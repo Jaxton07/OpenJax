@@ -12,5 +12,6 @@ serde.workspace = true
 serde_json.workspace = true
 shlex.workspace = true
 tokio.workspace = true
+toml.workspace = true
 walkdir.workspace = true
 openjax-protocol = { path = "../openjax-protocol" }

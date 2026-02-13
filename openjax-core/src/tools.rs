@@ -139,6 +139,8 @@ enum PatchOperation {
     AddFile { path: String, lines: Vec<String> },
     DeleteFile { path: String },
     UpdateFile { path: String, hunks: Vec<PatchHunk> },
+    MoveFile { from: String, to: String },
+    RenameFile { from: String, to: String },
 }
 
 #[derive(Debug, Clone)]
@@ -164,12 +166,16 @@ enum PlannedAction {
     Create { path: PathBuf, content: String },
     Update { path: PathBuf, content: String },
     Delete { path: PathBuf },
+    Move { from: PathBuf, to: PathBuf },
 }
 
 impl PlannedAction {
     fn path(&self) -> &Path {
         match self {
-            Self::Create { path, .. } | Self::Update { path, .. } | Self::Delete { path } => {
+            Self::Create { path, .. }
+            | Self::Update { path, .. }
+            | Self::Delete { path }
+            | Self::Move { to: path, .. } => {
                 path.as_path()
             }
         }
@@ -180,6 +186,13 @@ impl PlannedAction {
             Self::Create { path, .. } => format!("ADD {}", display_rel_path(cwd, path)),
             Self::Update { path, .. } => format!("UPDATE {}", display_rel_path(cwd, path)),
             Self::Delete { path } => format!("DELETE {}", display_rel_path(cwd, path)),
+            Self::Move { from, to } => {
+                format!(
+                    "MOVE {} -> {}",
+                    display_rel_path(cwd, from),
+                    display_rel_path(cwd, to)
+                )
+            }
         }
     }
 }
@@ -409,6 +422,50 @@ fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
             continue;
         }
 
+        if line.starts_with("*** Move File: ") {
+            // Format: *** Move File: from.txt -> to.txt
+            let parts = line
+                .trim_start_matches("*** Move File: ")
+                .trim()
+                .split("->")
+                .collect::<Vec<_>>();
+            if parts.len() != 2 {
+                return Err(anyhow!(
+                    "invalid patch: Move File requires format `from -> to`"
+                ));
+            }
+            let from = parts[0].trim().to_string();
+            let to = parts[1].trim().to_string();
+            if from.is_empty() || to.is_empty() {
+                return Err(anyhow!("invalid patch: empty path in Move File"));
+            }
+            operations.push(PatchOperation::MoveFile { from, to });
+            index += 1;
+            continue;
+        }
+
+        if line.starts_with("*** Rename File: ") {
+            // Format: *** Rename File: old.txt -> new.txt
+            let parts = line
+                .trim_start_matches("*** Rename File: ")
+                .trim()
+                .split("->")
+                .collect::<Vec<_>>();
+            if parts.len() != 2 {
+                return Err(anyhow!(
+                    "invalid patch: Rename File requires format `old -> new`"
+                ));
+            }
+            let from = parts[0].trim().to_string();
+            let to = parts[1].trim().to_string();
+            if from.is_empty() || to.is_empty() {
+                return Err(anyhow!("invalid patch: empty path in Rename File"));
+            }
+            operations.push(PatchOperation::RenameFile { from, to });
+            index += 1;
+            continue;
+        }
+
         if line.starts_with("*** Update File: ") {
             let path = line
                 .trim_start_matches("*** Update File: ")
@@ -546,6 +603,77 @@ async fn plan_patch_actions(
                     content: updated,
                 });
             }
+            PatchOperation::MoveFile { from, to } => {
+                let from_resolved = resolve_workspace_path(cwd, from)?;
+                let to_resolved = resolve_workspace_path_for_write(cwd, to)?;
+                if !seen_paths.insert(from_resolved.clone()) {
+                    return Err(anyhow!(
+                        "invalid patch: duplicated file operation target `{}`",
+                        display_rel_path(cwd, &from_resolved)
+                    ));
+                }
+                if !seen_paths.insert(to_resolved.clone()) {
+                    return Err(anyhow!(
+                        "invalid patch: duplicated file operation target `{}`",
+                        display_rel_path(cwd, &to_resolved)
+                    ));
+                }
+                let metadata = tokio::fs::metadata(&from_resolved).await.with_context(|| {
+                    format!("failed to stat move source: {}", from_resolved.display())
+                })?;
+                if !metadata.is_file() {
+                    return Err(anyhow!(
+                        "invalid patch: move source is not a file `{}`",
+                        display_rel_path(cwd, &from_resolved)
+                    ));
+                }
+                if to_resolved.exists() {
+                    return Err(anyhow!(
+                        "invalid patch: move target already exists `{}`",
+                        display_rel_path(cwd, &to_resolved)
+                    ));
+                }
+                actions.push(PlannedAction::Move {
+                    from: from_resolved,
+                    to: to_resolved,
+                });
+            }
+            PatchOperation::RenameFile { from, to } => {
+                // Rename is semantically the same as Move in this implementation
+                let from_resolved = resolve_workspace_path(cwd, from)?;
+                let to_resolved = resolve_workspace_path_for_write(cwd, to)?;
+                if !seen_paths.insert(from_resolved.clone()) {
+                    return Err(anyhow!(
+                        "invalid patch: duplicated file operation target `{}`",
+                        display_rel_path(cwd, &from_resolved)
+                    ));
+                }
+                if !seen_paths.insert(to_resolved.clone()) {
+                    return Err(anyhow!(
+                        "invalid patch: duplicated file operation target `{}`",
+                        display_rel_path(cwd, &to_resolved)
+                    ));
+                }
+                let metadata = tokio::fs::metadata(&from_resolved).await.with_context(|| {
+                    format!("failed to stat rename source: {}", from_resolved.display())
+                })?;
+                if !metadata.is_file() {
+                    return Err(anyhow!(
+                        "invalid patch: rename source is not a file `{}`",
+                        display_rel_path(cwd, &from_resolved)
+                    ));
+                }
+                if to_resolved.exists() {
+                    return Err(anyhow!(
+                        "invalid patch: rename target already exists `{}`",
+                        display_rel_path(cwd, &to_resolved)
+                    ));
+                }
+                actions.push(PlannedAction::Move {
+                    from: from_resolved,
+                    to: to_resolved,
+                });
+            }
         }
     }
 
@@ -598,6 +726,17 @@ async fn apply_single_patch_action(action: &PlannedAction) -> Result<()> {
             tokio::fs::remove_file(path)
                 .await
                 .with_context(|| format!("failed to delete file: {}", path.display()))?;
+        }
+        PlannedAction::Move { from, to } => {
+            // Ensure parent directory exists
+            if let Some(parent) = to.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .with_context(|| format!("failed to create parent dir: {}", parent.display()))?;
+            }
+            tokio::fs::rename(from, to)
+                .await
+                .with_context(|| format!("failed to move file: {} -> {}", from.display(), to.display()))?;
         }
     }
 
@@ -1085,6 +1224,58 @@ mod tests {
             .expect_err("patch should be rejected");
         assert!(err.to_string().contains("parent traversal is not allowed"));
         assert!(!cwd.join("../pwned.txt").exists());
+        let _ = fs::remove_dir_all(cwd);
+    }
+
+    #[tokio::test]
+    async fn apply_patch_move_file_works() {
+        let cwd = create_workspace();
+        // Create source file
+        fs::write(cwd.join("old.txt"), "hello").expect("seed file");
+
+        let call = ToolCall {
+            name: "apply_patch".to_string(),
+            args: HashMap::from([(
+                "patch".to_string(),
+                "*** Begin Patch\n*** Move File: old.txt -> new.txt\n*** End Patch"
+                    .to_string(),
+            )]),
+        };
+
+        let output = apply_patch_tool(&call, &cwd)
+            .await
+            .expect("patch should apply");
+        assert!(output.contains("MOVE"));
+        assert!(!cwd.join("old.txt").exists(), "old file should be moved");
+        assert!(cwd.join("new.txt").exists(), "new file should exist");
+        let content = fs::read_to_string(cwd.join("new.txt")).expect("file should exist");
+        assert_eq!(content, "hello");
+        let _ = fs::remove_dir_all(cwd);
+    }
+
+    #[tokio::test]
+    async fn apply_patch_rename_file_works() {
+        let cwd = create_workspace();
+        // Create source file
+        fs::write(cwd.join("file.txt"), "content").expect("seed file");
+
+        let call = ToolCall {
+            name: "apply_patch".to_string(),
+            args: HashMap::from([(
+                "patch".to_string(),
+                "*** Begin Patch\n*** Rename File: file.txt -> renamed.txt\n*** End Patch"
+                    .to_string(),
+            )]),
+        };
+
+        let output = apply_patch_tool(&call, &cwd)
+            .await
+            .expect("patch should apply");
+        assert!(output.contains("MOVE"));
+        assert!(!cwd.join("file.txt").exists(), "original file should be renamed");
+        assert!(cwd.join("renamed.txt").exists(), "renamed file should exist");
+        let content = fs::read_to_string(cwd.join("renamed.txt")).expect("file should exist");
+        assert_eq!(content, "content");
         let _ = fs::remove_dir_all(cwd);
     }
 }

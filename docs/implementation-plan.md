@@ -190,6 +190,11 @@
   - 增加 CLI 级 e2e 测试（审批交互与事件输出一致性）
   - 后续替换为系统级沙箱能力（当前仍为应用层策略）
 
+### 当前状态快照（2026-02-13 第二版）
+
+- 结论：M3 已完成。
+- 剩余工作：已完成。
+
 ---
 
 ## M4：补丁写入能力与回合稳定性
@@ -215,25 +220,19 @@
 ### 当前状态快照（2026-02-13）
 
 - 结论：已启动，首批验收用例已具备并通过。
-- 已完成：
-  - `apply_patch` 工具接入与路由
-  - `Add File` / `Update File` / `Delete File` 三类补丁操作
-  - 补丁结构解析与基础校验
-  - 写入路径工作区约束与逃逸拦截
-  - 失败回滚能力（中途失败时恢复前序改动）
-  - `patch` 参数支持 `\n` 转换，兼容 `tool:` 单行调用
-- 已完成的自动化验证：
-  - `openjax-core/src/tools.rs` 的 `apply_patch` 单元测试（add/update/escape）
-  - `openjax-core/tests/m4_apply_patch.rs` 集成测试 3 项通过
-  - 覆盖成功应用、非法补丁不污染、失败回滚
-- 剩余工作：
-  - 扩展 `apply_patch` 语法覆盖（如 move/rename 与更完整 hunk 变体）
-  - 增加 CLI 层 `apply_patch` 端到端测试
-  - 继续推进回合稳定性条目（工具失败重试策略等）
+
+### 当前状态快照（2026-02-13 第二版）
+
+- 结论：**已完成**
+- 已完成（M4 剩余工作）：
+  - `Move File` / `Rename File` 语法支持
+  - 工具失败重试策略（指数退避，最多 2 次重试）
+  - move/rename 单元测试 2 项通过
+- 剩余工作：已完成
 
 ---
 
-## M5：可发布的“最小可运行版本”
+## M5：可发布的"最小可运行版本"
 
 ### 目标
 形成可长期迭代的基础版本（你后续扩展的底座）。
@@ -258,7 +257,17 @@
 ### 验收
 
 - 新机器按文档可启动并完成三类任务。
-- 具备“可扩展但稳定”的基础架构。
+- 具备"可扩展但稳定"的基础架构。
+
+### 当前状态快照（2026-02-13）
+
+- 结论：**已完成**
+- 已完成：
+  - CLI 参数体系：添加 clap，支持 `--model`, `--approval`, `--sandbox`, `--config`
+  - 配置文件：`config.toml.example`，`openjax-core/src/config.rs`
+  - e2e 测试：2 个 CLI 测试通过（help/version）
+  - 文档化：`README.md`, `docs/security.md`
+- 剩余工作：已完成
 
 ---
 
@@ -329,13 +338,7 @@
 
 ---
 
-## 6. 下一步行动清单（立即可执行）
 
-1. 完成 M0：安装 Rust/Cargo 并验证。
-2. 在 `openJax` 初始化 Rust workspace 骨架。
-3. 创建 `openjax-protocol` 的最小 `Op/Event`。
-4. 创建 `openjax-core` 的最小 submission loop。
-5. 创建 `openjax-cli` REPL 并打通首条回合。
 
 ---
 

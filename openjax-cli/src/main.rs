@@ -1,9 +1,51 @@
+use clap::Parser;
 use openjax_core::Agent;
 use openjax_protocol::{Event, Op};
 use std::io::{self, Write};
+use std::path::PathBuf;
+
+#[derive(Parser, Debug)]
+#[command(name = "openjax")]
+#[command(version = "0.1.0")]
+#[command(about = "OpenJax - A CLI agent framework", long_about = None)]
+struct Cli {
+    /// 模型后端: minimax | openai | echo (also via OPENJAX_MODEL env var)
+    #[arg(long)]
+    model: Option<String>,
+
+    /// 审批策略: always_ask | on_request | never (also via OPENJAX_APPROVAL_POLICY env var)
+    #[arg(long)]
+    approval: Option<String>,
+
+    /// 沙箱模式: workspace_write | danger_full_access (also via OPENJAX_SANDBOX_MODE env var)
+    #[arg(long)]
+    sandbox: Option<String>,
+
+    /// 配置文件路径
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    // Show config info (CLI args will be applied via environment variables by clap)
+    if cli.model.is_some() {
+        println!("[cli] model: {:?}", cli.model);
+    }
+    if cli.approval.is_some() {
+        println!("[cli] approval: {:?}", cli.approval);
+    }
+    if cli.sandbox.is_some() {
+        println!("[cli] sandbox: {:?}", cli.sandbox);
+    }
+
+    if let Some(config_path) = &cli.config {
+        println!("[cli] config: {}", config_path.display());
+        println!("[config] Note: config file loading will be implemented in Phase 2");
+    }
+
     let mut agent = Agent::new();
 
     println!(

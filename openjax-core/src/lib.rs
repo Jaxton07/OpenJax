@@ -1,6 +1,8 @@
+mod config;
 mod model;
 mod tools;
 
+pub use config::Config;
 use openjax_protocol::{Event, Op};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -17,6 +19,24 @@ pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 const MAX_TOOL_CALLS_PER_TURN: usize = 5;
 const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
 const MAX_CONVERSATION_HISTORY_ITEMS: usize = 20;
+
+// Retry configuration for tool calls
+#[derive(Debug, Clone)]
+struct RetryConfig {
+    max_retries: u32,
+    initial_delay_ms: u64,
+    max_delay_ms: u64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            initial_delay_ms: 500,
+            max_delay_ms: 5000,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct ModelDecision {
@@ -211,44 +231,81 @@ impl Agent {
         call: tools::ToolCall,
         events: &mut Vec<Event>,
     ) {
+        let retry_config = RetryConfig::default();
+
         events.push(Event::ToolCallStarted {
             turn_id,
             tool_name: call.name.clone(),
         });
 
-        match self
-            .tools
-            .execute(&call, self.cwd.as_path(), self.tool_runtime_config)
-            .await
-        {
-            Ok(output) => {
-                events.push(Event::ToolCallCompleted {
-                    turn_id,
-                    tool_name: call.name.clone(),
-                    ok: true,
-                    output,
-                });
-                let message = format!("tool {} 执行成功", call.name);
+        // Try execution with retry
+        let mut last_error = None;
+        for attempt in 0..=retry_config.max_retries {
+            if attempt > 0 {
+                // Calculate delay with exponential backoff
+                let delay = std::cmp::min(
+                    retry_config.initial_delay_ms * 2u64.pow(attempt - 1),
+                    retry_config.max_delay_ms,
+                );
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                 events.push(Event::AssistantMessage {
                     turn_id,
-                    content: message.clone(),
+                    content: format!("tool {} 第 {} 次重试...", call.name, attempt),
                 });
-                self.record_history("assistant", message);
             }
-            Err(err) => {
-                events.push(Event::ToolCallCompleted {
-                    turn_id,
-                    tool_name: call.name.clone(),
-                    ok: false,
-                    output: err.to_string(),
-                });
-                let message = format!("tool {} 执行失败: {err}", call.name);
-                events.push(Event::AssistantMessage {
-                    turn_id,
-                    content: message.clone(),
-                });
-                self.record_history("assistant", message);
+
+            match self
+                .tools
+                .execute(&call, self.cwd.as_path(), self.tool_runtime_config)
+                .await
+            {
+                Ok(output) => {
+                    if attempt > 0 {
+                        events.push(Event::AssistantMessage {
+                            turn_id,
+                            content: format!("tool {} 重试成功", call.name),
+                        });
+                    }
+                    events.push(Event::ToolCallCompleted {
+                        turn_id,
+                        tool_name: call.name.clone(),
+                        ok: true,
+                        output,
+                    });
+                    let message = format!("tool {} 执行成功", call.name);
+                    events.push(Event::AssistantMessage {
+                        turn_id,
+                        content: message.clone(),
+                    });
+                    self.record_history("assistant", message);
+                    return;
+                }
+                Err(err) => {
+                    last_error = Some(err);
+                    // Check if error is retryable (not a validation error)
+                    let err_str = last_error.as_ref().unwrap().to_string();
+                    if err_str.contains("invalid") || err_str.contains("permission denied") {
+                        // Non-retryable error, don't retry
+                        break;
+                    }
+                }
             }
+        }
+
+        // All retries failed
+        if let Some(err) = last_error {
+            events.push(Event::ToolCallCompleted {
+                turn_id,
+                tool_name: call.name.clone(),
+                ok: false,
+                output: err.to_string(),
+            });
+            let message = format!("tool {} 执行失败: {}", call.name, err);
+            events.push(Event::AssistantMessage {
+                turn_id,
+                content: message.clone(),
+            });
+            self.record_history("assistant", message);
         }
     }
 
