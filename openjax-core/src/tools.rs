@@ -1,8 +1,48 @@
 use anyhow::{Context, Result, anyhow};
+use openjax_protocol::{AgentStatus, ThreadId};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
+
+// ============== Multi-Agent Configuration ==============
+
+/// Maximum depth for sub-agent spawning (from protocol)
+pub const MAX_AGENT_DEPTH: i32 = openjax_protocol::MAX_AGENT_DEPTH;
+
+/// Maximum number of concurrent agents per session
+pub const DEFAULT_MAX_AGENTS: usize = 4;
+
+/// Agent control configuration (预留扩展)
+#[derive(Debug, Clone)]
+pub struct AgentConfig {
+    /// Maximum concurrent agents allowed
+    pub max_agents: usize,
+    /// Maximum depth for sub-agent spawning
+    pub max_depth: i32,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            max_agents: DEFAULT_MAX_AGENTS,
+            max_depth: MAX_AGENT_DEPTH,
+        }
+    }
+}
+
+/// Agent runtime state (预留扩展)
+#[derive(Debug, Clone)]
+pub struct AgentRuntime {
+    /// Current agent's thread ID
+    pub thread_id: ThreadId,
+    /// Parent thread ID (None for root agent)
+    pub parent_thread_id: Option<ThreadId>,
+    /// Agent depth in the hierarchy
+    pub depth: i32,
+    /// Current status
+    pub status: AgentStatus,
+}
 
 #[derive(Debug, Clone)]
 pub struct ToolCall {

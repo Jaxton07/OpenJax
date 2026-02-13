@@ -9,6 +9,10 @@ use std::path::PathBuf;
 pub use model::build_model_client;
 pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
+pub use tools::{AgentConfig, AgentRuntime, MAX_AGENT_DEPTH};
+
+// Re-export protocol types for external use
+pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 
 const MAX_TOOL_CALLS_PER_TURN: usize = 5;
 const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
@@ -36,6 +40,10 @@ pub struct Agent {
     tool_runtime_config: tools::ToolRuntimeConfig,
     cwd: PathBuf,
     history: Vec<HistoryEntry>,
+    // Multi-agent support (预留扩展)
+    thread_id: ThreadId,
+    parent_thread_id: Option<ThreadId>,
+    depth: i32,
 }
 
 impl Agent {
@@ -64,6 +72,10 @@ impl Agent {
             },
             cwd,
             history: Vec::new(),
+            // Multi-agent support (预留扩展)
+            thread_id: ThreadId::new(),
+            parent_thread_id: None,
+            depth: 0,
         }
     }
 
@@ -78,6 +90,53 @@ impl Agent {
     pub fn sandbox_mode_name(&self) -> &'static str {
         self.tool_runtime_config.sandbox_mode.as_str()
     }
+
+    // ============== Multi-Agent Methods (预留扩展) ==============
+
+    /// Get current agent's thread ID
+    pub fn thread_id(&self) -> ThreadId {
+        self.thread_id
+    }
+
+    /// Get parent thread ID (None for root agent)
+    pub fn parent_thread_id(&self) -> Option<ThreadId> {
+        self.parent_thread_id
+    }
+
+    /// Get agent depth in the hierarchy
+    pub fn depth(&self) -> i32 {
+        self.depth
+    }
+
+    /// Check if this agent can spawn sub-agents
+    pub fn can_spawn_sub_agent(&self) -> bool {
+        self.depth < tools::MAX_AGENT_DEPTH
+    }
+
+    /// Create a new sub-agent (预留扩展，未完全实现)
+    /// Returns a new Agent instance with incremented depth
+    pub fn spawn_sub_agent(&self, input: &str) -> Result<Agent, String> {
+        if !self.can_spawn_sub_agent() {
+            return Err(format!(
+                "cannot spawn sub-agent: max depth {} reached",
+                tools::MAX_AGENT_DEPTH
+            ));
+        }
+
+        let mut sub_agent = Agent::with_runtime(
+            self.tool_runtime_config.approval_policy,
+            self.tool_runtime_config.sandbox_mode,
+            self.cwd.clone(),
+        );
+
+        // Set parent relationship
+        sub_agent.parent_thread_id = Some(self.thread_id);
+        sub_agent.depth = self.depth + 1;
+
+        Ok(sub_agent)
+    }
+
+    // ============== Main Submit Method ==============
 
     pub async fn submit(&mut self, op: Op) -> Vec<Event> {
         match op {
@@ -98,6 +157,49 @@ impl Agent {
 
                 events.push(Event::TurnCompleted { turn_id });
                 events
+            }
+            // Multi-agent operations (预留扩展)
+            Op::SpawnAgent { input, source } => {
+                // Check depth limit
+                if self.depth >= tools::MAX_AGENT_DEPTH {
+                    return vec![Event::AssistantMessage {
+                        turn_id: self.next_turn_id,
+                        content: format!(
+                            "Cannot spawn sub-agent: max depth {} reached",
+                            tools::MAX_AGENT_DEPTH
+                        ),
+                    }];
+                }
+
+                let new_thread_id = ThreadId::new();
+                let turn_id = self.next_turn_id;
+                self.next_turn_id += 1;
+
+                vec![Event::AgentSpawned {
+                    parent_thread_id: Some(self.thread_id),
+                    new_thread_id,
+                }]
+            }
+            Op::SendToAgent { thread_id: _, input: _ } => {
+                // 预留扩展：向指定代理发送消息
+                vec![Event::AssistantMessage {
+                    turn_id: self.next_turn_id,
+                    content: "SendToAgent not yet implemented".to_string(),
+                }]
+            }
+            Op::InterruptAgent { thread_id: _ } => {
+                // 预留扩展：中断指定代理
+                vec![Event::AssistantMessage {
+                    turn_id: self.next_turn_id,
+                    content: "InterruptAgent not yet implemented".to_string(),
+                }]
+            }
+            Op::ResumeAgent { rollout_path: _, source: _ } => {
+                // 预留扩展：从持久化状态恢复代理
+                vec![Event::AssistantMessage {
+                    turn_id: self.next_turn_id,
+                    content: "ResumeAgent not yet implemented".to_string(),
+                }]
             }
             Op::Shutdown => vec![Event::ShutdownComplete],
         }

@@ -72,5 +72,12 @@ fn print_event(event: &Event) {
         }
         Event::TurnCompleted { turn_id } => println!("[turn:{turn_id}] completed"),
         Event::ShutdownComplete => println!("shutdown complete"),
+        // Multi-agent events (预留扩展)
+        Event::AgentSpawned { parent_thread_id, new_thread_id } => {
+            println!("[agent] spawned: parent={parent_thread_id:?} new={new_thread_id:?}")
+        }
+        Event::AgentStatusChanged { thread_id, status } => {
+            println!("[agent:{thread_id:?}] status: {status:?}")
+        }
     }
 }
