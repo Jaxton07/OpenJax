@@ -18,6 +18,9 @@ async fn main() -> anyhow::Result<()> {
     println!(
         "命令执行示例: tool:exec_command cmd='ls -la' | tool:exec_command cmd='curl https://example.com' require_escalated=true"
     );
+    println!(
+        "补丁示例: tool:apply_patch patch='*** Begin Patch\\n*** Add File: hello.txt\\n+hello\\n*** End Patch'"
+    );
 
     loop {
         print!("> ");

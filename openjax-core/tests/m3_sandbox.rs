@@ -2,14 +2,18 @@ use openjax_core::{Agent, ApprovalPolicy, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn temp_workspace_path() -> PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after UNIX_EPOCH")
         .as_nanos();
-    std::env::temp_dir().join(format!("openjax-m3-it-{nanos}"))
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    std::env::temp_dir().join(format!("openjax-m3-it-{pid}-{nanos}-{counter}"))
 }
 
 fn create_workspace() -> PathBuf {
@@ -21,10 +25,12 @@ fn create_workspace() -> PathBuf {
 fn tool_completion<'a>(events: &'a [Event], tool_name: &str) -> &'a Event {
     events
         .iter()
-        .find(|event| matches!(
-            event,
-            Event::ToolCallCompleted { tool_name: name, .. } if name == tool_name
-        ))
+        .find(|event| {
+            matches!(
+                event,
+                Event::ToolCallCompleted { tool_name: name, .. } if name == tool_name
+            )
+        })
         .expect("expected ToolCallCompleted event")
 }
 

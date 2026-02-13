@@ -387,7 +387,7 @@ fn build_planner_input(
     format!(
         "You are OpenJax's planning layer.\n\
 Return ONLY valid JSON with one of two shapes:\n\
-1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|exec_command\",\"args\":{{...}}}}\n\
+1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|exec_command|apply_patch\",\"args\":{{...}}}}\n\
 2) Final answer: {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \
 Rules:\n\
@@ -395,6 +395,7 @@ Rules:\n\
 - You can call tools up to {remaining_calls} more times this turn.\n\
 - If task can be answered now, return final.\n\
 - For exec_command, put shell command in args.cmd.\n\
+- For apply_patch, put full patch text in args.patch.\n\
 \
 Conversation history (most recent last):\n{history_context}\n\
 \
@@ -409,7 +410,7 @@ fn build_json_repair_prompt(previous_output: &str) -> String {
         "Your previous response did not match the required JSON schema.\n\
 Return ONLY valid JSON. Do not include markdown, thoughts, or extra text.\n\
 Allowed outputs:\n\
-1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|exec_command\",\"args\":{{...}}}}\n\
+1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|exec_command|apply_patch\",\"args\":{{...}}}}\n\
 2) {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Previous response:\n{previous_output}\n"

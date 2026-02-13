@@ -51,6 +51,24 @@
   - 缺少 CLI crate 端到端交互测试（当前已覆盖 core 单测+集成测试）
   - `exec_command` 沙箱仍是应用层策略，不是系统级沙箱
 
+## Step 4：补丁写入能力与回合稳定性（已启动）
+
+- 状态：进行中（2026-02-13）
+- 已实现：
+  - `apply_patch` 工具接入 `ToolRouter`
+  - 支持 `Add File` / `Update File` / `Delete File`
+  - 补丁解析与基础校验（`*** Begin Patch` / `*** End Patch`）
+  - 写入路径安全校验（工作区内、拒绝绝对路径与 `..` 逃逸）
+  - 失败回滚：中途失败时恢复已修改文件
+  - `patch` 参数兼容 `\n` 转真实换行（便于 `tool:` 单行输入）
+- 自动化测试：
+  - `openjax-core/src/tools.rs` 新增 `apply_patch` 单元测试（add/update/escape）
+  - `openjax-core/tests/m4_apply_patch.rs` 新增 3 个集成测试并通过
+  - 覆盖点：成功应用、非法补丁不污染、中途失败回滚
+- 遗留：
+  - 暂未支持完整 `apply_patch` 语法子集（如 move/rename、更多高级 hunk 变体）
+  - 仍需补充 CLI 层 `apply_patch` 端到端交互测试
+
 ## 本轮新增文件/核心改动
 
 - `openjax-protocol/src/lib.rs`
@@ -63,9 +81,9 @@
 
 ---
 
-## 下一步建议（M3 -> M4）
+## 下一步建议（M4 -> M5）
 
-1. 设计并接入 `apply_patch` 等价能力，作为唯一写文件入口。
-2. 为补丁失败场景增加回滚验证，避免污染文件。
-3. 增加 CLI 级最小 e2e 测试脚本（审批交互与事件打印一致性）。
-4. 把工具调用从 `tool:` 文本协议升级为结构化 tool call 协议。
+1. 补齐 CLI 级最小 e2e 测试脚本（`apply_patch` + 审批交互 + 事件输出一致性）。
+2. 扩展 `apply_patch` 语法覆盖面，并补相应失败回滚用例。
+3. 把工具调用从 `tool:` 文本协议升级为结构化 tool call 协议。
+4. 开始整理 M5 所需参数体系与 `config.toml`。

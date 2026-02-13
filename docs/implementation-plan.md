@@ -212,6 +212,25 @@
 - Agent 可通过补丁修改文件并返回变更摘要。
 - 非法补丁会失败且不污染文件。
 
+### 当前状态快照（2026-02-13）
+
+- 结论：已启动，首批验收用例已具备并通过。
+- 已完成：
+  - `apply_patch` 工具接入与路由
+  - `Add File` / `Update File` / `Delete File` 三类补丁操作
+  - 补丁结构解析与基础校验
+  - 写入路径工作区约束与逃逸拦截
+  - 失败回滚能力（中途失败时恢复前序改动）
+  - `patch` 参数支持 `\n` 转换，兼容 `tool:` 单行调用
+- 已完成的自动化验证：
+  - `openjax-core/src/tools.rs` 的 `apply_patch` 单元测试（add/update/escape）
+  - `openjax-core/tests/m4_apply_patch.rs` 集成测试 3 项通过
+  - 覆盖成功应用、非法补丁不污染、失败回滚
+- 剩余工作：
+  - 扩展 `apply_patch` 语法覆盖（如 move/rename 与更完整 hunk 变体）
+  - 增加 CLI 层 `apply_patch` 端到端测试
+  - 继续推进回合稳定性条目（工具失败重试策略等）
+
 ---
 
 ## M5：可发布的“最小可运行版本”
