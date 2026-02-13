@@ -1,0 +1,11 @@
+[package]
+name = "openjax-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+openjax-core = { path = "../openjax-core" }
+openjax-protocol = { path = "../openjax-protocol" }
