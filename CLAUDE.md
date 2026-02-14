@@ -2,9 +2,14 @@
 
 本文档为 Claude Code (claude.ai/code) 提供在此代码仓库中工作的指导。
 
+## Shell 使用
+
+**优先使用 zsh 执行命令**，而非 bash。
+示例：zsh -c "cargo build 2>&1" | head -30
+
 ## 项目概述
 
-OpenJax 是一个基于 Rust 的 CLI 代理框架，使 AI 模型能够与代码库交互。它提供模块化架构，支持工具执行、沙箱环境和多模型支持, 参考codex 的实现。
+OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型能够与代码库交互。它提供模块化架构，支持工具执行、沙箱环境和多模型支持, 参考codex 的实现。
 
 本项目是想基于codex 的实现原理打造一个定制化的个人助理，而codex 的tool 工具调用，shell 执行，agent loop, 沙箱机制，等等基本能力是我们的助理agent 也需要的，所以现在一边参考codex 的源码一边实现我们的agent.
 
@@ -24,20 +29,20 @@ openjax-cli/       # CLI 入口点和事件显示
 
 ```bash
 # 构建所有包
-cargo build
+zsh -c "cargo build"
 
 # 构建特定包
-cargo build -p openjax-cli
+zsh -c "cargo build -p openjax-cli"
 
 # 运行所有测试
-cargo test
+zsh -c "cargo test"
 
 # 运行特定测试
-cargo test -p openjax-core m3_sandbox
-cargo test -p openjax-core m4_apply_patch
+zsh -c "cargo test -p openjax-core m3_sandbox"
+zsh -c "cargo test -p openjax-core m4_apply_patch"
 
 # 运行并显示输出
-cargo test -p openjax-core -- --nocapture
+zsh -c "cargo test -p openjax-core -- --nocapture"
 ```
 
 ## 环境变量
@@ -78,7 +83,7 @@ cargo test -p openjax-core -- --nocapture
 tool:read_file path=src/lib.rs
 tool:list_dir path=.
 tool:grep_files pattern=fn main path=.
-tool:exec_command cmd='cargo test' require_escalated=true timeout_ms=60000
+tool:exec_command cmd='zsh -c "cargo test"' require_escalated=true timeout_ms=60000
 tool:apply_patch patch='*** Begin Patch\n*** Add File: new.rs\n+// new file\n*** End Patch'
 ```
 
