@@ -1,5 +1,5 @@
 use clap::Parser;
-use openjax_core::{Agent, Config};
+use openjax_core::{init_logger, Agent, Config};
 use openjax_protocol::{Event, Op};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -70,6 +70,8 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_logger();
+
     let cli = Cli::parse();
 
     let config = if let Some(config_path) = &cli.config {

@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
+use tracing::{debug, info, warn};
 
 // ============== Multi-Agent Configuration ==============
 
@@ -123,14 +124,43 @@ impl ToolRouter {
         cwd: &Path,
         config: ToolRuntimeConfig,
     ) -> Result<String> {
-        match call.name.as_str() {
+        debug!(
+            tool_name = %call.name,
+            args = ?call.args,
+            cwd = %cwd.display(),
+            sandbox_mode = config.sandbox_mode.as_str(),
+            "tool_execute started"
+        );
+        let result = match call.name.as_str() {
             "read_file" => read_file(call, cwd).await,
             "list_dir" => list_dir(call, cwd).await,
             "grep_files" => grep_files(call, cwd).await,
             "exec_command" => exec_command(call, cwd, config).await,
             "apply_patch" => apply_patch_tool(call, cwd).await,
-            _ => Err(anyhow!("unknown tool: {}", call.name)),
+            _ => {
+                warn!(tool_name = %call.name, "tool_execute unknown tool");
+                Err(anyhow!("unknown tool: {}", call.name))
+            }
+        };
+        match &result {
+            Ok(output) => {
+                debug!(
+                    tool_name = %call.name,
+                    ok = true,
+                    output_len = output.len(),
+                    "tool_execute completed"
+                );
+            }
+            Err(err) => {
+                debug!(
+                    tool_name = %call.name,
+                    ok = false,
+                    error = %err,
+                    "tool_execute completed"
+                );
+            }
         }
+        result
     }
 }
 
@@ -306,9 +336,17 @@ async fn exec_command(call: &ToolCall, cwd: &Path, config: ToolRuntimeConfig) ->
         .map(|value| value == "true")
         .unwrap_or(false);
 
+    info!(
+        command = %command,
+        require_escalated = require_escalated,
+        sandbox_mode = config.sandbox_mode.as_str(),
+        "exec_command started"
+    );
+
     if should_prompt_approval(config.approval_policy, require_escalated)
         && !ask_for_approval(&command)?
     {
+        warn!(command = %command, "exec_command rejected by user");
         return Err(anyhow!("command rejected by user"));
     }
 
@@ -336,6 +374,14 @@ async fn exec_command(call: &ToolCall, cwd: &Path, config: ToolRuntimeConfig) ->
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    info!(
+        command = %command,
+        exit_code = exit_code,
+        stdout_len = stdout.len(),
+        stderr_len = stderr.len(),
+        "exec_command completed"
+    );
 
     Ok(format!(
         "exit_code={exit_code}\nstdout:\n{stdout}\nstderr:\n{stderr}"

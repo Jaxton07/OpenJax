@@ -1,12 +1,16 @@
 mod config;
+mod logger;
 mod model;
 mod tools;
 
 pub use config::Config;
+pub use logger::init_logger;
 use openjax_protocol::{Event, Op};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
+use tracing::{debug, info, warn};
 
 pub use model::build_model_client;
 pub use model::build_model_client_with_config;
@@ -94,6 +98,15 @@ impl Agent {
         cwd: PathBuf,
     ) -> Self {
         let model_client = model::build_model_client_with_config(config.model.as_ref());
+        let thread_id = ThreadId::new();
+        info!(
+            thread_id = ?thread_id,
+            model_backend = model_client.name(),
+            approval_policy = approval_policy.as_str(),
+            sandbox_mode = sandbox_mode.as_str(),
+            cwd = %cwd.display(),
+            "agent created"
+        );
         Self {
             next_turn_id: 1,
             model_client,
@@ -104,7 +117,7 @@ impl Agent {
             },
             cwd,
             history: Vec::new(),
-            thread_id: ThreadId::new(),
+            thread_id,
             parent_thread_id: None,
             depth: 0,
         }
@@ -245,6 +258,14 @@ impl Agent {
         events: &mut Vec<Event>,
     ) {
         let retry_config = RetryConfig::default();
+        let start_time = Instant::now();
+
+        info!(
+            turn_id = turn_id,
+            tool_name = %call.name,
+            args = ?call.args,
+            "tool_call started"
+        );
 
         events.push(Event::ToolCallStarted {
             turn_id,
@@ -265,6 +286,12 @@ impl Agent {
                     turn_id,
                     content: format!("tool {} 第 {} 次重试...", call.name, attempt),
                 });
+                warn!(
+                    turn_id = turn_id,
+                    tool_name = %call.name,
+                    attempt = attempt,
+                    "tool_call retry"
+                );
             }
 
             match self
@@ -273,6 +300,15 @@ impl Agent {
                 .await
             {
                 Ok(output) => {
+                    let duration_ms = start_time.elapsed().as_millis();
+                    info!(
+                        turn_id = turn_id,
+                        tool_name = %call.name,
+                        ok = true,
+                        duration_ms = duration_ms,
+                        output_len = output.len(),
+                        "tool_call completed"
+                    );
                     if attempt > 0 {
                         events.push(Event::AssistantMessage {
                             turn_id,
@@ -307,6 +343,15 @@ impl Agent {
 
         // All retries failed
         if let Some(err) = last_error {
+            let duration_ms = start_time.elapsed().as_millis();
+            info!(
+                turn_id = turn_id,
+                tool_name = %call.name,
+                ok = false,
+                duration_ms = duration_ms,
+                error = %err,
+                "tool_call completed"
+            );
             events.push(Event::ToolCallCompleted {
                 turn_id,
                 tool_name: call.name.clone(),
@@ -330,6 +375,12 @@ impl Agent {
     ) {
         let mut tool_traces: Vec<String> = Vec::new();
 
+        debug!(
+            turn_id = turn_id,
+            user_input_len = user_input.len(),
+            "natural_language_turn started"
+        );
+
         for executed_count in 0..MAX_TOOL_CALLS_PER_TURN {
             let remaining = MAX_TOOL_CALLS_PER_TURN - executed_count;
             let planner_input =
@@ -338,6 +389,11 @@ impl Agent {
             let model_output = match self.model_client.complete(&planner_input).await {
                 Ok(output) => output,
                 Err(err) => {
+                    warn!(
+                        turn_id = turn_id,
+                        error = %err,
+                        "model_request failed"
+                    );
                     let message = format!("[model error] {err}");
                     events.push(Event::AssistantMessage {
                         turn_id,
@@ -355,6 +411,11 @@ impl Agent {
                 let repaired_output = match self.model_client.complete(&repair_prompt).await {
                     Ok(output) => output,
                     Err(err) => {
+                        warn!(
+                            turn_id = turn_id,
+                            error = %err,
+                            "model_repair_request failed"
+                        );
                         let message = format!("[model error] {err}");
                         events.push(Event::AssistantMessage {
                             turn_id,
@@ -383,6 +444,11 @@ impl Agent {
                 let message = decision
                     .message
                     .unwrap_or_else(|| "任务已完成。".to_string());
+                info!(
+                    turn_id = turn_id,
+                    action = "final",
+                    "natural_language_turn completed"
+                );
                 events.push(Event::AssistantMessage {
                     turn_id,
                     content: message.clone(),
@@ -395,6 +461,10 @@ impl Agent {
                 let tool_name = match decision.tool {
                     Some(name) if !name.trim().is_empty() => name,
                     _ => {
+                        warn!(
+                            turn_id = turn_id,
+                            "model_decision missing tool name"
+                        );
                         let message = "[model error] tool action missing tool name".to_string();
                         events.push(Event::AssistantMessage {
                             turn_id,
@@ -407,8 +477,16 @@ impl Agent {
 
                 let call = tools::ToolCall {
                     name: tool_name.clone(),
-                    args: decision.args.unwrap_or_default(),
+                    args: decision.args.clone().unwrap_or_default(),
                 };
+
+                let start_time = Instant::now();
+                info!(
+                    turn_id = turn_id,
+                    tool_name = %call.name,
+                    args = ?call.args,
+                    "tool_call started"
+                );
 
                 events.push(Event::ToolCallStarted {
                     turn_id,
@@ -421,6 +499,15 @@ impl Agent {
                     .await
                 {
                     Ok(output) => {
+                        let duration_ms = start_time.elapsed().as_millis();
+                        info!(
+                            turn_id = turn_id,
+                            tool_name = %tool_name,
+                            ok = true,
+                            duration_ms = duration_ms,
+                            output_len = output.len(),
+                            "tool_call completed"
+                        );
                         let trace = format!(
                             "tool={tool_name}; ok=true; output={}",
                             truncate_for_prompt(&output)
@@ -435,7 +522,16 @@ impl Agent {
                         });
                     }
                     Err(err) => {
+                        let duration_ms = start_time.elapsed().as_millis();
                         let err_text = err.to_string();
+                        info!(
+                            turn_id = turn_id,
+                            tool_name = %tool_name,
+                            ok = false,
+                            duration_ms = duration_ms,
+                            error = %err_text,
+                            "tool_call completed"
+                        );
                         let trace = format!(
                             "tool={tool_name}; ok=false; output={}",
                             truncate_for_prompt(&err_text)
@@ -454,6 +550,11 @@ impl Agent {
                 continue;
             }
 
+            warn!(
+                turn_id = turn_id,
+                action = %decision.action,
+                "model_decision unsupported action"
+            );
             let message = format!("[model error] unsupported action: {}", decision.action);
             events.push(Event::AssistantMessage {
                 turn_id,
@@ -463,6 +564,11 @@ impl Agent {
             return;
         }
 
+        warn!(
+            turn_id = turn_id,
+            max_calls = MAX_TOOL_CALLS_PER_TURN,
+            "natural_language_turn reached max tool calls"
+        );
         let message = format!(
             "已达到单回合最多 {} 次工具调用限制，请继续下一轮。",
             MAX_TOOL_CALLS_PER_TURN
