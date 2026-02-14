@@ -3,6 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Serialize;
 
+use crate::config::ModelConfig;
+
 #[async_trait]
 pub trait ModelClient: Send + Sync {
     async fn complete(&self, user_input: &str) -> Result<String>;
@@ -47,14 +49,28 @@ struct ChatMessage {
 }
 
 impl ChatCompletionsClient {
-    pub fn from_minimax_env() -> Option<Self> {
-        let api_key = std::env::var("OPENJAX_MINIMAX_API_KEY")
+    pub fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
+        let env_api_key = std::env::var("OPENJAX_MINIMAX_API_KEY")
             .ok()
-            .filter(|value| !value.trim().is_empty())?;
+            .filter(|v| !v.trim().is_empty());
+        
+        let config_api_key = config.and_then(|c| c.api_key.as_ref());
+        
+        let api_key = env_api_key
+            .or_else(|| config_api_key.map(|s| s.clone()))?;
+        
         let model = std::env::var("OPENJAX_MINIMAX_MODEL")
-            .unwrap_or_else(|_| "codex-MiniMax-M2.1".to_string());
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| config.and_then(|c| c.model.clone()))
+            .unwrap_or_else(|| "codex-MiniMax-M2.1".to_string());
+        
         let base_url = std::env::var("OPENJAX_MINIMAX_BASE_URL")
-            .unwrap_or_else(|_| "https://api.minimaxi.com/v1".to_string());
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| config.and_then(|c| c.base_url.clone()))
+            .unwrap_or_else(|| "https://api.minimaxi.com/v1".to_string());
+        
         let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
         Some(Self {
@@ -66,13 +82,28 @@ impl ChatCompletionsClient {
         })
     }
 
-    pub fn from_openai_env() -> Option<Self> {
-        let api_key = std::env::var("OPENAI_API_KEY")
+    pub fn from_openai_config(config: Option<&ModelConfig>) -> Option<Self> {
+        let env_api_key = std::env::var("OPENAI_API_KEY")
             .ok()
-            .filter(|value| !value.trim().is_empty())?;
-        let model = std::env::var("OPENJAX_MODEL").unwrap_or_else(|_| "gpt-4.1-mini".to_string());
+            .filter(|v| !v.trim().is_empty());
+        
+        let config_api_key = config.and_then(|c| c.api_key.as_ref());
+        
+        let api_key = env_api_key
+            .or_else(|| config_api_key.map(|s| s.clone()))?;
+        
+        let model = std::env::var("OPENJAX_MODEL")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| config.and_then(|c| c.model.clone()))
+            .unwrap_or_else(|| "gpt-4.1-mini".to_string());
+        
         let base_url = std::env::var("OPENAI_BASE_URL")
-            .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| config.and_then(|c| c.base_url.clone()))
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+        
         let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
         Some(Self {
@@ -192,11 +223,34 @@ impl ModelClient for ChatCompletionsClient {
 }
 
 pub fn build_model_client() -> Box<dyn ModelClient> {
-    if let Some(client) = ChatCompletionsClient::from_minimax_env() {
+    build_model_client_with_config(None)
+}
+
+pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn ModelClient> {
+    let backend = config.and_then(|c| c.backend.as_ref()).map(|s| s.to_lowercase());
+    
+    match backend.as_deref() {
+        Some("minimax") => {
+            if let Some(client) = ChatCompletionsClient::from_minimax_config(config) {
+                return Box::new(client);
+            }
+        }
+        Some("openai") => {
+            if let Some(client) = ChatCompletionsClient::from_openai_config(config) {
+                return Box::new(client);
+            }
+        }
+        Some("echo") => {
+            return Box::new(EchoModelClient);
+        }
+        _ => {}
+    }
+
+    if let Some(client) = ChatCompletionsClient::from_minimax_config(config) {
         return Box::new(client);
     }
 
-    if let Some(client) = ChatCompletionsClient::from_openai_env() {
+    if let Some(client) = ChatCompletionsClient::from_openai_config(config) {
         return Box::new(client);
     }
 

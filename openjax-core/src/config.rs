@@ -1,7 +1,8 @@
 use serde::Deserialize;
+use std::path::PathBuf;
 
 /// OpenJax configuration
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Config {
     /// Model configuration
     #[serde(default)]
@@ -16,7 +17,7 @@ pub struct Config {
     pub agent: Option<AgentConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ModelConfig {
     /// Model backend: minimax | openai | echo
     #[serde(default)]
@@ -29,9 +30,13 @@ pub struct ModelConfig {
     /// Base URL override
     #[serde(default)]
     pub base_url: Option<String>,
+
+    /// Model name
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct SandboxConfig {
     /// Sandbox mode: workspace_write | danger_full_access
     #[serde(default)]
@@ -42,7 +47,7 @@ pub struct SandboxConfig {
     pub approval_policy: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AgentConfig {
     /// Maximum concurrent agents
     #[serde(default)]
@@ -59,5 +64,34 @@ impl Config {
         let content = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
         Ok(config)
+    }
+
+    /// Find and load config from default locations
+    /// Search order: ./.openjax.toml -> ~/.openjax/config.toml
+    pub fn load() -> Self {
+        Self::find_config_file()
+            .and_then(|path| Self::from_file(&path).ok())
+            .unwrap_or_default()
+    }
+
+    /// Find config file in default locations
+    pub fn find_config_file() -> Option<PathBuf> {
+        let cwd_config = std::env::current_dir()
+            .ok()?
+            .join(".openjax.toml");
+        
+        if cwd_config.exists() {
+            return Some(cwd_config);
+        }
+
+        let home_config = dirs::home_dir()?
+            .join(".openjax")
+            .join("config.toml");
+        
+        if home_config.exists() {
+            return Some(home_config);
+        }
+
+        None
     }
 }

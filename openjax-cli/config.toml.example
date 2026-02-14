@@ -1,14 +1,18 @@
 # OpenJax Configuration Example
-# Copy this file to ~/.openjax/config.toml or use --config flag
+# Copy this file to ~/.openjax/config.toml or ./.openjax.toml
 
 # Model configuration
 [model]
 # Backend: minimax | openai | echo
 backend = "echo"
 # API key (optional, can use env vars instead)
+# For OpenAI: OPENAI_API_KEY env var takes priority
+# For MiniMax: OPENJAX_MINIMAX_API_KEY env var takes priority
 # api_key = "your-api-key"
 # Base URL override (optional)
 # base_url = "https://api.example.com"
+# Model name (optional)
+# model = "gpt-4.1-mini"
 
 # Sandbox configuration
 [sandbox]

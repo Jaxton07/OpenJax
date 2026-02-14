@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub use model::build_model_client;
+pub use model::build_model_client_with_config;
 pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
 pub use tools::{AgentConfig, AgentRuntime, MAX_AGENT_DEPTH};
@@ -60,7 +61,6 @@ pub struct Agent {
     tool_runtime_config: tools::ToolRuntimeConfig,
     cwd: PathBuf,
     history: Vec<HistoryEntry>,
-    // Multi-agent support (预留扩展)
     thread_id: ThreadId,
     parent_thread_id: Option<ThreadId>,
     depth: i32,
@@ -68,12 +68,14 @@ pub struct Agent {
 
 impl Agent {
     pub fn new() -> Self {
+        let config = Config::load();
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::with_runtime(
-            tools::ApprovalPolicy::from_env(),
-            tools::SandboxMode::from_env(),
-            cwd,
-        )
+        Self::with_config_and_runtime(config, tools::ApprovalPolicy::from_env(), tools::SandboxMode::from_env(), cwd)
+    }
+
+    pub fn with_config(config: Config) -> Self {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self::with_config_and_runtime(config, tools::ApprovalPolicy::from_env(), tools::SandboxMode::from_env(), cwd)
     }
 
     pub fn with_runtime(
@@ -81,7 +83,17 @@ impl Agent {
         sandbox_mode: tools::SandboxMode,
         cwd: PathBuf,
     ) -> Self {
-        let model_client = model::build_model_client();
+        let config = Config::load();
+        Self::with_config_and_runtime(config, approval_policy, sandbox_mode, cwd)
+    }
+
+    pub fn with_config_and_runtime(
+        config: Config,
+        approval_policy: tools::ApprovalPolicy,
+        sandbox_mode: tools::SandboxMode,
+        cwd: PathBuf,
+    ) -> Self {
+        let model_client = model::build_model_client_with_config(config.model.as_ref());
         Self {
             next_turn_id: 1,
             model_client,
@@ -92,7 +104,6 @@ impl Agent {
             },
             cwd,
             history: Vec::new(),
-            // Multi-agent support (预留扩展)
             thread_id: ThreadId::new(),
             parent_thread_id: None,
             depth: 0,
@@ -135,7 +146,7 @@ impl Agent {
 
     /// Create a new sub-agent (预留扩展，未完全实现)
     /// Returns a new Agent instance with incremented depth
-    pub fn spawn_sub_agent(&self, input: &str) -> Result<Agent, String> {
+    pub fn spawn_sub_agent(&self, _input: &str) -> Result<Agent, String> {
         if !self.can_spawn_sub_agent() {
             return Err(format!(
                 "cannot spawn sub-agent: max depth {} reached",
@@ -179,7 +190,10 @@ impl Agent {
                 events
             }
             // Multi-agent operations (预留扩展)
-            Op::SpawnAgent { input, source } => {
+            Op::SpawnAgent {
+                input: _,
+                source: _,
+            } => {
                 // Check depth limit
                 if self.depth >= tools::MAX_AGENT_DEPTH {
                     return vec![Event::AssistantMessage {
@@ -192,7 +206,6 @@ impl Agent {
                 }
 
                 let new_thread_id = ThreadId::new();
-                let turn_id = self.next_turn_id;
                 self.next_turn_id += 1;
 
                 vec![Event::AgentSpawned {

@@ -1,8 +1,50 @@
 use clap::Parser;
-use openjax_core::Agent;
+use openjax_core::{Agent, Config};
 use openjax_protocol::{Event, Op};
 use std::io::{self, Write};
 use std::path::PathBuf;
+
+const DEFAULT_CONFIG: &str = r#"# OpenJax Configuration
+# Edit this file to configure your API keys
+
+[model]
+# Backend: minimax | openai | echo
+backend = "echo"
+# API key (env vars take priority if set)
+# For OpenAI: OPENAI_API_KEY
+# For MiniMax: OPENJAX_MINIMAX_API_KEY
+# api_key = "your-api-key"
+# base_url = "https://api.example.com"
+# model = "gpt-4.1-mini"
+
+[sandbox]
+mode = "workspace_write"
+approval_policy = "on_request"
+
+[agent]
+max_agents = 4
+max_depth = 1
+"#;
+
+fn ensure_local_config() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let config_path = cwd.join(".openjax.toml");
+    
+    if config_path.exists() {
+        return Some(config_path);
+    }
+    
+    match std::fs::write(&config_path, DEFAULT_CONFIG) {
+        Ok(()) => {
+            println!("[config] created default config: {}", config_path.display());
+            Some(config_path)
+        }
+        Err(e) => {
+            eprintln!("[config] failed to create default config: {}", e);
+            None
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "openjax")]
@@ -21,7 +63,7 @@ struct Cli {
     #[arg(long)]
     sandbox: Option<String>,
 
-    /// 配置文件路径
+    /// 配置文件路径 (默认自动查找 ./.openjax.toml 或 ~/.openjax/config.toml)
     #[arg(long)]
     config: Option<PathBuf>,
 }
@@ -30,7 +72,40 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Show config info (CLI args will be applied via environment variables by clap)
+    let config = if let Some(config_path) = &cli.config {
+        match Config::from_file(config_path) {
+            Ok(c) => {
+                println!("[config] loaded from: {}", config_path.display());
+                c
+            }
+            Err(e) => {
+                eprintln!("[config] failed to load {}: {}", config_path.display(), e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        if let Some(path) = ensure_local_config() {
+            match Config::from_file(&path) {
+                Ok(c) => {
+                    println!("[config] loaded from: {}", path.display());
+                    c
+                }
+                Err(e) => {
+                    eprintln!("[config] failed to load {}: {}", path.display(), e);
+                    Config::load()
+                }
+            }
+        } else {
+            let config = Config::load();
+            if let Some(path) = Config::find_config_file() {
+                println!("[config] loaded from: {}", path.display());
+            } else {
+                println!("[config] no config file found, using defaults");
+            }
+            config
+        }
+    };
+
     if cli.model.is_some() {
         println!("[cli] model: {:?}", cli.model);
     }
@@ -41,12 +116,7 @@ async fn main() -> anyhow::Result<()> {
         println!("[cli] sandbox: {:?}", cli.sandbox);
     }
 
-    if let Some(config_path) = &cli.config {
-        println!("[cli] config: {}", config_path.display());
-        println!("[config] Note: config file loading will be implemented in Phase 2");
-    }
-
-    let mut agent = Agent::new();
+    let mut agent = Agent::with_config(config);
 
     println!(
         "OpenJax CLI 已启动（model backend: {}，approval: {}，sandbox: {}）。输入内容开始对话，输入 /exit 退出。",
