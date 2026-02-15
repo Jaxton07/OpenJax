@@ -67,7 +67,7 @@ impl Config {
     }
 
     /// Find and load config from default locations
-    /// Search order: ./.openjax.toml -> ~/.openjax/config.toml
+    /// Search order: ./.openjax/config/config.toml -> ~/.openjax/config.toml
     pub fn load() -> Self {
         Self::find_config_file()
             .and_then(|path| Self::from_file(&path).ok())
@@ -78,7 +78,9 @@ impl Config {
     pub fn find_config_file() -> Option<PathBuf> {
         let cwd_config = std::env::current_dir()
             .ok()?
-            .join(".openjax.toml");
+            .join(".openjax")
+            .join("config")
+            .join("config.toml");
         
         if cwd_config.exists() {
             return Some(cwd_config);

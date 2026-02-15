@@ -30,10 +30,16 @@ max_depth = 1
 
 fn ensure_local_config() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
-    let config_path = cwd.join(".openjax.toml");
+    let config_dir = cwd.join(".openjax").join("config");
+    let config_path = config_dir.join("config.toml");
     
     if config_path.exists() {
         return Some(config_path);
+    }
+
+    if let Err(e) = std::fs::create_dir_all(&config_dir) {
+        eprintln!("[config] failed to create config dir: {}", e);
+        return None;
     }
     
     match std::fs::write(&config_path, DEFAULT_CONFIG) {
@@ -65,7 +71,7 @@ struct Cli {
     #[arg(long)]
     sandbox: Option<String>,
 
-    /// 配置文件路径 (默认自动查找 ./.openjax.toml 或 ~/.openjax/config.toml)
+    /// 配置文件路径 (默认自动查找 ./.openjax/config/config.toml 或 ~/.openjax/config.toml)
     #[arg(long)]
     config: Option<PathBuf>,
 }
