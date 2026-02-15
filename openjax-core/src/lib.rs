@@ -25,6 +25,20 @@ const MAX_TOOL_CALLS_PER_TURN: usize = 5;
 const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
 const MAX_CONVERSATION_HISTORY_ITEMS: usize = 20;
 
+// Rate limiting configuration for API calls
+#[derive(Debug, Clone)]
+struct RateLimitConfig {
+    min_delay_between_requests_ms: u64,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            min_delay_between_requests_ms: 1000,
+        }
+    }
+}
+
 // Retry configuration for tool calls
 #[derive(Debug, Clone)]
 struct RetryConfig {
@@ -58,6 +72,19 @@ struct HistoryEntry {
     content: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ToolCallKey {
+    name: String,
+    args: String,
+}
+
+#[derive(Debug, Clone)]
+struct ToolCallRecord {
+    key: ToolCallKey,
+    ok: bool,
+    _output: String,
+}
+
 pub struct Agent {
     next_turn_id: u64,
     model_client: Box<dyn model::ModelClient>,
@@ -68,6 +95,9 @@ pub struct Agent {
     thread_id: ThreadId,
     parent_thread_id: Option<ThreadId>,
     depth: i32,
+    last_api_call_time: Option<std::time::Instant>,
+    rate_limit_config: RateLimitConfig,
+    recent_tool_calls: Vec<ToolCallRecord>,
 }
 
 impl Agent {
@@ -120,6 +150,9 @@ impl Agent {
             thread_id,
             parent_thread_id: None,
             depth: 0,
+            last_api_call_time: None,
+            rate_limit_config: RateLimitConfig::default(),
+            recent_tool_calls: Vec::new(),
         }
     }
 
@@ -133,6 +166,55 @@ impl Agent {
 
     pub fn sandbox_mode_name(&self) -> &'static str {
         self.tool_runtime_config.sandbox_mode.as_str()
+    }
+
+    // ============== Rate Limiting ==============
+
+    async fn apply_rate_limit(&mut self) {
+        if let Some(last_time) = self.last_api_call_time {
+            let elapsed = last_time.elapsed();
+            let min_delay = std::time::Duration::from_millis(self.rate_limit_config.min_delay_between_requests_ms);
+
+            if elapsed < min_delay {
+                let delay = min_delay - elapsed;
+                debug!(
+                    delay_ms = delay.as_millis(),
+                    "rate_limit: delaying API call"
+                );
+                tokio::time::sleep(delay).await;
+            }
+        }
+        self.last_api_call_time = Some(std::time::Instant::now());
+    }
+
+    // ============== Duplicate Detection ==============
+
+    fn is_duplicate_tool_call(&self, tool_name: &str, args: &std::collections::HashMap<String, String>) -> bool {
+        let key = ToolCallKey {
+            name: tool_name.to_string(),
+            args: serde_json::to_string(args).unwrap_or_default(),
+        };
+
+        self.recent_tool_calls.iter().any(|record| {
+            record.key == key && record.ok
+        })
+    }
+
+    fn record_tool_call(&mut self, tool_name: &str, args: &std::collections::HashMap<String, String>, ok: bool, output: &str) {
+        let key = ToolCallKey {
+            name: tool_name.to_string(),
+            args: serde_json::to_string(args).unwrap_or_default(),
+        };
+
+        self.recent_tool_calls.push(ToolCallRecord {
+            key,
+            ok,
+            _output: output.to_string(),
+        });
+
+        if self.recent_tool_calls.len() > 10 {
+            self.recent_tool_calls.remove(0);
+        }
     }
 
     // ============== Multi-Agent Methods (预留扩展) ==============
@@ -386,6 +468,16 @@ impl Agent {
             let planner_input =
                 build_planner_input(user_input, &self.history, &tool_traces, remaining);
 
+            self.apply_rate_limit().await;
+
+            info!(
+                turn_id = turn_id,
+                executed_count = executed_count,
+                remaining_calls = remaining,
+                prompt_len = planner_input.len(),
+                "model_request started"
+            );
+
             let model_output = match self.model_client.complete(&planner_input).await {
                 Ok(output) => output,
                 Err(err) => {
@@ -404,10 +496,28 @@ impl Agent {
                 }
             };
 
+            info!(
+                turn_id = turn_id,
+                output_len = model_output.len(),
+                "model_request completed"
+            );
+
             let decision = if let Some(parsed) = parse_model_decision(&model_output) {
                 parsed
             } else {
+                info!(
+                    turn_id = turn_id,
+                    "model_output not valid JSON, attempting repair"
+                );
                 let repair_prompt = build_json_repair_prompt(&model_output);
+
+                self.apply_rate_limit().await;
+
+                info!(
+                    turn_id = turn_id,
+                    "model_repair_request started"
+                );
+
                 let repaired_output = match self.model_client.complete(&repair_prompt).await {
                     Ok(output) => output,
                     Err(err) => {
@@ -425,6 +535,11 @@ impl Agent {
                         return;
                     }
                 };
+
+                info!(
+                    turn_id = turn_id,
+                    "model_repair_request completed"
+                );
 
                 if let Some(parsed) = parse_model_decision(&repaired_output) {
                     parsed
@@ -475,9 +590,27 @@ impl Agent {
                     }
                 };
 
+                let args = decision.args.clone().unwrap_or_default();
+
+                if self.is_duplicate_tool_call(&tool_name, &args) {
+                    warn!(
+                        turn_id = turn_id,
+                        tool_name = %tool_name,
+                        args = ?args,
+                        "duplicate_tool_call detected, skipping"
+                    );
+                    let message = format!("[warning] tool {} with args {:?} was already called recently, skipping", tool_name, args);
+                    events.push(Event::AssistantMessage {
+                        turn_id,
+                        content: message.clone(),
+                    });
+                    self.record_history("assistant", message);
+                    continue;
+                }
+
                 let call = tools::ToolCall {
                     name: tool_name.clone(),
-                    args: decision.args.clone().unwrap_or_default(),
+                    args: args.clone(),
                 };
 
                 let start_time = Instant::now();
@@ -514,6 +647,8 @@ impl Agent {
                         );
                         tool_traces.push(trace);
 
+                        self.record_tool_call(&tool_name, &args, true, &output);
+
                         events.push(Event::ToolCallCompleted {
                             turn_id,
                             tool_name,
@@ -537,6 +672,8 @@ impl Agent {
                             truncate_for_prompt(&err_text)
                         );
                         tool_traces.push(trace);
+
+                        self.record_tool_call(&tool_name, &args, false, &err_text);
 
                         events.push(Event::ToolCallCompleted {
                             turn_id,
@@ -674,6 +811,9 @@ Rules:\n\
 - If task can be answered now, return final.\n\
 - For exec_command, put shell command in args.cmd.\n\
 - For apply_patch, put full patch text in args.patch.\n\
+- IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
+- If a tool was already called and returned results, use those results to decide the next action.\n\
+- Only call a tool again if you need different arguments or if the previous call failed.\n\
 \
 Conversation history (most recent last):\n{history_context}\n\
 \

@@ -1,7 +1,9 @@
 use clap::Parser;
 use openjax_core::{init_logger, Agent, Config};
 use openjax_protocol::{Event, Op};
-use std::io::{self, Write};
+use rustyline::Editor;
+use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use std::path::PathBuf;
 
 const DEFAULT_CONFIG: &str = r#"# OpenJax Configuration
@@ -136,31 +138,60 @@ async fn main() -> anyhow::Result<()> {
         "补丁示例: tool:apply_patch patch='*** Begin Patch\\n*** Add File: hello.txt\\n+hello\\n*** End Patch'"
     );
 
+    let mut rl = Editor::<(), DefaultHistory>::new()?;
+    let history_path = std::env::current_dir()?.join(".openjax").join("history.txt");
+
+    if let Some(dir) = history_path.parent() {
+        if !dir.exists() {
+            std::fs::create_dir_all(dir)?;
+        }
+    }
+
+    if let Err(e) = rl.load_history(&history_path) {
+        if history_path.exists() {
+            eprintln!("[cli] failed to load history: {}", e);
+        }
+    }
+
     loop {
-        print!("> ");
-        io::stdout().flush()?;
+        let readline = rl.readline("> ");
+        match readline {
+            Ok(input) => {
+                let input = input.trim().to_string();
+                if input.is_empty() {
+                    continue;
+                }
 
-        let mut input = String::new();
-        let bytes = io::stdin().read_line(&mut input)?;
-        if bytes == 0 {
-            break;
-        }
+                rl.add_history_entry(input.as_str())?;
 
-        let input = input.trim().to_string();
-        if input.is_empty() {
-            continue;
-        }
+                if input == "/exit" {
+                    for event in agent.submit(Op::Shutdown).await {
+                        print_event(&event);
+                    }
+                    break;
+                }
 
-        if input == "/exit" {
-            for event in agent.submit(Op::Shutdown).await {
-                print_event(&event);
+                for event in agent.submit(Op::UserTurn { input }).await {
+                    print_event(&event);
+                }
             }
-            break;
+            Err(ReadlineError::Interrupted) => {
+                println!("^C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                println!("exit");
+                break;
+            }
+            Err(err) => {
+                eprintln!("Error: {:?}", err);
+                break;
+            }
         }
+    }
 
-        for event in agent.submit(Op::UserTurn { input }).await {
-            print_event(&event);
-        }
+    if let Err(e) = rl.save_history(&history_path) {
+        eprintln!("[cli] failed to save history: {}", e);
     }
 
     Ok(())

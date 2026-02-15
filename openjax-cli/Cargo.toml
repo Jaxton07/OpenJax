@@ -8,5 +8,6 @@ license.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true
+rustyline = "14"
 openjax-core = { path = "../openjax-core" }
 openjax-protocol = { path = "../openjax-protocol" }
