@@ -48,7 +48,7 @@ pub struct ToolTurnContext {
 }
 
 /// MCP 工具结果
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct McpToolResult {
     pub content: Option<serde_json::Value>,
     pub is_error: Option<bool>,

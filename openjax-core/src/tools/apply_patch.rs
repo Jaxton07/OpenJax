@@ -41,7 +41,7 @@ pub enum PlannedAction {
 }
 
 impl PlannedAction {
-    fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         match self {
             Self::Create { path, .. }
             | Self::Update { path, .. }
@@ -52,7 +52,7 @@ impl PlannedAction {
         }
     }
 
-    fn summary(&self, cwd: &Path) -> String {
+    pub fn summary(&self, cwd: &Path) -> String {
         match self {
             Self::Create { path, .. } => format!("ADD {}", display_rel_path(cwd, path)),
             Self::Update { path, .. } => format!("UPDATE {}", display_rel_path(cwd, path)),
@@ -87,7 +87,7 @@ pub async fn apply_patch_tool(call: &ToolCall, cwd: &Path) -> Result<String> {
     Ok(format!("patch applied successfully\n{summary}"))
 }
 
-fn normalize_patch_arg(raw: &str) -> String {
+pub fn normalize_patch_arg(raw: &str) -> String {
     if raw.contains('\n') {
         raw.to_string()
     } else if raw.contains("\\n") {

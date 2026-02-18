@@ -1,7 +1,14 @@
 use async_trait::async_trait;
-use crate::tools::context::{ToolInvocation, ToolOutput};
-use crate::tools::error::FunctionCallError;
+use serde::Deserialize;
+
+use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
 use crate::tools::registry::{ToolHandler, ToolKind};
+use crate::tools::error::FunctionCallError;
+
+#[derive(Deserialize)]
+struct ApplyPatchArgs {
+    patch: String,
+}
 
 pub struct ApplyPatchHandler;
 
@@ -11,7 +18,49 @@ impl ToolHandler for ApplyPatchHandler {
         ToolKind::Function
     }
 
-    async fn handle(&self, _invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError> {
-        Err(FunctionCallError::Internal("apply_patch handler not yet implemented".to_string()))
+    async fn handle(&self, invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError> {
+        let ToolInvocation { payload, turn, .. } = invocation;
+
+        let arguments = match payload {
+            ToolPayload::Function { arguments } => arguments,
+            _ => {
+                return Err(FunctionCallError::RespondToModel(
+                    "apply_patch handler received unsupported payload".to_string(),
+                ));
+            }
+        };
+
+        let args: ApplyPatchArgs = serde_json::from_str(&arguments)
+            .map_err(|e| FunctionCallError::Internal(format!("failed to parse arguments: {}", e)))?;
+
+        let patch_arg = args.patch;
+        let normalized_patch = normalize_patch_arg(&patch_arg);
+        let operations = crate::tools::parse_apply_patch(&normalized_patch)
+            .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
+        let actions = crate::tools::plan_patch_actions(&turn.cwd, &operations).await
+            .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
+        crate::tools::apply_patch_actions(&actions).await
+            .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
+
+        let summary = actions
+            .iter()
+            .map(|action| action.summary(&turn.cwd))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        Ok(ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(format!("patch applied successfully\n{summary}")),
+            success: Some(true),
+        })
+    }
+}
+
+fn normalize_patch_arg(raw: &str) -> String {
+    if raw.contains('\n') {
+        raw.to_string()
+    } else if raw.contains("\\n") {
+        raw.replace("\\n", "\n")
+    } else {
+        raw.to_string()
     }
 }
