@@ -101,9 +101,9 @@ openjax-core/src/tools/
 │   ├── grep_files.rs      # grep_files 工具处理器
 │   ├── read_file.rs       # read_file 工具处理器
 │   ├── list_dir.rs        # list_dir 工具处理器
-│   ├── exec_command.rs    # exec_command 工具处理器
+│   ├── shell.rs          # shell 命令处理器
 │   └── apply_patch.rs     # apply_patch 工具处理器
-├── exec_command.rs           # exec_command 工具（原有）
+├── shell.rs               # shell 命令（原有）
 ├── apply_patch.rs            # apply_patch 工具（原有）
 ├── grep_files.rs             # grep_files 工具（原有）
 ├── read_file.rs              # read_file 工具（原有）
@@ -309,15 +309,16 @@ tool:read_file file_path=src/lib.rs mode=indentation indentation={"anchor_line":
 tool:list_dir dir_path=src offset=1 limit=50 depth=3
 ```
 
-### exec_command
+### shell
 
-执行 shell 命令，支持批准和沙箱模式。
+执行 shell 命令，支持批准和沙箱模式。支持 Bash、Zsh、PowerShell 三种 shell。
 
 **功能**：
-- 执行 zsh 命令
+- 执行 shell 命令（Bash/Zsh/PowerShell）
 - 支持批准策略
 - 沙箱模式限制
-- 返回退出码、stdout、stderr
+- 自动检测用户 shell 类型
+- apply_patch 命令拦截
 
 **参数**：
 - `cmd` (必需): 要执行的命令
@@ -334,7 +335,7 @@ tool:list_dir dir_path=src offset=1 limit=50 depth=3
 
 **示例**：
 ```bash
-tool:exec_command cmd='cargo test' require_escalated=true timeout_ms=60000
+tool:shell cmd='cargo test' require_escalated=true timeout_ms=60000
 ```
 
 ### apply_patch
@@ -638,7 +639,7 @@ export OPENJAX_APPROVAL_POLICY=never
 ### 变异操作
 
 以下工具被认为是变异操作：
-- `exec_command`: 执行命令可能修改文件系统
+- `shell`: 执行命令可能修改文件系统
 - `apply_patch`: 应用补丁会修改文件
 
 以下工具被认为是非变异操作：
@@ -851,7 +852,7 @@ for spec in specs {
 - [grep_files.rs](handlers/grep_files.rs) - grep_files 工具处理器
 - [read_file.rs](handlers/read_file.rs) - read_file 工具处理器
 - [list_dir.rs](handlers/list_dir.rs) - list_dir 工具处理器
-- [exec_command.rs](handlers/exec_command.rs) - exec_command 工具处理器
+- [shell.rs](handlers/shell.rs) - shell 命令处理器
 - [apply_patch.rs](handlers/apply_patch.rs) - apply_patch 工具处理器
 
 ### 外部参考

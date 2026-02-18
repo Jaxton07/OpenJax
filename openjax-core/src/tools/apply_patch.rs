@@ -9,13 +9,14 @@ use crate::tools::ToolCall;
 pub enum PatchOperation {
     AddFile { path: String, lines: Vec<String> },
     DeleteFile { path: String },
-    UpdateFile { path: String, hunks: Vec<PatchHunk> },
+    UpdateFile { path: String, move_to: Option<String>, hunks: Vec<PatchHunk> },
     MoveFile { from: String, to: String },
     RenameFile { from: String, to: String },
 }
 
 #[derive(Debug, Clone)]
 pub struct PatchHunk {
+    context: Option<String>,
     lines: Vec<PatchHunkLine>,
 }
 
@@ -92,9 +93,47 @@ pub fn normalize_patch_arg(raw: &str) -> String {
         raw.to_string()
     } else if raw.contains("\\n") {
         raw.replace("\\n", "\n")
+    } else if let Some(content) = extract_heredoc(raw) {
+        content
     } else {
         raw.to_string()
     }
+}
+
+fn extract_heredoc(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if !trimmed.starts_with("<<") {
+        return None;
+    }
+    
+    let rest = &trimmed[2..];
+    let (delimiter, content_start) = if rest.starts_with("'") {
+        let end_quote = rest[1..].find('\'')?;
+        let delimiter = &rest[1..=end_quote];
+        let content_start = &rest[end_quote + 2..];
+        (delimiter, content_start)
+    } else if rest.starts_with('"') {
+        let end_quote = rest[1..].find('"')?;
+        let delimiter = &rest[1..=end_quote];
+        let content_start = &rest[end_quote + 2..];
+        (delimiter, content_start)
+    } else {
+        let space_pos = rest.find(|c: char| c.is_whitespace())?;
+        let delimiter = &rest[..space_pos];
+        let content_start = &rest[space_pos..];
+        (delimiter, content_start)
+    };
+    
+    let content_start = content_start.trim_start_matches(|c: char| c.is_whitespace() && c != '\n');
+    if !content_start.starts_with('\n') {
+        return None;
+    }
+    
+    let content = &content_start[1..];
+    let end_marker = format!("\n{}", delimiter);
+    let end_pos = content.find(&end_marker)?;
+    
+    Some(content[..end_pos].to_string())
 }
 
 pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
@@ -199,15 +238,37 @@ pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
                 return Err(anyhow!("invalid patch: empty path in Update File"));
             }
             index += 1;
+            
+            let mut move_to = None;
+            if index < lines.len() - 1 && lines[index].starts_with("*** Move to: ") {
+                move_to = Some(
+                    lines[index]
+                        .trim_start_matches("*** Move to: ")
+                        .trim()
+                        .to_string(),
+                );
+                if move_to.as_ref().unwrap().is_empty() {
+                    return Err(anyhow!("invalid patch: empty path in Move to"));
+                }
+                index += 1;
+            }
+            
             let mut hunks = Vec::new();
             let mut current_lines = Vec::new();
+            let mut current_context = None;
             while index < lines.len() - 1 && !lines[index].starts_with("*** ") {
                 let raw = lines[index];
                 if raw.starts_with("@@") {
                     if !current_lines.is_empty() {
                         hunks.push(PatchHunk {
+                            context: current_context,
                             lines: std::mem::take(&mut current_lines),
                         });
+                        current_context = None;
+                    }
+                    let context_part = raw[2..].trim();
+                    if !context_part.is_empty() {
+                        current_context = Some(context_part.to_string());
                     }
                     index += 1;
                     continue;
@@ -223,13 +284,14 @@ pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
             }
             if !current_lines.is_empty() {
                 hunks.push(PatchHunk {
+                    context: current_context,
                     lines: current_lines,
                 });
             }
             if hunks.is_empty() {
                 return Err(anyhow!("invalid patch: update file has no hunks"));
             }
-            operations.push(PatchOperation::UpdateFile { path, hunks });
+            operations.push(PatchOperation::UpdateFile { path, move_to, hunks });
             continue;
         }
 
@@ -322,7 +384,7 @@ pub async fn plan_patch_actions(
                     to: to_resolved,
                 });
             }
-            PatchOperation::UpdateFile { path, hunks } => {
+            PatchOperation::UpdateFile { path, move_to, hunks } => {
                 let resolved = crate::tools::resolve_workspace_path_for_write(cwd, path)?;
                 if !seen_paths.insert(resolved.clone()) {
                     return Err(anyhow!(
@@ -339,10 +401,29 @@ pub async fn plan_patch_actions(
                 let original = tokio::fs::read_to_string(&resolved).await
                     .with_context(|| format!("failed to read file: {}", resolved.display()))?;
                 let content = apply_hunks_to_content(&original, hunks)?;
-                actions.push(PlannedAction::Update {
-                    path: resolved,
-                    content,
-                });
+                
+                if let Some(move_to_path) = move_to {
+                    let move_to_resolved = crate::tools::resolve_workspace_path_for_write(cwd, &move_to_path)?;
+                    if !seen_paths.insert(move_to_resolved.clone()) {
+                        return Err(anyhow!(
+                            "invalid patch: duplicated file operation target `{}`",
+                            display_rel_path(cwd, &move_to_resolved)
+                        ));
+                    }
+                    actions.push(PlannedAction::Move {
+                        from: resolved,
+                        to: move_to_resolved,
+                    });
+                    actions.push(PlannedAction::Update {
+                        path: crate::tools::resolve_workspace_path_for_write(cwd, &move_to_path)?,
+                        content,
+                    });
+                } else {
+                    actions.push(PlannedAction::Update {
+                        path: resolved,
+                        content,
+                    });
+                }
             }
         }
     }
@@ -607,7 +688,7 @@ mod tests {
         let operations = parse_apply_patch(patch).unwrap();
         assert_eq!(operations.len(), 1);
         match &operations[0] {
-            PatchOperation::UpdateFile { path, hunks } => {
+            PatchOperation::UpdateFile { path, hunks, .. } => {
                 assert_eq!(path, "test.txt");
                 assert_eq!(hunks.len(), 1);
                 assert_eq!(hunks[0].lines.len(), 4);
@@ -775,7 +856,9 @@ mod tests {
 
         let operations = vec![PatchOperation::UpdateFile {
             path: "test.txt".to_string(),
+            move_to: None,
             hunks: vec![PatchHunk {
+                context: None,
                 lines: vec![
                     PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
                     PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
@@ -808,6 +891,7 @@ mod tests {
             },
             PatchOperation::UpdateFile {
                 path: "test.txt".to_string(),
+                move_to: None,
                 hunks: vec![],
             },
         ];
@@ -841,6 +925,7 @@ mod tests {
 
         let operations = vec![PatchOperation::UpdateFile {
             path: "test.txt".to_string(),
+            move_to: None,
             hunks: vec![],
         }];
 
@@ -950,6 +1035,7 @@ mod tests {
     fn apply_hunks_to_content_simple_replace() {
         let original = "line1\nline2\nline3\n";
         let hunks = vec![PatchHunk {
+            context: None,
             lines: vec![
                 PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
                 PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
@@ -966,6 +1052,7 @@ mod tests {
     fn apply_hunks_to_content_multiple_removals() {
         let original = "line1\nline2\nline3\nline4\n";
         let hunks = vec![PatchHunk {
+            context: None,
             lines: vec![
                 PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
                 PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
@@ -982,6 +1069,7 @@ mod tests {
     fn apply_hunks_to_content_multiple_additions() {
         let original = "line1\nline2\n";
         let hunks = vec![PatchHunk {
+            context: None,
             lines: vec![
                 PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
                 PatchHunkLine { kind: PatchLineKind::Add, text: "line1.5".to_string() },
@@ -997,6 +1085,7 @@ mod tests {
     fn apply_hunks_to_content_context_mismatch() {
         let original = "line1\nline2\nline3\n";
         let hunks = vec![PatchHunk {
+            context: None,
             lines: vec![
                 PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
                 PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
@@ -1054,5 +1143,100 @@ mod tests {
         let path = Path::new("/other/file.txt");
         let result = display_rel_path(cwd, &path);
         assert_eq!(result, "/other/file.txt");
+    }
+
+    #[test]
+    fn extract_heredoc_single_quote() {
+        let raw = "<<'EOF'\n*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch\nEOF";
+        let result = extract_heredoc(raw);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch");
+    }
+
+    #[test]
+    fn extract_heredoc_double_quote() {
+        let raw = "<<\"EOF\"\n*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch\nEOF";
+        let result = extract_heredoc(raw);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch");
+    }
+
+    #[test]
+    fn extract_heredoc_unquoted() {
+        let raw = "<<EOF\n*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch\nEOF";
+        let result = extract_heredoc(raw);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch");
+    }
+
+    #[test]
+    fn extract_heredoc_no_match() {
+        let raw = "not a heredoc";
+        let result = extract_heredoc(raw);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_apply_patch_with_move() {
+        let patch = r#"*** Begin Patch
+*** Update File: old.txt
+*** Move to: new.txt
+@@
+ old content
+-new content
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::UpdateFile { path, move_to, hunks } => {
+                assert_eq!(path, "old.txt");
+                assert_eq!(move_to.as_deref(), Some("new.txt"));
+                assert_eq!(hunks.len(), 1);
+            }
+            _ => panic!("Expected UpdateFile operation with move_to"),
+        }
+    }
+
+    #[test]
+    fn parse_apply_patch_with_context() {
+        let patch = r#"*** Begin Patch
+*** Update File: test.txt
+@@ fn main
+ fn main() {
+-    println!("old");
++    println!("new");
+ }
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::UpdateFile { path, hunks, .. } => {
+                assert_eq!(path, "test.txt");
+                assert_eq!(hunks.len(), 1);
+                assert_eq!(hunks[0].context.as_deref(), Some("fn main"));
+            }
+            _ => panic!("Expected UpdateFile operation"),
+        }
+    }
+
+    #[test]
+    fn parse_apply_patch_empty_context() {
+        let patch = r#"*** Begin Patch
+*** Update File: test.txt
+@@
+ context
+-old
++new
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::UpdateFile { path, hunks, .. } => {
+                assert_eq!(path, "test.txt");
+                assert_eq!(hunks.len(), 1);
+                assert_eq!(hunks[0].context.as_deref(), None);
+            }
+            _ => panic!("Expected UpdateFile operation"),
+        }
     }
 }
