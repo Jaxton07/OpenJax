@@ -1,9 +1,10 @@
 mod config;
 mod logger;
 mod model;
-mod tools;
+pub mod tools;
 
 pub use config::Config;
+pub use config::AgentConfig;
 pub use logger::init_logger;
 use openjax_protocol::{Event, Op};
 use serde::Deserialize;
@@ -16,7 +17,6 @@ pub use model::build_model_client;
 pub use model::build_model_client_with_config;
 pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
-pub use tools::{AgentConfig, AgentRuntime, MAX_AGENT_DEPTH};
 
 // Re-export protocol types for external use
 pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
