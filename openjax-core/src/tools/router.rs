@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use super::shell::ShellType;
+
 #[derive(Debug, Clone)]
 pub struct ToolCall {
     pub name: String,
@@ -39,6 +41,17 @@ pub fn parse_tool_call(input: &str) -> Option<ToolCall> {
 pub struct ToolRuntimeConfig {
     pub approval_policy: ApprovalPolicy,
     pub sandbox_mode: SandboxMode,
+    pub shell_type: ShellType,
+}
+
+impl Default for ToolRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            approval_policy: ApprovalPolicy::AlwaysAsk,
+            sandbox_mode: SandboxMode::WorkspaceWrite,
+            shell_type: ShellType::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

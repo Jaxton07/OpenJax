@@ -47,6 +47,16 @@ pub struct ToolTurnContext {
     pub windows_sandbox_level: Option<String>,
 }
 
+impl Default for ToolTurnContext {
+    fn default() -> Self {
+        Self {
+            cwd: PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            windows_sandbox_level: None,
+        }
+    }
+}
+
 /// MCP 工具结果
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct McpToolResult {

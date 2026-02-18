@@ -28,3 +28,6 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+tempfile = "3"
+pretty_assertions = "1"
+which = "6"

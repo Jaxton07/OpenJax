@@ -2,7 +2,7 @@ use std::sync::Arc;
 use crate::tools::context::SandboxPolicy;
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::spec::{ToolSpec, ToolsConfig, create_grep_files_spec, create_read_file_spec, create_list_dir_spec, create_exec_command_spec, create_apply_patch_spec};
-use crate::tools::handlers::{GrepFilesHandler, ReadFileHandler, ListDirHandler, ExecCommandHandler, ApplyPatchHandler};
+use crate::tools::handlers::{GrepFilesHandler, ReadFileHandler, ListDirHandler, ShellCommandHandler, ApplyPatchHandler};
 
 /// 工具注册构建器
 pub struct ToolRegistryBuilder {
@@ -61,7 +61,7 @@ pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
     builder.register_handler("list_dir", list_handler);
 
     // 注册 exec_command
-    let exec_handler = Arc::new(ExecCommandHandler);
+    let exec_handler = Arc::new(ShellCommandHandler);
     builder.push_spec(create_exec_command_spec(), true);
     builder.register_handler("exec_command", exec_handler);
 

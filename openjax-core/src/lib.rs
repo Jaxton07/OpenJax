@@ -144,6 +144,7 @@ impl Agent {
             tool_runtime_config: tools::ToolRuntimeConfig {
                 approval_policy,
                 sandbox_mode,
+                shell_type: tools::ShellType::default(),
             },
             cwd,
             history: Vec::new(),

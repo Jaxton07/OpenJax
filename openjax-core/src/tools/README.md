@@ -72,7 +72,7 @@ OpenJax 工具系统是一个模块化、可扩展的工具框架，支持动态
 │  - GrepFilesHandler                                  │
 │  - ReadFileHandler                                   │
 │  - ListDirHandler                                    │
-│  - ExecCommandHandler                                 │
+│  - ShellCommandHandler                                 │
 │  - ApplyPatchHandler                                  │
 │  - DynamicToolHandler (自定义)                        │
 └─────────────────────────────────────────────────────────┘

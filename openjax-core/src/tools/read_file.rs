@@ -314,3 +314,409 @@ fn trim_empty_lines(out: &mut VecDeque<&LineRecord>) {
         out.pop_back();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+
+    #[tokio::test]
+    async fn reads_requested_range() {
+        let mut temp = NamedTempFile::new().unwrap();
+        write!(temp, "alpha\nbeta\ngamma\n").unwrap();
+
+        let lines = read_file_slice(temp.path(), 2, 2).await.unwrap();
+        assert_eq!(lines, vec!["L2: beta".to_string(), "L3: gamma".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn errors_when_offset_exceeds_length() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "only").unwrap();
+
+        let err = read_file_slice(temp.path(), 3, 1).await.expect_err("offset exceeds length");
+        assert_eq!(err.to_string(), "offset exceeds file length");
+    }
+
+    #[tokio::test]
+    async fn reads_non_utf8_lines() {
+        let mut temp = NamedTempFile::new().unwrap();
+        temp.as_file_mut().write_all(b"\xff\xfe\nplain\n").unwrap();
+
+        let lines = read_file_slice(temp.path(), 1, 2).await.unwrap();
+        let expected_first = format!("L1: {}{}", '\u{FFFD}', '\u{FFFD}');
+        assert_eq!(lines, vec![expected_first, "L2: plain".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn trims_crlf_endings() {
+        let mut temp = NamedTempFile::new().unwrap();
+        write!(temp, "one\r\ntwo\r\n").unwrap();
+
+        let lines = read_file_slice(temp.path(), 1, 2).await.unwrap();
+        assert_eq!(lines, vec!["L1: one".to_string(), "L2: two".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn respects_limit_even_with_more_lines() {
+        let mut temp = NamedTempFile::new().unwrap();
+        write!(temp, "first\nsecond\nthird\n").unwrap();
+
+        let lines = read_file_slice(temp.path(), 1, 2).await.unwrap();
+        assert_eq!(
+            lines,
+            vec!["L1: first".to_string(), "L2: second".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn truncates_lines_longer_than_max_length() {
+        let mut temp = NamedTempFile::new().unwrap();
+        let long_line = "x".repeat(READ_MAX_LINE_LENGTH + 50);
+        writeln!(temp, "{long_line}").unwrap();
+
+        let lines = read_file_slice(temp.path(), 1, 1).await.unwrap();
+        let expected = "x".repeat(READ_MAX_LINE_LENGTH);
+        assert_eq!(lines, vec![format!("L1: {expected}")]);
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_captures_block() {
+        let mut temp = NamedTempFile::new().unwrap();
+        write!(
+            temp,
+            "fn outer() {{
+    if cond {{
+        inner();
+    }}
+    tail();
+}}
+"
+        ).unwrap();
+
+        let options = IndentationArgs {
+            anchor_line: Some(3),
+            include_siblings: false,
+            max_levels: 1,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 3, 10, options).await.unwrap();
+
+        assert_eq!(
+            lines,
+            vec![
+                "L2:     if cond {".to_string(),
+                "L3:         inner();".to_string(),
+                "L4:     }".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_expands_parents() {
+        let mut temp = NamedTempFile::new().unwrap();
+        write!(
+            temp,
+            "mod root {{
+    fn outer() {{
+        if cond {{
+            inner();
+        }}
+    }}
+}}
+"
+        ).unwrap();
+
+        let mut options = IndentationArgs {
+            anchor_line: Some(4),
+            max_levels: 2,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 4, 50, options.clone()).await.unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "L2:     fn outer() {".to_string(),
+                "L3:         if cond {".to_string(),
+                "L4:             inner();".to_string(),
+                "L5:         }".to_string(),
+                "L6:     }".to_string(),
+            ]
+        );
+
+        options.max_levels = 3;
+        let expanded = read_file_indentation(temp.path(), 4, 50, options).await.unwrap();
+        assert_eq!(
+            expanded,
+            vec![
+                "L1: mod root {".to_string(),
+                "L2:     fn outer() {".to_string(),
+                "L3:         if cond {".to_string(),
+                "L4:             inner();".to_string(),
+                "L5:         }".to_string(),
+                "L6:     }".to_string(),
+                "L7: }".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_respects_sibling_flag() {
+        let mut temp = NamedTempFile::new().unwrap();
+        write!(
+            temp,
+            "fn wrapper() {{
+    if first {{
+        do_first();
+    }}
+    if second {{
+        do_second();
+    }}
+}}
+"
+        ).unwrap();
+
+        let mut options = IndentationArgs {
+            anchor_line: Some(3),
+            include_siblings: false,
+            max_levels: 1,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 3, 50, options.clone()).await.unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "L2:     if first {".to_string(),
+                "L3:         do_first();".to_string(),
+                "L4:     }".to_string(),
+            ]
+        );
+
+        options.include_siblings = true;
+        let with_siblings = read_file_indentation(temp.path(), 3, 50, options).await.unwrap();
+        assert_eq!(
+            with_siblings,
+            vec![
+                "L2:     if first {".to_string(),
+                "L3:         do_first();".to_string(),
+                "L4:     }".to_string(),
+                "L5:     if second {".to_string(),
+                "L6:         do_second();".to_string(),
+                "L7:     }".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_handles_python_sample() {
+        let mut temp = NamedTempFile::new().unwrap();
+        write!(
+            temp,
+            "class Foo:
+    def __init__(self, size):
+        self.size = size
+    def double(self, value):
+        if value is None:
+            return 0
+        result = value * self.size
+        return result
+class Bar:
+    def compute(self):
+        helper = Foo(2)
+        return helper.double(5)
+"
+        ).unwrap();
+
+        let options = IndentationArgs {
+            anchor_line: Some(7),
+            include_siblings: true,
+            max_levels: 1,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 1, 200, options).await.unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "L2:     def __init__(self, size):".to_string(),
+                "L3:         self.size = size".to_string(),
+                "L4:     def double(self, value):".to_string(),
+                "L5:         if value is None:".to_string(),
+                "L6:             return 0".to_string(),
+                "L7:         result = value * self.size".to_string(),
+                "L8:         return result".to_string(),
+            ]
+        );
+    }
+
+    fn write_cpp_sample() -> anyhow::Result<NamedTempFile> {
+        let mut temp = NamedTempFile::new()?;
+        write!(
+            temp,
+            "#include <vector>
+#include <string>
+
+namespace sample {{
+class Runner {{
+public:
+    void setup() {{
+        if (enabled_) {{
+            init();
+        }}
+    }}
+
+    // Run the code
+    int run() const {{
+        switch (mode_) {{
+            case Mode::Fast:
+                return fast();
+            case Mode::Slow:
+                return slow();
+            default:
+                return fallback();
+        }}
+    }}
+
+private:
+    bool enabled_ = false;
+    Mode mode_ = Mode::Fast;
+
+    int fast() const {{
+        return 1;
+    }}
+}};
+}}  // namespace sample
+"
+        )?;
+        Ok(temp)
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_handles_cpp_sample_shallow() {
+        let temp = write_cpp_sample().unwrap();
+
+        let options = IndentationArgs {
+            include_siblings: false,
+            anchor_line: Some(18),
+            max_levels: 1,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "L15:         switch (mode_) {".to_string(),
+                "L16:             case Mode::Fast:".to_string(),
+                "L17:                 return fast();".to_string(),
+                "L18:             case Mode::Slow:".to_string(),
+                "L19:                 return slow();".to_string(),
+                "L20:             default:".to_string(),
+                "L21:                 return fallback();".to_string(),
+                "L22:         }".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_handles_cpp_sample() {
+        let temp = write_cpp_sample().unwrap();
+
+        let options = IndentationArgs {
+            include_siblings: false,
+            include_header: true,
+            anchor_line: Some(18),
+            max_levels: 2,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "L13:     // Run the code".to_string(),
+                "L14:     int run() const {".to_string(),
+                "L15:         switch (mode_) {".to_string(),
+                "L16:             case Mode::Fast:".to_string(),
+                "L17:                 return fast();".to_string(),
+                "L18:             case Mode::Slow:".to_string(),
+                "L19:                 return slow();".to_string(),
+                "L20:             default:".to_string(),
+                "L21:                 return fallback();".to_string(),
+                "L22:         }".to_string(),
+                "L23:     }".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_handles_cpp_sample_no_headers() {
+        let temp = write_cpp_sample().unwrap();
+
+        let options = IndentationArgs {
+            include_siblings: false,
+            include_header: false,
+            anchor_line: Some(18),
+            max_levels: 2,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "L14:     int run() const {".to_string(),
+                "L15:         switch (mode_) {".to_string(),
+                "L16:             case Mode::Fast:".to_string(),
+                "L17:                 return fast();".to_string(),
+                "L18:             case Mode::Slow:".to_string(),
+                "L19:                 return slow();".to_string(),
+                "L20:             default:".to_string(),
+                "L21:                 return fallback();".to_string(),
+                "L22:         }".to_string(),
+                "L23:     }".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn indentation_mode_handles_cpp_sample_siblings() {
+        let temp = write_cpp_sample().unwrap();
+
+        let options = IndentationArgs {
+            include_siblings: true,
+            include_header: false,
+            anchor_line: Some(18),
+            max_levels: 2,
+            ..Default::default()
+        };
+
+        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "L7:     void setup() {".to_string(),
+                "L8:         if (enabled_) {".to_string(),
+                "L9:             init();".to_string(),
+                "L10:         }".to_string(),
+                "L11:     }".to_string(),
+                "L12: ".to_string(),
+                "L13:     // Run the code".to_string(),
+                "L14:     int run() const {".to_string(),
+                "L15:         switch (mode_) {".to_string(),
+                "L16:             case Mode::Fast:".to_string(),
+                "L17:                 return fast();".to_string(),
+                "L18:             case Mode::Slow:".to_string(),
+                "L19:                 return slow();".to_string(),
+                "L20:             default:".to_string(),
+                "L21:                 return fallback();".to_string(),
+                "L22:         }".to_string(),
+                "L23:     }".to_string(),
+            ]
+        );
+    }
+}

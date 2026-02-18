@@ -524,3 +524,535 @@ fn find_subsequence(haystack: &[String], start: usize, needle: &[String]) -> Opt
 fn display_rel_path(cwd: &Path, path: &Path) -> String {
     path.strip_prefix(cwd).unwrap_or(path).display().to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn parse_apply_patch_add_file() {
+        let patch = r#"*** Begin Patch
+*** Add File: new.txt
++Hello world
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::AddFile { path, lines } => {
+                assert_eq!(path, "new.txt");
+                assert_eq!(lines, &["Hello world"]);
+            }
+            _ => panic!("Expected AddFile operation"),
+        }
+    }
+
+    #[test]
+    fn parse_apply_patch_delete_file() {
+        let patch = r#"*** Begin Patch
+*** Delete File: old.txt
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::DeleteFile { path } => {
+                assert_eq!(path, "old.txt");
+            }
+            _ => panic!("Expected DeleteFile operation"),
+        }
+    }
+
+    #[test]
+    fn parse_apply_patch_move_file() {
+        let patch = r#"*** Begin Patch
+*** Move File: old.txt -> new.txt
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::MoveFile { from, to } => {
+                assert_eq!(from, "old.txt");
+                assert_eq!(to, "new.txt");
+            }
+            _ => panic!("Expected MoveFile operation"),
+        }
+    }
+
+    #[test]
+    fn parse_apply_patch_rename_file() {
+        let patch = r#"*** Begin Patch
+*** Rename File: old.txt -> new.txt
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::RenameFile { from, to } => {
+                assert_eq!(from, "old.txt");
+                assert_eq!(to, "new.txt");
+            }
+            _ => panic!("Expected RenameFile operation"),
+        }
+    }
+
+    #[test]
+    fn parse_apply_patch_update_file() {
+        let patch = r#"*** Begin Patch
+*** Update File: test.txt
+@@
+ context line
+-old line
++new line
+ another context
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 1);
+        match &operations[0] {
+            PatchOperation::UpdateFile { path, hunks } => {
+                assert_eq!(path, "test.txt");
+                assert_eq!(hunks.len(), 1);
+                assert_eq!(hunks[0].lines.len(), 4);
+            }
+            _ => panic!("Expected UpdateFile operation"),
+        }
+    }
+
+    #[test]
+    fn parse_apply_patch_multiple_operations() {
+        let patch = r#"*** Begin Patch
+*** Add File: new.txt
++Hello world
+*** Update File: test.txt
+ context
+-old
++new
+*** Delete File: old.txt
+*** End Patch"#;
+        let operations = parse_apply_patch(patch).unwrap();
+        assert_eq!(operations.len(), 3);
+    }
+
+    #[test]
+    fn parse_apply_patch_invalid_missing_begin() {
+        let patch = r#"*** Add File: new.txt
++Hello world
+*** End Patch"#;
+        let result = parse_apply_patch(patch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("missing `*** Begin Patch`"));
+    }
+
+    #[test]
+    fn parse_apply_patch_invalid_missing_end() {
+        let patch = r#"*** Begin Patch
+*** Add File: new.txt
++Hello world"#;
+        let result = parse_apply_patch(patch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("missing `*** End Patch`"));
+    }
+
+    #[test]
+    fn parse_apply_patch_invalid_empty_path() {
+        let patch = r#"*** Begin Patch
+*** Add File: 
++Hello world
+*** End Patch"#;
+        let result = parse_apply_patch(patch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty path"));
+    }
+
+    #[test]
+    fn parse_apply_patch_invalid_no_operations() {
+        let patch = r#"*** Begin Patch
+*** End Patch"#;
+        let result = parse_apply_patch(patch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no operations found"));
+    }
+
+    #[test]
+    fn parse_apply_patch_invalid_unknown_operation() {
+        let patch = r#"*** Begin Patch
+*** Unknown: test.txt
+*** End Patch"#;
+        let result = parse_apply_patch(patch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unknown operation"));
+    }
+
+    #[test]
+    fn parse_apply_patch_invalid_update_no_hunks() {
+        let patch = r#"*** Begin Patch
+*** Update File: test.txt
+*** End Patch"#;
+        let result = parse_apply_patch(patch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no hunks"));
+    }
+
+    #[test]
+    fn parse_apply_patch_invalid_move_format() {
+        let patch = r#"*** Begin Patch
+*** Move File: old.txt
+*** End Patch"#;
+        let result = parse_apply_patch(patch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("format `from -> to`"));
+    }
+
+    #[tokio::test]
+    async fn plan_patch_actions_add_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+
+        let operations = vec![PatchOperation::AddFile {
+            path: "new.txt".to_string(),
+            lines: vec!["Hello world".to_string()],
+        }];
+
+        let actions = plan_patch_actions(cwd, &operations).await.unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            PlannedAction::Create { path, content } => {
+                assert_eq!(path.file_name().unwrap().to_str().unwrap(), "new.txt");
+                assert_eq!(content, "Hello world");
+            }
+            _ => panic!("Expected Create action"),
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_patch_actions_delete_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let file_path = cwd.join("old.txt");
+        tokio::fs::write(&file_path, "content").await.expect("write file");
+
+        let operations = vec![PatchOperation::DeleteFile {
+            path: "old.txt".to_string(),
+        }];
+
+        let actions = plan_patch_actions(cwd, &operations).await.unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            PlannedAction::Delete { path } => {
+                assert_eq!(path.file_name().unwrap().to_str().unwrap(), "old.txt");
+            }
+            _ => panic!("Expected Delete action"),
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_patch_actions_move_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let from_path = cwd.join("old.txt");
+        tokio::fs::write(&from_path, "content").await.expect("write file");
+
+        let operations = vec![PatchOperation::MoveFile {
+            from: "old.txt".to_string(),
+            to: "new.txt".to_string(),
+        }];
+
+        let actions = plan_patch_actions(cwd, &operations).await.unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            PlannedAction::Move { from, to } => {
+                assert_eq!(from.file_name().unwrap().to_str().unwrap(), "old.txt");
+                assert_eq!(to.file_name().unwrap().to_str().unwrap(), "new.txt");
+            }
+            _ => panic!("Expected Move action"),
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_patch_actions_update_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let file_path = cwd.join("test.txt");
+        tokio::fs::write(&file_path, "line1\nline2\nline3\n").await.expect("write file");
+
+        let operations = vec![PatchOperation::UpdateFile {
+            path: "test.txt".to_string(),
+            hunks: vec![PatchHunk {
+                lines: vec![
+                    PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
+                    PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
+                    PatchHunkLine { kind: PatchLineKind::Add, text: "line2-updated".to_string() },
+                    PatchHunkLine { kind: PatchLineKind::Context, text: "line3".to_string() },
+                ],
+            }],
+        }];
+
+        let actions = plan_patch_actions(cwd, &operations).await.unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            PlannedAction::Update { path, content } => {
+                assert_eq!(path.file_name().unwrap().to_str().unwrap(), "test.txt");
+                assert_eq!(content, "line1\nline2-updated\nline3\n");
+            }
+            _ => panic!("Expected Update action"),
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_patch_actions_duplicate_target() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+
+        let operations = vec![
+            PatchOperation::AddFile {
+                path: "test.txt".to_string(),
+                lines: vec!["content".to_string()],
+            },
+            PatchOperation::UpdateFile {
+                path: "test.txt".to_string(),
+                hunks: vec![],
+            },
+        ];
+
+        let result = plan_patch_actions(cwd, &operations).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("duplicated file operation target"));
+    }
+
+    #[tokio::test]
+    async fn plan_patch_actions_add_existing_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let file_path = cwd.join("test.txt");
+        tokio::fs::write(&file_path, "content").await.expect("write file");
+
+        let operations = vec![PatchOperation::AddFile {
+            path: "test.txt".to_string(),
+            lines: vec!["new content".to_string()],
+        }];
+
+        let result = plan_patch_actions(cwd, &operations).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("add file target already exists"));
+    }
+
+    #[tokio::test]
+    async fn plan_patch_actions_update_nonexistent_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+
+        let operations = vec![PatchOperation::UpdateFile {
+            path: "test.txt".to_string(),
+            hunks: vec![],
+        }];
+
+        let result = plan_patch_actions(cwd, &operations).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("update file target does not exist"));
+    }
+
+    #[tokio::test]
+    async fn apply_patch_actions_creates_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+
+        let actions = vec![PlannedAction::Create {
+            path: cwd.join("new.txt"),
+            content: "Hello world".to_string(),
+        }];
+
+        apply_patch_actions(&actions).await.unwrap();
+        let content = tokio::fs::read_to_string(cwd.join("new.txt")).await.unwrap();
+        assert_eq!(content, "Hello world");
+    }
+
+    #[tokio::test]
+    async fn apply_patch_actions_deletes_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let file_path = cwd.join("old.txt");
+        tokio::fs::write(&file_path, "content").await.expect("write file");
+
+        let actions = vec![PlannedAction::Delete {
+            path: file_path.clone(),
+        }];
+
+        apply_patch_actions(&actions).await.unwrap();
+        assert!(!file_path.exists());
+    }
+
+    #[tokio::test]
+    async fn apply_patch_actions_updates_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let file_path = cwd.join("test.txt");
+        tokio::fs::write(&file_path, "old content").await.expect("write file");
+
+        let actions = vec![PlannedAction::Update {
+            path: file_path.clone(),
+            content: "new content".to_string(),
+        }];
+
+        apply_patch_actions(&actions).await.unwrap();
+        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert_eq!(content, "new content");
+    }
+
+    #[tokio::test]
+    async fn apply_patch_actions_moves_file() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let from_path = cwd.join("old.txt");
+        let to_path = cwd.join("new.txt");
+        tokio::fs::write(&from_path, "content").await.expect("write file");
+
+        let actions = vec![PlannedAction::Move {
+            from: from_path.clone(),
+            to: to_path.clone(),
+        }];
+
+        apply_patch_actions(&actions).await.unwrap();
+        assert!(!from_path.exists());
+        assert!(to_path.exists());
+        let content = tokio::fs::read_to_string(&to_path).await.unwrap();
+        assert_eq!(content, "content");
+    }
+
+    #[tokio::test]
+    async fn apply_patch_actions_rolls_back_on_error() {
+        let temp = TempDir::new().expect("create tempdir");
+        let cwd = temp.path();
+        let file1_path = cwd.join("file1.txt");
+        let file2_path = cwd.join("file2.txt");
+        tokio::fs::write(&file1_path, "content1").await.expect("write file1");
+        tokio::fs::write(&file2_path, "content2").await.expect("write file2");
+
+        let actions = vec![
+            PlannedAction::Update {
+                path: file1_path.clone(),
+                content: "new content1".to_string(),
+            },
+            PlannedAction::Update {
+                path: PathBuf::from("/nonexistent/path.txt"),
+                content: "new content2".to_string(),
+            },
+        ];
+
+        let result = apply_patch_actions(&actions).await;
+        assert!(result.is_err());
+
+        let content1 = tokio::fs::read_to_string(&file1_path).await.unwrap();
+        assert_eq!(content1, "content1");
+
+        let content2 = tokio::fs::read_to_string(&file2_path).await.unwrap();
+        assert_eq!(content2, "content2");
+    }
+
+    #[test]
+    fn apply_hunks_to_content_simple_replace() {
+        let original = "line1\nline2\nline3\n";
+        let hunks = vec![PatchHunk {
+            lines: vec![
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Add, text: "line2-new".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line3".to_string() },
+            ],
+        }];
+
+        let result = apply_hunks_to_content(original, &hunks).unwrap();
+        assert_eq!(result, "line1\nline2-new\nline3\n");
+    }
+
+    #[test]
+    fn apply_hunks_to_content_multiple_removals() {
+        let original = "line1\nline2\nline3\nline4\n";
+        let hunks = vec![PatchHunk {
+            lines: vec![
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Remove, text: "line3".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line4".to_string() },
+            ],
+        }];
+
+        let result = apply_hunks_to_content(original, &hunks).unwrap();
+        assert_eq!(result, "line1\nline4\n");
+    }
+
+    #[test]
+    fn apply_hunks_to_content_multiple_additions() {
+        let original = "line1\nline2\n";
+        let hunks = vec![PatchHunk {
+            lines: vec![
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Add, text: "line1.5".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line2".to_string() },
+            ],
+        }];
+
+        let result = apply_hunks_to_content(original, &hunks).unwrap();
+        assert_eq!(result, "line1\nline1.5\nline2\n");
+    }
+
+    #[test]
+    fn apply_hunks_to_content_context_mismatch() {
+        let original = "line1\nline2\nline3\n";
+        let hunks = vec![PatchHunk {
+            lines: vec![
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
+                PatchHunkLine { kind: PatchLineKind::Context, text: "line3-different".to_string() },
+            ],
+        }];
+
+        let result = apply_hunks_to_content(original, &hunks);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("hunk context not found"));
+    }
+
+    #[test]
+    fn find_subsequence_empty_needle() {
+        let haystack = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let result = find_subsequence(&haystack, 0, &[]);
+        assert_eq!(result, Some(0));
+    }
+
+    #[test]
+    fn find_subsequence_found() {
+        let haystack = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let needle = vec!["b".to_string(), "c".to_string()];
+        let result = find_subsequence(&haystack, 0, &needle);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn find_subsequence_not_found() {
+        let haystack = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let needle = vec!["d".to_string()];
+        let result = find_subsequence(&haystack, 0, &needle);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn find_subsequence_start_offset() {
+        let haystack = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let needle = vec!["b".to_string()];
+        let result = find_subsequence(&haystack, 1, &needle);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn display_rel_path_relative() {
+        let cwd = Path::new("/workspace");
+        let path = Path::new("/workspace/src/file.txt");
+        let result = display_rel_path(cwd, &path);
+        assert_eq!(result, "src/file.txt");
+    }
+
+    #[test]
+    fn display_rel_path_absolute() {
+        let cwd = Path::new("/workspace");
+        let path = Path::new("/other/file.txt");
+        let result = display_rel_path(cwd, &path);
+        assert_eq!(result, "/other/file.txt");
+    }
+}

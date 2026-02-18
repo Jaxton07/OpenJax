@@ -10,29 +10,31 @@ use tracing::{info, warn};
 use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
 use crate::tools::registry::{ToolHandler, ToolKind};
 use crate::tools::error::FunctionCallError;
-use crate::tools::{ApprovalPolicy, SandboxMode};
+use crate::tools::{ApprovalPolicy, SandboxMode, ShellType};
+use crate::tools::shell::Shell;
+use crate::tools::apply_patch_interceptor;
 
 #[derive(Deserialize)]
-struct ExecCommandArgs {
+struct ShellCommandArgs {
     cmd: String,
     #[serde(default)]
     require_escalated: bool,
-    #[serde(default = "exec_default_timeout")]
+    #[serde(default = "shell_default_timeout")]
     timeout_ms: u64,
 }
 
-fn exec_default_timeout() -> u64 { 30_000 }
+fn shell_default_timeout() -> u64 { 30_000 }
 
-pub struct ExecCommandHandler;
+pub struct ShellCommandHandler;
 
 #[async_trait]
-impl ToolHandler for ExecCommandHandler {
+impl ToolHandler for ShellCommandHandler {
     fn kind(&self) -> ToolKind {
         ToolKind::Function
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError> {
-        let ToolInvocation { payload, turn, .. } = invocation;
+        let ToolInvocation { payload, turn, call_id, tool_name } = invocation;
 
         let arguments = match payload {
             ToolPayload::Function { arguments } => arguments,
@@ -43,7 +45,7 @@ impl ToolHandler for ExecCommandHandler {
             }
         };
 
-        let args: ExecCommandArgs = serde_json::from_str(&arguments)
+        let args: ShellCommandArgs = serde_json::from_str(&arguments)
             .map_err(|e| FunctionCallError::Internal(format!("failed to parse arguments: {}", e)))?;
 
         let command = args.cmd;
@@ -81,11 +83,30 @@ impl ToolHandler for ExecCommandHandler {
                 .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
         }
 
+        let command_tokens: Vec<String> = command.split_whitespace().map(|s| s.to_string()).collect();
+
+        if let Some(output) = apply_patch_interceptor::intercept_apply_patch(
+            &command_tokens,
+            &turn.cwd,
+            None,
+            &turn,
+            &call_id,
+            &tool_name,
+        ).await? {
+            return Ok(ToolOutput::Function {
+                body: FunctionCallOutputBody::Text(output),
+                success: Some(true),
+            });
+        }
+
+        let shell = Shell::new(ShellType::default())
+            .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
+        let shell_args = shell.derive_exec_args(&command, None);
+
         let output = timeout(
             Duration::from_millis(timeout_ms),
-            Command::new("zsh")
-                .arg("-lc")
-                .arg(&command)
+            Command::new(&shell.shell_path)
+                .args(&shell_args)
                 .current_dir(&turn.cwd)
                 .output(),
         )
