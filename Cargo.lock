@@ -1030,6 +1030,7 @@ name = "openjax-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "crossterm",
  "openjax-core",
  "openjax-protocol",

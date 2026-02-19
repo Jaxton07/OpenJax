@@ -1,5 +1,6 @@
 pub mod app;
 pub mod app_event;
+pub mod approval;
 pub mod render;
 pub mod state;
 pub mod tui;

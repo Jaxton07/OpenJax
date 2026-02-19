@@ -514,3 +514,16 @@ openjax-tui/
    - 将 core 事件回灌到 `AppEvent::CoreEvent`，驱动 TUI 视图实时更新
 2. TUI 启动后会显示运行时信息（model/approval/sandbox），并在退出时发送 `Op::Shutdown`。
 3. 该补充完成后，TUI 具备端到端会话能力，不再只是静态 MVP 骨架。
+
+### 15.6 审批决策接入补充（2026-02-19）
+
+1. 新增 `openjax-tui/src/approval.rs`：
+   - `TuiApprovalHandler` 实现 `openjax_core::ApprovalHandler`
+   - `request_approval` 在后台等待 UI 决策
+   - `resolve(request_id, approved)` 由主循环在按键后回填
+2. `openjax-tui/src/main.rs` 接入：
+   - 启动时将 `TuiApprovalHandler` 注入 `Agent::set_approval_handler(...)`
+   - turn 执行改为后台任务，主循环持续渲染并消费 core 事件
+   - 审批 overlay 可见时按 `y/n` 直接完成批准/拒绝
+3. `openjax-core` 审批请求结构补齐 `request_id`，保证 UI 决策与 core 事件一一对应。
+4. 新增测试：`openjax-tui/tests/m9_tui_approval_handler.rs`。

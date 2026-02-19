@@ -84,6 +84,7 @@ impl ToolOrchestrator {
                 .turn
                 .approval_handler
                 .request_approval(ApprovalRequest {
+                    request_id: request_id.clone(),
                     target: invocation.tool_name.clone(),
                     reason: "tool call requires approval by policy".to_string(),
                 })

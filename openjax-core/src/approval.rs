@@ -3,6 +3,7 @@ use std::io;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalRequest {
+    pub request_id: String,
     pub target: String,
     pub reason: String,
 }
@@ -25,6 +26,7 @@ impl StdinApprovalHandler {
 impl ApprovalHandler for StdinApprovalHandler {
     async fn request_approval(&self, request: ApprovalRequest) -> Result<bool, String> {
         println!("[approval] 执行需要确认: {}", request.target);
+        println!("[approval] request id: {}", request.request_id);
         println!("[approval] 原因: {}", request.reason);
         println!("[approval] 输入 y 同意，其他任意输入拒绝:");
 

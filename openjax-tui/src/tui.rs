@@ -1,5 +1,5 @@
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, read};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, poll, read};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -108,6 +108,9 @@ pub fn map_crossterm_event(event: Event) -> Option<AppEvent> {
 }
 
 pub fn next_app_event() -> anyhow::Result<Option<AppEvent>> {
+    if !poll(std::time::Duration::from_millis(50))? {
+        return Ok(None);
+    }
     let event = read()?;
     Ok(map_crossterm_event(event))
 }

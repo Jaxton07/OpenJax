@@ -97,6 +97,7 @@ impl ToolHandler for ShellCommandHandler {
             let approved = turn
                 .approval_handler
                 .request_approval(ApprovalRequest {
+                    request_id: request_id.clone(),
                     target: command.clone(),
                     reason,
                 })
