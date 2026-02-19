@@ -8,6 +8,7 @@ pub use config::AgentConfig;
 pub use logger::init_logger;
 use openjax_protocol::{Event, Op};
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -22,6 +23,8 @@ pub use tools::SandboxMode;
 pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 
 const MAX_TOOL_CALLS_PER_TURN: usize = 5;
+const MAX_PLANNER_ROUNDS_PER_TURN: usize = 10;
+const MAX_CONSECUTIVE_DUPLICATE_SKIPS: usize = 2;
 const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
 const MAX_CONVERSATION_HISTORY_ITEMS: usize = 20;
 
@@ -64,6 +67,8 @@ struct ModelDecision {
     tool: Option<String>,
     args: Option<HashMap<String, String>>,
     message: Option<String>,
+    #[serde(flatten)]
+    extra: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +87,7 @@ struct ToolCallKey {
 struct ToolCallRecord {
     key: ToolCallKey,
     ok: bool,
+    epoch: u64,
     _output: String,
 }
 
@@ -98,6 +104,7 @@ pub struct Agent {
     last_api_call_time: Option<std::time::Instant>,
     rate_limit_config: RateLimitConfig,
     recent_tool_calls: Vec<ToolCallRecord>,
+    state_epoch: u64,
 }
 
 impl Agent {
@@ -109,7 +116,9 @@ impl Agent {
 
     pub fn with_config(config: Config) -> Self {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::with_config_and_runtime(config, tools::ApprovalPolicy::from_env(), tools::SandboxMode::from_env(), cwd)
+        let approval_policy = resolve_approval_policy(&config);
+        let sandbox_mode = resolve_sandbox_mode(&config);
+        Self::with_config_and_runtime(config, approval_policy, sandbox_mode, cwd)
     }
 
     pub fn with_runtime(
@@ -160,6 +169,7 @@ impl Agent {
             last_api_call_time: None,
             rate_limit_config: RateLimitConfig::default(),
             recent_tool_calls: Vec::new(),
+            state_epoch: 0,
         }
     }
 
@@ -203,7 +213,7 @@ impl Agent {
         };
 
         self.recent_tool_calls.iter().any(|record| {
-            record.key == key && record.ok
+            record.key == key && record.ok && record.epoch == self.state_epoch
         })
     }
 
@@ -216,6 +226,7 @@ impl Agent {
         self.recent_tool_calls.push(ToolCallRecord {
             key,
             ok,
+            epoch: self.state_epoch,
             _output: output.to_string(),
         });
 
@@ -277,6 +288,10 @@ impl Agent {
                 let turn_id = self.next_turn_id;
                 self.next_turn_id += 1;
                 self.record_history("user", input.clone());
+                // Duplicate-call protection should only apply within one user turn.
+                // Keeping records across turns can incorrectly block legitimate reads/writes.
+                self.recent_tool_calls.clear();
+                self.state_epoch = 0;
 
                 let mut events = vec![Event::TurnStarted { turn_id }];
 
@@ -463,6 +478,9 @@ impl Agent {
         events: &mut Vec<Event>,
     ) {
         let mut tool_traces: Vec<String> = Vec::new();
+        let mut executed_count = 0usize;
+        let mut planner_rounds = 0usize;
+        let mut consecutive_duplicate_skips = 0usize;
 
         debug!(
             turn_id = turn_id,
@@ -470,7 +488,7 @@ impl Agent {
             "natural_language_turn started"
         );
 
-        for executed_count in 0..MAX_TOOL_CALLS_PER_TURN {
+        while executed_count < MAX_TOOL_CALLS_PER_TURN && planner_rounds < MAX_PLANNER_ROUNDS_PER_TURN {
             let remaining = MAX_TOOL_CALLS_PER_TURN - executed_count;
             let planner_input =
                 build_planner_input(user_input, &self.history, &tool_traces, remaining);
@@ -484,6 +502,7 @@ impl Agent {
                 prompt_len = planner_input.len(),
                 "model_request started"
             );
+            planner_rounds += 1;
 
             let model_output = match self.model_client.complete(&planner_input).await {
                 Ok(output) => output,
@@ -516,7 +535,7 @@ impl Agent {
             );
 
             let decision = if let Some(parsed) = parse_model_decision(&model_output) {
-                parsed
+                normalize_model_decision(parsed)
             } else {
                 info!(
                     turn_id = turn_id,
@@ -561,7 +580,7 @@ impl Agent {
                 );
 
                 if let Some(parsed) = parse_model_decision(&repaired_output) {
-                    parsed
+                    normalize_model_decision(parsed)
                 } else {
                     // Still non-JSON after one repair attempt: treat first output as final.
                     events.push(Event::AssistantMessage {
@@ -634,6 +653,23 @@ impl Agent {
                         content: message.clone(),
                     });
                     self.record_history("assistant", message);
+                    tool_traces.push(format!(
+                        "tool={tool_name}; ok=skipped_duplicate; args={}",
+                        serde_json::to_string(&args).unwrap_or_default()
+                    ));
+                    consecutive_duplicate_skips = consecutive_duplicate_skips.saturating_add(1);
+                    if should_abort_on_consecutive_duplicate_skips(consecutive_duplicate_skips) {
+                        let loop_message = format!(
+                            "检测到连续 {} 次重复工具调用，已提前结束本回合以避免循环。请继续下一轮或换一种指令。",
+                            MAX_CONSECUTIVE_DUPLICATE_SKIPS
+                        );
+                        events.push(Event::AssistantMessage {
+                            turn_id,
+                            content: loop_message.clone(),
+                        });
+                        self.record_history("assistant", loop_message);
+                        return;
+                    }
                     continue;
                 }
 
@@ -661,6 +697,12 @@ impl Agent {
                     .await
                 {
                     Ok(output) => {
+                        if is_mutating_tool(&tool_name) {
+                            // File/content state has changed. Move to a new epoch so read/list
+                            // calls with the same args can run again against fresh state.
+                            self.state_epoch = self.state_epoch.saturating_add(1);
+                        }
+
                         let duration_ms = start_time.elapsed().as_millis();
                         info!(
                             turn_id = turn_id,
@@ -684,6 +726,8 @@ impl Agent {
                             ok: true,
                             output: output.to_string(),
                         });
+                        executed_count += 1;
+                        consecutive_duplicate_skips = 0;
                     }
                     Err(err) => {
                         let duration_ms = start_time.elapsed().as_millis();
@@ -710,6 +754,8 @@ impl Agent {
                             ok: false,
                             output: err_text.to_string(),
                         });
+                        executed_count += 1;
+                        consecutive_duplicate_skips = 0;
                     }
                 }
 
@@ -730,18 +776,31 @@ impl Agent {
             return;
         }
 
-        warn!(
-            turn_id = turn_id,
-            max_calls = MAX_TOOL_CALLS_PER_TURN,
-            "natural_language_turn reached max tool calls"
-        );
-        let message = format!(
-            "已达到单回合最多 {} 次工具调用限制，请继续下一轮。",
-            MAX_TOOL_CALLS_PER_TURN
-        );
+        let message = if executed_count >= MAX_TOOL_CALLS_PER_TURN {
+            warn!(
+                turn_id = turn_id,
+                max_calls = MAX_TOOL_CALLS_PER_TURN,
+                "natural_language_turn reached max tool calls"
+            );
+            format!(
+                "已达到单回合最多 {} 次工具调用限制，请继续下一轮。",
+                MAX_TOOL_CALLS_PER_TURN
+            )
+        } else {
+            warn!(
+                turn_id = turn_id,
+                planner_rounds = planner_rounds,
+                max_rounds = MAX_PLANNER_ROUNDS_PER_TURN,
+                "natural_language_turn reached max planner rounds"
+            );
+            format!(
+                "已达到单回合最多 {} 次规划轮次限制，请继续下一轮。",
+                MAX_PLANNER_ROUNDS_PER_TURN
+            )
+        };
         events.push(Event::AssistantMessage {
             turn_id,
-            content: message.clone(),
+            content: message.clone()
         });
         self.record_history("assistant", message);
     }
@@ -806,6 +865,68 @@ fn parse_model_decision(raw: &str) -> Option<ModelDecision> {
     serde_json::from_str::<ModelDecision>(&mixed).ok()
 }
 
+fn is_supported_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "read_file" | "list_dir" | "grep_files" | "shell" | "apply_patch"
+    )
+}
+
+fn stringify_json_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        Value::Null => None,
+        Value::Array(_) | Value::Object(_) => Some(value.to_string()),
+    }
+}
+
+fn normalize_model_decision(mut decision: ModelDecision) -> ModelDecision {
+    let action_lower = decision.action.to_ascii_lowercase();
+    if action_lower == "tool" || action_lower == "final" {
+        return decision;
+    }
+
+    if !is_supported_tool_name(&action_lower) {
+        return decision;
+    }
+
+    if decision
+        .tool
+        .as_deref()
+        .map_or(true, |t| t.trim().is_empty())
+    {
+        decision.tool = Some(action_lower.clone());
+    }
+
+    if decision.args.is_none() {
+        let mut args = HashMap::new();
+        for (k, v) in &decision.extra {
+            if matches!(k.as_str(), "action" | "type" | "tool" | "args" | "message") {
+                continue;
+            }
+            if let Some(value) = stringify_json_value(v) {
+                args.insert(k.clone(), value);
+            }
+        }
+        if !args.is_empty() {
+            decision.args = Some(args);
+        }
+    }
+
+    decision.action = "tool".to_string();
+    decision
+}
+
+fn is_mutating_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "apply_patch" | "shell" | "exec_command")
+}
+
+fn should_abort_on_consecutive_duplicate_skips(count: usize) -> bool {
+    count >= MAX_CONSECUTIVE_DUPLICATE_SKIPS
+}
+
 fn build_planner_input(
     user_input: &str,
     history: &[HistoryEntry],
@@ -852,6 +973,8 @@ Rules:\n\
 - IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
 - If a tool was already called and returned results, use those results to decide the next action.\n\
 - Only call a tool again if you need different arguments or if the previous call failed.\n\
+- After a successful apply_patch, at most one read_file call is allowed for verification, then return final.\n\
+- If verification already shows the requested content/changes are present, return final immediately.\n\
 \n\
 Conversation history (most recent last):\n{history_context}\n\
 \n\
@@ -876,5 +999,187 @@ Previous response:\n{previous_output}\n"
 impl Default for Agent {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn parse_approval_policy(value: &str) -> Option<tools::ApprovalPolicy> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "always_ask" => Some(tools::ApprovalPolicy::AlwaysAsk),
+        "on_request" => Some(tools::ApprovalPolicy::OnRequest),
+        "never" => Some(tools::ApprovalPolicy::Never),
+        _ => None,
+    }
+}
+
+fn parse_sandbox_mode(value: &str) -> Option<tools::SandboxMode> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "workspace_write" => Some(tools::SandboxMode::WorkspaceWrite),
+        "danger_full_access" => Some(tools::SandboxMode::DangerFullAccess),
+        _ => None,
+    }
+}
+
+fn resolve_approval_policy(config: &Config) -> tools::ApprovalPolicy {
+    if let Ok(val) = std::env::var("OPENJAX_APPROVAL_POLICY") {
+        if let Some(policy) = parse_approval_policy(&val) {
+            return policy;
+        }
+    }
+
+    if let Some(policy) = config
+        .sandbox
+        .as_ref()
+        .and_then(|s| s.approval_policy.as_deref())
+        .and_then(parse_approval_policy)
+    {
+        return policy;
+    }
+
+    tools::ApprovalPolicy::OnRequest
+}
+
+fn resolve_sandbox_mode(config: &Config) -> tools::SandboxMode {
+    if let Ok(val) = std::env::var("OPENJAX_SANDBOX_MODE") {
+        if let Some(mode) = parse_sandbox_mode(&val) {
+            return mode;
+        }
+    }
+
+    if let Some(mode) = config
+        .sandbox
+        .as_ref()
+        .and_then(|s| s.mode.as_deref())
+        .and_then(parse_sandbox_mode)
+    {
+        return mode;
+    }
+
+    tools::SandboxMode::WorkspaceWrite
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use super::{
+        build_planner_input, normalize_model_decision, parse_approval_policy, parse_model_decision,
+        parse_sandbox_mode, should_abort_on_consecutive_duplicate_skips, Agent, ApprovalPolicy,
+        SandboxMode,
+    };
+
+    #[test]
+    fn normalizes_tool_name_in_action_with_top_level_args() {
+        let raw = r#"{"action":"read_file","path":"test.txt"}"#;
+        let parsed = parse_model_decision(raw).expect("parse decision");
+        let decision = normalize_model_decision(parsed);
+
+        assert_eq!(decision.action, "tool");
+        assert_eq!(decision.tool.as_deref(), Some("read_file"));
+        assert_eq!(
+            decision
+                .args
+                .as_ref()
+                .and_then(|m| m.get("path"))
+                .map(String::as_str),
+            Some("test.txt")
+        );
+    }
+
+    #[test]
+    fn keeps_explicit_tool_shape_unchanged() {
+        let raw = r#"{"action":"tool","tool":"apply_patch","args":{"patch":"*** Begin Patch\n*** End Patch"}}"#;
+        let parsed = parse_model_decision(raw).expect("parse decision");
+        let decision = normalize_model_decision(parsed);
+
+        assert_eq!(decision.action, "tool");
+        assert_eq!(decision.tool.as_deref(), Some("apply_patch"));
+        assert!(decision.args.as_ref().is_some_and(|m| m.contains_key("patch")));
+    }
+
+    #[test]
+    fn keeps_final_action_unchanged() {
+        let raw = r#"{"action":"final","message":"done"}"#;
+        let parsed = parse_model_decision(raw).expect("parse decision");
+        let decision = normalize_model_decision(parsed);
+
+        assert_eq!(decision.action, "final");
+        assert_eq!(decision.message.as_deref(), Some("done"));
+    }
+
+    #[test]
+    fn duplicate_detection_is_turn_local_when_cleared() {
+        let mut agent = Agent::with_runtime(
+            ApprovalPolicy::Never,
+            SandboxMode::WorkspaceWrite,
+            PathBuf::from("."),
+        );
+        let mut args = HashMap::new();
+        args.insert("path".to_string(), "test.txt".to_string());
+
+        agent.record_tool_call("read_file", &args, true, "ok");
+        assert!(agent.is_duplicate_tool_call("read_file", &args));
+
+        agent.recent_tool_calls.clear();
+        assert!(!agent.is_duplicate_tool_call("read_file", &args));
+    }
+
+    #[test]
+    fn parse_runtime_policies() {
+        assert!(matches!(
+            parse_approval_policy("always_ask"),
+            Some(ApprovalPolicy::AlwaysAsk)
+        ));
+        assert!(matches!(
+            parse_approval_policy("on_request"),
+            Some(ApprovalPolicy::OnRequest)
+        ));
+        assert!(matches!(
+            parse_approval_policy("never"),
+            Some(ApprovalPolicy::Never)
+        ));
+        assert!(parse_approval_policy("invalid").is_none());
+
+        assert!(matches!(
+            parse_sandbox_mode("workspace_write"),
+            Some(SandboxMode::WorkspaceWrite)
+        ));
+        assert!(matches!(
+            parse_sandbox_mode("danger_full_access"),
+            Some(SandboxMode::DangerFullAccess)
+        ));
+        assert!(parse_sandbox_mode("invalid").is_none());
+    }
+
+    #[test]
+    fn duplicate_detection_resets_after_mutation_epoch_change() {
+        let mut agent = Agent::with_runtime(
+            ApprovalPolicy::Never,
+            SandboxMode::WorkspaceWrite,
+            PathBuf::from("."),
+        );
+        let mut args = HashMap::new();
+        args.insert("path".to_string(), "test.txt".to_string());
+
+        agent.record_tool_call("read_file", &args, true, "old");
+        assert!(agent.is_duplicate_tool_call("read_file", &args));
+
+        agent.state_epoch = agent.state_epoch.saturating_add(1);
+        assert!(!agent.is_duplicate_tool_call("read_file", &args));
+    }
+
+    #[test]
+    fn planner_prompt_contains_apply_patch_verification_rule() {
+        let prompt = build_planner_input("update file", &[], &[], 3);
+        assert!(prompt.contains("After a successful apply_patch"));
+        assert!(prompt.contains("return final immediately"));
+    }
+
+    #[test]
+    fn aborts_after_consecutive_duplicate_skips() {
+        assert!(!should_abort_on_consecutive_duplicate_skips(0));
+        assert!(!should_abort_on_consecutive_duplicate_skips(1));
+        assert!(should_abort_on_consecutive_duplicate_skips(2));
+        assert!(should_abort_on_consecutive_duplicate_skips(3));
     }
 }

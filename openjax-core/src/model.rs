@@ -114,6 +114,39 @@ impl ChatCompletionsClient {
             backend_name: "openai-chat-completions",
         })
     }
+
+    pub fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
+        let env_api_key = std::env::var("OPENJAX_GLM_API_KEY")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+
+        let config_api_key = config.and_then(|c| c.api_key.as_ref());
+
+        let api_key = env_api_key
+            .or_else(|| config_api_key.map(|s| s.clone()))?;
+
+        let model = std::env::var("OPENJAX_GLM_MODEL")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| config.and_then(|c| c.model.clone()))
+            .unwrap_or_else(|| "GLM-4.7".to_string());
+
+        let base_url = std::env::var("OPENJAX_GLM_BASE_URL")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| config.and_then(|c| c.base_url.clone()))
+            .unwrap_or_else(|| "https://open.bigmodel.cn/api/coding/paas/v4".to_string());
+
+        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
+        Some(Self {
+            client: Client::new(),
+            api_key,
+            model,
+            endpoint,
+            backend_name: "glm-chat-completions",
+        })
+    }
 }
 
 fn response_snippet(body: &str) -> String {
@@ -230,6 +263,11 @@ pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn M
     let backend = config.and_then(|c| c.backend.as_ref()).map(|s| s.to_lowercase());
     
     match backend.as_deref() {
+        Some("glm") => {
+            if let Some(client) = ChatCompletionsClient::from_glm_config(config) {
+                return Box::new(client);
+            }
+        }
         Some("minimax") => {
             if let Some(client) = ChatCompletionsClient::from_minimax_config(config) {
                 return Box::new(client);
@@ -251,6 +289,10 @@ pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn M
     }
 
     if let Some(client) = ChatCompletionsClient::from_openai_config(config) {
+        return Box::new(client);
+    }
+
+    if let Some(client) = ChatCompletionsClient::from_glm_config(config) {
         return Box::new(client);
     }
 
