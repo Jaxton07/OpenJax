@@ -293,12 +293,49 @@ pub fn create_apply_patch_spec() -> ToolSpec {
     }
 }
 
+/// 创建 edit_file_range 工具规范
+pub fn create_edit_file_range_spec() -> ToolSpec {
+    ToolSpec {
+        name: "edit_file_range".to_string(),
+        description: "Edit a file by replacing an inclusive line range [start_line, end_line] with new_text. Line numbers are 1-indexed.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the file to edit"
+                },
+                "start_line": {
+                    "type": "number",
+                    "description": "Start line (1-indexed, inclusive)",
+                    "minimum": 1
+                },
+                "end_line": {
+                    "type": "number",
+                    "description": "End line (1-indexed, inclusive)",
+                    "minimum": 1
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "Replacement text for the specified line range. Use empty string to delete the range."
+                }
+            },
+            "required": ["file_path", "start_line", "end_line", "new_text"]
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "string",
+            "description": "Summary of applied edit"
+        })),
+    }
+}
+
 /// 构建所有工具规范
 pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
     vec![
         create_grep_files_spec(),
         create_read_file_spec(),
         create_list_dir_spec(),
+        create_edit_file_range_spec(),
         create_shell_spec(),
         match config.apply_patch_tool_type {
             Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),

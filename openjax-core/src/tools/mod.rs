@@ -22,7 +22,7 @@ pub use common::{parse_tool_args, verify_path_exists, take_bytes_at_char_boundar
 pub use error::FunctionCallError;
 pub use context::{ToolPayload, ToolOutput, FunctionCallOutputBody, ToolInvocation, ToolTurnContext, McpToolResult, SandboxPolicy, ApprovalPolicy};
 pub use registry::{ToolHandler, ToolKind, ToolRegistry};
-pub use spec::{ToolSpec, ToolsConfig, ShellToolType, ApplyPatchToolType, FreeformFormat, create_grep_files_spec, create_read_file_spec, create_list_dir_spec, create_shell_spec, create_exec_command_spec, create_apply_patch_spec, create_apply_patch_freeform_spec, build_all_specs};
+pub use spec::{ToolSpec, ToolsConfig, ShellToolType, ApplyPatchToolType, FreeformFormat, create_grep_files_spec, create_read_file_spec, create_list_dir_spec, create_edit_file_range_spec, create_shell_spec, create_exec_command_spec, create_apply_patch_spec, create_apply_patch_freeform_spec, build_all_specs};
 pub use tool_builder::{ToolRegistryBuilder, build_default_tool_registry, create_tool_invocation};
 pub use events::{HookEvent, BeforeToolUse, AfterToolUse};
 pub use hooks::HookExecutor;

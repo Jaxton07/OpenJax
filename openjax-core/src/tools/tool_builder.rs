@@ -2,7 +2,7 @@ use std::sync::Arc;
 use crate::tools::context::{SandboxPolicy, ApprovalPolicy};
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::spec::{ToolSpec, ToolsConfig, build_all_specs};
-use crate::tools::handlers::{GrepFilesHandler, ReadFileHandler, ListDirHandler, ShellCommandHandler, ApplyPatchHandler};
+use crate::tools::handlers::{ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler, ShellCommandHandler};
 
 /// 工具注册构建器
 pub struct ToolRegistryBuilder {
@@ -66,6 +66,9 @@ pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
     
     let patch_handler = Arc::new(ApplyPatchHandler);
     builder.register_handler("apply_patch", patch_handler);
+
+    let edit_range_handler = Arc::new(EditFileRangeHandler);
+    builder.register_handler("edit_file_range", edit_range_handler);
     
     builder.build()
 }

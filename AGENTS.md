@@ -1,5 +1,16 @@
 # Repository Guidelines
 
+## 项目概述
+OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型能够与代码库交互。它提供模块化架构，支持工具执行、沙箱环境和多模型支持, 参考codex 的实现。
+
+本项目是想基于codex 的实现原理打造一个定制化的个人助理，而codex 的tool 工具调用，shell 执行，agent loop, 沙箱机制，等等基本能力是我们的助理agent 也需要的，所以现在一边参考codex 的源码一边实现我们的agent.
+
+[本仓库架构详细介绍](docs/project-structure-index.md)
+[codex 仓库的说明文档详细版](docs/codex-architecture-reference.md)
+[codex 仓库的参考文档简略版](docs/codex-quick-reference.md)
+[codex 仓库本地路径](/Users/ericw/work/code/ai/codex)
+
+
 ## 项目结构与模块划分
 OpenJax 是 Rust workspace，核心由 3 个 crate 组成：
 - `openjax-core/`：Agent 主循环、模型客户端、工具路由、沙箱与工具处理器。

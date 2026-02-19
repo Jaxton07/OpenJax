@@ -868,7 +868,7 @@ fn parse_model_decision(raw: &str) -> Option<ModelDecision> {
 fn is_supported_tool_name(name: &str) -> bool {
     matches!(
         name,
-        "read_file" | "list_dir" | "grep_files" | "shell" | "apply_patch"
+        "read_file" | "list_dir" | "grep_files" | "shell" | "apply_patch" | "edit_file_range"
     )
 }
 
@@ -920,7 +920,7 @@ fn normalize_model_decision(mut decision: ModelDecision) -> ModelDecision {
 }
 
 fn is_mutating_tool(tool_name: &str) -> bool {
-    matches!(tool_name, "apply_patch" | "shell" | "exec_command")
+    matches!(tool_name, "apply_patch" | "edit_file_range" | "shell" | "exec_command")
 }
 
 fn should_abort_on_consecutive_duplicate_skips(count: usize) -> bool {
@@ -952,7 +952,7 @@ fn build_planner_input(
     format!(
         "You are OpenJax's planning layer.\n\
 Return ONLY valid JSON with one of two shapes:\n\
-1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch\",\"args\":{{...}}}}\n\
+1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
 2) Final answer: {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Rules:\n\
@@ -970,6 +970,7 @@ Rules:\n\
   *** End Patch\n\
   Operations: *** Add File:, *** Update File:, *** Delete File:, *** Move File: from -> to\n\
   IMPORTANT: In Update File, every line after @@ MUST start with space (context), - (remove), or + (add).\n\
+- For edit_file_range, provide args: file_path, start_line, end_line, new_text.\n\
 - IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
 - If a tool was already called and returned results, use those results to decide the next action.\n\
 - Only call a tool again if you need different arguments or if the previous call failed.\n\
@@ -989,7 +990,7 @@ fn build_json_repair_prompt(previous_output: &str) -> String {
         "Your previous response did not match the required JSON schema.\n\
 Return ONLY valid JSON. Do not include markdown, thoughts, or extra text.\n\
 Allowed outputs:\n\
-1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch\",\"args\":{{...}}}}\n\
+1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
 2) {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Previous response:\n{previous_output}\n"
