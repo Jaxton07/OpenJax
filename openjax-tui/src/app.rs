@@ -66,7 +66,7 @@ impl App {
             .block(Block::default().title("Input").borders(Borders::ALL));
         frame.render_widget(composer, chunks[2]);
 
-        let status = Paragraph::new(vec![status_bar::render_line(self.state.show_help)]);
+        let status = Paragraph::new(vec![status_bar::render_line(&self.state)]);
         frame.render_widget(status, chunks[3]);
 
         if let Some(overlay) = &self.state.approval_overlay {

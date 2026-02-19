@@ -1,9 +1,20 @@
 use ratatui::text::Line;
 
-pub fn render_line(show_help: bool) -> Line<'static> {
-    if show_help {
-        Line::from("Enter submit | Backspace delete | ? hide help | q quit")
+use crate::state::AppState;
+
+pub fn render_line(state: &AppState) -> Line<'static> {
+    let shortcuts = if state.show_help {
+        "Enter submit | Backspace delete | ? hide help | q quit"
     } else {
-        Line::from("Enter submit | ? help | q quit")
-    }
+        "Enter submit | ? help | q quit"
+    };
+
+    let runtime = format!(
+        "model: {} | approval: {} | sandbox: {}",
+        state.model_name.as_deref().unwrap_or("-"),
+        state.approval_policy.as_deref().unwrap_or("-"),
+        state.sandbox_mode.as_deref().unwrap_or("-")
+    );
+
+    Line::from(format!("{shortcuts} || {runtime}"))
 }

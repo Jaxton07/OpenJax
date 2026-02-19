@@ -15,6 +15,9 @@ pub struct AppState {
     pub approval_overlay: Option<ApprovalOverlay>,
     pub show_help: bool,
     pub show_system_messages: bool,
+    pub model_name: Option<String>,
+    pub approval_policy: Option<String>,
+    pub sandbox_mode: Option<String>,
 }
 
 impl AppState {

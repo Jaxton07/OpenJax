@@ -37,12 +37,9 @@ async fn main() -> anyhow::Result<()> {
         .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes"));
     {
         let agent_guard = agent.lock().await;
-        app.state.push_system_message(format!(
-            "TUI ready (model: {}, approval: {}, sandbox: {})",
-            agent_guard.model_backend_name(),
-            agent_guard.approval_policy_name(),
-            agent_guard.sandbox_mode_name()
-        ));
+        app.state.model_name = Some(agent_guard.model_backend_name().to_string());
+        app.state.approval_policy = Some(agent_guard.approval_policy_name().to_string());
+        app.state.sandbox_mode = Some(agent_guard.sandbox_mode_name().to_string());
     }
 
     let mut turn_task: Option<tokio::task::JoinHandle<()>> = None;
