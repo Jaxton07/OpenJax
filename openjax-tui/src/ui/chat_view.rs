@@ -8,7 +8,6 @@ pub fn render_lines(state: &AppState) -> Vec<Line<'static>> {
 
     for message in &state.messages {
         let prefix = format!("[{}] ", message.role);
-        let padding = " ".repeat(prefix.chars().count());
         let mut content_lines = message.content.lines();
         let first = content_lines.next().unwrap_or_default();
 
@@ -18,10 +17,7 @@ pub fn render_lines(state: &AppState) -> Vec<Line<'static>> {
         ]));
 
         for line in content_lines {
-            out.push(Line::from(vec![
-                Span::raw(padding.clone()),
-                Span::raw(line.to_string()),
-            ]));
+            out.push(Line::from(Span::raw(line.to_string())));
         }
     }
 

@@ -81,13 +81,6 @@ pub fn map_crossterm_event(event: Event) -> Option<AppEvent> {
             ..
         }) if modifiers.contains(KeyModifiers::CONTROL) => Some(AppEvent::Quit),
         Event::Key(KeyEvent {
-            code: KeyCode::Esc, ..
-        }) => Some(AppEvent::Quit),
-        Event::Key(KeyEvent {
-            code: KeyCode::Char('q'),
-            ..
-        }) => Some(AppEvent::Quit),
-        Event::Key(KeyEvent {
             code: KeyCode::Char('?'),
             ..
         }) => Some(AppEvent::ToggleHelp),
@@ -114,6 +107,21 @@ pub fn map_crossterm_event(event: Event) -> Option<AppEvent> {
             code: KeyCode::Down,
             ..
         }) => Some(AppEvent::HistoryNext),
+        Event::Key(KeyEvent {
+            code: KeyCode::PageUp,
+            ..
+        }) => Some(AppEvent::ScrollPageUp),
+        Event::Key(KeyEvent {
+            code: KeyCode::PageDown,
+            ..
+        }) => Some(AppEvent::ScrollPageDown),
+        Event::Key(KeyEvent {
+            code: KeyCode::Home,
+            ..
+        }) => Some(AppEvent::ScrollTop),
+        Event::Key(KeyEvent {
+            code: KeyCode::End, ..
+        }) => Some(AppEvent::ScrollBottom),
         Event::Key(KeyEvent {
             code: KeyCode::Char(ch),
             ..

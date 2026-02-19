@@ -47,3 +47,21 @@ fn cursor_edit_and_history_navigation_work() {
     app.handle_event(AppEvent::HistoryNext);
     assert_eq!(app.state.input, "x");
 }
+
+#[test]
+fn chat_scroll_controls_work() {
+    let mut app = App::default();
+    app.state.chat_scroll = 30;
+    app.state.follow_output = false;
+
+    app.handle_event(AppEvent::ScrollPageUp);
+    assert_eq!(app.state.chat_scroll, 20);
+    assert!(!app.state.follow_output);
+
+    app.handle_event(AppEvent::ScrollTop);
+    assert_eq!(app.state.chat_scroll, 0);
+    assert!(!app.state.follow_output);
+
+    app.handle_event(AppEvent::ScrollBottom);
+    assert!(app.state.follow_output);
+}

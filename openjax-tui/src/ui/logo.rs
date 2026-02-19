@@ -21,7 +21,7 @@ pub fn render_lines() -> Vec<Line<'static>> {
     vec![
         Line::from(spans),
         Line::from(Span::styled(
-            "Personal Coding Agent",
+            "Personal Assistant",
             Style::default().fg(Color::DarkGray),
         )),
     ]

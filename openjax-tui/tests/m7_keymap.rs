@@ -19,15 +19,21 @@ fn keymap_maps_primary_shortcuts() {
         Some(AppEvent::ToggleHelp)
     ));
     assert!(matches!(
-        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))),
-        Some(AppEvent::Quit)
-    ));
-    assert!(matches!(
         map_crossterm_event(Event::Key(KeyEvent::new(
             KeyCode::Char('c'),
             KeyModifiers::CONTROL
         ))),
         Some(AppEvent::Quit)
+    ));
+    assert!(
+        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).is_none()
+    );
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('q'),
+            KeyModifiers::NONE
+        ))),
+        Some(AppEvent::InputChar('q'))
     ));
     assert!(matches!(
         map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))),
@@ -47,5 +53,27 @@ fn keymap_maps_primary_shortcuts() {
     assert!(matches!(
         map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))),
         Some(AppEvent::HistoryNext)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(
+            KeyCode::PageUp,
+            KeyModifiers::NONE
+        ))),
+        Some(AppEvent::ScrollPageUp)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(
+            KeyCode::PageDown,
+            KeyModifiers::NONE
+        ))),
+        Some(AppEvent::ScrollPageDown)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE))),
+        Some(AppEvent::ScrollTop)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE))),
+        Some(AppEvent::ScrollBottom)
     ));
 }

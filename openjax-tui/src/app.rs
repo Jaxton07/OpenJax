@@ -1,11 +1,9 @@
 use crate::app_event::AppEvent;
-use crate::render::theme;
 use crate::state::AppState;
 use crate::ui::{chat_view, composer, logo, status_bar};
 use ratatui::Frame;
 use ratatui::layout::Alignment;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 #[derive(Debug, Default)]
@@ -27,6 +25,22 @@ impl App {
             AppEvent::MoveCursorRight => self.state.move_cursor_right(),
             AppEvent::HistoryPrev => self.state.recall_prev_history(),
             AppEvent::HistoryNext => self.state.recall_next_history(),
+            AppEvent::ScrollPageUp => {
+                self.state.chat_scroll = self.state.chat_scroll.saturating_sub(10);
+                self.state.follow_output = false;
+            }
+            AppEvent::ScrollPageDown => {
+                self.state.chat_scroll = self.state.chat_scroll.saturating_add(10);
+                self.state.follow_output = false;
+            }
+            AppEvent::ScrollTop => {
+                self.state.chat_scroll = 0;
+                self.state.follow_output = false;
+            }
+            AppEvent::ScrollBottom => {
+                self.state.chat_scroll = usize::MAX;
+                self.state.follow_output = true;
+            }
             AppEvent::SubmitInput => {
                 if let Some(input) = self.state.consume_submitted_input() {
                     self.state.push_user_message(input);
@@ -44,7 +58,7 @@ impl App {
             .constraints([
                 Constraint::Length(2),
                 Constraint::Min(1),
-                Constraint::Length(3),
+                Constraint::Length(1),
                 Constraint::Length(1),
             ])
             .split(frame.area());
@@ -53,27 +67,24 @@ impl App {
         frame.render_widget(logo, chunks[0]);
 
         let chat_lines = chat_view::render_lines(&self.state);
+        let chat_inner_height = chunks[1].height as usize;
+        let max_scroll = chat_lines.len().saturating_sub(chat_inner_height);
+        let scroll = if self.state.follow_output {
+            max_scroll
+        } else {
+            self.state.chat_scroll.min(max_scroll)
+        };
         let chat = Paragraph::new(chat_lines)
-            .block(
-                Block::default()
-                    .title(Span::styled("Conversation", theme::title_style()))
-                    .borders(Borders::ALL),
-            )
-            .wrap(Wrap { trim: false });
+            .wrap(Wrap { trim: false })
+            .scroll((scroll as u16, 0));
         frame.render_widget(chat, chunks[1]);
 
-        let composer = Paragraph::new(vec![composer::render_line(&self.state)])
-            .block(Block::default().title("Input").borders(Borders::ALL));
+        let composer = Paragraph::new(vec![composer::render_line(&self.state)]);
         frame.render_widget(composer, chunks[2]);
-        let composer_inner = chunks[2].inner(ratatui::layout::Margin {
-            horizontal: 1,
-            vertical: 1,
-        });
-        if composer_inner.width > 0 && composer_inner.height > 0 {
-            let cursor_x =
-                composer_inner.x + composer::cursor_offset(&self.state, composer_inner.width);
-            let cursor_x = cursor_x.min(composer_inner.x + composer_inner.width.saturating_sub(1));
-            frame.set_cursor_position((cursor_x, composer_inner.y));
+        if chunks[2].width > 0 && chunks[2].height > 0 {
+            let cursor_x = chunks[2].x + composer::cursor_offset(&self.state, chunks[2].width);
+            let cursor_x = cursor_x.min(chunks[2].x + chunks[2].width.saturating_sub(1));
+            frame.set_cursor_position((cursor_x, chunks[2].y));
         }
 
         let status = Paragraph::new(vec![status_bar::render_line(&self.state)]);
@@ -100,8 +111,10 @@ Enter: submit input\n\
 Backspace: delete char\n\
 Left / Right: move cursor\n\
 Up / Down: input history\n\
+PageUp / PageDown: scroll chat\n\
+Home / End: chat top/bottom\n\
 ?: toggle this help\n\
-q / Esc / Ctrl-C: quit",
+Ctrl-C: quit",
                 )
                 .block(Block::default().title("Help").borders(Borders::ALL))
                 .wrap(Wrap { trim: false }),

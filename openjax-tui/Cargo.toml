@@ -10,6 +10,8 @@ tokio.workspace = true
 async-trait.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+unicode-width.workspace = true
+tracing.workspace = true
 openjax-core = { path = "../openjax-core" }
 openjax-protocol = { path = "../openjax-protocol" }
 scopeguard = "1"

@@ -1,11 +1,12 @@
 use async_trait::async_trait;
 use openjax_core::{ApprovalHandler, ApprovalRequest};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use tokio::sync::{Mutex, oneshot};
 
 #[derive(Debug, Default)]
 pub struct TuiApprovalHandler {
     pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    queued_requests: Mutex<VecDeque<ApprovalRequest>>,
 }
 
 impl TuiApprovalHandler {
@@ -21,12 +22,19 @@ impl TuiApprovalHandler {
         }
         false
     }
+
+    pub async fn pop_request(&self) -> Option<ApprovalRequest> {
+        self.queued_requests.lock().await.pop_front()
+    }
 }
 
 #[async_trait]
 impl ApprovalHandler for TuiApprovalHandler {
     async fn request_approval(&self, request: ApprovalRequest) -> Result<bool, String> {
         let (tx, rx) = oneshot::channel();
+
+        self.queued_requests.lock().await.push_back(request.clone());
+
         let mut pending = self.pending.lock().await;
         pending.insert(request.request_id, tx);
         drop(pending);

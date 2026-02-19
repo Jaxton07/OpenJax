@@ -4,9 +4,9 @@ use crate::state::AppState;
 
 pub fn render_line(state: &AppState) -> Line<'static> {
     let shortcuts = if state.show_help {
-        "Enter submit | Backspace delete | ? hide help | q quit"
+        "Enter submit | Backspace delete | ? hide help | Ctrl-C quit"
     } else {
-        "Enter submit | ? help | q quit"
+        "Enter submit | ? help | Ctrl-C quit"
     };
 
     let runtime = format!(

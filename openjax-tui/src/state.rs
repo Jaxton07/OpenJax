@@ -11,6 +11,8 @@ pub struct UiMessage {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AppState {
     pub messages: Vec<UiMessage>,
+    pub chat_scroll: usize,
+    pub follow_output: bool,
     pub input: String,
     pub input_cursor: usize,
     pub input_history: Vec<String>,
