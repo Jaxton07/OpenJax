@@ -100,6 +100,21 @@ pub fn map_crossterm_event(event: Event) -> Option<AppEvent> {
             ..
         }) => Some(AppEvent::Backspace),
         Event::Key(KeyEvent {
+            code: KeyCode::Left,
+            ..
+        }) => Some(AppEvent::MoveCursorLeft),
+        Event::Key(KeyEvent {
+            code: KeyCode::Right,
+            ..
+        }) => Some(AppEvent::MoveCursorRight),
+        Event::Key(KeyEvent {
+            code: KeyCode::Up, ..
+        }) => Some(AppEvent::HistoryPrev),
+        Event::Key(KeyEvent {
+            code: KeyCode::Down,
+            ..
+        }) => Some(AppEvent::HistoryNext),
+        Event::Key(KeyEvent {
             code: KeyCode::Char(ch),
             ..
         }) => Some(AppEvent::InputChar(ch)),

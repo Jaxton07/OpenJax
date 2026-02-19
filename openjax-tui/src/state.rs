@@ -12,6 +12,10 @@ pub struct UiMessage {
 pub struct AppState {
     pub messages: Vec<UiMessage>,
     pub input: String,
+    pub input_cursor: usize,
+    pub input_history: Vec<String>,
+    pub input_history_index: Option<usize>,
+    pub input_draft: String,
     pub approval_overlay: Option<ApprovalOverlay>,
     pub show_help: bool,
     pub show_system_messages: bool,
@@ -42,6 +46,86 @@ impl AppState {
             role: "assistant".to_string(),
             content,
         });
+    }
+
+    pub fn insert_input_char(&mut self, ch: char) {
+        let mut chars: Vec<char> = self.input.chars().collect();
+        let cursor = self.input_cursor.min(chars.len());
+        chars.insert(cursor, ch);
+        self.input = chars.into_iter().collect();
+        self.input_cursor = cursor + 1;
+        self.input_history_index = None;
+        self.input_draft.clear();
+    }
+
+    pub fn backspace_input(&mut self) {
+        if self.input_cursor == 0 {
+            return;
+        }
+        let mut chars: Vec<char> = self.input.chars().collect();
+        let cursor = self.input_cursor.min(chars.len());
+        chars.remove(cursor - 1);
+        self.input = chars.into_iter().collect();
+        self.input_cursor = cursor - 1;
+        self.input_history_index = None;
+        self.input_draft.clear();
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        self.input_cursor = self.input_cursor.saturating_sub(1);
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        let len = self.input.chars().count();
+        self.input_cursor = (self.input_cursor + 1).min(len);
+    }
+
+    pub fn recall_prev_history(&mut self) {
+        if self.input_history.is_empty() {
+            return;
+        }
+        let idx = match self.input_history_index {
+            Some(current) => current.saturating_sub(1),
+            None => {
+                self.input_draft = self.input.clone();
+                self.input_history.len() - 1
+            }
+        };
+        self.input_history_index = Some(idx);
+        self.input = self.input_history[idx].clone();
+        self.input_cursor = self.input.chars().count();
+    }
+
+    pub fn recall_next_history(&mut self) {
+        let Some(current) = self.input_history_index else {
+            return;
+        };
+        if current + 1 < self.input_history.len() {
+            let idx = current + 1;
+            self.input_history_index = Some(idx);
+            self.input = self.input_history[idx].clone();
+            self.input_cursor = self.input.chars().count();
+            return;
+        }
+        self.input_history_index = None;
+        self.input = self.input_draft.clone();
+        self.input_cursor = self.input.chars().count();
+        self.input_draft.clear();
+    }
+
+    pub fn consume_submitted_input(&mut self) -> Option<String> {
+        let submitted = self.input.trim().to_string();
+        if submitted.is_empty() {
+            return None;
+        }
+        if self.input_history.last() != Some(&submitted) {
+            self.input_history.push(submitted.clone());
+        }
+        self.input.clear();
+        self.input_cursor = 0;
+        self.input_history_index = None;
+        self.input_draft.clear();
+        Some(submitted)
     }
 
     pub fn map_core_event(&mut self, event: &Event) {

@@ -21,15 +21,15 @@ impl App {
 
     pub fn handle_event(&mut self, event: AppEvent) {
         match event {
-            AppEvent::InputChar(ch) => self.state.input.push(ch),
-            AppEvent::Backspace => {
-                self.state.input.pop();
-            }
+            AppEvent::InputChar(ch) => self.state.insert_input_char(ch),
+            AppEvent::Backspace => self.state.backspace_input(),
+            AppEvent::MoveCursorLeft => self.state.move_cursor_left(),
+            AppEvent::MoveCursorRight => self.state.move_cursor_right(),
+            AppEvent::HistoryPrev => self.state.recall_prev_history(),
+            AppEvent::HistoryNext => self.state.recall_next_history(),
             AppEvent::SubmitInput => {
-                let input = self.state.input.trim().to_string();
-                if !input.is_empty() {
+                if let Some(input) = self.state.consume_submitted_input() {
                     self.state.push_user_message(input);
-                    self.state.input.clear();
                 }
             }
             AppEvent::ToggleHelp => self.state.show_help = !self.state.show_help,
@@ -65,6 +65,16 @@ impl App {
         let composer = Paragraph::new(vec![composer::render_line(&self.state)])
             .block(Block::default().title("Input").borders(Borders::ALL));
         frame.render_widget(composer, chunks[2]);
+        let composer_inner = chunks[2].inner(ratatui::layout::Margin {
+            horizontal: 1,
+            vertical: 1,
+        });
+        if composer_inner.width > 0 && composer_inner.height > 0 {
+            let cursor_x =
+                composer_inner.x + composer::cursor_offset(&self.state, composer_inner.width);
+            let cursor_x = cursor_x.min(composer_inner.x + composer_inner.width.saturating_sub(1));
+            frame.set_cursor_position((cursor_x, composer_inner.y));
+        }
 
         let status = Paragraph::new(vec![status_bar::render_line(&self.state)]);
         frame.render_widget(status, chunks[3]);
@@ -88,6 +98,8 @@ impl App {
                     "Shortcuts:\n\
 Enter: submit input\n\
 Backspace: delete char\n\
+Left / Right: move cursor\n\
+Up / Down: input history\n\
 ?: toggle this help\n\
 q / Esc / Ctrl-C: quit",
                 )

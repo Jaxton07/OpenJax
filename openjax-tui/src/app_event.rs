@@ -4,6 +4,10 @@ use openjax_protocol::Event;
 pub enum AppEvent {
     InputChar(char),
     Backspace,
+    MoveCursorLeft,
+    MoveCursorRight,
+    HistoryPrev,
+    HistoryNext,
     SubmitInput,
     ToggleHelp,
     CoreEvent(Event),

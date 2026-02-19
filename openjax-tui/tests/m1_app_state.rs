@@ -18,3 +18,32 @@ fn input_state_and_message_append_order() {
     assert_eq!(app.state.messages[0].role, "user");
     assert_eq!(app.state.messages[0].content, "h");
 }
+
+#[test]
+fn cursor_edit_and_history_navigation_work() {
+    let mut app = App::default();
+
+    app.handle_event(AppEvent::InputChar('a'));
+    app.handle_event(AppEvent::InputChar('c'));
+    app.handle_event(AppEvent::MoveCursorLeft);
+    app.handle_event(AppEvent::InputChar('b'));
+    assert_eq!(app.state.input, "abc");
+
+    app.handle_event(AppEvent::SubmitInput);
+    assert_eq!(app.state.messages.len(), 1);
+    assert_eq!(app.state.messages[0].content, "abc");
+
+    app.handle_event(AppEvent::InputChar('x'));
+    app.handle_event(AppEvent::SubmitInput);
+    assert_eq!(app.state.messages.len(), 2);
+    assert_eq!(app.state.messages[1].content, "x");
+
+    app.handle_event(AppEvent::HistoryPrev);
+    assert_eq!(app.state.input, "x");
+
+    app.handle_event(AppEvent::HistoryPrev);
+    assert_eq!(app.state.input, "abc");
+
+    app.handle_event(AppEvent::HistoryNext);
+    assert_eq!(app.state.input, "x");
+}

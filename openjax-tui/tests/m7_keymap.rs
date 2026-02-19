@@ -29,4 +29,23 @@ fn keymap_maps_primary_shortcuts() {
         ))),
         Some(AppEvent::Quit)
     ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))),
+        Some(AppEvent::MoveCursorLeft)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(
+            KeyCode::Right,
+            KeyModifiers::NONE
+        ))),
+        Some(AppEvent::MoveCursorRight)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))),
+        Some(AppEvent::HistoryPrev)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))),
+        Some(AppEvent::HistoryNext)
+    ));
 }
