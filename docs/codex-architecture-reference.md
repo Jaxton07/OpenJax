@@ -341,7 +341,7 @@ tui/src/
 ├── history_cell.rs           # 历史记录
 ├── diff_render.rs            # Diff 渲染
 ├── markdown_render.rs        # Markdown 渲染
-├── exec_command.rs           # 命令执行
+├── shell.rs           # 命令执行
 ├── approvals.rs              # 审批界面
 └── ...
 ```

@@ -6,7 +6,7 @@
 1. **单元测试覆盖**：为所有工具添加完整的单元测试
 2. **多 Shell 支持**：支持 Bash、Zsh、PowerShell
 3. **apply_patch 拦截**：在 shell 命令中拦截并处理 apply_patch 命令
-4. **Shell 命令重命名**：将 exec_command 重命名为 shell，以匹配 Codex 架构
+4. **Shell 命令重命名**：将 `exec_command` 重命名为 `shell`，以匹配 Codex 架构
 
 ## 已完成功能
 
@@ -17,7 +17,7 @@
 | grep_files | 6 | ✅ 全部通过 |
 | read_file | 14 | ✅ 全部通过 |
 | list_dir | 7 | ✅ 全部通过 |
-| shell (原 exec_command) | 14 | ✅ 全部通过 |
+| shell（原 exec_command） | 14 | ✅ 全部通过 |
 | apply_patch | 35 | ✅ 全部通过 |
 | **总计** | **76** | **✅ 全部通过** |
 
@@ -49,7 +49,7 @@
 - 大限制处理
 - 截断结果提示
 
-**shell (原 exec_command)**：
+**shell（原 exec_command）**：
 - 批准策略测试
 - 路径参数识别
 - 网络命令阻止
@@ -300,7 +300,7 @@ impl ToolHandler for ShellCommandHandler {
 
 1. **与 Codex 架构对齐**：Codex 使用 `shell.rs` 作为 shell 命令处理器
 2. **更清晰的命名**：`ShellCommandHandler` 比 `ExecCommandHandler` 更准确地描述其功能
-3. **避免混淆**：避免与 `exec_command` 函数名混淆
+3. **避免混淆**：避免与旧的 `exec_command` 函数命名混淆
 
 ## 与 Codex 的对比
 
@@ -398,7 +398,7 @@ test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 - [x] grep_files 单元测试通过
 - [x] read_file 单元测试通过
 - [x] list_dir 单元测试通过
-- [x] shell (原 exec_command) 单元测试通过
+- [x] shell（原 exec_command）单元测试通过
 - [x] apply_patch 单元测试通过
 - [x] shell 单元测试通过
 - [x] apply_patch_interceptor 单元测试通过

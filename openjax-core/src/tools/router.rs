@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use super::shell::ShellType;
+use super::spec::ToolsConfig;
+pub use super::context::ApprovalPolicy;
 
 #[derive(Debug, Clone)]
 pub struct ToolCall {
@@ -20,7 +22,9 @@ pub fn parse_tool_call(input: &str) -> Option<ToolCall> {
         return None;
     }
     
-    let parts: Vec<&str> = rest.split_whitespace().collect();
+    let parts: Vec<String> = shlex::split(rest).unwrap_or_else(|| {
+        rest.split_whitespace().map(ToString::to_string).collect()
+    });
     if parts.is_empty() {
         return None;
     }
@@ -42,40 +46,27 @@ pub struct ToolRuntimeConfig {
     pub approval_policy: ApprovalPolicy,
     pub sandbox_mode: SandboxMode,
     pub shell_type: ShellType,
+    pub tools_config: ToolsConfig,
 }
 
 impl Default for ToolRuntimeConfig {
     fn default() -> Self {
         Self {
-            approval_policy: ApprovalPolicy::AlwaysAsk,
+            approval_policy: ApprovalPolicy::OnRequest,
             sandbox_mode: SandboxMode::WorkspaceWrite,
             shell_type: ShellType::default(),
+            tools_config: ToolsConfig::default(),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApprovalPolicy {
-    AlwaysAsk,
-    OnRequest,
-    Never,
-}
-
-impl ApprovalPolicy {
-    pub fn from_env() -> Self {
-        match std::env::var("OPENJAX_APPROVAL_POLICY").as_deref() {
-            Ok("always_ask") => Self::AlwaysAsk,
-            Ok("on_request") => Self::OnRequest,
-            Ok("never") => Self::Never,
-            _ => Self::AlwaysAsk,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::AlwaysAsk => "always_ask",
-            Self::OnRequest => "on_request",
-            Self::Never => "never",
+impl ToolRuntimeConfig {
+    pub fn with_config(config: ToolsConfig) -> Self {
+        Self {
+            approval_policy: ApprovalPolicy::OnRequest,
+            sandbox_mode: SandboxMode::WorkspaceWrite,
+            shell_type: ShellType::default(),
+            tools_config: config,
         }
     }
 }
@@ -104,3 +95,34 @@ impl SandboxMode {
 }
 
 pub const MAX_AGENT_DEPTH: i32 = 10;
+
+#[cfg(test)]
+mod tests {
+    use super::parse_tool_call;
+
+    #[test]
+    fn parse_tool_call_preserves_quoted_shell_command() {
+        let input = "tool:shell cmd='echo hi >/tmp/openjax-e2e.txt' require_escalated=true";
+        let parsed = parse_tool_call(input).expect("expected parsed tool call");
+        assert_eq!(parsed.name, "shell");
+        assert_eq!(
+            parsed.args.get("cmd").map(String::as_str),
+            Some("echo hi >/tmp/openjax-e2e.txt")
+        );
+        assert_eq!(
+            parsed.args.get("require_escalated").map(String::as_str),
+            Some("true")
+        );
+    }
+
+    #[test]
+    fn parse_tool_call_preserves_quoted_apply_patch() {
+        let input = "tool:apply_patch patch='*** Begin Patch\\n*** Add File: test.txt\\n+hello\\n*** End Patch'";
+        let parsed = parse_tool_call(input).expect("expected parsed tool call");
+        assert_eq!(parsed.name, "apply_patch");
+        assert_eq!(
+            parsed.args.get("patch").map(String::as_str),
+            Some("*** Begin Patch\\n*** Add File: test.txt\\n+hello\\n*** End Patch")
+        );
+    }
+}

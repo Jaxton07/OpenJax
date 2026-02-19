@@ -4,7 +4,7 @@
 
 本计划旨在为 OpenJax 添加以下两个关键功能：
 1. **多 Shell 支持**：支持 Bash、Zsh、PowerShell（当前仅支持 Zsh）
-2. **apply_patch 拦截**：在 exec_command 中检测并拦截 apply_patch 命令
+2. **apply_patch 拦截**：在 shell 中检测并拦截 apply_patch 命令
 
 ## 背景
 
@@ -158,18 +158,18 @@ impl Default for ToolRuntimeConfig {
 }
 ```
 
-#### 1.4 更新 exec_command
+#### 1.4 更新 shell
 
-修改 `openjax-core/src/tools/exec_command.rs`：
+修改 `openjax-core/src/tools/shell.rs`：
 
 ```rust
-pub async fn exec_command(
+pub async fn shell(
     call: &ToolCall,
     cwd: &Path,
     config: ToolRuntimeConfig,
 ) -> Result<String> {
     let command = call.args.get("cmd")
-        .ok_or_else(|| anyhow!("exec_command requires cmd='<shell command>'"))?
+        .ok_or_else(|| anyhow!("shell requires cmd='<shell command>'"))?
         .to_string();
 
     let shell = Shell::new(config.shell_type)?;
@@ -179,7 +179,7 @@ pub async fn exec_command(
     info!(
         command = %command,
         shell_type = ?config.shell_type,
-        "exec_command started"
+        "shell started"
     );
 
     // ... 其余逻辑保持不变 ...
@@ -249,12 +249,12 @@ pub async fn intercept_apply_patch(
 }
 ```
 
-#### 2.2 更新 exec_command 集成拦截
+#### 2.2 更新 shell 集成拦截
 
-在 `openjax-core/src/tools/exec_command.rs` 中添加拦截逻辑：
+在 `openjax-core/src/tools/shell.rs` 中添加拦截逻辑：
 
 ```rust
-pub async fn exec_command(
+pub async fn shell(
     call: &ToolCall,
     cwd: &Path,
     config: ToolRuntimeConfig,
@@ -262,7 +262,7 @@ pub async fn exec_command(
     call_id: &str,
 ) -> Result<String> {
     let command = call.args.get("cmd")
-        .ok_or_else(|| anyhow!("exec_command requires cmd='<shell command>'"))?
+        .ok_or_else(|| anyhow!("shell requires cmd='<shell command>'"))?
         .to_string();
 
     let shell = Shell::new(config.shell_type)?;
@@ -271,7 +271,7 @@ pub async fn exec_command(
     info!(
         command = %command,
         shell_type = ?config.shell_type,
-        "exec_command started"
+        "shell started"
     );
 
     // 拦截 apply_patch
@@ -281,7 +281,7 @@ pub async fn exec_command(
         None,
         turn_context,
         call_id,
-        "exec_command",
+        "shell",
     ).await? {
         return Ok(format_tool_output(&output));
     }
@@ -434,7 +434,7 @@ mod tests {
 
 - ✅ 支持 Bash、Zsh、PowerShell 三种 shell
 - ✅ 自动检测用户 shell 类型
-- ✅ 在 exec_command 中拦截 apply_patch 命令
+- ✅ 在 shell 中拦截 apply_patch 命令
 - ✅ 拦截后调用专门的 apply_patch 工具
 - ✅ 记录警告信息
 

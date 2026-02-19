@@ -18,6 +18,7 @@ toml.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
+time.workspace = true
 walkdir.workspace = true
 uuid.workspace = true
 openjax-protocol = { path = "../openjax-protocol" }

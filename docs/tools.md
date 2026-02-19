@@ -9,7 +9,7 @@
 | `read_file` | 读取文件内容 | 只读 |
 | `list_dir` | 列出目录内容 | 只读 |
 | `grep_files` | 递归搜索文件 | 只读 |
-| `exec_command` | 执行 shell 命令 | 可配置 |
+| `shell` | 执行 shell 命令 | 可配置 |
 | `apply_patch` | 应用文件补丁 | 可配置 |
 
 ---
@@ -108,7 +108,7 @@ tool:grep_files pattern=ToolRouter path=openjax-core/src
 
 ---
 
-## 4. exec_command
+## 4. shell
 
 执行 shell 命令，支持沙箱模式和审批策略。
 
@@ -123,8 +123,8 @@ tool:grep_files pattern=ToolRouter path=openjax-core/src
 ### 使用示例
 
 ```bash
-tool:exec_command cmd='zsh -c "cargo test"' require_escalated=true timeout_ms=60000
-tool:exec_command cmd='ls -la' timeout_ms=5000
+tool:shell cmd='zsh -c "cargo test"' require_escalated=true timeout_ms=60000
+tool:shell cmd='ls -la' timeout_ms=5000
 ```
 
 ### 输出格式
@@ -312,7 +312,7 @@ match call.name.as_str() {
     "read_file" => read_file(call, cwd).await,
     "list_dir" => list_dir(call, cwd).await,
     "grep_files" => grep_files(call, cwd).await,
-    "exec_command" => exec_command(call, cwd, config).await,
+    "shell" => shell(call, cwd, config).await,
     "apply_patch" => apply_patch_tool(call, cwd).await,
     _ => Err(anyhow!("unknown tool: {}", call.name))
 }

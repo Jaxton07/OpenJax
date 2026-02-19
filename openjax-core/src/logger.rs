@@ -5,8 +5,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::Level;
 use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::fmt::time::OffsetTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry;
+use time::format_description::well_known::Rfc3339;
 
 const DEFAULT_MAX_LINES: usize = 10_000;
 const DEFAULT_MAX_ARCHIVES: usize = 4;
@@ -113,6 +115,11 @@ pub fn init_logger() -> Option<()> {
 
     let level_filter = get_log_level_from_env();
 
+    let timer = OffsetTime::local_rfc_3339().unwrap_or_else(|_| {
+        let offset = time::UtcOffset::from_hms(8, 0, 0).unwrap();
+        OffsetTime::new(offset, Rfc3339)
+    });
+
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(file_writer)
         .with_ansi(false)
@@ -120,6 +127,7 @@ pub fn init_logger() -> Option<()> {
         .with_thread_ids(false)
         .with_file(false)
         .with_line_number(false)
+        .with_timer(timer)
         .with_filter(tracing_subscriber::filter::LevelFilter::from(level_filter));
 
     let subscriber = registry().with(fmt_layer);

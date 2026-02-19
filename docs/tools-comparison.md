@@ -261,14 +261,14 @@ file_b.rs:2:    println!("Hello");
 
 ---
 
-## 4. exec_command / shell
+## 4. shell
 
 ### Codex 实现
 
 **工具类型：**
 - `shell` - 标准 shell 执行
 - `shell_command` - 使用会话 shell（保持状态）
-- `exec_command` - 统一执行接口
+- `exec` - 统一执行接口
 - `local_shell` - 本地 shell 执行
 - `container.exec` - 容器内执行
 
@@ -431,17 +431,17 @@ ToolRouter (路由)
 1. ✅ `grep_files` 使用 ripgrep：大幅提升性能
 2. ✅ `read_file` 添加 offset 和 limit：支持分页读取
 3. ✅ `list_dir` 添加 depth 参数：支持递归列出
-4. ✅ `exec_command` 添加安全命令检测：减少不必要的审批
+4. ✅ `shell` 添加安全命令检测：减少不必要的审批
 
 **中优先级：**
 5. ✅ `read_file` 添加行号显示：便于定位代码
 6. ✅ `list_dir` 添加文件类型标记：便于识别文件类型
-7. ✅ `exec_command` 支持多种 shell 类型：提高兼容性
+7. ✅ `shell` 支持多种 shell 类型：提高兼容性
 8. ✅ 添加 ToolOrchestrator：统一处理审批和沙箱逻辑
 
 **低优先级：**
 9. ✅ `read_file` 添加缩进感知模式：智能读取代码块
-10. ✅ `exec_command` 添加会话 shell：保持 shell 状态
+10. ✅ `shell` 添加会话 shell：保持 shell 状态
 11. ✅ 添加钩子支持：扩展工具执行流程
 12. ✅ 添加遥测支持：记录工具执行指标
 

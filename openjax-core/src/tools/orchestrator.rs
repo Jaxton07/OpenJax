@@ -1,16 +1,18 @@
 use std::time::Instant;
 use std::sync::Arc;
-use crate::tools::context::{ToolInvocation, ToolOutput};
+use crate::tools::context::{ToolInvocation, ToolOutput, ApprovalPolicy};
 use crate::tools::registry::ToolRegistry;
 use crate::tools::sandboxing::SandboxManager;
 use crate::tools::events::{HookEvent, BeforeToolUse, AfterToolUse};
 use crate::tools::hooks::HookExecutor;
+use crate::tools::ToolsConfig;
 
 /// 工具编排器
 pub struct ToolOrchestrator {
     registry: Arc<ToolRegistry>,
     hook_executor: HookExecutor,
     sandbox_manager: SandboxManager,
+    _config: ToolsConfig,
 }
 
 impl ToolOrchestrator {
@@ -19,6 +21,16 @@ impl ToolOrchestrator {
             registry,
             hook_executor: HookExecutor::new(),
             sandbox_manager: SandboxManager::new(),
+            _config: ToolsConfig::default(),
+        }
+    }
+
+    pub fn with_config(registry: Arc<ToolRegistry>, config: ToolsConfig) -> Self {
+        Self {
+            registry,
+            hook_executor: HookExecutor::new(),
+            sandbox_manager: SandboxManager::new(),
+            _config: config,
         }
     }
 
@@ -41,7 +53,9 @@ impl ToolOrchestrator {
 
         // 2. 检查是否需要批准
         let is_mutating = self.sandbox_manager.is_mutating_operation(&invocation.tool_name);
-        if self.sandbox_manager.requires_approval(invocation.turn.sandbox_policy, is_mutating) {
+        let requires_approval = self.should_prompt_approval(invocation.turn.approval_policy, is_mutating);
+        
+        if requires_approval {
             if !self.ask_for_approval(&invocation)? {
                 return Err(crate::tools::error::FunctionCallError::ApprovalRejected(
                     "command rejected by user".to_string(),
@@ -77,15 +91,21 @@ impl ToolOrchestrator {
         result
     }
 
+    fn should_prompt_approval(&self, policy: ApprovalPolicy, is_mutating: bool) -> bool {
+        match policy {
+            ApprovalPolicy::AlwaysAsk => true,
+            ApprovalPolicy::OnRequest => is_mutating,
+            ApprovalPolicy::Never => false,
+        }
+    }
+
     fn ask_for_approval(&self, invocation: &ToolInvocation) -> Result<bool, crate::tools::error::FunctionCallError> {
         println!("[approval] 执行工具需要确认: {}", invocation.tool_name);
         println!("[approval] 输入 y 同意，其他任意输入拒绝:");
-
         let mut answer = String::new();
         std::io::stdin()
             .read_line(&mut answer)
             .map_err(|e| crate::tools::error::FunctionCallError::Internal(format!("failed to read approval: {}", e)))?;
-
         Ok(answer.trim().eq_ignore_ascii_case("y"))
     }
 }

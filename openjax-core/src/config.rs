@@ -15,6 +15,10 @@ pub struct Config {
     /// Agent configuration
     #[serde(default)]
     pub agent: Option<AgentConfig>,
+
+    /// Tools configuration
+    #[serde(default)]
+    pub tools: Option<crate::tools::spec::ToolsConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

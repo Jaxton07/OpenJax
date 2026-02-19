@@ -40,7 +40,7 @@ impl ToolHandler for ShellCommandHandler {
             ToolPayload::Function { arguments } => arguments,
             _ => {
                 return Err(FunctionCallError::RespondToModel(
-                    "exec_command handler received unsupported payload".to_string(),
+                    "shell handler received unsupported payload".to_string(),
                 ));
             }
         };
@@ -59,20 +59,20 @@ impl ToolHandler for ShellCommandHandler {
             crate::tools::SandboxPolicy::DangerFullAccess => SandboxMode::DangerFullAccess,
         };
 
-        let approval_policy = ApprovalPolicy::AlwaysAsk;
+        let approval_policy = turn.approval_policy;
 
         info!(
             command = %command,
             require_escalated = require_escalated,
             sandbox_mode = sandbox_policy.as_str(),
-            "exec_command started"
+            "shell started"
         );
 
         if should_prompt_approval(approval_policy, require_escalated)
             && !ask_for_approval(&command)
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?
         {
-            warn!(command = %command, "exec_command rejected by user");
+            warn!(command = %command, "shell rejected by user");
             return Err(FunctionCallError::ApprovalRejected(
                 "command rejected by user".to_string(),
             ));
@@ -123,7 +123,7 @@ impl ToolHandler for ShellCommandHandler {
             exit_code = exit_code,
             stdout_len = stdout.len(),
             stderr_len = stderr.len(),
-            "exec_command completed"
+            "shell completed"
         );
 
         Ok(ToolOutput::Function {

@@ -24,7 +24,7 @@ pub async fn intercept_apply_patch(
                     match apply_patch_actions(&actions).await {
                         Ok(_) => {
                             tracing::warn!(
-                                "apply_patch was requested via exec_command. Use apply_patch tool instead."
+                                "apply_patch was requested via shell. Use apply_patch tool instead."
                             );
                             let summary = actions
                                 .iter()

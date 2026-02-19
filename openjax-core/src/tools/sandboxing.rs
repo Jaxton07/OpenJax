@@ -26,7 +26,7 @@ impl SandboxManager {
     /// 检查是否为变异操作
     pub fn is_mutating_operation(&self, tool_name: &str) -> bool {
         match tool_name {
-            "exec_command" | "apply_patch" => true,
+            "shell" | "exec_command" | "apply_patch" => true,
             _ => false,
         }
     }

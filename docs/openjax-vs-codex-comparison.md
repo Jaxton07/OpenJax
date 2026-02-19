@@ -73,7 +73,7 @@ for executed_count in 0..MAX_TOOL_CALLS_PER_TURN {
 | `read_file` | ✅ 防止逃逸 | 读取文件内容 |
 | `list_dir` | ✅ 防止逃逸 | 列出目录 |
 | `grep_files` | ✅ 防止逃逸 | 文本搜索 |
-| `exec_command` | ✅ 审批 + 白名单 | Shell 命令执行 |
+| `shell` | ✅ 审批 + 白名单 | Shell 命令执行 |
 | `apply_patch` | ✅ 路径验证 + 回滚 | Add/Update/Delete 文件 |
 
 ### 3.3 沙箱机制

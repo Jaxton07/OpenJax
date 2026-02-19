@@ -13,6 +13,7 @@ const READ_COMMENT_PREFIXES: &[&str] = &["#", "//", "--"];
 
 #[derive(Deserialize)]
 struct ReadFileArgs {
+    #[serde(alias = "path", alias = "filepath")]
     file_path: String,
     #[serde(default = "read_default_offset")]
     offset: usize,

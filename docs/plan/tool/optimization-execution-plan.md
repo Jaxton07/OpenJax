@@ -196,7 +196,7 @@ impl ToolRegistry {
 - `openjax-core/src/tools/handlers/grep_files.rs`（新建）
 - `openjax-core/src/tools/handlers/read_file.rs`（新建）
 - `openjax-core/src/tools/handlers/list_dir.rs`（新建）
-- `openjax-core/src/tools/handlers/exec_command.rs`（新建）
+- `openjax-core/src/tools/handlers/shell.rs`（新建）
 - `openjax-core/src/tools/handlers/apply_patch.rs`（新建）
 
 **目标**：将现有工具函数迁移到 ToolHandler 实现
@@ -354,10 +354,10 @@ pub fn build_specs(config: &ToolsConfig) -> ToolRegistryBuilder {
     builder.push_spec(create_list_dir_spec(), true);
     builder.register_handler("list_dir", list_handler);
 
-    // 注册 exec_command
+    // 注册 shell
     let exec_handler = Arc::new(ExecCommandHandler);
-    builder.push_spec(create_exec_command_spec(), true);
-    builder.register_handler("exec_command", exec_handler);
+    builder.push_spec(create_shell_spec(), true);
+    builder.register_handler("shell", exec_handler);
 
     // 注册 apply_patch
     let patch_handler = Arc::new(ApplyPatchHandler);
@@ -633,7 +633,7 @@ impl ToolOrchestrator {
     fn is_mutating_operation(&self, invocation: &ToolInvocation) -> bool {
         // 检查工具是否是变异操作
         match invocation.tool_name.as_str() {
-            "exec_command" | "apply_patch" => true,
+            "shell" | "apply_patch" => true,
             _ => false,
         }
     }

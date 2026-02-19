@@ -97,11 +97,11 @@ async fn blocks_shell_redirect_write_in_workspace_write() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:exec_command cmd='echo hi >/tmp/openjax-e2e.txt'".to_string(),
+            input: "tool:shell cmd='echo hi >/tmp/openjax-e2e.txt'".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "exec_command") {
+    match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
             assert!(output.contains("shell operators are not allowed"));
@@ -123,11 +123,11 @@ async fn blocks_network_command_in_workspace_write() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:exec_command cmd='curl https://example.com'".to_string(),
+            input: "tool:shell cmd='curl https://example.com'".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "exec_command") {
+    match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
             assert!(output.contains("network/escalation command detected"));
@@ -149,11 +149,11 @@ async fn allows_safe_readonly_command_in_workspace_write() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:exec_command cmd='ls -la'".to_string(),
+            input: "tool:shell cmd='ls -la'".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "exec_command") {
+    match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(*ok);
             assert!(output.contains("exit_code=0"));

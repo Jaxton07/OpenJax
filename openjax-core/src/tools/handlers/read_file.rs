@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::collections::VecDeque;
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tracing::debug;
 
 use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -15,6 +16,7 @@ const READ_COMMENT_PREFIXES: &[&str] = &["#", "//", "--"];
 
 #[derive(Deserialize)]
 struct ReadFileArgs {
+    #[serde(alias = "path", alias = "filepath")]
     file_path: String,
     #[serde(default = "read_default_offset")]
     offset: usize,
@@ -26,7 +28,7 @@ struct ReadFileArgs {
     indentation: Option<IndentationArgs>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "snake_case")]
 enum ReadMode {
     #[default]
@@ -98,8 +100,25 @@ impl ToolHandler for ReadFileHandler {
             }
         };
 
+        debug!(
+            raw_arguments = %arguments,
+            cwd = %turn.cwd.display(),
+            "read_file parsing arguments"
+        );
+
         let args: ReadFileArgs = serde_json::from_str(&arguments)
-            .map_err(|e| FunctionCallError::Internal(format!("failed to parse arguments: {}", e)))?;
+            .map_err(|e| {
+                debug!(error = %e, raw_arguments = %arguments, "read_file failed to parse arguments");
+                FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
+            })?;
+
+        debug!(
+            file_path = %args.file_path,
+            offset = args.offset,
+            limit = args.limit,
+            mode = ?args.mode,
+            "read_file parsed arguments"
+        );
 
         if args.offset == 0 {
             return Err(FunctionCallError::RespondToModel(

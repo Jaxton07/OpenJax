@@ -135,10 +135,10 @@ async fn main() -> anyhow::Result<()> {
         agent.sandbox_mode_name(),
     );
     println!(
-        "可用工具示例: tool:list_dir path=. | tool:read_file path=docs/todo.md | tool:grep_files pattern=OpenJax path=."
+        "可用工具示例: tool:list_dir dir_path=. | tool:read_file file_path=docs/todo.md | tool:grep_files pattern=OpenJax path=."
     );
     println!(
-        "命令执行示例: tool:exec_command cmd='ls -la' | tool:exec_command cmd='curl https://example.com' require_escalated=true"
+        "命令执行示例: tool:shell cmd='ls -la' | tool:shell cmd='curl https://example.com' require_escalated=true"
     );
     println!(
         "补丁示例: tool:apply_patch patch='*** Begin Patch\\n*** Add File: hello.txt\\n+hello\\n*** End Patch'"

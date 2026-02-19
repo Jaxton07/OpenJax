@@ -55,12 +55,12 @@ openjax-core/src/tools/
 ├── grep_files.rs            # grep_files 工具
 ├── read_file.rs             # read_file 工具
 ├── list_dir.rs              # list_dir 工具
-├── exec_command.rs          # exec_command 工具
+├── shell.rs          # shell 工具
 └── apply_patch.rs           # apply_patch 工具
 ```
 
 **核心组件**：
-- 独立的工具函数：`grep_files()`, `read_file()`, `list_dir()`, `exec_command()`, `apply_patch()`
+- 独立的工具函数：`grep_files()`, `read_file()`, `list_dir()`, `shell()`, `apply_patch()`
 - `ToolRouter`：简单的路由器，分发到各个工具函数
 - `ToolCall`：工具调用结构体（name + args）
 - `ToolRuntimeConfig`：运行时配置（approval_policy + sandbox_mode）
@@ -133,7 +133,7 @@ pub async fn execute(&self, call: &ToolCall, cwd: &Path, config: ToolRuntimeConf
         "read_file" => read_file(call, cwd).await,
         "list_dir" => list_dir(call, cwd).await,
         "grep_files" => grep_files(call, cwd).await,
-        "exec_command" => exec_command(call, cwd, config).await,
+        "shell" => shell(call, cwd, config).await,
         "apply_patch" => apply_patch_tool(call, cwd).await,
         _ => Err(anyhow!("unknown tool: {}", call.name))
     }
@@ -231,7 +231,7 @@ pub async fn run<Rq, Out, T>(&self, request: Rq) -> Result<Out, T> {
 #### OpenJax
 ```rust
 // 在工具函数内部处理批准和沙箱
-pub async fn exec_command(call: &ToolCall, cwd: &Path, config: ToolRuntimeConfig) -> Result<String> {
+pub async fn shell(call: &ToolCall, cwd: &Path, config: ToolRuntimeConfig) -> Result<String> {
     if should_prompt_approval(config.approval_policy, require_escalated)
         && !ask_for_approval(&command)?
     {
@@ -388,7 +388,7 @@ builder.push_spec(create_grep_files_tool(...), true);
 - ✅ `grep_files`：使用 ripgrep 进行高性能搜索
 - ✅ `read_file`：文件读取（支持分页和缩进感知）
 - ✅ `list_dir`：目录列出（支持递归和分页）
-- ✅ `exec_command`：Shell 命令执行（支持批准和沙箱）
+- ✅ `shell`：Shell 命令执行（支持批准和沙箱）
 - ✅ `apply_patch`：补丁解析和应用
 
 ### 与 Codex 的差异

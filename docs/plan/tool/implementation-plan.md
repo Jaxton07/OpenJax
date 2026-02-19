@@ -983,7 +983,7 @@ async fn list_dir_with_depth() {
 
 ### 中期（1-2 月）
 
-1. 重构 exec_command（参考 Codex）
+1. 重构 shell（参考 Codex）
 2. 添加 ToolRegistry
 3. 添加 ToolOrchestrator
 4. 添加 ToolRuntime 抽象

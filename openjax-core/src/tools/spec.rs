@@ -10,13 +10,13 @@ pub struct ToolSpec {
 }
 
 /// 工具配置
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub struct ToolsConfig {
     pub shell_type: ShellToolType,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub enum ShellToolType {
     Default,
     Local,
@@ -24,18 +24,17 @@ pub enum ShellToolType {
     Disabled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub enum ApplyPatchToolType {
     Default,
     Freeform,
-    UnifiedExec,
 }
 
 impl Default for ToolsConfig {
     fn default() -> Self {
         Self {
             shell_type: ShellToolType::Default,
-            apply_patch_tool_type: Some(ApplyPatchToolType::Default),
+            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
         }
     }
 }
@@ -232,11 +231,11 @@ pub fn create_list_dir_spec() -> ToolSpec {
     }
 }
 
-/// 创建 exec_command 工具规范
-pub fn create_exec_command_spec() -> ToolSpec {
+/// 创建 shell 工具规范
+pub fn create_shell_spec() -> ToolSpec {
     ToolSpec {
-        name: "exec_command".to_string(),
-        description: "Execute a shell command with optional approval and sandbox restrictions. Returns exit code, stdout, and stderr. The command runs in a zsh shell with the current working directory set to the workspace root.".to_string(),
+        name: "shell".to_string(),
+        description: "Execute a shell command with optional approval and sandbox restrictions. Returns exit code, stdout, and stderr. The command runs in the detected user shell with the current working directory set to the workspace root.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -265,6 +264,13 @@ pub fn create_exec_command_spec() -> ToolSpec {
     }
 }
 
+/// 兼容旧名称：exec_command
+pub fn create_exec_command_spec() -> ToolSpec {
+    let mut spec = create_shell_spec();
+    spec.name = "exec_command".to_string();
+    spec
+}
+
 /// 创建 apply_patch 工具规范
 pub fn create_apply_patch_spec() -> ToolSpec {
     ToolSpec {
@@ -288,12 +294,15 @@ pub fn create_apply_patch_spec() -> ToolSpec {
 }
 
 /// 构建所有工具规范
-pub fn build_all_specs() -> Vec<ToolSpec> {
+pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
     vec![
         create_grep_files_spec(),
         create_read_file_spec(),
         create_list_dir_spec(),
-        create_exec_command_spec(),
-        create_apply_patch_spec(),
+        create_shell_spec(),
+        match config.apply_patch_tool_type {
+            Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),
+            _ => create_apply_patch_spec(),
+        },
     ]
 }

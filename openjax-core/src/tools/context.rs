@@ -44,6 +44,7 @@ pub struct ToolInvocation {
 pub struct ToolTurnContext {
     pub cwd: PathBuf,
     pub sandbox_policy: SandboxPolicy,
+    pub approval_policy: ApprovalPolicy,
     pub windows_sandbox_level: Option<String>,
 }
 
@@ -52,7 +53,35 @@ impl Default for ToolTurnContext {
         Self {
             cwd: PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
+            approval_policy: ApprovalPolicy::OnRequest,
             windows_sandbox_level: None,
+        }
+    }
+}
+
+/// 批准策略
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalPolicy {
+    AlwaysAsk,
+    OnRequest,
+    Never,
+}
+
+impl ApprovalPolicy {
+    pub fn from_env() -> Self {
+        match std::env::var("OPENJAX_APPROVAL_POLICY").as_deref() {
+            Ok("always_ask") => Self::AlwaysAsk,
+            Ok("on_request") => Self::OnRequest,
+            Ok("never") => Self::Never,
+            _ => Self::OnRequest,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AlwaysAsk => "always_ask",
+            Self::OnRequest => "on_request",
+            Self::Never => "never",
         }
     }
 }

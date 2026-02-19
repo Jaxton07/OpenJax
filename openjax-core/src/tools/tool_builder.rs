@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use crate::tools::context::SandboxPolicy;
+use crate::tools::context::{SandboxPolicy, ApprovalPolicy};
 use crate::tools::registry::{ToolHandler, ToolRegistry};
-use crate::tools::spec::{ToolSpec, ToolsConfig, create_grep_files_spec, create_read_file_spec, create_list_dir_spec, create_exec_command_spec, create_apply_patch_spec};
+use crate::tools::spec::{ToolSpec, ToolsConfig, build_all_specs};
 use crate::tools::handlers::{GrepFilesHandler, ReadFileHandler, ListDirHandler, ShellCommandHandler, ApplyPatchHandler};
 
 /// 工具注册构建器
@@ -43,33 +43,30 @@ impl Default for ToolRegistryBuilder {
 /// 构建默认的工具注册表
 pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
     let mut builder = ToolRegistryBuilder::new();
-    let _config = ToolsConfig::default();
-
-    // 注册 grep_files
+    let config = ToolsConfig::default();
+    
+    for spec in build_all_specs(&config) {
+        let parallel = !spec.name.eq("apply_patch");
+        builder.push_spec(spec, parallel);
+    }
+    
     let grep_handler = Arc::new(GrepFilesHandler);
-    builder.push_spec(create_grep_files_spec(), true);
     builder.register_handler("grep_files", grep_handler);
-
-    // 注册 read_file
+    
     let read_handler = Arc::new(ReadFileHandler);
-    builder.push_spec(create_read_file_spec(), true);
     builder.register_handler("read_file", read_handler);
-
-    // 注册 list_dir
+    
     let list_handler = Arc::new(ListDirHandler);
-    builder.push_spec(create_list_dir_spec(), true);
     builder.register_handler("list_dir", list_handler);
-
-    // 注册 exec_command
-    let exec_handler = Arc::new(ShellCommandHandler);
-    builder.push_spec(create_exec_command_spec(), true);
-    builder.register_handler("exec_command", exec_handler);
-
-    // 注册 apply_patch
+    
+    let shell_handler = Arc::new(ShellCommandHandler);
+    builder.register_handler("shell", shell_handler.clone());
+    // Backward-compatible alias; primary tool name is `shell`.
+    builder.register_handler("exec_command", shell_handler);
+    
     let patch_handler = Arc::new(ApplyPatchHandler);
-    builder.push_spec(create_apply_patch_spec(), true);
     builder.register_handler("apply_patch", patch_handler);
-
+    
     builder.build()
 }
 
@@ -79,6 +76,7 @@ pub fn create_tool_invocation(
     arguments: String,
     cwd: std::path::PathBuf,
     sandbox_policy: SandboxPolicy,
+    approval_policy: ApprovalPolicy,
 ) -> crate::tools::context::ToolInvocation {
     crate::tools::context::ToolInvocation {
         tool_name,
@@ -87,6 +85,7 @@ pub fn create_tool_invocation(
         turn: crate::tools::context::ToolTurnContext {
             cwd,
             sandbox_policy,
+            approval_policy,
             windows_sandbox_level: None,
         },
     }

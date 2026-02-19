@@ -2,6 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+#[allow(unused_imports)]
 use super::types::{PatchHunk, PatchHunkLine, PatchLineKind, PlannedAction};
 use super::matcher::{split_lines_preserve_end, find_subsequence};
 

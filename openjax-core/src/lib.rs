@@ -140,11 +140,17 @@ impl Agent {
         Self {
             next_turn_id: 1,
             model_client,
-            tools: tools::ToolRouter::new(),
+            tools: tools::ToolRouter::with_runtime_config(tools::ToolRuntimeConfig {
+                approval_policy,
+                sandbox_mode,
+                shell_type: tools::ShellType::default(),
+                tools_config: tools::spec::ToolsConfig::default(),
+            }),
             tool_runtime_config: tools::ToolRuntimeConfig {
                 approval_policy,
                 sandbox_mode,
                 shell_type: tools::ShellType::default(),
+                tools_config: tools::spec::ToolsConfig::default(),
             },
             cwd,
             history: Vec::new(),
@@ -503,6 +509,12 @@ impl Agent {
                 "model_request completed"
             );
 
+            debug!(
+                turn_id = turn_id,
+                raw_output = %model_output,
+                "model_raw_output"
+            );
+
             let decision = if let Some(parsed) = parse_model_decision(&model_output) {
                 parsed
             } else {
@@ -542,6 +554,12 @@ impl Agent {
                     "model_repair_request completed"
                 );
 
+                debug!(
+                    turn_id = turn_id,
+                    repaired_output = %repaired_output,
+                    "model_repaired_output"
+                );
+
                 if let Some(parsed) = parse_model_decision(&repaired_output) {
                     parsed
                 } else {
@@ -556,6 +574,16 @@ impl Agent {
             };
 
             let action = decision.action.to_ascii_lowercase();
+            
+            info!(
+                turn_id = turn_id,
+                action = %action,
+                tool = ?decision.tool,
+                args = ?decision.args,
+                message = ?decision.message,
+                "model_decision"
+            );
+            
             if action == "final" {
                 let message = decision
                     .message
@@ -652,9 +680,9 @@ impl Agent {
 
                         events.push(Event::ToolCallCompleted {
                             turn_id,
-                            tool_name,
+                            tool_name: tool_name.to_string(),
                             ok: true,
-                            output,
+                            output: output.to_string(),
                         });
                     }
                     Err(err) => {
@@ -678,9 +706,9 @@ impl Agent {
 
                         events.push(Event::ToolCallCompleted {
                             turn_id,
-                            tool_name,
+                            tool_name: tool_name.to_string(),
                             ok: false,
-                            output: err_text,
+                            output: err_text.to_string(),
                         });
                     }
                 }
@@ -803,23 +831,32 @@ fn build_planner_input(
     format!(
         "You are OpenJax's planning layer.\n\
 Return ONLY valid JSON with one of two shapes:\n\
-1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|exec_command|apply_patch\",\"args\":{{...}}}}\n\
+1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch\",\"args\":{{...}}}}\n\
 2) Final answer: {{\"action\":\"final\",\"message\":\"...\"}}\n\
-\
+\n\
 Rules:\n\
 - At most one action per response.\n\
 - You can call tools up to {remaining_calls} more times this turn.\n\
 - If task can be answered now, return final.\n\
-- For exec_command, put shell command in args.cmd.\n\
-- For apply_patch, put full patch text in args.patch.\n\
+- For shell, put shell command in args.cmd.\n\
+- For apply_patch, use this EXACT format (note the space prefix for context lines):\n\
+  *** Begin Patch\n\
+  *** Update File: <filepath>\n\
+  @@\n\
+   context line (MUST start with space)\n\
+  -line to remove (starts with -)\n\
+  +line to add (starts with +)\n\
+  *** End Patch\n\
+  Operations: *** Add File:, *** Update File:, *** Delete File:, *** Move File: from -> to\n\
+  IMPORTANT: In Update File, every line after @@ MUST start with space (context), - (remove), or + (add).\n\
 - IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
 - If a tool was already called and returned results, use those results to decide the next action.\n\
 - Only call a tool again if you need different arguments or if the previous call failed.\n\
-\
+\n\
 Conversation history (most recent last):\n{history_context}\n\
-\
+\n\
 User request:\n{user_input}\n\
-\
+\n\
 Tool execution history:\n{tool_context}\n"
     )
 }
@@ -829,7 +866,7 @@ fn build_json_repair_prompt(previous_output: &str) -> String {
         "Your previous response did not match the required JSON schema.\n\
 Return ONLY valid JSON. Do not include markdown, thoughts, or extra text.\n\
 Allowed outputs:\n\
-1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|exec_command|apply_patch\",\"args\":{{...}}}}\n\
+1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch\",\"args\":{{...}}}}\n\
 2) {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Previous response:\n{previous_output}\n"

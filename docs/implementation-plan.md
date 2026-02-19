@@ -123,7 +123,7 @@
    - `read_file`
    - `list_dir`
    - `grep_files`
-3. 实现 `exec_command`：
+3. 实现 `shell`：
    - 同步/异步执行
    - stdout/stderr 捕获
    - 超时控制
