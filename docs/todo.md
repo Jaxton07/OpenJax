@@ -2,8 +2,10 @@
 
 1. 查看日志中工具调用了三次的原因 [x] 
 2. 对比codex 的tool 实现，看看跟我们有啥区别，排查patch_tool 的失败原因
-3. 添加Freeform 工具支持
-4. 拆分openjax-core/src/tools/README.md
+3. 添加Freeform 工具支持 [x]
+4. 拆分openjax-core/src/tools/README.md [x]
+
+5. 优化日志，增加用户输入信息
 
 
 
