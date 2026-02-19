@@ -1,11 +1,11 @@
 use anyhow::{Result, anyhow};
 use std::path::Path;
 
-use crate::tools::ToolCall;
-use super::parser::parse_apply_patch;
-use super::heredoc::normalize_patch_arg;
-use super::planner::plan_patch_actions;
 use super::applier::apply_patch_actions;
+use super::heredoc::normalize_patch_arg;
+use super::parser::parse_apply_patch;
+use super::planner::plan_patch_actions;
+use crate::tools::ToolCall;
 
 pub async fn apply_patch_tool(call: &ToolCall, cwd: &Path) -> Result<String> {
     let patch_arg = call

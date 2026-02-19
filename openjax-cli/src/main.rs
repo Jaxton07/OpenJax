@@ -1,5 +1,5 @@
 use clap::Parser;
-use openjax_core::{init_logger, Agent, Config};
+use openjax_core::{Agent, Config, init_logger};
 use openjax_protocol::{Event, Op};
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
@@ -32,7 +32,7 @@ fn ensure_local_config() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     let config_dir = cwd.join(".openjax").join("config");
     let config_path = config_dir.join("config.toml");
-    
+
     if config_path.exists() {
         return Some(config_path);
     }
@@ -41,7 +41,7 @@ fn ensure_local_config() -> Option<PathBuf> {
         eprintln!("[config] failed to create config dir: {}", e);
         return None;
     }
-    
+
     match std::fs::write(&config_path, DEFAULT_CONFIG) {
         Ok(()) => {
             println!("[config] created default config: {}", config_path.display());
@@ -145,7 +145,9 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut rl = Editor::<(), DefaultHistory>::new()?;
-    let history_path = std::env::current_dir()?.join(".openjax").join("history.txt");
+    let history_path = std::env::current_dir()?
+        .join(".openjax")
+        .join("history.txt");
 
     if let Some(dir) = history_path.parent() {
         if !dir.exists() {
@@ -224,7 +226,10 @@ fn print_event(event: &Event) {
         Event::TurnCompleted { turn_id } => println!("[turn:{turn_id}] completed"),
         Event::ShutdownComplete => println!("shutdown complete"),
         // Multi-agent events (预留扩展)
-        Event::AgentSpawned { parent_thread_id, new_thread_id } => {
+        Event::AgentSpawned {
+            parent_thread_id,
+            new_thread_id,
+        } => {
             println!("[agent] spawned: parent={parent_thread_id:?} new={new_thread_id:?}")
         }
         Event::AgentStatusChanged { thread_id, status } => {

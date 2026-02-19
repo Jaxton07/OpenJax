@@ -1,6 +1,6 @@
+use crate::tools::registry::ToolHandler;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::tools::registry::ToolHandler;
 
 /// 动态工具管理器
 pub struct DynamicToolManager {

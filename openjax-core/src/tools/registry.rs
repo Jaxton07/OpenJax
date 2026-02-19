@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// 工具类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -61,15 +61,20 @@ impl ToolRegistry {
     }
 
     /// 分发工具调用
-    pub async fn dispatch(&self, invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError> {
+    pub async fn dispatch(
+        &self,
+        invocation: ToolInvocation,
+    ) -> Result<ToolOutput, FunctionCallError> {
         let tool_name = invocation.tool_name.clone();
-        let handler = self.handler(&tool_name)
+        let handler = self
+            .handler(&tool_name)
             .ok_or_else(|| FunctionCallError::ToolNotFound(tool_name.clone()))?;
 
         if !handler.matches_kind(&invocation.payload) {
-            return Err(FunctionCallError::InvalidPayload(
-                format!("tool {} does not support payload type", tool_name)
-            ));
+            return Err(FunctionCallError::InvalidPayload(format!(
+                "tool {} does not support payload type",
+                tool_name
+            )));
         }
 
         handler.handle(invocation).await

@@ -15,7 +15,7 @@ pub fn extract_heredoc(raw: &str) -> Option<String> {
     if !trimmed.starts_with("<<") {
         return None;
     }
-    
+
     let rest = &trimmed[2..];
     let (delimiter, content_start) = if rest.starts_with("'") {
         let end_quote = rest[1..].find('\'')?;
@@ -33,16 +33,16 @@ pub fn extract_heredoc(raw: &str) -> Option<String> {
         let content_start = &rest[space_pos..];
         (delimiter, content_start)
     };
-    
+
     let content_start = content_start.trim_start_matches(|c: char| c.is_whitespace() && c != '\n');
     if !content_start.starts_with('\n') {
         return None;
     }
-    
+
     let content = &content_start[1..];
     let end_marker = format!("\n{}", delimiter);
     let end_pos = content.find(&end_marker)?;
-    
+
     Some(content[..end_pos].to_string())
 }
 
@@ -55,15 +55,22 @@ mod tests {
         let raw = "<<'EOF'\n*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch\nEOF";
         let result = extract_heredoc(raw);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch");
+        assert_eq!(
+            result.unwrap(),
+            "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch"
+        );
     }
 
     #[test]
     fn extract_heredoc_double_quote() {
-        let raw = "<<\"EOF\"\n*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch\nEOF";
+        let raw =
+            "<<\"EOF\"\n*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch\nEOF";
         let result = extract_heredoc(raw);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch");
+        assert_eq!(
+            result.unwrap(),
+            "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch"
+        );
     }
 
     #[test]
@@ -71,7 +78,10 @@ mod tests {
         let raw = "<<EOF\n*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch\nEOF";
         let result = extract_heredoc(raw);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch");
+        assert_eq!(
+            result.unwrap(),
+            "*** Begin Patch\n*** Add File: test.txt\n+content\n*** End Patch"
+        );
     }
 
     #[test]

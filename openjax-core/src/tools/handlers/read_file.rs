@@ -6,9 +6,9 @@ use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::debug;
 
-use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
-use crate::tools::registry::{ToolHandler, ToolKind};
+use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
+use crate::tools::registry::{ToolHandler, ToolKind};
 
 const READ_MAX_LINE_LENGTH: usize = 500;
 const READ_TAB_WIDTH: usize = 4;
@@ -74,11 +74,21 @@ impl LineRecord {
     }
 }
 
-fn read_default_offset() -> usize { 1 }
-fn read_default_limit() -> usize { 2000 }
-fn read_default_max_levels() -> usize { 0 }
-fn read_default_include_siblings() -> bool { false }
-fn read_default_include_header() -> bool { true }
+fn read_default_offset() -> usize {
+    1
+}
+fn read_default_limit() -> usize {
+    2000
+}
+fn read_default_max_levels() -> usize {
+    0
+}
+fn read_default_include_siblings() -> bool {
+    false
+}
+fn read_default_include_header() -> bool {
+    true
+}
 
 pub struct ReadFileHandler;
 
@@ -106,11 +116,10 @@ impl ToolHandler for ReadFileHandler {
             "read_file parsing arguments"
         );
 
-        let args: ReadFileArgs = serde_json::from_str(&arguments)
-            .map_err(|e| {
-                debug!(error = %e, raw_arguments = %arguments, "read_file failed to parse arguments");
-                FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
-            })?;
+        let args: ReadFileArgs = serde_json::from_str(&arguments).map_err(|e| {
+            debug!(error = %e, raw_arguments = %arguments, "read_file failed to parse arguments");
+            FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
+        })?;
 
         debug!(
             file_path = %args.file_path,
@@ -137,11 +146,13 @@ impl ToolHandler for ReadFileHandler {
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
 
         let collected = match args.mode {
-            ReadMode::Slice => read_file_slice(&path, args.offset, args.limit).await
+            ReadMode::Slice => read_file_slice(&path, args.offset, args.limit)
+                .await
                 .map_err(|e| FunctionCallError::Internal(e.to_string()))?,
             ReadMode::Indentation => {
                 let indentation = args.indentation.unwrap_or_default();
-                read_file_indentation(&path, args.offset, args.limit, indentation).await
+                read_file_indentation(&path, args.offset, args.limit, indentation)
+                    .await
                     .map_err(|e| FunctionCallError::Internal(e.to_string()))?
             }
         };
@@ -165,10 +176,14 @@ async fn read_file_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec
 
     loop {
         buffer.clear();
-        let bytes_read = reader.read_until(b'\n', &mut buffer).await
+        let bytes_read = reader
+            .read_until(b'\n', &mut buffer)
+            .await
             .with_context(|| "failed to read file")?;
 
-        if bytes_read == 0 { break; }
+        if bytes_read == 0 {
+            break;
+        }
 
         if buffer.last() == Some(&b'\n') {
             buffer.pop();
@@ -179,8 +194,12 @@ async fn read_file_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec
 
         seen += 1;
 
-        if seen < offset { continue; }
-        if collected.len() == limit { break; }
+        if seen < offset {
+            continue;
+        }
+        if collected.len() == limit {
+            break;
+        }
 
         let formatted = format_read_line(&buffer);
         collected.push(format!("L{seen}: {formatted}"));
@@ -245,8 +264,7 @@ async fn read_file_indentation(
                 i -= 1;
 
                 if effective_indents[iu] == min_indent && !options.include_siblings {
-                    let allow_header_comment =
-                        options.include_header && collected[iu].is_comment();
+                    let allow_header_comment = options.include_header && collected[iu].is_comment();
                     let can_take_line = allow_header_comment || i_counter_min_indent == 0;
 
                     if can_take_line {
@@ -258,7 +276,9 @@ async fn read_file_indentation(
                     }
                 }
 
-                if out.len() >= final_limit { break; }
+                if out.len() >= final_limit {
+                    break;
+                }
             } else {
                 i = -1;
             }
@@ -284,12 +304,15 @@ async fn read_file_indentation(
             }
         }
 
-        if progressed == 0 { break; }
+        if progressed == 0 {
+            break;
+        }
     }
 
     trim_empty_lines(&mut out);
 
-    Ok(out.into_iter()
+    Ok(out
+        .into_iter()
         .map(|record| format!("L{}: {}", record.number, record.display))
         .collect())
 }
@@ -306,10 +329,14 @@ async fn collect_file_lines(path: &Path) -> Result<Vec<LineRecord>> {
 
     loop {
         buffer.clear();
-        let bytes_read = reader.read_until(b'\n', &mut buffer).await
+        let bytes_read = reader
+            .read_until(b'\n', &mut buffer)
+            .await
             .with_context(|| "failed to read file")?;
 
-        if bytes_read == 0 { break; }
+        if bytes_read == 0 {
+            break;
+        }
 
         if buffer.last() == Some(&b'\n') {
             buffer.pop();
@@ -322,7 +349,12 @@ async fn collect_file_lines(path: &Path) -> Result<Vec<LineRecord>> {
         let raw = String::from_utf8_lossy(&buffer).into_owned();
         let indent = measure_indent(&raw);
         let display = format_read_line(&buffer);
-        lines.push(LineRecord { number, raw, display, indent });
+        lines.push(LineRecord {
+            number,
+            raw,
+            display,
+            indent,
+        });
     }
 
     Ok(lines)

@@ -39,7 +39,9 @@ pub const MAX_AGENT_DEPTH: i32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Op {
-    UserTurn { input: String },
+    UserTurn {
+        input: String,
+    },
     /// Spawn a new sub-agent (预留扩展)
     SpawnAgent {
         input: String,

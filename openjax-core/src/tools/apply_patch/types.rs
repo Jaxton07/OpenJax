@@ -2,11 +2,26 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub enum PatchOperation {
-    AddFile { path: String, lines: Vec<String> },
-    DeleteFile { path: String },
-    UpdateFile { path: String, move_to: Option<String>, hunks: Vec<PatchHunk> },
-    MoveFile { from: String, to: String },
-    RenameFile { from: String, to: String },
+    AddFile {
+        path: String,
+        lines: Vec<String>,
+    },
+    DeleteFile {
+        path: String,
+    },
+    UpdateFile {
+        path: String,
+        move_to: Option<String>,
+        hunks: Vec<PatchHunk>,
+    },
+    MoveFile {
+        from: String,
+        to: String,
+    },
+    RenameFile {
+        from: String,
+        to: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -42,17 +57,21 @@ impl PlannedAction {
             Self::Create { path, .. }
             | Self::Update { path, .. }
             | Self::Delete { path }
-            | Self::Move { to: path, .. } => {
-                path.as_path()
-            }
+            | Self::Move { to: path, .. } => path.as_path(),
         }
     }
 
     pub fn summary(&self, cwd: &Path) -> String {
         match self {
-            Self::Create { path, .. } => format!("ADD {}", super::matcher::display_rel_path(cwd, path)),
-            Self::Update { path, .. } => format!("UPDATE {}", super::matcher::display_rel_path(cwd, path)),
-            Self::Delete { path } => format!("DELETE {}", super::matcher::display_rel_path(cwd, path)),
+            Self::Create { path, .. } => {
+                format!("ADD {}", super::matcher::display_rel_path(cwd, path))
+            }
+            Self::Update { path, .. } => {
+                format!("UPDATE {}", super::matcher::display_rel_path(cwd, path))
+            }
+            Self::Delete { path } => {
+                format!("DELETE {}", super::matcher::display_rel_path(cwd, path))
+            }
             Self::Move { from, to } => {
                 format!(
                     "MOVE {} -> {}",

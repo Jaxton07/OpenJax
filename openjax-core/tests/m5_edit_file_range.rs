@@ -49,7 +49,11 @@ async fn edit_file_range_replaces_lines_successfully() {
     );
 
     let input = "tool:edit_file_range file_path=todo.txt start_line=2 end_line=3 new_text='line2-updated\nline3-updated'";
-    let events = agent.submit(Op::UserTurn { input: input.to_string() }).await;
+    let events = agent
+        .submit(Op::UserTurn {
+            input: input.to_string(),
+        })
+        .await;
 
     match tool_completion(&events, "edit_file_range") {
         Event::ToolCallCompleted { ok, output, .. } => {
@@ -77,7 +81,11 @@ async fn edit_file_range_deletes_lines_with_empty_text() {
     );
 
     let input = "tool:edit_file_range file_path=todo.txt start_line=2 end_line=3 new_text=''";
-    let events = agent.submit(Op::UserTurn { input: input.to_string() }).await;
+    let events = agent
+        .submit(Op::UserTurn {
+            input: input.to_string(),
+        })
+        .await;
 
     match tool_completion(&events, "edit_file_range") {
         Event::ToolCallCompleted { ok, .. } => {
@@ -104,7 +112,11 @@ async fn edit_file_range_rejects_invalid_range() {
     );
 
     let input = "tool:edit_file_range file_path=todo.txt start_line=3 end_line=4 new_text='x'";
-    let events = agent.submit(Op::UserTurn { input: input.to_string() }).await;
+    let events = agent
+        .submit(Op::UserTurn {
+            input: input.to_string(),
+        })
+        .await;
 
     match tool_completion(&events, "edit_file_range") {
         Event::ToolCallCompleted { ok, output, .. } => {

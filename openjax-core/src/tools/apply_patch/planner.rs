@@ -2,9 +2,9 @@ use anyhow::{Context, Result, anyhow};
 use std::collections::HashSet;
 use std::path::Path;
 
-use super::types::{PatchOperation, PlannedAction};
 use super::applier::apply_hunks_to_content;
 use super::matcher::display_rel_path;
+use super::types::{PatchOperation, PlannedAction};
 
 pub async fn plan_patch_actions(
     cwd: &Path,
@@ -72,7 +72,11 @@ pub async fn plan_patch_actions(
                     to: to_resolved,
                 });
             }
-            PatchOperation::UpdateFile { path, move_to, hunks } => {
+            PatchOperation::UpdateFile {
+                path,
+                move_to,
+                hunks,
+            } => {
                 let resolved = crate::tools::resolve_workspace_path_for_write(cwd, path)?;
                 if !seen_paths.insert(resolved.clone()) {
                     return Err(anyhow!(
@@ -86,12 +90,14 @@ pub async fn plan_patch_actions(
                         display_rel_path(cwd, &resolved)
                     ));
                 }
-                let original = tokio::fs::read_to_string(&resolved).await
+                let original = tokio::fs::read_to_string(&resolved)
+                    .await
                     .with_context(|| format!("failed to read file: {}", resolved.display()))?;
                 let content = apply_hunks_to_content(&original, hunks)?;
-                
+
                 if let Some(move_to_path) = move_to {
-                    let move_to_resolved = crate::tools::resolve_workspace_path_for_write(cwd, &move_to_path)?;
+                    let move_to_resolved =
+                        crate::tools::resolve_workspace_path_for_write(cwd, &move_to_path)?;
                     if !seen_paths.insert(move_to_resolved.clone()) {
                         return Err(anyhow!(
                             "invalid patch: duplicated file operation target `{}`",
@@ -121,8 +127,8 @@ pub async fn plan_patch_actions(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{PatchHunk, PatchHunkLine, PatchLineKind};
+    use super::*;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -151,7 +157,9 @@ mod tests {
         let temp = TempDir::new().expect("create tempdir");
         let cwd = temp.path();
         let file_path = cwd.join("old.txt");
-        tokio::fs::write(&file_path, "content").await.expect("write file");
+        tokio::fs::write(&file_path, "content")
+            .await
+            .expect("write file");
 
         let operations = vec![PatchOperation::DeleteFile {
             path: "old.txt".to_string(),
@@ -172,7 +180,9 @@ mod tests {
         let temp = TempDir::new().expect("create tempdir");
         let cwd = temp.path();
         let from_path = cwd.join("old.txt");
-        tokio::fs::write(&from_path, "content").await.expect("write file");
+        tokio::fs::write(&from_path, "content")
+            .await
+            .expect("write file");
 
         let operations = vec![PatchOperation::MoveFile {
             from: "old.txt".to_string(),
@@ -195,7 +205,9 @@ mod tests {
         let temp = TempDir::new().expect("create tempdir");
         let cwd = temp.path();
         let file_path = cwd.join("test.txt");
-        tokio::fs::write(&file_path, "line1\nline2\nline3\n").await.expect("write file");
+        tokio::fs::write(&file_path, "line1\nline2\nline3\n")
+            .await
+            .expect("write file");
 
         let operations = vec![PatchOperation::UpdateFile {
             path: "test.txt".to_string(),
@@ -203,10 +215,22 @@ mod tests {
             hunks: vec![PatchHunk {
                 context: None,
                 lines: vec![
-                    PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
-                    PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
-                    PatchHunkLine { kind: PatchLineKind::Add, text: "line2-updated".to_string() },
-                    PatchHunkLine { kind: PatchLineKind::Context, text: "line3".to_string() },
+                    PatchHunkLine {
+                        kind: PatchLineKind::Context,
+                        text: "line1".to_string(),
+                    },
+                    PatchHunkLine {
+                        kind: PatchLineKind::Remove,
+                        text: "line2".to_string(),
+                    },
+                    PatchHunkLine {
+                        kind: PatchLineKind::Add,
+                        text: "line2-updated".to_string(),
+                    },
+                    PatchHunkLine {
+                        kind: PatchLineKind::Context,
+                        text: "line3".to_string(),
+                    },
                 ],
             }],
         }];
@@ -241,7 +265,12 @@ mod tests {
 
         let result = plan_patch_actions(cwd, &operations).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("duplicated file operation target"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("duplicated file operation target")
+        );
     }
 
     #[tokio::test]
@@ -249,7 +278,9 @@ mod tests {
         let temp = TempDir::new().expect("create tempdir");
         let cwd = temp.path();
         let file_path = cwd.join("test.txt");
-        tokio::fs::write(&file_path, "content").await.expect("write file");
+        tokio::fs::write(&file_path, "content")
+            .await
+            .expect("write file");
 
         let operations = vec![PatchOperation::AddFile {
             path: "test.txt".to_string(),
@@ -258,7 +289,12 @@ mod tests {
 
         let result = plan_patch_actions(cwd, &operations).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("add file target already exists"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("add file target already exists")
+        );
     }
 
     #[tokio::test]
@@ -274,6 +310,11 @@ mod tests {
 
         let result = plan_patch_actions(cwd, &operations).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("update file target does not exist"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("update file target does not exist")
+        );
     }
 }

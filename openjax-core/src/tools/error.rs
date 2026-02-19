@@ -19,4 +19,3 @@ impl From<anyhow::Error> for FunctionCallError {
         FunctionCallError::Internal(err.to_string())
     }
 }
-

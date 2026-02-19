@@ -1,12 +1,25 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::approval::{ApprovalHandler, StdinApprovalHandler};
 
 /// 工具调用载荷
 #[derive(Debug, Clone)]
 pub enum ToolPayload {
-    Function { arguments: String },
-    Custom { input: String },
-    LocalShell { params: ShellToolCallParams },
-    Mcp { server: String, tool: String, raw_arguments: String },
+    Function {
+        arguments: String,
+    },
+    Custom {
+        input: String,
+    },
+    LocalShell {
+        params: ShellToolCallParams,
+    },
+    Mcp {
+        server: String,
+        tool: String,
+        raw_arguments: String,
+    },
 }
 
 /// Shell 工具调用参数
@@ -19,8 +32,13 @@ pub struct ShellToolCallParams {
 /// 工具输出
 #[derive(Debug, Clone)]
 pub enum ToolOutput {
-    Function { body: FunctionCallOutputBody, success: Option<bool> },
-    Mcp { result: Result<McpToolResult, String> },
+    Function {
+        body: FunctionCallOutputBody,
+        success: Option<bool>,
+    },
+    Mcp {
+        result: Result<McpToolResult, String>,
+    },
 }
 
 /// 函数调用输出体
@@ -31,7 +49,7 @@ pub enum FunctionCallOutputBody {
 }
 
 /// 工具调用上下文
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ToolInvocation {
     pub tool_name: String,
     pub call_id: String,
@@ -39,12 +57,24 @@ pub struct ToolInvocation {
     pub turn: ToolTurnContext,
 }
 
+impl std::fmt::Debug for ToolInvocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolInvocation")
+            .field("tool_name", &self.tool_name)
+            .field("call_id", &self.call_id)
+            .field("payload", &self.payload)
+            .field("turn", &self.turn)
+            .finish()
+    }
+}
+
 /// 工具轮次上下文
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ToolTurnContext {
     pub cwd: PathBuf,
     pub sandbox_policy: SandboxPolicy,
     pub approval_policy: ApprovalPolicy,
+    pub approval_handler: Arc<dyn ApprovalHandler>,
     pub windows_sandbox_level: Option<String>,
 }
 
@@ -54,8 +84,20 @@ impl Default for ToolTurnContext {
             cwd: PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
             approval_policy: ApprovalPolicy::OnRequest,
+            approval_handler: Arc::new(StdinApprovalHandler::new()),
             windows_sandbox_level: None,
         }
+    }
+}
+
+impl std::fmt::Debug for ToolTurnContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolTurnContext")
+            .field("cwd", &self.cwd)
+            .field("sandbox_policy", &self.sandbox_policy)
+            .field("approval_policy", &self.approval_policy)
+            .field("windows_sandbox_level", &self.windows_sandbox_level)
+            .finish()
     }
 }
 

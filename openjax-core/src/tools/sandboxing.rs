@@ -9,7 +9,11 @@ impl SandboxManager {
     }
 
     /// 检查是否需要批准
-    pub fn requires_approval(&self, sandbox_policy: SandboxPolicy, require_escalated: bool) -> bool {
+    pub fn requires_approval(
+        &self,
+        sandbox_policy: SandboxPolicy,
+        require_escalated: bool,
+    ) -> bool {
         match sandbox_policy {
             SandboxPolicy::None => false,
             SandboxPolicy::ReadOnly => false,

@@ -1,4 +1,4 @@
-use crate::tools::apply_patch::{parse_apply_patch, plan_patch_actions, apply_patch_actions};
+use crate::tools::apply_patch::{apply_patch_actions, parse_apply_patch, plan_patch_actions};
 use crate::tools::context::ToolTurnContext;
 use crate::tools::error::FunctionCallError;
 use std::path::Path;
@@ -18,27 +18,23 @@ pub async fn intercept_apply_patch(
     let patch_input = command[1..].join(" ");
 
     match parse_apply_patch(&patch_input) {
-        Ok(operations) => {
-            match plan_patch_actions(cwd, &operations).await {
-                Ok(actions) => {
-                    match apply_patch_actions(&actions).await {
-                        Ok(_) => {
-                            tracing::warn!(
-                                "apply_patch was requested via shell. Use apply_patch tool instead."
-                            );
-                            let summary = actions
-                                .iter()
-                                .map(|action| action.summary(cwd))
-                                .collect::<Vec<String>>()
-                                .join("\n");
-                            Ok(Some(format!("patch applied successfully\n{summary}")))
-                        }
-                        Err(e) => Err(FunctionCallError::Internal(e.to_string())),
-                    }
+        Ok(operations) => match plan_patch_actions(cwd, &operations).await {
+            Ok(actions) => match apply_patch_actions(&actions).await {
+                Ok(_) => {
+                    tracing::warn!(
+                        "apply_patch was requested via shell. Use apply_patch tool instead."
+                    );
+                    let summary = actions
+                        .iter()
+                        .map(|action| action.summary(cwd))
+                        .collect::<Vec<String>>()
+                        .join("\n");
+                    Ok(Some(format!("patch applied successfully\n{summary}")))
                 }
                 Err(e) => Err(FunctionCallError::Internal(e.to_string())),
-            }
-        }
+            },
+            Err(e) => Err(FunctionCallError::Internal(e.to_string())),
+        },
         Err(e) => Err(FunctionCallError::Internal(e.to_string())),
     }
 }
@@ -61,7 +57,9 @@ mod tests {
             &ToolTurnContext::default(),
             "test-call-id",
             "test-tool",
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.is_none());
     }
@@ -84,7 +82,9 @@ mod tests {
             &ToolTurnContext::default(),
             "test-call-id",
             "test-tool",
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.is_some());
     }
@@ -107,7 +107,9 @@ mod tests {
             &ToolTurnContext::default(),
             "test-call-id",
             "test-tool",
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.is_some());
     }

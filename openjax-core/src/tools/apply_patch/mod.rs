@@ -1,15 +1,15 @@
-pub mod types;
-pub mod parser;
+pub mod applier;
 pub mod heredoc;
 pub mod matcher;
-pub mod applier;
+pub mod parser;
 pub mod planner;
 pub mod tool;
+pub mod types;
 
-pub use types::{PatchOperation, PatchHunk, PatchHunkLine, PatchLineKind, PlannedAction};
+pub use applier::{apply_hunks_to_content, apply_patch_actions};
+pub use heredoc::{extract_heredoc, normalize_patch_arg};
+pub use matcher::{display_rel_path, find_subsequence, seek_sequence, split_lines_preserve_end};
 pub use parser::parse_apply_patch;
-pub use heredoc::{normalize_patch_arg, extract_heredoc};
-pub use matcher::{split_lines_preserve_end, find_subsequence, seek_sequence, display_rel_path};
-pub use applier::{apply_patch_actions, apply_hunks_to_content};
 pub use planner::plan_patch_actions;
 pub use tool::apply_patch_tool;
+pub use types::{PatchHunk, PatchHunkLine, PatchLineKind, PatchOperation, PlannedAction};

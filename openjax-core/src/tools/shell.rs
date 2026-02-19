@@ -54,8 +54,8 @@ pub struct Shell {
 impl Shell {
     pub fn new(shell_type: ShellType) -> Result<Self> {
         let executable = shell_type.executable_name();
-        let shell_path = which(executable)
-            .map_err(|_| anyhow::anyhow!("{} not found", executable))?;
+        let shell_path =
+            which(executable).map_err(|_| anyhow::anyhow!("{} not found", executable))?;
 
         Ok(Self {
             shell_type,

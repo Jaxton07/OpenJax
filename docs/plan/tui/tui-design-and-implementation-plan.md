@@ -146,8 +146,8 @@ openjax-tui/
 
 1. `zsh -lc "cargo build"`
 2. `zsh -lc "cargo test"`
-3. `zsh -lc "cargo test -p openjax-core m3_sandbox"`
-4. `zsh -lc "cargo test -p openjax-core m4_apply_patch"`
+3. `zsh -lc "cargo test -p openjax-core --test m3_sandbox"`
+4. `zsh -lc "cargo test -p openjax-core --test m4_apply_patch"`
 5. `zsh -lc "cargo test -p openjax-cli"`
 
 ### 测试新增
@@ -286,9 +286,16 @@ openjax-tui/
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
 4. 关键回归分组：
-   - `cargo test -p openjax-core m3_sandbox`
-   - `cargo test -p openjax-core m4_apply_patch`
+   - `cargo test -p openjax-core --test m3_sandbox`
+   - `cargo test -p openjax-core --test m4_apply_patch`
    - `cargo test -p openjax-cli`
+
+## 6.4 构建告警治理（新增）
+
+1. 每个阶段结束前执行 `cargo build` 与 `cargo test`，若出现 warning 必须在当阶段修复，不滚入下一阶段。
+2. 对“已知预留但暂未使用”的字段、参数、局部变量，优先通过重命名为下划线前缀（如 `_parent_thread_id`、`_source`）消除告警。
+3. 不使用 `#[allow(...)]` 大范围压制告警，除非有明确注释说明且限定到最小作用域。
+4. CI 与本地验收保持一致：以 `clippy -D warnings` 作为告警零容忍门槛，避免 warning 越积越多。
 
 ## 7. 风险与缓解
 
@@ -324,3 +331,60 @@ openjax-tui/
 3. 为 Agent 增加 `submit_with_sink`，并以此实现原 `submit`。
 4. 新建 `openjax-tui` crate 的最小骨架和 `m1_app_state` 测试。
 5. 完成 workspace 构建与测试回归，产出首轮验收记录。
+
+## 11. 第一阶段执行记录（2026-02-19）
+
+### 11.1 执行命令与结果
+
+1. `zsh -lc "cargo build"`：通过（存在 2 条 warning，见 11.2）。
+2. `zsh -lc "cargo test"`：通过（workspace 全量测试通过）。
+3. `zsh -lc "cargo test -p openjax-core --test m3_sandbox"`：通过（5 passed）。
+4. `zsh -lc "cargo test -p openjax-core --test m4_apply_patch"`：通过（3 passed）。
+5. `zsh -lc "cargo test -p openjax-cli"`：通过（2 passed）。
+
+### 11.2 发现的问题
+
+1. 原计划中的 `cargo test -p openjax-core m3_sandbox` / `m4_apply_patch` 会被解释为测试名过滤条件，在当前代码下可能出现 `0 tests`，已修正为 `--test` 形式。
+2. 当前存在构建 warning（`openjax-core/src/tools/router_impl.rs`）：
+   - 未使用参数 `config`
+   - 未读取字段 `config`
+3. 按“构建告警治理”要求，进入第二阶段前应先清理上述 warning。
+
+### 11.3 第一阶段结论
+
+1. 第一阶段“基线与护栏”中的基线验证已完成并可复现。
+2. 第二阶段可开始，但建议先完成 warning 清理以满足告警门禁要求。
+
+## 12. 第二阶段执行记录（2026-02-19）
+
+### 12.1 已完成改造
+
+1. 审批抽象落地：新增 `openjax-core/src/approval.rs`，定义 `ApprovalHandler`、`ApprovalRequest`、`StdinApprovalHandler`。
+2. 审批链路解耦：工具审批不再在 core 里直接读取 stdin，改为通过 `ToolTurnContext` 注入 `ApprovalHandler` 执行审批决策。
+3. Agent 注入能力：`Agent` 新增 `set_approval_handler(...)`，允许 CLI/TUI 在运行时替换审批实现。
+4. 事件输出接口：新增 `submit_with_sink(op, sink)`，在保留 `submit` 的前提下提供事件 sink 接口。
+5. 兼容性修复：审批拒绝错误改为非重试错误，避免在重试链路中重复弹审批。
+6. 构建告警清理：已清理 `openjax-core/src/tools/router_impl.rs` 的未使用参数/字段告警。
+
+### 12.2 新增测试
+
+1. `openjax-core/tests/m5_approval_handler.rs`
+   - 覆盖 `AlwaysAsk / OnRequest / Never` 三个策略分支。
+   - 覆盖批准与拒绝路径。
+2. `openjax-core/tests/m6_submit_stream.rs`
+   - 验证 `submit_with_sink` 发射顺序与返回事件顺序一致。
+3. `openjax-core/tests/m7_backward_compat_submit.rs`
+   - 验证 `submit` 仍返回完整回合事件序列。
+
+### 12.3 验证结果
+
+1. `zsh -lc "cargo fmt && cargo build -p openjax-core -p openjax-cli"`：通过。
+2. `zsh -lc "cargo test -p openjax-core"`：通过。
+3. `zsh -lc "cargo test -p openjax-cli"`：通过。
+4. `zsh -lc "cargo test --workspace"`：通过。
+5. `zsh -lc "cargo clippy --workspace --all-targets -- -D warnings"`：未通过（当前仓库存在既有 lint 债务，需单独治理）。
+
+### 12.4 第二阶段结论
+
+1. 第二阶段核心改造已可用，且 `openjax-cli` 回归通过。
+2. 下一步可进入第三阶段：创建 `openjax-tui` MVP 骨架与基础状态/渲染测试。

@@ -7,9 +7,9 @@ use std::fs::FileType;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
-use crate::tools::registry::{ToolHandler, ToolKind};
+use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
+use crate::tools::registry::{ToolHandler, ToolKind};
 
 const LIST_DIR_MAX_ENTRY_LENGTH: usize = 500;
 const LIST_DIR_INDENTATION_SPACES: usize = 2;
@@ -55,9 +55,15 @@ impl From<&FileType> for DirEntryKind {
     }
 }
 
-fn list_dir_default_offset() -> usize { 1 }
-fn list_dir_default_limit() -> usize { 25 }
-fn list_dir_default_depth() -> usize { 2 }
+fn list_dir_default_offset() -> usize {
+    1
+}
+fn list_dir_default_limit() -> usize {
+    25
+}
+fn list_dir_default_depth() -> usize {
+    2
+}
 
 pub struct ListDirHandler;
 
@@ -79,8 +85,9 @@ impl ToolHandler for ListDirHandler {
             }
         };
 
-        let args: ListDirArgs = serde_json::from_str(&arguments)
-            .map_err(|e| FunctionCallError::Internal(format!("failed to parse arguments: {}", e)))?;
+        let args: ListDirArgs = serde_json::from_str(&arguments).map_err(|e| {
+            FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
+        })?;
 
         if args.offset == 0 {
             return Err(FunctionCallError::RespondToModel(
@@ -104,7 +111,8 @@ impl ToolHandler for ListDirHandler {
         let path = crate::tools::resolve_workspace_path(&turn.cwd, &rel_path)
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
 
-        let entries = list_dir_slice(&path, args.offset, args.limit, args.depth).await
+        let entries = list_dir_slice(&path, args.offset, args.limit, args.depth)
+            .await
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
         let mut output = Vec::with_capacity(entries.len() + 1);
         output.push(format!("Absolute path: {}", path.display()));
@@ -164,14 +172,20 @@ async fn collect_dir_entries(
     queue.push_back((dir_path.to_path_buf(), relative_prefix.to_path_buf(), depth));
 
     while let Some((current_dir, prefix, remaining_depth)) = queue.pop_front() {
-        let mut read_dir = fs::read_dir(&current_dir).await
+        let mut read_dir = fs::read_dir(&current_dir)
+            .await
             .with_context(|| "failed to read directory")?;
 
         let mut dir_entries = Vec::new();
 
-        while let Some(entry) = read_dir.next_entry().await
-            .with_context(|| "failed to read directory")? {
-            let file_type = entry.file_type().await
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .with_context(|| "failed to read directory")?
+        {
+            let file_type = entry
+                .file_type()
+                .await
                 .with_context(|| "failed to inspect entry")?;
 
             let file_name = entry.file_name();
@@ -214,7 +228,8 @@ async fn collect_dir_entries(
 fn format_dir_entry_name(path: &Path) -> String {
     let normalized = path.to_string_lossy().replace("\\", "/");
     if normalized.len() > LIST_DIR_MAX_ENTRY_LENGTH {
-        crate::tools::take_bytes_at_char_boundary(&normalized, LIST_DIR_MAX_ENTRY_LENGTH).to_string()
+        crate::tools::take_bytes_at_char_boundary(&normalized, LIST_DIR_MAX_ENTRY_LENGTH)
+            .to_string()
     } else {
         normalized
     }
@@ -223,7 +238,8 @@ fn format_dir_entry_name(path: &Path) -> String {
 fn format_dir_entry_component(name: &OsStr) -> String {
     let normalized = name.to_string_lossy();
     if normalized.len() > LIST_DIR_MAX_ENTRY_LENGTH {
-        crate::tools::take_bytes_at_char_boundary(&normalized, LIST_DIR_MAX_ENTRY_LENGTH).to_string()
+        crate::tools::take_bytes_at_char_boundary(&normalized, LIST_DIR_MAX_ENTRY_LENGTH)
+            .to_string()
     } else {
         normalized.to_string()
     }

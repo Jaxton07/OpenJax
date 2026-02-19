@@ -1,8 +1,12 @@
-use std::sync::Arc;
-use crate::tools::context::{SandboxPolicy, ApprovalPolicy};
+use crate::approval::ApprovalHandler;
+use crate::tools::context::{ApprovalPolicy, SandboxPolicy};
+use crate::tools::handlers::{
+    ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler,
+    ShellCommandHandler,
+};
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::spec::{ToolSpec, ToolsConfig, build_all_specs};
-use crate::tools::handlers::{ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler, ShellCommandHandler};
+use std::sync::Arc;
 
 /// 工具注册构建器
 pub struct ToolRegistryBuilder {
@@ -44,32 +48,32 @@ impl Default for ToolRegistryBuilder {
 pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
     let mut builder = ToolRegistryBuilder::new();
     let config = ToolsConfig::default();
-    
+
     for spec in build_all_specs(&config) {
         let parallel = !spec.name.eq("apply_patch");
         builder.push_spec(spec, parallel);
     }
-    
+
     let grep_handler = Arc::new(GrepFilesHandler);
     builder.register_handler("grep_files", grep_handler);
-    
+
     let read_handler = Arc::new(ReadFileHandler);
     builder.register_handler("read_file", read_handler);
-    
+
     let list_handler = Arc::new(ListDirHandler);
     builder.register_handler("list_dir", list_handler);
-    
+
     let shell_handler = Arc::new(ShellCommandHandler);
     builder.register_handler("shell", shell_handler.clone());
     // Backward-compatible alias; primary tool name is `shell`.
     builder.register_handler("exec_command", shell_handler);
-    
+
     let patch_handler = Arc::new(ApplyPatchHandler);
     builder.register_handler("apply_patch", patch_handler);
 
     let edit_range_handler = Arc::new(EditFileRangeHandler);
     builder.register_handler("edit_file_range", edit_range_handler);
-    
+
     builder.build()
 }
 
@@ -80,6 +84,7 @@ pub fn create_tool_invocation(
     cwd: std::path::PathBuf,
     sandbox_policy: SandboxPolicy,
     approval_policy: ApprovalPolicy,
+    approval_handler: Arc<dyn ApprovalHandler>,
 ) -> crate::tools::context::ToolInvocation {
     crate::tools::context::ToolInvocation {
         tool_name,
@@ -89,6 +94,7 @@ pub fn create_tool_invocation(
             cwd,
             sandbox_policy,
             approval_policy,
+            approval_handler,
             windows_sandbox_level: None,
         },
     }

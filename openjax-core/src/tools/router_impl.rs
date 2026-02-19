@@ -1,16 +1,16 @@
 use anyhow::{Result, anyhow};
-use tracing::{debug, info, warn};
 use std::sync::Arc;
+use tracing::{debug, info, warn};
 
-use super::router::{ToolCall, ToolRuntimeConfig};
-use super::context::{SandboxPolicy, ApprovalPolicy};
+use super::context::{ApprovalPolicy, SandboxPolicy};
 use super::orchestrator::ToolOrchestrator;
-use super::tool_builder::{build_default_tool_registry, create_tool_invocation};
 use super::registry::ToolHandler;
+use super::router::{ToolCall, ToolRuntimeConfig};
+use super::tool_builder::{build_default_tool_registry, create_tool_invocation};
+use crate::approval::ApprovalHandler;
 
 pub struct ToolRouter {
     orchestrator: Arc<ToolOrchestrator>,
-    config: ToolRuntimeConfig,
 }
 
 impl ToolRouter {
@@ -18,28 +18,26 @@ impl ToolRouter {
         let (registry, _) = build_default_tool_registry();
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
-            config: ToolRuntimeConfig::default(),
         }
     }
 
-    pub fn with_config(config: &crate::tools::spec::ToolsConfig) -> Self {
+    pub fn with_config(_config: &crate::tools::spec::ToolsConfig) -> Self {
         let (registry, _) = build_default_tool_registry();
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
-            config: ToolRuntimeConfig::default(),
         }
     }
 
-    pub fn with_runtime_config(config: ToolRuntimeConfig) -> Self {
+    pub fn with_runtime_config(_config: ToolRuntimeConfig) -> Self {
         let (registry, _) = build_default_tool_registry();
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
-            config,
         }
     }
 
     pub fn register_tool(&self, name: String, handler: Arc<dyn ToolHandler>) {
-        let orchestrator = Arc::as_ptr(&self.orchestrator) as *const ToolOrchestrator as *mut ToolOrchestrator;
+        let orchestrator =
+            Arc::as_ptr(&self.orchestrator) as *const ToolOrchestrator as *mut ToolOrchestrator;
         unsafe {
             (*orchestrator).register_tool(name, handler);
         }
@@ -50,6 +48,7 @@ impl ToolRouter {
         call: &ToolCall,
         cwd: &std::path::Path,
         config: ToolRuntimeConfig,
+        approval_handler: Arc<dyn ApprovalHandler>,
     ) -> Result<String> {
         debug!(
             tool_name = %call.name,
@@ -74,43 +73,40 @@ impl ToolRouter {
 
         let invocation = create_tool_invocation(
             call.name.clone(),
-            serde_json::to_string(&call.args).map_err(|e| anyhow!("failed to serialize args: {}", e))?,
+            serde_json::to_string(&call.args)
+                .map_err(|e| anyhow!("failed to serialize args: {}", e))?,
             cwd.to_path_buf(),
             sandbox_policy,
             approval_policy,
+            approval_handler,
         );
 
         let result = self.orchestrator.run(invocation).await;
 
         match result {
-            Ok(tool_output) => {
-                match tool_output {
-                    super::context::ToolOutput::Function { body, .. } => {
-                        match body {
-                            super::context::FunctionCallOutputBody::Text(text) => {
-                                info!(tool_name = %call.name, output_len = text.len(), "tool_execute completed");
-                                Ok(text.clone())
-                            }
-                            super::context::FunctionCallOutputBody::Json(json) => {
-                                info!(tool_name = %call.name, output_len = json.to_string().len(), "tool_execute completed");
-                                Ok(json.to_string())
-                            }
-                        }
+            Ok(tool_output) => match tool_output {
+                super::context::ToolOutput::Function { body, .. } => match body {
+                    super::context::FunctionCallOutputBody::Text(text) => {
+                        info!(tool_name = %call.name, output_len = text.len(), "tool_execute completed");
+                        Ok(text.clone())
                     }
-                    super::context::ToolOutput::Mcp { result, .. } => {
-                        match result {
-                            Ok(r) => {
-                                info!(tool_name = %call.name, "tool_execute completed");
-                                serde_json::to_string(&r).map_err(|e| anyhow!("failed to serialize mcp result: {}", e))
-                            }
-                            Err(e) => {
-                                warn!(tool_name = %call.name, error = %e, "tool_execute failed");
-                                Err(anyhow!("error: {}", e))
-                            }
-                        }
+                    super::context::FunctionCallOutputBody::Json(json) => {
+                        info!(tool_name = %call.name, output_len = json.to_string().len(), "tool_execute completed");
+                        Ok(json.to_string())
                     }
-                }
-            }
+                },
+                super::context::ToolOutput::Mcp { result, .. } => match result {
+                    Ok(r) => {
+                        info!(tool_name = %call.name, "tool_execute completed");
+                        serde_json::to_string(&r)
+                            .map_err(|e| anyhow!("failed to serialize mcp result: {}", e))
+                    }
+                    Err(e) => {
+                        warn!(tool_name = %call.name, error = %e, "tool_execute failed");
+                        Err(anyhow!("error: {}", e))
+                    }
+                },
+            },
             Err(err) => {
                 warn!(tool_name = %call.name, error = %err, "tool_execute failed");
                 Err(anyhow!("error: {}", err))

@@ -7,12 +7,13 @@ use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 use tracing::{info, warn};
 
-use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
-use crate::tools::registry::{ToolHandler, ToolKind};
-use crate::tools::error::FunctionCallError;
-use crate::tools::{ApprovalPolicy, SandboxMode, ShellType};
-use crate::tools::shell::Shell;
+use crate::approval::ApprovalRequest;
 use crate::tools::apply_patch_interceptor;
+use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
+use crate::tools::error::FunctionCallError;
+use crate::tools::registry::{ToolHandler, ToolKind};
+use crate::tools::shell::Shell;
+use crate::tools::{ApprovalPolicy, SandboxMode, ShellType};
 
 #[derive(Deserialize)]
 struct ShellCommandArgs {
@@ -23,7 +24,9 @@ struct ShellCommandArgs {
     timeout_ms: u64,
 }
 
-fn shell_default_timeout() -> u64 { 30_000 }
+fn shell_default_timeout() -> u64 {
+    30_000
+}
 
 pub struct ShellCommandHandler;
 
@@ -34,7 +37,12 @@ impl ToolHandler for ShellCommandHandler {
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError> {
-        let ToolInvocation { payload, turn, call_id, tool_name } = invocation;
+        let ToolInvocation {
+            payload,
+            turn,
+            call_id,
+            tool_name,
+        } = invocation;
 
         let arguments = match payload {
             ToolPayload::Function { arguments } => arguments,
@@ -45,8 +53,9 @@ impl ToolHandler for ShellCommandHandler {
             }
         };
 
-        let args: ShellCommandArgs = serde_json::from_str(&arguments)
-            .map_err(|e| FunctionCallError::Internal(format!("failed to parse arguments: {}", e)))?;
+        let args: ShellCommandArgs = serde_json::from_str(&arguments).map_err(|e| {
+            FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
+        })?;
 
         let command = args.cmd;
         let require_escalated = args.require_escalated;
@@ -68,14 +77,26 @@ impl ToolHandler for ShellCommandHandler {
             "shell started"
         );
 
-        if should_prompt_approval(approval_policy, require_escalated)
-            && !ask_for_approval(&command)
-            .map_err(|e| FunctionCallError::Internal(e.to_string()))?
-        {
-            warn!(command = %command, "shell rejected by user");
-            return Err(FunctionCallError::ApprovalRejected(
-                "command rejected by user".to_string(),
-            ));
+        if should_prompt_approval(approval_policy, require_escalated) {
+            let approved = turn
+                .approval_handler
+                .request_approval(ApprovalRequest {
+                    target: command.clone(),
+                    reason: if require_escalated {
+                        "shell command requested escalated permissions".to_string()
+                    } else {
+                        "shell command requires approval by policy".to_string()
+                    },
+                })
+                .await
+                .map_err(FunctionCallError::Internal)?;
+
+            if !approved {
+                warn!(command = %command, "shell rejected by user");
+                return Err(FunctionCallError::ApprovalRejected(
+                    "command rejected by user".to_string(),
+                ));
+            }
         }
 
         if let SandboxMode::WorkspaceWrite = sandbox_policy {
@@ -83,7 +104,8 @@ impl ToolHandler for ShellCommandHandler {
                 .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
         }
 
-        let command_tokens: Vec<String> = command.split_whitespace().map(|s| s.to_string()).collect();
+        let command_tokens: Vec<String> =
+            command.split_whitespace().map(|s| s.to_string()).collect();
 
         if let Some(output) = apply_patch_interceptor::intercept_apply_patch(
             &command_tokens,
@@ -92,7 +114,9 @@ impl ToolHandler for ShellCommandHandler {
             &turn,
             &call_id,
             &tool_name,
-        ).await? {
+        )
+        .await?
+        {
             return Ok(ToolOutput::Function {
                 body: FunctionCallOutputBody::Text(output),
                 success: Some(true),
@@ -111,7 +135,9 @@ impl ToolHandler for ShellCommandHandler {
                 .output(),
         )
         .await
-        .map_err(|_| FunctionCallError::Internal(format!("command timed out after {}ms", timeout_ms)))?
+        .map_err(|_| {
+            FunctionCallError::Internal(format!("command timed out after {}ms", timeout_ms))
+        })?
         .map_err(|e| FunctionCallError::Internal(format!("failed to execute command: {}", e)))?;
 
         let exit_code = output.status.code().unwrap_or(-1);
@@ -141,18 +167,6 @@ fn should_prompt_approval(policy: ApprovalPolicy, require_escalated: bool) -> bo
         ApprovalPolicy::OnRequest => require_escalated,
         ApprovalPolicy::Never => false,
     }
-}
-
-fn ask_for_approval(command: &str) -> Result<bool> {
-    println!("[approval] 执行命令需要确认: {command}");
-    println!("[approval] 输入 y 同意，其他任意输入拒绝:");
-
-    let mut answer = String::new();
-    std::io::stdin()
-        .read_line(&mut answer)
-        .context("failed to read approval input")?;
-
-    Ok(answer.trim().eq_ignore_ascii_case("y"))
 }
 
 fn deny_if_blocked_in_workspace_write(command: &str, cwd: &Path) -> Result<()> {

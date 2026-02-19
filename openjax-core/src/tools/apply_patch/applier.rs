@@ -2,9 +2,9 @@ use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use super::matcher::{find_subsequence, split_lines_preserve_end};
 #[allow(unused_imports)]
 use super::types::{PatchHunk, PatchHunkLine, PatchLineKind, PlannedAction};
-use super::matcher::{split_lines_preserve_end, find_subsequence};
 
 pub async fn apply_patch_actions(actions: &[PlannedAction]) -> Result<()> {
     let mut backups = HashMap::new();
@@ -39,9 +39,9 @@ async fn apply_single_patch_action(action: &PlannedAction) -> Result<()> {
     match action {
         PlannedAction::Create { path, content } | PlannedAction::Update { path, content } => {
             if let Some(parent) = path.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .with_context(|| format!("failed to create parent dir: {}", parent.display()))?;
+                tokio::fs::create_dir_all(parent).await.with_context(|| {
+                    format!("failed to create parent dir: {}", parent.display())
+                })?;
             }
             tokio::fs::write(path, content)
                 .await
@@ -54,13 +54,17 @@ async fn apply_single_patch_action(action: &PlannedAction) -> Result<()> {
         }
         PlannedAction::Move { from, to } => {
             if let Some(parent) = to.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .with_context(|| format!("failed to create parent dir: {}", parent.display()))?;
+                tokio::fs::create_dir_all(parent).await.with_context(|| {
+                    format!("failed to create parent dir: {}", parent.display())
+                })?;
             }
-            tokio::fs::rename(from, to)
-                .await
-                .with_context(|| format!("failed to move file: {} -> {}", from.display(), to.display()))?;
+            tokio::fs::rename(from, to).await.with_context(|| {
+                format!(
+                    "failed to move file: {} -> {}",
+                    from.display(),
+                    to.display()
+                )
+            })?;
         }
     }
 
@@ -171,7 +175,9 @@ mod tests {
         }];
 
         apply_patch_actions(&actions).await.unwrap();
-        let content = tokio::fs::read_to_string(cwd.join("new.txt")).await.unwrap();
+        let content = tokio::fs::read_to_string(cwd.join("new.txt"))
+            .await
+            .unwrap();
         assert_eq!(content, "Hello world");
     }
 
@@ -180,7 +186,9 @@ mod tests {
         let temp = TempDir::new().expect("create tempdir");
         let cwd = temp.path();
         let file_path = cwd.join("old.txt");
-        tokio::fs::write(&file_path, "content").await.expect("write file");
+        tokio::fs::write(&file_path, "content")
+            .await
+            .expect("write file");
 
         let actions = vec![PlannedAction::Delete {
             path: file_path.clone(),
@@ -195,7 +203,9 @@ mod tests {
         let temp = TempDir::new().expect("create tempdir");
         let cwd = temp.path();
         let file_path = cwd.join("test.txt");
-        tokio::fs::write(&file_path, "old content").await.expect("write file");
+        tokio::fs::write(&file_path, "old content")
+            .await
+            .expect("write file");
 
         let actions = vec![PlannedAction::Update {
             path: file_path.clone(),
@@ -213,7 +223,9 @@ mod tests {
         let cwd = temp.path();
         let from_path = cwd.join("old.txt");
         let to_path = cwd.join("new.txt");
-        tokio::fs::write(&from_path, "content").await.expect("write file");
+        tokio::fs::write(&from_path, "content")
+            .await
+            .expect("write file");
 
         let actions = vec![PlannedAction::Move {
             from: from_path.clone(),
@@ -233,8 +245,12 @@ mod tests {
         let cwd = temp.path();
         let file1_path = cwd.join("file1.txt");
         let file2_path = cwd.join("file2.txt");
-        tokio::fs::write(&file1_path, "content1").await.expect("write file1");
-        tokio::fs::write(&file2_path, "content2").await.expect("write file2");
+        tokio::fs::write(&file1_path, "content1")
+            .await
+            .expect("write file1");
+        tokio::fs::write(&file2_path, "content2")
+            .await
+            .expect("write file2");
 
         let actions = vec![
             PlannedAction::Update {
@@ -263,10 +279,22 @@ mod tests {
         let hunks = vec![PatchHunk {
             context: None,
             lines: vec![
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Add, text: "line2-new".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line3".to_string() },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line1".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Remove,
+                    text: "line2".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Add,
+                    text: "line2-new".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line3".to_string(),
+                },
             ],
         }];
 
@@ -280,10 +308,22 @@ mod tests {
         let hunks = vec![PatchHunk {
             context: None,
             lines: vec![
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Remove, text: "line3".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line4".to_string() },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line1".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Remove,
+                    text: "line2".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Remove,
+                    text: "line3".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line4".to_string(),
+                },
             ],
         }];
 
@@ -297,9 +337,18 @@ mod tests {
         let hunks = vec![PatchHunk {
             context: None,
             lines: vec![
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Add, text: "line1.5".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line2".to_string() },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line1".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Add,
+                    text: "line1.5".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line2".to_string(),
+                },
             ],
         }];
 
@@ -313,14 +362,28 @@ mod tests {
         let hunks = vec![PatchHunk {
             context: None,
             lines: vec![
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line1".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Remove, text: "line2".to_string() },
-                PatchHunkLine { kind: PatchLineKind::Context, text: "line3-different".to_string() },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line1".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Remove,
+                    text: "line2".to_string(),
+                },
+                PatchHunkLine {
+                    kind: PatchLineKind::Context,
+                    text: "line3-different".to_string(),
+                },
             ],
         }];
 
         let result = apply_hunks_to_content(original, &hunks);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("hunk context not found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("hunk context not found")
+        );
     }
 }

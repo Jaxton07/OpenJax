@@ -53,24 +53,23 @@ impl ChatCompletionsClient {
         let env_api_key = std::env::var("OPENJAX_MINIMAX_API_KEY")
             .ok()
             .filter(|v| !v.trim().is_empty());
-        
+
         let config_api_key = config.and_then(|c| c.api_key.as_ref());
-        
-        let api_key = env_api_key
-            .or_else(|| config_api_key.map(|s| s.clone()))?;
-        
+
+        let api_key = env_api_key.or_else(|| config_api_key.map(|s| s.clone()))?;
+
         let model = std::env::var("OPENJAX_MINIMAX_MODEL")
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| config.and_then(|c| c.model.clone()))
             .unwrap_or_else(|| "codex-MiniMax-M2.1".to_string());
-        
+
         let base_url = std::env::var("OPENJAX_MINIMAX_BASE_URL")
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| config.and_then(|c| c.base_url.clone()))
             .unwrap_or_else(|| "https://api.minimaxi.com/v1".to_string());
-        
+
         let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
         Some(Self {
@@ -86,24 +85,23 @@ impl ChatCompletionsClient {
         let env_api_key = std::env::var("OPENAI_API_KEY")
             .ok()
             .filter(|v| !v.trim().is_empty());
-        
+
         let config_api_key = config.and_then(|c| c.api_key.as_ref());
-        
-        let api_key = env_api_key
-            .or_else(|| config_api_key.map(|s| s.clone()))?;
-        
+
+        let api_key = env_api_key.or_else(|| config_api_key.map(|s| s.clone()))?;
+
         let model = std::env::var("OPENJAX_MODEL")
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| config.and_then(|c| c.model.clone()))
             .unwrap_or_else(|| "gpt-4.1-mini".to_string());
-        
+
         let base_url = std::env::var("OPENAI_BASE_URL")
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| config.and_then(|c| c.base_url.clone()))
             .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-        
+
         let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
         Some(Self {
@@ -122,8 +120,7 @@ impl ChatCompletionsClient {
 
         let config_api_key = config.and_then(|c| c.api_key.as_ref());
 
-        let api_key = env_api_key
-            .or_else(|| config_api_key.map(|s| s.clone()))?;
+        let api_key = env_api_key.or_else(|| config_api_key.map(|s| s.clone()))?;
 
         let model = std::env::var("OPENJAX_GLM_MODEL")
             .ok()
@@ -260,8 +257,10 @@ pub fn build_model_client() -> Box<dyn ModelClient> {
 }
 
 pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn ModelClient> {
-    let backend = config.and_then(|c| c.backend.as_ref()).map(|s| s.to_lowercase());
-    
+    let backend = config
+        .and_then(|c| c.backend.as_ref())
+        .map(|s| s.to_lowercase());
+
     match backend.as_deref() {
         Some("glm") => {
             if let Some(client) = ChatCompletionsClient::from_glm_config(config) {

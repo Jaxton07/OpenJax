@@ -5,9 +5,9 @@ use std::path::Path;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 
-use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
-use crate::tools::registry::{ToolHandler, ToolKind};
+use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
+use crate::tools::registry::{ToolHandler, ToolKind};
 
 const GREP_DEFAULT_LIMIT: usize = 100;
 const GREP_MAX_LIMIT: usize = 2000;
@@ -68,14 +68,20 @@ impl ToolHandler for GrepFilesHandler {
         let search_path = crate::tools::resolve_workspace_path(&turn.cwd, &rel_path)
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
 
-        crate::tools::verify_path_exists(&search_path).await
+        crate::tools::verify_path_exists(&search_path)
+            .await
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
 
         let include = args.include.as_deref().map(str::trim).and_then(|val| {
-            if val.is_empty() { None } else { Some(val.to_string()) }
+            if val.is_empty() {
+                None
+            } else {
+                Some(val.to_string())
+            }
         });
 
-        let search_results = run_rg_search(pattern, include.as_deref(), &search_path, limit, &turn.cwd).await?;
+        let search_results =
+            run_rg_search(pattern, include.as_deref(), &search_path, limit, &turn.cwd).await?;
 
         if search_results.is_empty() {
             Ok(ToolOutput::Function {
@@ -116,7 +122,9 @@ async fn run_rg_search(
     let output = timeout(GREP_COMMAND_TIMEOUT, command.output())
         .await
         .map_err(|_| anyhow!("rg timed out after 30 seconds"))?
-        .map_err(|err| anyhow!("failed to launch rg: {err}. Ensure ripgrep is installed and on PATH."))?;
+        .map_err(|err| {
+            anyhow!("failed to launch rg: {err}. Ensure ripgrep is installed and on PATH.")
+        })?;
 
     match output.status.code() {
         Some(0) => Ok(parse_rg_results(&output.stdout, limit)),
@@ -131,11 +139,17 @@ async fn run_rg_search(
 fn parse_rg_results(stdout: &[u8], limit: usize) -> Vec<String> {
     let mut results = Vec::new();
     for line in stdout.split(|byte| *byte == b'\n') {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if let Ok(text) = std::str::from_utf8(line) {
-            if text.is_empty() { continue; }
+            if text.is_empty() {
+                continue;
+            }
             results.push(text.to_string());
-            if results.len() == limit { break; }
+            if results.len() == limit {
+                break;
+            }
         }
     }
     results
@@ -143,6 +157,5 @@ fn parse_rg_results(stdout: &[u8], limit: usize) -> Vec<String> {
 
 fn parse_tool_args<T: for<'de> serde::Deserialize<'de>>(arguments: &str) -> Result<T> {
     let json_str = arguments;
-    serde_json::from_str(json_str)
-        .map_err(|e| anyhow!("failed to parse arguments: {e}"))
+    serde_json::from_str(json_str).map_err(|e| anyhow!("failed to parse arguments: {e}"))
 }

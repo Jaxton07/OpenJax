@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use serde::de::{self, Deserializer};
 use serde::Deserialize;
+use serde::de::{self, Deserializer};
 
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
@@ -57,8 +57,9 @@ impl ToolHandler for EditFileRangeHandler {
             }
         };
 
-        let args: EditFileRangeArgs = serde_json::from_str(&arguments)
-            .map_err(|e| FunctionCallError::Internal(format!("failed to parse arguments: {}", e)))?;
+        let args: EditFileRangeArgs = serde_json::from_str(&arguments).map_err(|e| {
+            FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
+        })?;
 
         if args.start_line == 0 || args.end_line == 0 {
             return Err(FunctionCallError::RespondToModel(
@@ -81,7 +82,9 @@ impl ToolHandler for EditFileRangeHandler {
         let had_trailing_newline = original.ends_with('\n');
         let mut lines: Vec<String> = original.lines().map(|l| l.to_string()).collect();
         if lines.is_empty() {
-            return Err(FunctionCallError::RespondToModel("file is empty".to_string()));
+            return Err(FunctionCallError::RespondToModel(
+                "file is empty".to_string(),
+            ));
         }
 
         let line_count = lines.len();

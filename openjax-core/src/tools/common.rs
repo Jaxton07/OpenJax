@@ -2,15 +2,17 @@ use anyhow::{Context, Result, anyhow};
 use serde::de::DeserializeOwned;
 use std::path::{Component, Path, PathBuf};
 
-pub fn parse_tool_args<T: DeserializeOwned>(args: &std::collections::HashMap<String, String>) -> Result<T> {
-    let json_str = serde_json::to_string(args)
-        .map_err(|e| anyhow!("failed to serialize args: {e}"))?;
-    serde_json::from_str(&json_str)
-        .map_err(|e| anyhow!("failed to parse arguments: {e}"))
+pub fn parse_tool_args<T: DeserializeOwned>(
+    args: &std::collections::HashMap<String, String>,
+) -> Result<T> {
+    let json_str =
+        serde_json::to_string(args).map_err(|e| anyhow!("failed to serialize args: {e}"))?;
+    serde_json::from_str(&json_str).map_err(|e| anyhow!("failed to parse arguments: {e}"))
 }
 
 pub async fn verify_path_exists(path: &Path) -> Result<()> {
-    tokio::fs::metadata(path).await
+    tokio::fs::metadata(path)
+        .await
         .with_context(|| format!("unable to access `{}`", path.display()))?;
     Ok(())
 }
@@ -87,9 +89,7 @@ pub fn resolve_workspace_path_for_write(cwd: &Path, rel_path: &str) -> Result<Pa
     if candidate.exists() {
         let resolved = candidate
             .canonicalize()
-            .with_context(|| {
-                format!("failed to canonicalize path: {}", candidate.display())
-            })?;
+            .with_context(|| format!("failed to canonicalize path: {}", candidate.display()))?;
 
         if !resolved.starts_with(&workspace_root) {
             return Err(anyhow!("path escapes workspace: {}", candidate.display()));

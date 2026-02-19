@@ -53,9 +53,15 @@ impl From<&FileType> for DirEntryKind {
     }
 }
 
-fn list_dir_default_offset() -> usize { 1 }
-fn list_dir_default_limit() -> usize { 25 }
-fn list_dir_default_depth() -> usize { 2 }
+fn list_dir_default_offset() -> usize {
+    1
+}
+fn list_dir_default_limit() -> usize {
+    25
+}
+fn list_dir_default_depth() -> usize {
+    2
+}
 
 pub async fn list_dir(call: &ToolCall, cwd: &Path) -> Result<String> {
     let args: ListDirArgs = parse_tool_args(&call.args)?;
@@ -130,14 +136,20 @@ async fn collect_dir_entries(
     queue.push_back((dir_path.to_path_buf(), relative_prefix.to_path_buf(), depth));
 
     while let Some((current_dir, prefix, remaining_depth)) = queue.pop_front() {
-        let mut read_dir = fs::read_dir(&current_dir).await
+        let mut read_dir = fs::read_dir(&current_dir)
+            .await
             .with_context(|| "failed to read directory")?;
 
         let mut dir_entries = Vec::new();
 
-        while let Some(entry) = read_dir.next_entry().await
-            .with_context(|| "failed to read directory")? {
-            let file_type = entry.file_type().await
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .with_context(|| "failed to read directory")?
+        {
+            let file_type = entry
+                .file_type()
+                .await
                 .with_context(|| "failed to inspect entry")?;
 
             let file_name = entry.file_name();
@@ -429,11 +441,19 @@ mod tests {
         let deeper = nested.join("deeper");
         tokio::fs::create_dir(&nested).await.expect("create nested");
         tokio::fs::create_dir(&deeper).await.expect("create deeper");
-        tokio::fs::write(dir_path.join("root.txt"), b"root").await.expect("write root");
-        tokio::fs::write(nested.join("child.txt"), b"child").await.expect("write child");
-        tokio::fs::write(deeper.join("grandchild.txt"), b"deep").await.expect("write deep");
+        tokio::fs::write(dir_path.join("root.txt"), b"root")
+            .await
+            .expect("write root");
+        tokio::fs::write(nested.join("child.txt"), b"child")
+            .await
+            .expect("write child");
+        tokio::fs::write(deeper.join("grandchild.txt"), b"deep")
+            .await
+            .expect("write deep");
 
-        let entries_depth_three = list_dir_slice(dir_path, 1, 3, 3).await.expect("list directory");
+        let entries_depth_three = list_dir_slice(dir_path, 1, 3, 3)
+            .await
+            .expect("list directory");
         assert_eq!(
             entries_depth_three,
             vec![

@@ -3,12 +3,12 @@ use std::io::{BufRead, BufReader, Write as IoWrite};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use time::format_description::well_known::Rfc3339;
 use tracing::Level;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::fmt::time::OffsetTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry;
-use time::format_description::well_known::Rfc3339;
 
 const DEFAULT_MAX_LINES: usize = 10_000;
 const DEFAULT_MAX_ARCHIVES: usize = 4;
@@ -174,11 +174,7 @@ pub struct RollingFileWriter {
 }
 
 impl RollingFileWriter {
-    pub fn new(
-        log_dir: PathBuf,
-        max_lines: usize,
-        max_archives: usize,
-    ) -> Self {
+    pub fn new(log_dir: PathBuf, max_lines: usize, max_archives: usize) -> Self {
         Self {
             log_dir,
             max_lines,
@@ -187,10 +183,7 @@ impl RollingFileWriter {
     }
 
     fn rotate(&self) {
-        let archive_name = format!(
-            "openjax.{}.log",
-            chrono_timestamp()
-        );
+        let archive_name = format!("openjax.{}.log", chrono_timestamp());
         let archive_path = self.log_dir.join(&archive_name);
         let current_path = self.log_dir.join(LOG_FILE_NAME);
 

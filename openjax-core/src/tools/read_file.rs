@@ -71,11 +71,21 @@ impl LineRecord {
     }
 }
 
-fn read_default_offset() -> usize { 1 }
-fn read_default_limit() -> usize { 2000 }
-fn read_default_max_levels() -> usize { 0 }
-fn read_default_include_siblings() -> bool { false }
-fn read_default_include_header() -> bool { true }
+fn read_default_offset() -> usize {
+    1
+}
+fn read_default_limit() -> usize {
+    2000
+}
+fn read_default_max_levels() -> usize {
+    0
+}
+fn read_default_include_siblings() -> bool {
+    false
+}
+fn read_default_include_header() -> bool {
+    true
+}
 
 pub async fn read_file(call: &ToolCall, cwd: &Path) -> Result<String> {
     let args: ReadFileArgs = parse_tool_args(&call.args)?;
@@ -114,10 +124,14 @@ async fn read_file_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec
 
     loop {
         buffer.clear();
-        let bytes_read = reader.read_until(b'\n', &mut buffer).await
+        let bytes_read = reader
+            .read_until(b'\n', &mut buffer)
+            .await
             .with_context(|| "failed to read file")?;
 
-        if bytes_read == 0 { break; }
+        if bytes_read == 0 {
+            break;
+        }
 
         if buffer.last() == Some(&b'\n') {
             buffer.pop();
@@ -128,8 +142,12 @@ async fn read_file_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec
 
         seen += 1;
 
-        if seen < offset { continue; }
-        if collected.len() == limit { break; }
+        if seen < offset {
+            continue;
+        }
+        if collected.len() == limit {
+            break;
+        }
 
         let formatted = format_read_line(&buffer);
         collected.push(format!("L{seen}: {formatted}"));
@@ -194,8 +212,7 @@ async fn read_file_indentation(
                 i -= 1;
 
                 if effective_indents[iu] == min_indent && !options.include_siblings {
-                    let allow_header_comment =
-                        options.include_header && collected[iu].is_comment();
+                    let allow_header_comment = options.include_header && collected[iu].is_comment();
                     let can_take_line = allow_header_comment || i_counter_min_indent == 0;
 
                     if can_take_line {
@@ -207,7 +224,9 @@ async fn read_file_indentation(
                     }
                 }
 
-                if out.len() >= final_limit { break; }
+                if out.len() >= final_limit {
+                    break;
+                }
             } else {
                 i = -1;
             }
@@ -233,12 +252,15 @@ async fn read_file_indentation(
             }
         }
 
-        if progressed == 0 { break; }
+        if progressed == 0 {
+            break;
+        }
     }
 
     trim_empty_lines(&mut out);
 
-    Ok(out.into_iter()
+    Ok(out
+        .into_iter()
         .map(|record| format!("L{}: {}", record.number, record.display))
         .collect())
 }
@@ -255,10 +277,14 @@ async fn collect_file_lines(path: &Path) -> Result<Vec<LineRecord>> {
 
     loop {
         buffer.clear();
-        let bytes_read = reader.read_until(b'\n', &mut buffer).await
+        let bytes_read = reader
+            .read_until(b'\n', &mut buffer)
+            .await
             .with_context(|| "failed to read file")?;
 
-        if bytes_read == 0 { break; }
+        if bytes_read == 0 {
+            break;
+        }
 
         if buffer.last() == Some(&b'\n') {
             buffer.pop();
@@ -271,7 +297,12 @@ async fn collect_file_lines(path: &Path) -> Result<Vec<LineRecord>> {
         let raw = String::from_utf8_lossy(&buffer).into_owned();
         let indent = measure_indent(&raw);
         let display = format_read_line(&buffer);
-        lines.push(LineRecord { number, raw, display, indent });
+        lines.push(LineRecord {
+            number,
+            raw,
+            display,
+            indent,
+        });
     }
 
     Ok(lines)
@@ -319,8 +350,8 @@ fn trim_empty_lines(out: &mut VecDeque<&LineRecord>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn reads_requested_range() {
@@ -336,7 +367,9 @@ mod tests {
         let mut temp = NamedTempFile::new().unwrap();
         writeln!(temp, "only").unwrap();
 
-        let err = read_file_slice(temp.path(), 3, 1).await.expect_err("offset exceeds length");
+        let err = read_file_slice(temp.path(), 3, 1)
+            .await
+            .expect_err("offset exceeds length");
         assert_eq!(err.to_string(), "offset exceeds file length");
     }
 
@@ -394,7 +427,8 @@ mod tests {
     tail();
 }}
 "
-        ).unwrap();
+        )
+        .unwrap();
 
         let options = IndentationArgs {
             anchor_line: Some(3),
@@ -403,7 +437,9 @@ mod tests {
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 3, 10, options).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 3, 10, options)
+            .await
+            .unwrap();
 
         assert_eq!(
             lines,
@@ -428,7 +464,8 @@ mod tests {
     }}
 }}
 "
-        ).unwrap();
+        )
+        .unwrap();
 
         let mut options = IndentationArgs {
             anchor_line: Some(4),
@@ -436,7 +473,9 @@ mod tests {
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 4, 50, options.clone()).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 4, 50, options.clone())
+            .await
+            .unwrap();
         assert_eq!(
             lines,
             vec![
@@ -449,7 +488,9 @@ mod tests {
         );
 
         options.max_levels = 3;
-        let expanded = read_file_indentation(temp.path(), 4, 50, options).await.unwrap();
+        let expanded = read_file_indentation(temp.path(), 4, 50, options)
+            .await
+            .unwrap();
         assert_eq!(
             expanded,
             vec![
@@ -478,7 +519,8 @@ mod tests {
     }}
 }}
 "
-        ).unwrap();
+        )
+        .unwrap();
 
         let mut options = IndentationArgs {
             anchor_line: Some(3),
@@ -487,7 +529,9 @@ mod tests {
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 3, 50, options.clone()).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 3, 50, options.clone())
+            .await
+            .unwrap();
         assert_eq!(
             lines,
             vec![
@@ -498,7 +542,9 @@ mod tests {
         );
 
         options.include_siblings = true;
-        let with_siblings = read_file_indentation(temp.path(), 3, 50, options).await.unwrap();
+        let with_siblings = read_file_indentation(temp.path(), 3, 50, options)
+            .await
+            .unwrap();
         assert_eq!(
             with_siblings,
             vec![
@@ -530,7 +576,8 @@ class Bar:
         helper = Foo(2)
         return helper.double(5)
 "
-        ).unwrap();
+        )
+        .unwrap();
 
         let options = IndentationArgs {
             anchor_line: Some(7),
@@ -539,7 +586,9 @@ class Bar:
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 1, 200, options).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 1, 200, options)
+            .await
+            .unwrap();
         assert_eq!(
             lines,
             vec![
@@ -607,7 +656,9 @@ private:
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 18, 200, options)
+            .await
+            .unwrap();
         assert_eq!(
             lines,
             vec![
@@ -635,7 +686,9 @@ private:
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 18, 200, options)
+            .await
+            .unwrap();
         assert_eq!(
             lines,
             vec![
@@ -666,7 +719,9 @@ private:
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 18, 200, options)
+            .await
+            .unwrap();
         assert_eq!(
             lines,
             vec![
@@ -696,7 +751,9 @@ private:
             ..Default::default()
         };
 
-        let lines = read_file_indentation(temp.path(), 18, 200, options).await.unwrap();
+        let lines = read_file_indentation(temp.path(), 18, 200, options)
+            .await
+            .unwrap();
         assert_eq!(
             lines,
             vec![

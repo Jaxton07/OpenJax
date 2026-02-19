@@ -45,10 +45,15 @@ pub async fn grep_files(call: &ToolCall, cwd: &Path) -> Result<String> {
     verify_path_exists(&search_path).await?;
 
     let include = args.include.as_deref().map(str::trim).and_then(|val| {
-        if val.is_empty() { None } else { Some(val.to_string()) }
+        if val.is_empty() {
+            None
+        } else {
+            Some(val.to_string())
+        }
     });
 
-    let search_results = run_rg_search(pattern, include.as_deref(), &search_path, limit, cwd).await?;
+    let search_results =
+        run_rg_search(pattern, include.as_deref(), &search_path, limit, cwd).await?;
 
     if search_results.is_empty() {
         Ok("No matches found.".to_string())
@@ -82,7 +87,9 @@ async fn run_rg_search(
     let output = timeout(GREP_COMMAND_TIMEOUT, command.output())
         .await
         .map_err(|_| anyhow!("rg timed out after 30 seconds"))?
-        .map_err(|err| anyhow!("failed to launch rg: {err}. Ensure ripgrep is installed and on PATH."))?;
+        .map_err(|err| {
+            anyhow!("failed to launch rg: {err}. Ensure ripgrep is installed and on PATH.")
+        })?;
 
     match output.status.code() {
         Some(0) => Ok(parse_rg_results(&output.stdout, limit)),
@@ -97,11 +104,17 @@ async fn run_rg_search(
 fn parse_rg_results(stdout: &[u8], limit: usize) -> Vec<String> {
     let mut results = Vec::new();
     for line in stdout.split(|byte| *byte == b'\n') {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if let Ok(text) = std::str::from_utf8(line) {
-            if text.is_empty() { continue; }
+            if text.is_empty() {
+                continue;
+            }
             results.push(text.to_string());
-            if results.len() == limit { break; }
+            if results.len() == limit {
+                break;
+            }
         }
     }
     results
@@ -159,7 +172,9 @@ mod tests {
         std::fs::write(dir.join("match_one.rs"), "alpha beta gamma").unwrap();
         std::fs::write(dir.join("match_two.txt"), "alpha delta").unwrap();
 
-        let results = run_rg_search("alpha", Some("*.rs"), dir, 10, dir).await.unwrap();
+        let results = run_rg_search("alpha", Some("*.rs"), dir, 10, dir)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results.iter().all(|path| path.ends_with("match_one.rs")));
     }

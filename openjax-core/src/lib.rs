@@ -1,16 +1,19 @@
+pub mod approval;
 mod config;
 mod logger;
 mod model;
 pub mod tools;
 
-pub use config::Config;
+pub use approval::{ApprovalHandler, ApprovalRequest, StdinApprovalHandler};
 pub use config::AgentConfig;
+pub use config::Config;
 pub use logger::init_logger;
 use openjax_protocol::{Event, Op};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -105,13 +108,19 @@ pub struct Agent {
     rate_limit_config: RateLimitConfig,
     recent_tool_calls: Vec<ToolCallRecord>,
     state_epoch: u64,
+    approval_handler: Arc<dyn approval::ApprovalHandler>,
 }
 
 impl Agent {
     pub fn new() -> Self {
         let config = Config::load();
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::with_config_and_runtime(config, tools::ApprovalPolicy::from_env(), tools::SandboxMode::from_env(), cwd)
+        Self::with_config_and_runtime(
+            config,
+            tools::ApprovalPolicy::from_env(),
+            tools::SandboxMode::from_env(),
+            cwd,
+        )
     }
 
     pub fn with_config(config: Config) -> Self {
@@ -170,6 +179,7 @@ impl Agent {
             rate_limit_config: RateLimitConfig::default(),
             recent_tool_calls: Vec::new(),
             state_epoch: 0,
+            approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
         }
     }
 
@@ -185,12 +195,18 @@ impl Agent {
         self.tool_runtime_config.sandbox_mode.as_str()
     }
 
+    pub fn set_approval_handler(&mut self, handler: Arc<dyn approval::ApprovalHandler>) {
+        self.approval_handler = handler;
+    }
+
     // ============== Rate Limiting ==============
 
     async fn apply_rate_limit(&mut self) {
         if let Some(last_time) = self.last_api_call_time {
             let elapsed = last_time.elapsed();
-            let min_delay = std::time::Duration::from_millis(self.rate_limit_config.min_delay_between_requests_ms);
+            let min_delay = std::time::Duration::from_millis(
+                self.rate_limit_config.min_delay_between_requests_ms,
+            );
 
             if elapsed < min_delay {
                 let delay = min_delay - elapsed;
@@ -206,18 +222,28 @@ impl Agent {
 
     // ============== Duplicate Detection ==============
 
-    fn is_duplicate_tool_call(&self, tool_name: &str, args: &std::collections::HashMap<String, String>) -> bool {
+    fn is_duplicate_tool_call(
+        &self,
+        tool_name: &str,
+        args: &std::collections::HashMap<String, String>,
+    ) -> bool {
         let key = ToolCallKey {
             name: tool_name.to_string(),
             args: serde_json::to_string(args).unwrap_or_default(),
         };
 
-        self.recent_tool_calls.iter().any(|record| {
-            record.key == key && record.ok && record.epoch == self.state_epoch
-        })
+        self.recent_tool_calls
+            .iter()
+            .any(|record| record.key == key && record.ok && record.epoch == self.state_epoch)
     }
 
-    fn record_tool_call(&mut self, tool_name: &str, args: &std::collections::HashMap<String, String>, ok: bool, output: &str) {
+    fn record_tool_call(
+        &mut self,
+        tool_name: &str,
+        args: &std::collections::HashMap<String, String>,
+        ok: bool,
+        output: &str,
+    ) {
         let key = ToolCallKey {
             name: tool_name.to_string(),
             args: serde_json::to_string(args).unwrap_or_default(),
@@ -276,11 +302,24 @@ impl Agent {
         // Set parent relationship
         sub_agent.parent_thread_id = Some(self.thread_id);
         sub_agent.depth = self.depth + 1;
+        sub_agent.approval_handler = self.approval_handler.clone();
 
         Ok(sub_agent)
     }
 
     // ============== Main Submit Method ==============
+
+    pub async fn submit_with_sink(
+        &mut self,
+        op: Op,
+        sink: tokio::sync::mpsc::UnboundedSender<Event>,
+    ) -> Vec<Event> {
+        let events = self.submit(op).await;
+        for event in &events {
+            let _ = sink.send(event.clone());
+        }
+        events
+    }
 
     pub async fn submit(&mut self, op: Op) -> Vec<Event> {
         match op {
@@ -330,7 +369,10 @@ impl Agent {
                     new_thread_id,
                 }]
             }
-            Op::SendToAgent { thread_id: _, input: _ } => {
+            Op::SendToAgent {
+                thread_id: _,
+                input: _,
+            } => {
                 // 预留扩展：向指定代理发送消息
                 vec![Event::AssistantMessage {
                     turn_id: self.next_turn_id,
@@ -344,7 +386,10 @@ impl Agent {
                     content: "InterruptAgent not yet implemented".to_string(),
                 }]
             }
-            Op::ResumeAgent { rollout_path: _, source: _ } => {
+            Op::ResumeAgent {
+                rollout_path: _,
+                source: _,
+            } => {
                 // 预留扩展：从持久化状态恢复代理
                 vec![Event::AssistantMessage {
                     turn_id: self.next_turn_id,
@@ -400,7 +445,12 @@ impl Agent {
 
             match self
                 .tools
-                .execute(&call, self.cwd.as_path(), self.tool_runtime_config)
+                .execute(
+                    &call,
+                    self.cwd.as_path(),
+                    self.tool_runtime_config,
+                    self.approval_handler.clone(),
+                )
                 .await
             {
                 Ok(output) => {
@@ -437,7 +487,10 @@ impl Agent {
                     last_error = Some(err);
                     // Check if error is retryable (not a validation error)
                     let err_str = last_error.as_ref().unwrap().to_string();
-                    if err_str.contains("invalid") || err_str.contains("permission denied") {
+                    if err_str.contains("invalid")
+                        || err_str.contains("permission denied")
+                        || err_str.contains("Approval rejected")
+                    {
                         // Non-retryable error, don't retry
                         break;
                     }
@@ -488,7 +541,9 @@ impl Agent {
             "natural_language_turn started"
         );
 
-        while executed_count < MAX_TOOL_CALLS_PER_TURN && planner_rounds < MAX_PLANNER_ROUNDS_PER_TURN {
+        while executed_count < MAX_TOOL_CALLS_PER_TURN
+            && planner_rounds < MAX_PLANNER_ROUNDS_PER_TURN
+        {
             let remaining = MAX_TOOL_CALLS_PER_TURN - executed_count;
             let planner_input =
                 build_planner_input(user_input, &self.history, &tool_traces, remaining);
@@ -545,10 +600,7 @@ impl Agent {
 
                 self.apply_rate_limit().await;
 
-                info!(
-                    turn_id = turn_id,
-                    "model_repair_request started"
-                );
+                info!(turn_id = turn_id, "model_repair_request started");
 
                 let repaired_output = match self.model_client.complete(&repair_prompt).await {
                     Ok(output) => output,
@@ -568,10 +620,7 @@ impl Agent {
                     }
                 };
 
-                info!(
-                    turn_id = turn_id,
-                    "model_repair_request completed"
-                );
+                info!(turn_id = turn_id, "model_repair_request completed");
 
                 debug!(
                     turn_id = turn_id,
@@ -593,7 +642,7 @@ impl Agent {
             };
 
             let action = decision.action.to_ascii_lowercase();
-            
+
             info!(
                 turn_id = turn_id,
                 action = %action,
@@ -602,7 +651,7 @@ impl Agent {
                 message = ?decision.message,
                 "model_decision"
             );
-            
+
             if action == "final" {
                 let message = decision
                     .message
@@ -624,10 +673,7 @@ impl Agent {
                 let tool_name = match decision.tool {
                     Some(name) if !name.trim().is_empty() => name,
                     _ => {
-                        warn!(
-                            turn_id = turn_id,
-                            "model_decision missing tool name"
-                        );
+                        warn!(turn_id = turn_id, "model_decision missing tool name");
                         let message = "[model error] tool action missing tool name".to_string();
                         events.push(Event::AssistantMessage {
                             turn_id,
@@ -647,7 +693,10 @@ impl Agent {
                         args = ?args,
                         "duplicate_tool_call detected, skipping"
                     );
-                    let message = format!("[warning] tool {} with args {:?} was already called recently, skipping", tool_name, args);
+                    let message = format!(
+                        "[warning] tool {} with args {:?} was already called recently, skipping",
+                        tool_name, args
+                    );
                     events.push(Event::AssistantMessage {
                         turn_id,
                         content: message.clone(),
@@ -693,7 +742,12 @@ impl Agent {
 
                 match self
                     .tools
-                    .execute(&call, self.cwd.as_path(), self.tool_runtime_config)
+                    .execute(
+                        &call,
+                        self.cwd.as_path(),
+                        self.tool_runtime_config,
+                        self.approval_handler.clone(),
+                    )
                     .await
                 {
                     Ok(output) => {
@@ -800,7 +854,7 @@ impl Agent {
         };
         events.push(Event::AssistantMessage {
             turn_id,
-            content: message.clone()
+            content: message.clone(),
         });
         self.record_history("assistant", message);
     }
@@ -920,7 +974,10 @@ fn normalize_model_decision(mut decision: ModelDecision) -> ModelDecision {
 }
 
 fn is_mutating_tool(tool_name: &str) -> bool {
-    matches!(tool_name, "apply_patch" | "edit_file_range" | "shell" | "exec_command")
+    matches!(
+        tool_name,
+        "apply_patch" | "edit_file_range" | "shell" | "exec_command"
+    )
 }
 
 fn should_abort_on_consecutive_duplicate_skips(count: usize) -> bool {
@@ -1064,9 +1121,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        build_planner_input, normalize_model_decision, parse_approval_policy, parse_model_decision,
-        parse_sandbox_mode, should_abort_on_consecutive_duplicate_skips, Agent, ApprovalPolicy,
-        SandboxMode,
+        Agent, ApprovalPolicy, SandboxMode, build_planner_input, normalize_model_decision,
+        parse_approval_policy, parse_model_decision, parse_sandbox_mode,
+        should_abort_on_consecutive_duplicate_skips,
     };
 
     #[test]
@@ -1095,7 +1152,12 @@ mod tests {
 
         assert_eq!(decision.action, "tool");
         assert_eq!(decision.tool.as_deref(), Some("apply_patch"));
-        assert!(decision.args.as_ref().is_some_and(|m| m.contains_key("patch")));
+        assert!(
+            decision
+                .args
+                .as_ref()
+                .is_some_and(|m| m.contains_key("patch"))
+        );
     }
 
     #[test]

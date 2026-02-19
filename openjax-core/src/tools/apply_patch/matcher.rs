@@ -22,17 +22,22 @@ pub fn find_subsequence(haystack: &[String], start: usize, needle: &[String]) ->
     })
 }
 
-pub fn seek_sequence(lines: &[String], pattern: &[String], start: usize, eof: bool) -> Option<usize> {
+pub fn seek_sequence(
+    lines: &[String],
+    pattern: &[String],
+    start: usize,
+    eof: bool,
+) -> Option<usize> {
     if pattern.is_empty() {
         return Some(start);
     }
-    
+
     let max_start = if eof {
         lines.len()
     } else {
         lines.len().saturating_sub(pattern.len())
     };
-    
+
     for level in 0..4 {
         match level {
             0 => {
@@ -58,43 +63,70 @@ pub fn seek_sequence(lines: &[String], pattern: &[String], start: usize, eof: bo
             _ => break,
         }
     }
-    
+
     None
 }
 
-fn find_subsequence_exact(lines: &[String], start: usize, pattern: &[String], max_start: usize) -> Option<usize> {
+fn find_subsequence_exact(
+    lines: &[String],
+    start: usize,
+    pattern: &[String],
+    max_start: usize,
+) -> Option<usize> {
     let end = max_start.min(lines.len());
     for i in start..end {
         if i + pattern.len() > lines.len() {
             break;
         }
-        if lines[i..i + pattern.len()].iter().zip(pattern).all(|(l, p)| l == p) {
+        if lines[i..i + pattern.len()]
+            .iter()
+            .zip(pattern)
+            .all(|(l, p)| l == p)
+        {
             return Some(i);
         }
     }
     None
 }
 
-fn find_subsequence_trim_end(lines: &[String], start: usize, pattern: &[String], max_start: usize) -> Option<usize> {
+fn find_subsequence_trim_end(
+    lines: &[String],
+    start: usize,
+    pattern: &[String],
+    max_start: usize,
+) -> Option<usize> {
     let end = max_start.min(lines.len());
     for i in start..end {
         if i + pattern.len() > lines.len() {
             break;
         }
-        if lines[i..i + pattern.len()].iter().zip(pattern).all(|(l, p)| l.trim_end() == p.trim_end()) {
+        if lines[i..i + pattern.len()]
+            .iter()
+            .zip(pattern)
+            .all(|(l, p)| l.trim_end() == p.trim_end())
+        {
             return Some(i);
         }
     }
     None
 }
 
-fn find_subsequence_trim(lines: &[String], start: usize, pattern: &[String], max_start: usize) -> Option<usize> {
+fn find_subsequence_trim(
+    lines: &[String],
+    start: usize,
+    pattern: &[String],
+    max_start: usize,
+) -> Option<usize> {
     let end = max_start.min(lines.len());
     for i in start..end {
         if i + pattern.len() > lines.len() {
             break;
         }
-        if lines[i..i + pattern.len()].iter().zip(pattern).all(|(l, p)| l.trim() == p.trim()) {
+        if lines[i..i + pattern.len()]
+            .iter()
+            .zip(pattern)
+            .all(|(l, p)| l.trim() == p.trim())
+        {
             return Some(i);
         }
     }
@@ -103,51 +135,63 @@ fn find_subsequence_trim(lines: &[String], start: usize, pattern: &[String], max
 
 fn normalize_unicode(text: &str) -> String {
     let mut result = text.to_string();
-    
+
     let replacements: Vec<(char, char)> = vec![
-        ('\u{2013}', '-'),   // en dash
-        ('\u{2014}', '-'),   // em dash
-        ('\u{2015}', '-'),   // horizontal bar
-        ('\u{2010}', '-'),   // hyphen
-        ('\u{2011}', '-'),   // non-breaking hyphen
-        ('\u{2012}', '-'),   // figure dash
-        ('\u{2013}', '-'),   // en dash
-        ('\u{2014}', '-'),   // em dash
-        ('\u{2015}', '-'),   // horizontal bar
-        ('\u{201C}', '"'),   // left double quotation mark
-        ('\u{201D}', '"'),   // right double quotation mark
-        ('\u{2018}', '\''),  // left single quotation mark
-        ('\u{2019}', '\''),  // right single quotation mark
-        ('\u{201A}', '\''),  // single low-9 quotation mark
-        ('\u{201B}', '\''),  // single high-reversed-9 quotation mark
-        ('\u{2018}', '\''),  // left single quotation mark
-        ('\u{2019}', '\''),  // right single quotation mark
-        ('\u{201C}', '"'),   // left double quotation mark
-        ('\u{201D}', '"'),   // right double quotation mark
-        ('\u{201E}', '"'),   // double low-9 quotation mark
-        ('\u{201F}', '"'),   // double high-reversed-9 quotation mark
-        ('\u{201C}', '"'),   // left double quotation mark
-        ('\u{201D}', '"'),   // right double quotation mark
-        ('\u{00A0}', ' '), // non-breaking space
+        ('\u{2013}', '-'),  // en dash
+        ('\u{2014}', '-'),  // em dash
+        ('\u{2015}', '-'),  // horizontal bar
+        ('\u{2010}', '-'),  // hyphen
+        ('\u{2011}', '-'),  // non-breaking hyphen
+        ('\u{2012}', '-'),  // figure dash
+        ('\u{2013}', '-'),  // en dash
+        ('\u{2014}', '-'),  // em dash
+        ('\u{2015}', '-'),  // horizontal bar
+        ('\u{201C}', '"'),  // left double quotation mark
+        ('\u{201D}', '"'),  // right double quotation mark
+        ('\u{2018}', '\''), // left single quotation mark
+        ('\u{2019}', '\''), // right single quotation mark
+        ('\u{201A}', '\''), // single low-9 quotation mark
+        ('\u{201B}', '\''), // single high-reversed-9 quotation mark
+        ('\u{2018}', '\''), // left single quotation mark
+        ('\u{2019}', '\''), // right single quotation mark
+        ('\u{201C}', '"'),  // left double quotation mark
+        ('\u{201D}', '"'),  // right double quotation mark
+        ('\u{201E}', '"'),  // double low-9 quotation mark
+        ('\u{201F}', '"'),  // double high-reversed-9 quotation mark
+        ('\u{201C}', '"'),  // left double quotation mark
+        ('\u{201D}', '"'),  // right double quotation mark
+        ('\u{00A0}', ' '),  // non-breaking space
     ];
-    
+
     for (from, to) in replacements {
         result = result.replace(from, &to.to_string());
     }
-    
+
     result
 }
 
-fn find_subsequence_normalized(lines: &[String], start: usize, pattern: &[String], max_start: usize) -> Option<usize> {
+fn find_subsequence_normalized(
+    lines: &[String],
+    start: usize,
+    pattern: &[String],
+    max_start: usize,
+) -> Option<usize> {
     let end = max_start.min(lines.len());
     let normalized_pattern: Vec<String> = pattern.iter().map(|p| normalize_unicode(p)).collect();
-    
+
     for i in start..end {
         if i + pattern.len() > lines.len() {
             break;
         }
-        let normalized_lines: Vec<String> = lines[i..i + pattern.len()].iter().map(|l| normalize_unicode(l)).collect();
-        if normalized_lines.iter().zip(&normalized_pattern).all(|(l, p)| l == p) {
+        let normalized_lines: Vec<String> = lines[i..i + pattern.len()]
+            .iter()
+            .map(|l| normalize_unicode(l))
+            .collect();
+        if normalized_lines
+            .iter()
+            .zip(&normalized_pattern)
+            .all(|(l, p)| l == p)
+        {
             return Some(i);
         }
     }

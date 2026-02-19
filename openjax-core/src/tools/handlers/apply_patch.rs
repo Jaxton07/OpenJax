@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload, FunctionCallOutputBody};
-use crate::tools::registry::{ToolHandler, ToolKind};
+use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
+use crate::tools::registry::{ToolHandler, ToolKind};
 
 #[derive(Deserialize)]
 struct ApplyPatchArgs {
@@ -37,15 +37,14 @@ impl ToolHandler for ApplyPatchHandler {
             "apply_patch parsing arguments"
         );
 
-        let args: ApplyPatchArgs = serde_json::from_str(&arguments)
-            .map_err(|e| {
-                debug!(error = %e, raw_arguments = %arguments, "apply_patch failed to parse arguments");
-                FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
-            })?;
+        let args: ApplyPatchArgs = serde_json::from_str(&arguments).map_err(|e| {
+            debug!(error = %e, raw_arguments = %arguments, "apply_patch failed to parse arguments");
+            FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
+        })?;
 
         let patch_arg = args.patch;
         let normalized_patch = normalize_patch_arg(&patch_arg);
-        
+
         debug!(
             patch_len = normalized_patch.len(),
             patch_preview = %normalized_patch.chars().take(200).collect::<String>(),
@@ -54,16 +53,18 @@ impl ToolHandler for ApplyPatchHandler {
 
         let operations = crate::tools::parse_apply_patch(&normalized_patch)
             .map_err(|e| FunctionCallError::Internal(format!("failed to apply patch: {}", e)))?;
-        
+
         debug!(
             operation_count = operations.len(),
             operations = ?operations,
             "apply_patch parsed operations"
         );
 
-        let actions = crate::tools::plan_patch_actions(&turn.cwd, &operations).await
+        let actions = crate::tools::plan_patch_actions(&turn.cwd, &operations)
+            .await
             .map_err(|e| FunctionCallError::Internal(format!("failed to apply patch: {}", e)))?;
-        crate::tools::apply_patch_actions(&actions).await
+        crate::tools::apply_patch_actions(&actions)
+            .await
             .map_err(|e| FunctionCallError::Internal(format!("failed to apply patch: {}", e)))?;
 
         let summary = actions

@@ -1,5 +1,5 @@
+use super::types::{PatchHunk, PatchHunkLine, PatchLineKind, PatchOperation};
 use anyhow::{Result, anyhow};
-use super::types::{PatchOperation, PatchHunk, PatchHunkLine, PatchLineKind};
 
 pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
     let lines = patch.lines().collect::<Vec<&str>>();
@@ -103,7 +103,7 @@ pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
                 return Err(anyhow!("invalid patch: empty path in Update File"));
             }
             index += 1;
-            
+
             let mut move_to = None;
             if index < lines.len() - 1 && lines[index].starts_with("*** Move to: ") {
                 move_to = Some(
@@ -117,7 +117,7 @@ pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
                 }
                 index += 1;
             }
-            
+
             let mut hunks = Vec::new();
             let mut current_lines = Vec::new();
             let mut current_context = None;
@@ -156,7 +156,11 @@ pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
             if hunks.is_empty() {
                 return Err(anyhow!("invalid patch: update file has no hunks"));
             }
-            operations.push(PatchOperation::UpdateFile { path, move_to, hunks });
+            operations.push(PatchOperation::UpdateFile {
+                path,
+                move_to,
+                hunks,
+            });
             continue;
         }
 
@@ -295,7 +299,12 @@ mod tests {
 *** End Patch"#;
         let result = parse_apply_patch(patch);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("missing `*** Begin Patch`"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("missing `*** Begin Patch`")
+        );
     }
 
     #[test]
@@ -305,7 +314,12 @@ mod tests {
 +Hello world"#;
         let result = parse_apply_patch(patch);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("missing `*** End Patch`"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("missing `*** End Patch`")
+        );
     }
 
     #[test]
@@ -325,7 +339,12 @@ mod tests {
 *** End Patch"#;
         let result = parse_apply_patch(patch);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no operations found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("no operations found")
+        );
     }
 
     #[test]
@@ -335,7 +354,12 @@ mod tests {
 *** End Patch"#;
         let result = parse_apply_patch(patch);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unknown operation"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unknown operation")
+        );
     }
 
     #[test]
@@ -355,7 +379,12 @@ mod tests {
 *** End Patch"#;
         let result = parse_apply_patch(patch);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("format `from -> to`"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("format `from -> to`")
+        );
     }
 
     #[test]
@@ -370,7 +399,11 @@ mod tests {
         let operations = parse_apply_patch(patch).unwrap();
         assert_eq!(operations.len(), 1);
         match &operations[0] {
-            PatchOperation::UpdateFile { path, move_to, hunks } => {
+            PatchOperation::UpdateFile {
+                path,
+                move_to,
+                hunks,
+            } => {
                 assert_eq!(path, "old.txt");
                 assert_eq!(move_to.as_deref(), Some("new.txt"));
                 assert_eq!(hunks.len(), 1);

@@ -85,15 +85,13 @@ impl Config {
             .join(".openjax")
             .join("config")
             .join("config.toml");
-        
+
         if cwd_config.exists() {
             return Some(cwd_config);
         }
 
-        let home_config = dirs::home_dir()?
-            .join(".openjax")
-            .join("config.toml");
-        
+        let home_config = dirs::home_dir()?.join(".openjax").join("config.toml");
+
         if home_config.exists() {
             return Some(home_config);
         }

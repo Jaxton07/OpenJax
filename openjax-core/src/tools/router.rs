@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+pub use super::context::ApprovalPolicy;
 use super::shell::ShellType;
 use super::spec::ToolsConfig;
-pub use super::context::ApprovalPolicy;
 
 #[derive(Debug, Clone)]
 pub struct ToolCall {
@@ -47,7 +47,13 @@ pub fn parse_tool_call(input: &str) -> Option<ToolCall> {
 
         skip_spaces(rest, &mut i);
         if i >= rest.len() || rest[i..].chars().next() != Some('=') {
-            while i < rest.len() && !rest[i..].chars().next().expect("char exists").is_whitespace() {
+            while i < rest.len()
+                && !rest[i..]
+                    .chars()
+                    .next()
+                    .expect("char exists")
+                    .is_whitespace()
+            {
                 i += rest[i..].chars().next().expect("char exists").len_utf8();
             }
             continue;
