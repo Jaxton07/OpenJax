@@ -1,8 +1,10 @@
 use crate::app_event::AppEvent;
+use crate::render::theme;
 use crate::state::AppState;
 use crate::ui::{chat_view, composer, status_bar};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 #[derive(Debug, Default)]
@@ -29,6 +31,7 @@ impl App {
                     self.state.input.clear();
                 }
             }
+            AppEvent::ToggleHelp => self.state.show_help = !self.state.show_help,
             AppEvent::CoreEvent(event) => self.state.map_core_event(&event),
             AppEvent::Quit => self.should_quit = true,
         }
@@ -45,15 +48,18 @@ impl App {
             .split(frame.area());
 
         let chat_lines = chat_view::render_lines(&self.state);
-        let chat = Paragraph::new(chat_lines)
-            .block(Block::default().title("OpenJax TUI").borders(Borders::ALL));
+        let chat = Paragraph::new(chat_lines).block(
+            Block::default()
+                .title(Span::styled("OpenJax TUI", theme::title_style()))
+                .borders(Borders::ALL),
+        );
         frame.render_widget(chat, chunks[0]);
 
         let composer = Paragraph::new(vec![composer::render_line(&self.state)])
             .block(Block::default().title("Input").borders(Borders::ALL));
         frame.render_widget(composer, chunks[1]);
 
-        let status = Paragraph::new(vec![status_bar::render_line()]);
+        let status = Paragraph::new(vec![status_bar::render_line(self.state.show_help)]);
         frame.render_widget(status, chunks[2]);
 
         if let Some(overlay) = &self.state.approval_overlay {
@@ -62,6 +68,22 @@ impl App {
             frame.render_widget(
                 Paragraph::new(overlay.prompt.clone())
                     .block(Block::default().title("Approval").borders(Borders::ALL)),
+                popup,
+            );
+        }
+
+        if self.state.show_help {
+            let popup = centered_rect(70, 35, frame.area());
+            frame.render_widget(Clear, popup);
+            frame.render_widget(
+                Paragraph::new(
+                    "Shortcuts:\n\
+Enter: submit input\n\
+Backspace: delete char\n\
+?: toggle this help\n\
+q / Esc / Ctrl-C: quit",
+                )
+                .block(Block::default().title("Help").borders(Borders::ALL)),
                 popup,
             );
         }

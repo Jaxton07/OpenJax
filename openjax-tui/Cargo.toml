@@ -11,6 +11,7 @@ ratatui.workspace = true
 crossterm.workspace = true
 openjax-core = { path = "../openjax-core" }
 openjax-protocol = { path = "../openjax-protocol" }
+scopeguard = "1"
 
 [dev-dependencies]
 pretty_assertions.workspace = true

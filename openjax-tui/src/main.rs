@@ -1,6 +1,6 @@
 use openjax_tui::app::App;
 use openjax_tui::app_event::AppEvent;
-use openjax_tui::tui::next_app_event;
+use openjax_tui::tui::{AltScreenMode, enter_terminal_mode, next_app_event, restore_terminal_mode};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::io::{self, Stdout};
@@ -13,6 +13,11 @@ fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<Stdout>>> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let alt_enabled = enter_terminal_mode(AltScreenMode::from_env())?;
+    let _guard = scopeguard::guard(alt_enabled, |enabled| {
+        let _ = restore_terminal_mode(enabled);
+    });
+
     let mut terminal = setup_terminal()?;
     let mut app = App::default();
 

@@ -1035,6 +1035,7 @@ dependencies = [
  "openjax-protocol",
  "pretty_assertions",
  "ratatui",
+ "scopeguard",
  "tokio",
 ]
 

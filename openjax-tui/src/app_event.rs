@@ -5,6 +5,7 @@ pub enum AppEvent {
     InputChar(char),
     Backspace,
     SubmitInput,
+    ToggleHelp,
     CoreEvent(Event),
     Quit,
 }

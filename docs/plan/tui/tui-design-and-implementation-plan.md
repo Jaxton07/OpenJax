@@ -470,3 +470,39 @@ openjax-tui/
 
 1. 审批 overlay 与审批事件链路已打通。
 2. 增量文本事件（`AssistantDelta`）已具备协议与 UI 合并能力。
+
+## 15. 第五阶段执行记录（2026-02-19）
+
+### 15.1 已完成改造
+
+1. Markdown 渲染增强：
+   - `openjax-tui/src/render/markdown.rs` 支持标题、列表、代码块的可读文本转换。
+   - assistant 消息展示改为先过 Markdown 渲染，再落入 UI 状态。
+2. 可用性增强：
+   - 状态栏增加帮助提示（`?` 开关）。
+   - 新增帮助弹层（快捷键列表）。
+3. 终端行为增强：
+   - `openjax-tui/src/tui.rs` 新增终端模式管理（raw mode + alt screen）。
+   - 增加 `OPENJAX_TUI_ALT_SCREEN=auto|always|never` 策略。
+   - `main.rs` 接入进入/恢复守卫，确保异常路径也执行终端恢复。
+4. 键位映射增强：
+   - 增加 `?` 打开/关闭帮助。
+   - 支持 `Esc` / `Ctrl-C` 退出。
+
+### 15.2 新增测试
+
+1. `openjax-tui/tests/m6_markdown_render.rs`
+2. `openjax-tui/tests/m7_keymap.rs`
+3. `openjax-tui/tests/m8_terminal_restore.rs`
+
+### 15.3 验证结果
+
+1. `zsh -lc "cargo fmt"`：通过。
+2. `zsh -lc "cargo test -p openjax-tui"`：通过。
+3. `zsh -lc "cargo test -p openjax-core"`：通过。
+4. `zsh -lc "cargo test -p openjax-cli"`：通过。
+
+### 15.4 第五阶段结论
+
+1. 渲染可读性与终端可用性已显著提升，具备下一轮 UI 增强基础。
+2. 计划中的五个阶段已全部落地并形成可验证记录。

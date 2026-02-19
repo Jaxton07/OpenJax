@@ -1,3 +1,4 @@
+use crate::render::markdown::render_markdown_as_plain_text;
 use crate::ui::overlay_approval::ApprovalOverlay;
 use openjax_protocol::Event;
 
@@ -12,6 +13,7 @@ pub struct AppState {
     pub messages: Vec<UiMessage>,
     pub input: String,
     pub approval_overlay: Option<ApprovalOverlay>,
+    pub show_help: bool,
 }
 
 impl AppState {
@@ -39,7 +41,7 @@ impl AppState {
     pub fn map_core_event(&mut self, event: &Event) {
         match event {
             Event::AssistantMessage { content, .. } => {
-                self.push_assistant_message(content.clone());
+                self.push_assistant_message(render_markdown_as_plain_text(content));
             }
             Event::AssistantDelta { content_delta, .. } => {
                 if let Some(last) = self.messages.last_mut()
