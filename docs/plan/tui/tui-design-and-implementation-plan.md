@@ -506,3 +506,11 @@ openjax-tui/
 
 1. 渲染可读性与终端可用性已显著提升，具备下一轮 UI 增强基础。
 2. 计划中的五个阶段已全部落地并形成可验证记录。
+
+### 15.5 会话接入补充（2026-02-19）
+
+1. `openjax-tui/src/main.rs` 已接入 `openjax-core::Agent`：
+   - 输入提交时调用 `Agent::submit_with_sink(Op::UserTurn { ... }, sink)`
+   - 将 core 事件回灌到 `AppEvent::CoreEvent`，驱动 TUI 视图实时更新
+2. TUI 启动后会显示运行时信息（model/approval/sandbox），并在退出时发送 `Op::Shutdown`。
+3. 该补充完成后，TUI 具备端到端会话能力，不再只是静态 MVP 骨架。
