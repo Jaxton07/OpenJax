@@ -223,6 +223,29 @@ fn print_event(event: &Event) {
         Event::AssistantMessage { turn_id, content } => {
             println!("[turn:{turn_id}] assistant: {content}")
         }
+        Event::AssistantDelta {
+            turn_id,
+            content_delta,
+        } => {
+            println!("[turn:{turn_id}] assistant delta: {content_delta}");
+        }
+        Event::ApprovalRequested {
+            turn_id,
+            request_id,
+            target,
+            reason,
+        } => {
+            println!(
+                "[turn:{turn_id}] approval requested: id={request_id} target={target} reason={reason}"
+            );
+        }
+        Event::ApprovalResolved {
+            turn_id,
+            request_id,
+            approved,
+        } => {
+            println!("[turn:{turn_id}] approval resolved: id={request_id} approved={approved}");
+        }
         Event::TurnCompleted { turn_id } => println!("[turn:{turn_id}] completed"),
         Event::ShutdownComplete => println!("shutdown complete"),
         // Multi-agent events (预留扩展)

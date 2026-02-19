@@ -1,14 +1,11 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalOverlay {
-    pub visible: bool,
+    pub request_id: String,
     pub prompt: String,
 }
 
 impl ApprovalOverlay {
-    pub fn hidden() -> Self {
-        Self {
-            visible: false,
-            prompt: String::new(),
-        }
+    pub fn new(request_id: String, prompt: String) -> Self {
+        Self { request_id, prompt }
     }
 }

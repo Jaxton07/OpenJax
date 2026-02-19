@@ -5,8 +5,10 @@ use crate::tools::events::{AfterToolUse, BeforeToolUse, HookEvent};
 use crate::tools::hooks::HookExecutor;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::sandboxing::SandboxManager;
+use openjax_protocol::Event;
 use std::sync::Arc;
 use std::time::Instant;
+use uuid::Uuid;
 
 /// 工具编排器
 pub struct ToolOrchestrator {
@@ -68,6 +70,16 @@ impl ToolOrchestrator {
             self.should_prompt_approval(invocation.turn.approval_policy, is_mutating);
 
         if requires_approval {
+            let request_id = Uuid::new_v4().to_string();
+            if let Some(sink) = &invocation.turn.event_sink {
+                let _ = sink.send(Event::ApprovalRequested {
+                    turn_id: invocation.turn.turn_id,
+                    request_id: request_id.clone(),
+                    target: invocation.tool_name.clone(),
+                    reason: "tool call requires approval by policy".to_string(),
+                });
+            }
+
             let approved = invocation
                 .turn
                 .approval_handler
@@ -77,6 +89,14 @@ impl ToolOrchestrator {
                 })
                 .await
                 .map_err(crate::tools::error::FunctionCallError::Internal)?;
+
+            if let Some(sink) = &invocation.turn.event_sink {
+                let _ = sink.send(Event::ApprovalResolved {
+                    turn_id: invocation.turn.turn_id,
+                    request_id,
+                    approved,
+                });
+            }
 
             if !approved {
                 return Err(crate::tools::error::FunctionCallError::ApprovalRejected(

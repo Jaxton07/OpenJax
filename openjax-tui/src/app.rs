@@ -3,7 +3,7 @@ use crate::state::AppState;
 use crate::ui::{chat_view, composer, status_bar};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -55,5 +55,39 @@ impl App {
 
         let status = Paragraph::new(vec![status_bar::render_line()]);
         frame.render_widget(status, chunks[2]);
+
+        if let Some(overlay) = &self.state.approval_overlay {
+            let popup = centered_rect(70, 25, frame.area());
+            frame.render_widget(Clear, popup);
+            frame.render_widget(
+                Paragraph::new(overlay.prompt.clone())
+                    .block(Block::default().title("Approval").borders(Borders::ALL)),
+                popup,
+            );
+        }
     }
+}
+
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    r: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1])[1]
 }

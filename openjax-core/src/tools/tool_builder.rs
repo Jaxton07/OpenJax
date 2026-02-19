@@ -79,22 +79,26 @@ pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
 
 /// 创建工具调用上下文
 pub fn create_tool_invocation(
+    turn_id: u64,
     tool_name: String,
     arguments: String,
     cwd: std::path::PathBuf,
     sandbox_policy: SandboxPolicy,
     approval_policy: ApprovalPolicy,
     approval_handler: Arc<dyn ApprovalHandler>,
+    event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
 ) -> crate::tools::context::ToolInvocation {
     crate::tools::context::ToolInvocation {
         tool_name,
         call_id: uuid::Uuid::new_v4().to_string(),
         payload: crate::tools::context::ToolPayload::Function { arguments },
         turn: crate::tools::context::ToolTurnContext {
+            turn_id,
             cwd,
             sandbox_policy,
             approval_policy,
             approval_handler,
+            event_sink,
             windows_sandbox_level: None,
         },
     }

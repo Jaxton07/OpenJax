@@ -45,10 +45,12 @@ impl ToolRouter {
 
     pub async fn execute(
         &self,
+        turn_id: u64,
         call: &ToolCall,
         cwd: &std::path::Path,
         config: ToolRuntimeConfig,
         approval_handler: Arc<dyn ApprovalHandler>,
+        event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
     ) -> Result<String> {
         debug!(
             tool_name = %call.name,
@@ -72,6 +74,7 @@ impl ToolRouter {
         };
 
         let invocation = create_tool_invocation(
+            turn_id,
             call.name.clone(),
             serde_json::to_string(&call.args)
                 .map_err(|e| anyhow!("failed to serialize args: {}", e))?,
@@ -79,6 +82,7 @@ impl ToolRouter {
             sandbox_policy,
             approval_policy,
             approval_handler,
+            event_sink,
         );
 
         let result = self.orchestrator.run(invocation).await;

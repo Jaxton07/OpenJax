@@ -85,6 +85,21 @@ pub enum Event {
         turn_id: u64,
         content: String,
     },
+    AssistantDelta {
+        turn_id: u64,
+        content_delta: String,
+    },
+    ApprovalRequested {
+        turn_id: u64,
+        request_id: String,
+        target: String,
+        reason: String,
+    },
+    ApprovalResolved {
+        turn_id: u64,
+        request_id: String,
+        approved: bool,
+    },
     /// New agent spawned (预留扩展)
     AgentSpawned {
         parent_thread_id: Option<ThreadId>,

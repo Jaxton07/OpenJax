@@ -427,3 +427,46 @@ openjax-tui/
 
 1. `openjax-tui` MVP 骨架已可构建、可测试。
 2. 下一步可进入第四阶段：审批 overlay 与增量流式事件渲染。
+
+## 14. 第四阶段执行记录（2026-02-19）
+
+### 14.1 已完成改造
+
+1. 扩展协议事件（`openjax-protocol::Event`）：
+   - `AssistantDelta { turn_id, content_delta }`
+   - `ApprovalRequested { turn_id, request_id, target, reason }`
+   - `ApprovalResolved { turn_id, request_id, approved }`
+2. 在 core 工具调用链打通审批事件发射：
+   - `ToolTurnContext` 新增 `turn_id` 与 `event_sink`
+   - `ToolRouter::execute` / `create_tool_invocation` 透传 `turn_id` 与 `event_sink`
+   - `ToolOrchestrator` 与 `ShellCommandHandler` 在审批前后发射 `ApprovalRequested/Resolved`
+3. 在 `Agent` 内合并工具子事件：
+   - 每次工具调用创建内部 `event_sink`，在返回后按顺序并入 turn 事件序列
+4. 在 TUI 状态机接入审批与流式事件：
+   - `AppState` 支持 `approval_overlay`
+   - 映射 `ApprovalRequested/Resolved` 控制 overlay 打开/关闭
+   - 映射 `AssistantDelta` 并合并到同一 assistant 消息
+   - `App::render` 增加 approval popup 渲染
+
+### 14.2 新增测试
+
+1. `openjax-core/tests/m8_approval_event_emission.rs`
+   - 验证审批流程会发射 `ApprovalRequested/ApprovalResolved`
+2. `openjax-tui/tests/m4_approval_overlay.rs`
+   - 验证审批 overlay 打开与关闭
+3. `openjax-tui/tests/m5_streaming_merge.rs`
+   - 验证 `AssistantDelta` 聚合渲染
+
+### 14.3 验证结果
+
+1. `zsh -lc "cargo fmt"`：通过。
+2. `zsh -lc "cargo test -p openjax-core --test m8_approval_event_emission"`：通过。
+3. `zsh -lc "cargo test -p openjax-tui --test m4_approval_overlay --test m5_streaming_merge"`：通过。
+4. `zsh -lc "cargo test -p openjax-core"`：通过。
+5. `zsh -lc "cargo test -p openjax-tui"`：通过。
+6. `zsh -lc "cargo test -p openjax-cli"`：通过。
+
+### 14.4 第四阶段结论
+
+1. 审批 overlay 与审批事件链路已打通。
+2. 增量文本事件（`AssistantDelta`）已具备协议与 UI 合并能力。

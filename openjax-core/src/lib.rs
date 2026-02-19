@@ -443,17 +443,21 @@ impl Agent {
                 );
             }
 
+            let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
             match self
                 .tools
                 .execute(
+                    turn_id,
                     &call,
                     self.cwd.as_path(),
                     self.tool_runtime_config,
                     self.approval_handler.clone(),
+                    Some(tool_event_tx),
                 )
                 .await
             {
                 Ok(output) => {
+                    drain_tool_events(&mut tool_event_rx, events);
                     let duration_ms = start_time.elapsed().as_millis();
                     info!(
                         turn_id = turn_id,
@@ -484,6 +488,7 @@ impl Agent {
                     return;
                 }
                 Err(err) => {
+                    drain_tool_events(&mut tool_event_rx, events);
                     last_error = Some(err);
                     // Check if error is retryable (not a validation error)
                     let err_str = last_error.as_ref().unwrap().to_string();
@@ -740,17 +745,21 @@ impl Agent {
                     tool_name: tool_name.clone(),
                 });
 
+                let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
                 match self
                     .tools
                     .execute(
+                        turn_id,
                         &call,
                         self.cwd.as_path(),
                         self.tool_runtime_config,
                         self.approval_handler.clone(),
+                        Some(tool_event_tx),
                     )
                     .await
                 {
                     Ok(output) => {
+                        drain_tool_events(&mut tool_event_rx, events);
                         if is_mutating_tool(&tool_name) {
                             // File/content state has changed. Move to a new epoch so read/list
                             // calls with the same args can run again against fresh state.
@@ -784,6 +793,7 @@ impl Agent {
                         consecutive_duplicate_skips = 0;
                     }
                     Err(err) => {
+                        drain_tool_events(&mut tool_event_rx, events);
                         let duration_ms = start_time.elapsed().as_millis();
                         let err_text = err.to_string();
                         info!(
@@ -978,6 +988,15 @@ fn is_mutating_tool(tool_name: &str) -> bool {
         tool_name,
         "apply_patch" | "edit_file_range" | "shell" | "exec_command"
     )
+}
+
+fn drain_tool_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>,
+    events: &mut Vec<Event>,
+) {
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
 }
 
 fn should_abort_on_consecutive_duplicate_skips(count: usize) -> bool {

@@ -14,6 +14,8 @@ use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
 use crate::tools::shell::Shell;
 use crate::tools::{ApprovalPolicy, SandboxMode, ShellType};
+use openjax_protocol::Event;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 struct ShellCommandArgs {
@@ -78,18 +80,36 @@ impl ToolHandler for ShellCommandHandler {
         );
 
         if should_prompt_approval(approval_policy, require_escalated) {
+            let request_id = Uuid::new_v4().to_string();
+            let reason = if require_escalated {
+                "shell command requested escalated permissions".to_string()
+            } else {
+                "shell command requires approval by policy".to_string()
+            };
+            if let Some(sink) = &turn.event_sink {
+                let _ = sink.send(Event::ApprovalRequested {
+                    turn_id: turn.turn_id,
+                    request_id: request_id.clone(),
+                    target: command.clone(),
+                    reason: reason.clone(),
+                });
+            }
             let approved = turn
                 .approval_handler
                 .request_approval(ApprovalRequest {
                     target: command.clone(),
-                    reason: if require_escalated {
-                        "shell command requested escalated permissions".to_string()
-                    } else {
-                        "shell command requires approval by policy".to_string()
-                    },
+                    reason,
                 })
                 .await
                 .map_err(FunctionCallError::Internal)?;
+
+            if let Some(sink) = &turn.event_sink {
+                let _ = sink.send(Event::ApprovalResolved {
+                    turn_id: turn.turn_id,
+                    request_id,
+                    approved,
+                });
+            }
 
             if !approved {
                 warn!(command = %command, "shell rejected by user");

@@ -1,3 +1,4 @@
+use crate::ui::overlay_approval::ApprovalOverlay;
 use openjax_protocol::Event;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,6 +11,7 @@ pub struct UiMessage {
 pub struct AppState {
     pub messages: Vec<UiMessage>,
     pub input: String,
+    pub approval_overlay: Option<ApprovalOverlay>,
 }
 
 impl AppState {
@@ -39,6 +41,15 @@ impl AppState {
             Event::AssistantMessage { content, .. } => {
                 self.push_assistant_message(content.clone());
             }
+            Event::AssistantDelta { content_delta, .. } => {
+                if let Some(last) = self.messages.last_mut()
+                    && last.role == "assistant"
+                {
+                    last.content.push_str(content_delta);
+                } else {
+                    self.push_assistant_message(content_delta.clone());
+                }
+            }
             Event::ToolCallStarted { tool_name, .. } => {
                 self.push_system_message(format!("tool started: {tool_name}"));
             }
@@ -61,6 +72,33 @@ impl AppState {
             }
             Event::ShutdownComplete => {
                 self.push_system_message("shutdown complete".to_string());
+            }
+            Event::ApprovalRequested {
+                request_id,
+                target,
+                reason,
+                ..
+            } => {
+                self.approval_overlay = Some(ApprovalOverlay::new(
+                    request_id.clone(),
+                    format!("approve `{target}` ? {reason}"),
+                ));
+            }
+            Event::ApprovalResolved {
+                request_id,
+                approved,
+                ..
+            } => {
+                if self
+                    .approval_overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.request_id == *request_id)
+                {
+                    self.approval_overlay = None;
+                }
+                self.push_system_message(format!(
+                    "approval resolved: id={request_id} approved={approved}"
+                ));
             }
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
         }

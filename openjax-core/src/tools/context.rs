@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::approval::{ApprovalHandler, StdinApprovalHandler};
+use openjax_protocol::Event;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// 工具调用载荷
 #[derive(Debug, Clone)]
@@ -71,20 +73,24 @@ impl std::fmt::Debug for ToolInvocation {
 /// 工具轮次上下文
 #[derive(Clone)]
 pub struct ToolTurnContext {
+    pub turn_id: u64,
     pub cwd: PathBuf,
     pub sandbox_policy: SandboxPolicy,
     pub approval_policy: ApprovalPolicy,
     pub approval_handler: Arc<dyn ApprovalHandler>,
+    pub event_sink: Option<UnboundedSender<Event>>,
     pub windows_sandbox_level: Option<String>,
 }
 
 impl Default for ToolTurnContext {
     fn default() -> Self {
         Self {
+            turn_id: 0,
             cwd: PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
             approval_policy: ApprovalPolicy::OnRequest,
             approval_handler: Arc::new(StdinApprovalHandler::new()),
+            event_sink: None,
             windows_sandbox_level: None,
         }
     }
@@ -93,6 +99,7 @@ impl Default for ToolTurnContext {
 impl std::fmt::Debug for ToolTurnContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ToolTurnContext")
+            .field("turn_id", &self.turn_id)
             .field("cwd", &self.cwd)
             .field("sandbox_policy", &self.sandbox_policy)
             .field("approval_policy", &self.approval_policy)
