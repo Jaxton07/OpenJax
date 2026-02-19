@@ -31,6 +31,7 @@
 - [扩展指南](extension-guide.md) - 如何扩展新工具
 - [Hooks 系统](hooks-system.md) - Hooks 系统的详细说明
 - [动态工具](dynamic-tools.md) - 动态工具支持
+- [Freeform 工具](freeform-tools.md) - Freeform 工具支持（Lark 语法）
 
 ### 安全文档
 
@@ -83,6 +84,8 @@ OpenJax 工具系统提供以下核心特性：
 - **集中的沙箱和批准管理**：统一的沙箱策略和批准流程
 - **支持多种工具类型**：Function、Mcp、Custom、LocalShell
 - **动态工具支持**：支持运行时注册自定义工具
+- **Freeform 工具支持**：支持 Lark 语法定义的自由格式工具（如 apply_patch）
+- **模块化架构**：工具代码按功能拆分为独立模块，易于维护和扩展
 
 ## 可用工具
 

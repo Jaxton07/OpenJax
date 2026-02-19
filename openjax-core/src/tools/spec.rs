@@ -27,6 +27,7 @@ pub enum ShellToolType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyPatchToolType {
     Default,
+    Freeform,
     UnifiedExec,
 }
 
@@ -36,6 +37,49 @@ impl Default for ToolsConfig {
             shell_type: ShellToolType::Default,
             apply_patch_tool_type: Some(ApplyPatchToolType::Default),
         }
+    }
+}
+
+/// Freeform 工具格式
+#[derive(Debug, Clone)]
+pub struct FreeformFormat {
+    pub r#type: String,
+    pub syntax: String,
+    pub definition: String,
+}
+
+/// 创建 apply_patch Freeform 工具规范
+pub fn create_apply_patch_freeform_spec() -> ToolSpec {
+    ToolSpec {
+        name: "apply_patch".to_string(),
+        description: r#"Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON."#.to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "description": "Format type (e.g., 'grammar')"
+                        },
+                        "syntax": {
+                            "type": "string",
+                            "description": "Syntax parser (e.g., 'lark')"
+                        },
+                        "definition": {
+                            "type": "string",
+                            "description": "Grammar definition"
+                        }
+                    }
+                }
+            },
+            "required": []
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "string",
+            "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
+        })),
     }
 }
 
