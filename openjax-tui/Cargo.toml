@@ -1,0 +1,16 @@
+[package]
+name = "openjax-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+openjax-core = { path = "../openjax-core" }
+openjax-protocol = { path = "../openjax-protocol" }
+
+[dev-dependencies]
+pretty_assertions.workspace = true

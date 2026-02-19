@@ -388,3 +388,42 @@ openjax-tui/
 
 1. 第二阶段核心改造已可用，且 `openjax-cli` 回归通过。
 2. 下一步可进入第三阶段：创建 `openjax-tui` MVP 骨架与基础状态/渲染测试。
+
+## 13. 第三阶段执行记录（2026-02-19）
+
+### 13.1 已完成改造
+
+1. 新增 `openjax-tui` crate，并加入 workspace：
+   - `openjax-tui/Cargo.toml`
+   - `openjax-tui/src/main.rs`
+   - `openjax-tui/src/lib.rs`
+2. 建立最小 TUI 架构骨架：
+   - 应用层：`app.rs`、`state.rs`、`app_event.rs`、`tui.rs`
+   - UI 层：`ui/chat_view.rs`、`ui/composer.rs`、`ui/status_bar.rs`、`ui/overlay_approval.rs`
+   - 渲染层：`render/markdown.rs`、`render/theme.rs`
+3. 实现 MVP 最小行为：
+   - 输入编辑（字符输入、退格、提交）
+   - 聊天消息列表渲染
+   - `Event -> UIState` 基础映射（`AssistantMessage`、工具起止、回合起止）
+
+### 13.2 新增测试
+
+1. `openjax-tui/tests/m1_app_state.rs`
+   - 输入状态转换
+   - 消息追加顺序
+2. `openjax-tui/tests/m2_event_mapping.rs`
+   - `Event -> UIState` 映射正确性
+3. `openjax-tui/tests/m3_render_smoke.rs`
+   - 固定 terminal size 下渲染 smoke test
+
+### 13.3 验证结果
+
+1. `zsh -lc "cargo build -p openjax-tui"`：通过。
+2. `zsh -lc "cargo test -p openjax-tui"`：通过。
+3. `zsh -lc "cargo test -p openjax-core"`：通过。
+4. `zsh -lc "cargo test -p openjax-cli"`：通过。
+
+### 13.4 第三阶段结论
+
+1. `openjax-tui` MVP 骨架已可构建、可测试。
+2. 下一步可进入第四阶段：审批 overlay 与增量流式事件渲染。
