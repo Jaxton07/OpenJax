@@ -32,6 +32,9 @@ async fn main() -> anyhow::Result<()> {
 
     let mut terminal = setup_terminal()?;
     let mut app = App::default();
+    app.state.show_system_messages = std::env::var("OPENJAX_TUI_SHOW_SYSTEM_EVENTS")
+        .ok()
+        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes"));
     {
         let agent_guard = agent.lock().await;
         app.state.push_system_message(format!(

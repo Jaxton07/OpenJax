@@ -21,9 +21,22 @@ fn core_event_to_ui_state_mapping() {
         output: "ok".to_string(),
     }));
 
-    assert_eq!(app.state.messages.len(), 3);
+    assert_eq!(app.state.messages.len(), 1);
+    assert_eq!(app.state.messages[0].role, "assistant");
+    assert_eq!(app.state.messages[0].content, "done");
+}
+
+#[test]
+fn core_event_mapping_can_show_system_messages_when_enabled() {
+    let mut app = App::default();
+    app.state.show_system_messages = true;
+
+    app.handle_event(AppEvent::CoreEvent(Event::ToolCallStarted {
+        turn_id: 1,
+        tool_name: "read_file".to_string(),
+    }));
+
+    assert_eq!(app.state.messages.len(), 1);
+    assert_eq!(app.state.messages[0].role, "system");
     assert!(app.state.messages[0].content.contains("tool started"));
-    assert_eq!(app.state.messages[1].role, "assistant");
-    assert_eq!(app.state.messages[1].content, "done");
-    assert!(app.state.messages[2].content.contains("tool completed"));
 }

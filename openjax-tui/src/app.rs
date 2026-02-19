@@ -1,11 +1,12 @@
 use crate::app_event::AppEvent;
 use crate::render::theme;
 use crate::state::AppState;
-use crate::ui::{chat_view, composer, status_bar};
+use crate::ui::{chat_view, composer, logo, status_bar};
 use ratatui::Frame;
+use ratatui::layout::Alignment;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::Span;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -41,33 +42,40 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(2),
                 Constraint::Min(1),
                 Constraint::Length(3),
                 Constraint::Length(1),
             ])
             .split(frame.area());
 
+        let logo = Paragraph::new(logo::render_lines()).alignment(Alignment::Center);
+        frame.render_widget(logo, chunks[0]);
+
         let chat_lines = chat_view::render_lines(&self.state);
-        let chat = Paragraph::new(chat_lines).block(
-            Block::default()
-                .title(Span::styled("OpenJax TUI", theme::title_style()))
-                .borders(Borders::ALL),
-        );
-        frame.render_widget(chat, chunks[0]);
+        let chat = Paragraph::new(chat_lines)
+            .block(
+                Block::default()
+                    .title(Span::styled("Conversation", theme::title_style()))
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: false });
+        frame.render_widget(chat, chunks[1]);
 
         let composer = Paragraph::new(vec![composer::render_line(&self.state)])
             .block(Block::default().title("Input").borders(Borders::ALL));
-        frame.render_widget(composer, chunks[1]);
+        frame.render_widget(composer, chunks[2]);
 
         let status = Paragraph::new(vec![status_bar::render_line(self.state.show_help)]);
-        frame.render_widget(status, chunks[2]);
+        frame.render_widget(status, chunks[3]);
 
         if let Some(overlay) = &self.state.approval_overlay {
             let popup = centered_rect(70, 25, frame.area());
             frame.render_widget(Clear, popup);
             frame.render_widget(
                 Paragraph::new(overlay.prompt.clone())
-                    .block(Block::default().title("Approval").borders(Borders::ALL)),
+                    .block(Block::default().title("Approval").borders(Borders::ALL))
+                    .wrap(Wrap { trim: false }),
                 popup,
             );
         }
@@ -83,7 +91,8 @@ Backspace: delete char\n\
 ?: toggle this help\n\
 q / Esc / Ctrl-C: quit",
                 )
-                .block(Block::default().title("Help").borders(Borders::ALL)),
+                .block(Block::default().title("Help").borders(Borders::ALL))
+                .wrap(Wrap { trim: false }),
                 popup,
             );
         }

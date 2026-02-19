@@ -14,6 +14,7 @@ pub struct AppState {
     pub input: String,
     pub approval_overlay: Option<ApprovalOverlay>,
     pub show_help: bool,
+    pub show_system_messages: bool,
 }
 
 impl AppState {
@@ -25,10 +26,12 @@ impl AppState {
     }
 
     pub fn push_system_message(&mut self, content: String) {
-        self.messages.push(UiMessage {
-            role: "system".to_string(),
-            content,
-        });
+        if self.show_system_messages {
+            self.messages.push(UiMessage {
+                role: "system".to_string(),
+                content,
+            });
+        }
     }
 
     pub fn push_assistant_message(&mut self, content: String) {
