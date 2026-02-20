@@ -1,0 +1,12 @@
+{
+  "protocol_version": "v1",
+  "kind": "event",
+  "session_id": "sess_001",
+  "turn_id": "turn_001",
+  "event_type": "approval_requested",
+  "payload": {
+    "request_id": "appr_001",
+    "target": "shell",
+    "reason": "command requires escalated privileges"
+  }
+}

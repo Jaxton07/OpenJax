@@ -1,0 +1,14 @@
+{
+  "protocol_version": "v1",
+  "kind": "response",
+  "request_id": "req_1002",
+  "ok": false,
+  "error": {
+    "code": "INVALID_PARAMS",
+    "message": "field `input` is required",
+    "retriable": false,
+    "details": {
+      "field": "input"
+    }
+  }
+}

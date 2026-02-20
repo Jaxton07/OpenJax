@@ -1,0 +1,13 @@
+{
+  "protocol_version": "v1",
+  "kind": "request",
+  "request_id": "req_1001",
+  "session_id": "sess_001",
+  "method": "submit_turn",
+  "params": {
+    "input": "请读取 README 并总结关键点",
+    "metadata": {
+      "source": "python_tui"
+    }
+  }
+}

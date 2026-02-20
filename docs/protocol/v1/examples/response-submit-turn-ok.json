@@ -1,0 +1,10 @@
+{
+  "protocol_version": "v1",
+  "kind": "response",
+  "request_id": "req_1001",
+  "ok": true,
+  "result": {
+    "turn_id": "turn_001",
+    "accepted": true
+  }
+}

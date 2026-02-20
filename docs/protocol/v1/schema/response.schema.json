@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openjax.dev/schemas/protocol/v1/response.schema.json",
+  "title": "OpenJax Protocol v1 Response",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "kind",
+    "request_id",
+    "ok"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "v1"
+    },
+    "kind": {
+      "const": "response"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "result": {
+      "type": "object"
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "then": {
+        "required": [
+          "result"
+        ],
+        "not": {
+          "required": [
+            "error"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "then": {
+        "required": [
+          "error"
+        ],
+        "not": {
+          "required": [
+            "result"
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "error": {
+      "type": "object",
+      "required": [
+        "code",
+        "message",
+        "retriable",
+        "details"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_REQUEST",
+            "INVALID_PARAMS",
+            "SESSION_NOT_FOUND",
+            "TURN_NOT_FOUND",
+            "APPROVAL_NOT_FOUND",
+            "TIMEOUT",
+            "INTERNAL_ERROR",
+            "NOT_IMPLEMENTED"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retriable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,76 +1,90 @@
 # OpenJax 工具系统概述
 
-本文档提供了 OpenJax 工具系统的概述，包括核心特性和当前状态。
+本文档描述 OpenJax 工具系统的当前能力、边界与重构期定位。
 
-## 核心特性
+---
 
-OpenJax 工具系统是一个模块化、可扩展的工具框架，支持动态注册、统一接口、丰富的输出格式和完整的执行流程。该系统参考了 Codex 的架构设计，提供了与 Codex 一致的体验。
+## 1. 定位
 
-### 主要特性
+OpenJax 工具系统是 Rust 内核中的执行与安全中枢，负责：
 
-- **统一的接口抽象**：所有工具实现相同的 `ToolHandler` trait
-- **动态注册和分发**：支持运行时注册和分发工具
-- **丰富的输出格式**：支持 Text 和 Json 输出，包含成功标志
-- **工具规范定义**：JSON Schema 定义工具的输入和输出
-- **Hooks 系统**：支持工具执行前后的钩子
-- **集中的沙箱和批准管理**：统一的沙箱策略和批准流程
-- **支持多种工具类型**：Function、Mcp、Custom、LocalShell
-- **动态工具支持**：支持运行时注册自定义工具
+1. 工具注册与调度
+2. 沙箱与审批策略落地
+3. 工具调用生命周期事件输出
+4. 为上层（CLI/TUI/Python 外层）提供稳定执行能力
 
-## 当前状态
+说明：本系统参考 Codex 架构思想，但当前口径是“能力对齐范围”，不是“完全一致体验承诺”。
 
-### 已完成的优化阶段
+---
 
-#### 第一阶段：引入核心抽象层 ✅
-- ✅ 定义核心类型（context.rs）
-- ✅ 定义 ToolHandler trait（registry.rs）
-- ✅ 实现工具注册表（registry.rs）
-- ✅ 迁移现有工具到 ToolHandler
+## 2. 核心能力（当前已具备）
 
-#### 第二阶段：实现工具规范和输出格式 ✅
-- ✅ 定义工具规范（spec.rs）
-- ✅ 实现工具规范注册（tool_builder.rs）
+- 统一接口抽象：`ToolHandler` trait
+- 工具注册与分发：`ToolRegistry`
+- 输出格式：Text / Json（含成功标志）
+- 工具规范：JSON Schema 描述输入输出
+- Hooks：执行前后挂钩（Before/After）
+- 沙箱与审批：统一编排管理
+- 动态工具：运行时注册支持
 
-#### 第三阶段：实现 Hooks 系统 ✅
-- ✅ 定义 Hooks 类型（events.rs）
-- ✅ 实现 Hooks 执行器（hooks.rs）
+---
 
-#### 第四阶段：集中管理沙箱和批准逻辑 ✅
-- ✅ 定义沙箱策略（sandboxing.rs）
-- ✅ 实现工具编排器（orchestrator.rs）
+## 3. 当前模块地图
 
-#### 第五阶段：支持动态注册和扩展性 ✅
-- ✅ 实现动态工具支持（dynamic.rs）
-- ✅ 更新工具路由器（router_impl.rs）
+路径：`openjax-core/src/tools/`
 
-### 编译状态
+- 核心抽象：`context.rs`、`registry.rs`、`spec.rs`、`error.rs`
+- 路由与编排：`router_impl.rs`、`orchestrator.rs`、`sandboxing.rs`
+- 事件与钩子：`events.rs`、`hooks.rs`
+- 动态扩展：`dynamic.rs`、`tool_builder.rs`
+- 工具处理器：`handlers/*.rs`
 
-✅ **编译成功**，无警告无错误：
+---
+
+## 4. 重构期能力边界（必须明确）
+
+### 4.1 承诺范围
+
+1. Rust 内核继续作为唯一工具执行入口。
+2. Python 外层通过协议调用工具能力，不直接复制工具执行逻辑。
+3. 审批与沙箱策略在 Rust 侧统一判定和执行。
+
+### 4.2 暂不承诺项（当前阶段）
+
+1. 不承诺与 Codex 的所有工具特性一一对齐。
+2. 不承诺首阶段支持多会话并发工具编排。
+3. 不承诺 Python 侧直接替代 Rust 侧安全边界实现。
+
+---
+
+## 5. 与 Rust + Python 重构的关系
+
+在目标架构中：
+
+- `openjax-core` 继续承载工具系统主体。
+- `openjaxd`（规划中）作为跨语言访问入口。
+- `openjax_sdk`（规划中）只做协议封装与事件分发，不重写工具内核。
+
+---
+
+## 6. 验证建议
+
 ```bash
-cargo build -p openjax-core
-# Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.17s
+zsh -lc "cargo build -p openjax-core"
+zsh -lc "cargo test -p openjax-core"
 ```
 
-## 系统总结
+重构阶段建议增加：
 
-OpenJax 工具系统已经完成了全面的优化，达到了与 Codex 一致的架构水平。系统具备：
+1. 协议集成测试（daemon <-> sdk）
+2. 审批超时与取消场景测试
+3. 高风险命令审批策略回归测试
 
-- ✅ 统一的接口抽象（ToolHandler trait）
-- ✅ 动态注册和分发能力（ToolRegistry）
-- ✅ 丰富的输出格式（Text、Json）
-- ✅ 工具规范定义（JSON Schema）
-- ✅ Hooks 系统（BeforeToolUse、AfterToolUse）
-- ✅ 集中的沙箱和批准管理（ToolOrchestrator）
-- ✅ 支持多种工具类型（Function、Mcp、Custom、LocalShell）
-- ✅ 动态工具支持（DynamicToolManager）
-- ✅ 清晰的模块化架构
+---
 
-这个系统为 OpenJax 的后续扩展打下了坚实的基础，支持快速添加新工具、集成外部服务和实现复杂的工具链。
+## 7. 相关文档
 
-## 相关文档
-
-- [架构设计](architecture.md) - 了解工具系统的架构设计
-- [核心组件](core-components.md) - 深入了解核心组件
-- [工具列表](tools-list.md) - 查看所有可用工具
-- [使用指南](usage-guide.md) - 学习如何使用工具系统
-- [扩展指南](extension-guide.md) - 学习如何扩展新工具
+- `docs/tools/architecture.md`
+- `docs/tools/core-components.md`
+- `docs/plan/refactor/phase-plan-and-todo.md`
+- `docs/plan/rust-kernel-python-expansion-plan.md`
