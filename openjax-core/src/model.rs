@@ -2,12 +2,19 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Serialize;
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::ModelConfig;
 
 #[async_trait]
 pub trait ModelClient: Send + Sync {
     async fn complete(&self, user_input: &str) -> Result<String>;
+
+    async fn complete_stream(
+        &self,
+        user_input: &str,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<String>;
 
     fn name(&self) -> &'static str;
 }
@@ -19,6 +26,18 @@ pub struct EchoModelClient;
 impl ModelClient for EchoModelClient {
     async fn complete(&self, user_input: &str) -> Result<String> {
         Ok(format!("[Echo fallback] {user_input}"))
+    }
+
+    async fn complete_stream(
+        &self,
+        user_input: &str,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<String> {
+        let text = format!("[Echo fallback] {user_input}");
+        if let Some(sender) = delta_sender {
+            let _ = sender.send(text.clone());
+        }
+        Ok(text)
     }
 
     fn name(&self) -> &'static str {
@@ -40,6 +59,8 @@ struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -189,6 +210,44 @@ fn extract_content_from_body(body: &serde_json::Value) -> Option<String> {
     None
 }
 
+fn extract_delta_content_from_body(body: &serde_json::Value) -> Option<String> {
+    let delta = body
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("delta"))?;
+
+    let content = delta.get("content")?;
+    if let Some(text) = content.as_str() {
+        return Some(text.to_string());
+    }
+
+    if let Some(blocks) = content.as_array() {
+        let mut merged = String::new();
+        for block in blocks {
+            if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
+                merged.push_str(text);
+            }
+        }
+        if !merged.is_empty() {
+            return Some(merged);
+        }
+    }
+
+    None
+}
+
+fn parse_sse_data_line(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !trimmed.starts_with("data:") {
+        return None;
+    }
+    Some(trimmed[5..].trim())
+}
+
 #[async_trait]
 impl ModelClient for ChatCompletionsClient {
     async fn complete(&self, user_input: &str) -> Result<String> {
@@ -205,6 +264,7 @@ impl ModelClient for ChatCompletionsClient {
                 },
             ],
             temperature: 0.2,
+            stream: None,
         };
 
         let resp = self
@@ -245,6 +305,122 @@ impl ModelClient for ChatCompletionsClient {
         })?;
 
         Ok(content)
+    }
+
+    async fn complete_stream(
+        &self,
+        user_input: &str,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<String> {
+        let req = ChatCompletionRequest {
+            model: self.model.clone(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: "You are OpenJax, a pragmatic coding assistant in terminal CLI. Keep responses concise.".to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: user_input.to_string(),
+                },
+            ],
+            temperature: 0.2,
+            stream: Some(true),
+        };
+
+        let mut resp = self
+            .client
+            .post(&self.endpoint)
+            .bearer_auth(&self.api_key)
+            .header("accept", "text/event-stream")
+            .json(&req)
+            .send()
+            .await
+            .context("chat completions streaming request failed")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp
+                .text()
+                .await
+                .context("failed to read streaming error response body")?;
+            return Err(anyhow!(
+                "chat completions streaming API error ({status}): {}",
+                response_snippet(&body_text)
+            ));
+        }
+
+        let mut assembled = String::new();
+        let mut pending: Vec<u8> = Vec::new();
+
+        while let Some(chunk) = resp.chunk().await.context("failed reading stream chunk")? {
+            pending.extend_from_slice(&chunk);
+
+            while let Some(pos) = pending.iter().position(|b| *b == b'\n') {
+                let mut line = pending.drain(..=pos).collect::<Vec<u8>>();
+                if matches!(line.last(), Some(b'\n')) {
+                    let _ = line.pop();
+                }
+                if matches!(line.last(), Some(b'\r')) {
+                    let _ = line.pop();
+                }
+
+                let line_text = String::from_utf8_lossy(&line);
+                let Some(data) = parse_sse_data_line(&line_text) else {
+                    continue;
+                };
+
+                if data == "[DONE]" {
+                    continue;
+                }
+
+                let payload: serde_json::Value = serde_json::from_str(data).map_err(|err| {
+                    anyhow!(
+                        "failed to parse SSE JSON chunk: {err}; chunk_snippet={}",
+                        response_snippet(data)
+                    )
+                })?;
+
+                if let Some(delta) = extract_delta_content_from_body(&payload) {
+                    if !delta.is_empty() {
+                        assembled.push_str(&delta);
+                        if let Some(sender) = &delta_sender {
+                            let _ = sender.send(delta);
+                        }
+                    }
+                }
+            }
+        }
+
+        if !pending.is_empty() {
+            let line_text = String::from_utf8_lossy(&pending);
+            if let Some(data) = parse_sse_data_line(&line_text) {
+                if data != "[DONE]" {
+                    let payload: serde_json::Value = serde_json::from_str(data).map_err(|err| {
+                        anyhow!(
+                            "failed to parse trailing SSE JSON chunk: {err}; chunk_snippet={}",
+                            response_snippet(data)
+                        )
+                    })?;
+                    if let Some(delta) = extract_delta_content_from_body(&payload) {
+                        if !delta.is_empty() {
+                            assembled.push_str(&delta);
+                            if let Some(sender) = &delta_sender {
+                                let _ = sender.send(delta);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if assembled.is_empty() {
+            return Err(anyhow!(
+                "missing streaming delta content in API response; status={status}"
+            ));
+        }
+
+        Ok(assembled)
     }
 
     fn name(&self) -> &'static str {

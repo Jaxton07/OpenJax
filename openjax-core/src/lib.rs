@@ -680,7 +680,7 @@ impl Agent {
             );
 
             if action == "final" {
-                let message = decision
+                let seed_message = decision
                     .message
                     .unwrap_or_else(|| "任务已完成。".to_string());
                 info!(
@@ -689,6 +689,15 @@ impl Agent {
                     action = "final",
                     "natural_language_turn completed"
                 );
+                let message = self
+                    .stream_final_assistant_reply(
+                        turn_id,
+                        user_input,
+                        &tool_traces,
+                        &seed_message,
+                        events,
+                    )
+                    .await;
                 self.push_event(events, Event::AssistantMessage {
                     turn_id,
                     content: message.clone(),
@@ -900,6 +909,71 @@ impl Agent {
         }
     }
 
+    async fn stream_final_assistant_reply(
+        &mut self,
+        turn_id: u64,
+        user_input: &str,
+        tool_traces: &[String],
+        seed_message: &str,
+        events: &mut Vec<Event>,
+    ) -> String {
+        let prompt = build_final_response_prompt(user_input, tool_traces, seed_message);
+        self.apply_rate_limit().await;
+
+        let (delta_tx, mut delta_rx) = tokio::sync::mpsc::unbounded_channel();
+        let stream_future = self.model_client.complete_stream(&prompt, Some(delta_tx));
+        tokio::pin!(stream_future);
+
+        let mut streamed = String::new();
+        let result = loop {
+            tokio::select! {
+                delta = delta_rx.recv() => {
+                    if let Some(delta) = delta {
+                        if !delta.is_empty() {
+                            streamed.push_str(&delta);
+                            self.push_event(events, Event::AssistantDelta {
+                                turn_id,
+                                content_delta: delta,
+                            });
+                        }
+                    }
+                }
+                result = &mut stream_future => {
+                    break result;
+                }
+            }
+        };
+
+        while let Ok(delta) = delta_rx.try_recv() {
+            if !delta.is_empty() {
+                streamed.push_str(&delta);
+                self.push_event(events, Event::AssistantDelta {
+                    turn_id,
+                    content_delta: delta,
+                });
+            }
+        }
+
+        match result {
+            Ok(full_text) => {
+                if streamed.is_empty() {
+                    return full_text;
+                }
+                if full_text.is_empty() {
+                    return streamed;
+                }
+                if full_text == streamed {
+                    return streamed;
+                }
+                full_text
+            }
+            Err(err) => {
+                warn!(turn_id = turn_id, error = %err, "final response streaming failed; fallback to planner message");
+                seed_message.to_string()
+            }
+        }
+    }
+
     fn push_event(&self, events: &mut Vec<Event>, event: Event) {
         if let Some(sink) = &self.event_sink {
             let _ = sink.send(event.clone());
@@ -1104,6 +1178,27 @@ Tool execution history:\n{tool_context}\n"
     )
 }
 
+fn build_final_response_prompt(user_input: &str, tool_traces: &[String], seed_message: &str) -> String {
+    let tool_context = if tool_traces.is_empty() {
+        "(no tools executed in this turn)".to_string()
+    } else {
+        tool_traces.join("\n")
+    };
+
+    format!(
+        "You are OpenJax's final response writer.\n\
+Produce only the final assistant reply text for the user.\n\
+Do not output JSON, markdown fences, or extra metadata.\n\
+Keep the response concise, accurate, and actionable.\n\
+\n\
+User request:\n{user_input}\n\
+\n\
+Tool execution summary for this turn:\n{tool_context}\n\
+\n\
+Draft answer from planner:\n{seed_message}\n"
+    )
+}
+
 fn build_json_repair_prompt(previous_output: &str) -> String {
     format!(
         "Your previous response did not match the required JSON schema.\n\
@@ -1179,14 +1274,57 @@ fn resolve_sandbox_mode(config: &Config) -> tools::SandboxMode {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use openjax_protocol::{Event, Op};
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+    use tokio::sync::mpsc::UnboundedSender;
 
     use super::{
-        Agent, ApprovalPolicy, SandboxMode, build_planner_input, normalize_model_decision,
+        Agent, ApprovalPolicy, SandboxMode, build_planner_input, model::ModelClient,
+        normalize_model_decision,
         parse_approval_policy, parse_model_decision, parse_sandbox_mode,
         should_abort_on_consecutive_duplicate_skips, summarize_user_input,
     };
+
+    struct ScriptedStreamingModel {
+        complete_calls: Mutex<usize>,
+    }
+
+    impl ScriptedStreamingModel {
+        fn new() -> Self {
+            Self {
+                complete_calls: Mutex::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ModelClient for ScriptedStreamingModel {
+        async fn complete(&self, _user_input: &str) -> Result<String> {
+            let mut calls = self.complete_calls.lock().expect("complete_calls lock");
+            *calls += 1;
+            Ok(r#"{"action":"final","message":"seed"}"#.to_string())
+        }
+
+        async fn complete_stream(
+            &self,
+            _user_input: &str,
+            delta_sender: Option<UnboundedSender<String>>,
+        ) -> Result<String> {
+            if let Some(sender) = delta_sender {
+                let _ = sender.send("你".to_string());
+                let _ = sender.send("好".to_string());
+            }
+            Ok("你好".to_string())
+        }
+
+        fn name(&self) -> &'static str {
+            "scripted-stream"
+        }
+    }
 
     #[test]
     fn normalizes_tool_name_in_action_with_top_level_args() {
@@ -1320,5 +1458,55 @@ mod tests {
         let (preview, truncated) = summarize_user_input("abcdef", 3);
         assert_eq!(preview, "abc...");
         assert!(truncated);
+    }
+
+    #[tokio::test]
+    async fn final_action_emits_assistant_delta_before_message() {
+        let mut agent = Agent::with_runtime(
+            ApprovalPolicy::Never,
+            SandboxMode::WorkspaceWrite,
+            PathBuf::from("."),
+        );
+        agent.model_client = Box::new(ScriptedStreamingModel::new());
+
+        let events = agent
+            .submit(Op::UserTurn {
+                input: "你好".to_string(),
+            })
+            .await;
+
+        let mut delta_text = String::new();
+        let mut first_delta_index: Option<usize> = None;
+        let mut assistant_message_index: Option<usize> = None;
+        let mut assistant_message_text = String::new();
+
+        for (idx, event) in events.iter().enumerate() {
+            match event {
+                Event::AssistantDelta { content_delta, .. } => {
+                    if first_delta_index.is_none() {
+                        first_delta_index = Some(idx);
+                    }
+                    delta_text.push_str(content_delta);
+                }
+                Event::AssistantMessage { content, .. } => {
+                    assistant_message_index = Some(idx);
+                    assistant_message_text = content.clone();
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(delta_text, "你好");
+        assert_eq!(assistant_message_text, "你好");
+        assert!(first_delta_index.is_some(), "expected assistant delta events");
+        assert!(
+            assistant_message_index.is_some(),
+            "expected final assistant message"
+        );
+        assert!(
+            first_delta_index.expect("first delta")
+                < assistant_message_index.expect("assistant message index"),
+            "assistant delta should be emitted before final assistant message"
+        );
     }
 }
