@@ -10,7 +10,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -20,6 +20,7 @@ const KIND_REQUEST: &str = "request";
 const KIND_RESPONSE: &str = "response";
 const KIND_EVENT: &str = "event";
 const APPROVAL_TIMEOUT_MS: u64 = 60_000;
+const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
 
 #[derive(Debug, Deserialize)]
 struct RequestEnvelope {
@@ -302,6 +303,17 @@ async fn handle_line(
                 return;
             };
 
+            let (input_preview, input_truncated) =
+                summarize_user_input(input, USER_INPUT_LOG_PREVIEW_CHARS);
+            info!(
+                request_id = %req.request_id,
+                session_id = %session_id,
+                input_len = input.chars().count(),
+                input_preview = ?input_preview,
+                input_truncated = input_truncated,
+                "submit_turn accepted"
+            );
+
             let sessions_guard = sessions.lock().await;
             let Some(state) = sessions_guard.get(&session_id) else {
                 let _ = send_error(
@@ -325,43 +337,103 @@ async fn handle_line(
 
             tokio::spawn(async move {
                 info!(request_id = %request_id, session_id = %session_id_for_events, "submit_turn worker started");
-                let events = {
-                    let mut agent = agent.lock().await;
-                    agent.submit(Op::UserTurn { input: input_owned }).await
-                };
+                let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+                let submit_agent = agent.clone();
+                let submit_input = input_owned.clone();
+                let submit_task = tokio::spawn(async move {
+                    let mut agent = submit_agent.lock().await;
+                    agent
+                        .submit_with_sink(Op::UserTurn { input: submit_input }, event_tx)
+                        .await
+                });
 
-                let turn_id = first_turn_id(&events).map(|tid| tid.to_string());
-                let response = if let Some(tid) = turn_id.clone() {
-                    info!(request_id = %request_id, session_id = %session_id_for_events, turn_id = %tid, "turn finished");
-                    send_ok(
-                        writer_for_events.clone(),
-                        request_id,
-                        json!({"turn_id": tid, "accepted": true}),
-                    )
-                    .await
-                } else {
-                    error!(request_id = %request_id, session_id = %session_id_for_events, "failed to infer turn_id");
-                    send_error(
-                        writer_for_events.clone(),
-                        request_id,
-                        "INTERNAL_ERROR",
-                        "failed to infer turn_id from events".to_string(),
-                        false,
-                        json!({}),
-                    )
-                    .await
-                };
+                let mut response_sent = false;
+                let mut response_turn_id: Option<String> = None;
 
-                if response.is_err() {
-                    return;
-                }
+                while let Some(event) = event_rx.recv().await {
+                    if !response_sent {
+                        if let Some(tid) = turn_id_from_event(&event) {
+                            let tid_str = tid.to_string();
+                            let response = send_ok(
+                                writer_for_events.clone(),
+                                request_id.clone(),
+                                json!({"turn_id": tid_str, "accepted": true}),
+                            )
+                            .await;
+                            if response.is_err() {
+                                return;
+                            }
+                            response_sent = true;
+                            response_turn_id = Some(tid.to_string());
+                        }
+                    }
 
-                if streaming_enabled.load(Ordering::Relaxed) {
-                    for event in events {
+                    if streaming_enabled.load(Ordering::Relaxed) {
                         if let Some(envelope) = map_event(&session_id_for_events, event) {
                             let _ = send_event(writer_for_events.clone(), envelope).await;
                         }
                     }
+                }
+
+                let events = match submit_task.await {
+                    Ok(events) => events,
+                    Err(err) => {
+                        error!(request_id = %request_id, session_id = %session_id_for_events, error = %err, "submit task join failed");
+                        let _ = send_error(
+                            writer_for_events.clone(),
+                            request_id,
+                            "INTERNAL_ERROR",
+                            "submit task failed".to_string(),
+                            false,
+                            json!({}),
+                        )
+                        .await;
+                        return;
+                    }
+                };
+
+                if !response_sent {
+                    let response = if let Some(tid) = first_turn_id(&events).map(|tid| tid.to_string()) {
+                        response_turn_id = Some(tid.clone());
+                        send_ok(
+                            writer_for_events.clone(),
+                            request_id.clone(),
+                            json!({"turn_id": tid, "accepted": true}),
+                        )
+                        .await
+                    } else {
+                        error!(request_id = %request_id, session_id = %session_id_for_events, "failed to infer turn_id");
+                        send_error(
+                            writer_for_events.clone(),
+                            request_id.clone(),
+                            "INTERNAL_ERROR",
+                            "failed to infer turn_id from events".to_string(),
+                            false,
+                            json!({}),
+                        )
+                        .await
+                    };
+                    if response.is_err() {
+                        return;
+                    }
+                }
+
+                if let Some(tid) = response_turn_id.as_deref() {
+                    let (assistant_deltas, assistant_messages, tool_calls, approvals) =
+                        summarize_turn_events(&events);
+                    info!(
+                        request_id = %request_id,
+                        session_id = %session_id_for_events,
+                        turn_id = %tid,
+                        phase = "thinking_completed",
+                        assistant_delta_events = assistant_deltas,
+                        assistant_message_events = assistant_messages,
+                        tool_call_events = tool_calls,
+                        approval_events = approvals,
+                        total_events = events.len(),
+                        "turn lifecycle update"
+                    );
+                    info!(request_id = %request_id, session_id = %session_id_for_events, turn_id = %tid, "turn finished");
                 }
             });
         }
@@ -529,6 +601,22 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
     None
 }
 
+fn turn_id_from_event(event: &Event) -> Option<u64> {
+    match event {
+        Event::TurnStarted { turn_id }
+        | Event::ToolCallStarted { turn_id, .. }
+        | Event::ToolCallCompleted { turn_id, .. }
+        | Event::AssistantMessage { turn_id, .. }
+        | Event::AssistantDelta { turn_id, .. }
+        | Event::ApprovalRequested { turn_id, .. }
+        | Event::ApprovalResolved { turn_id, .. }
+        | Event::TurnCompleted { turn_id } => Some(*turn_id),
+        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } | Event::ShutdownComplete => {
+            None
+        }
+    }
+}
+
 fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
     match event {
         Event::TurnStarted { turn_id } => Some(EventEnvelope {
@@ -685,6 +773,41 @@ fn chrono_like_now() -> String {
     }
 }
 
+fn summarize_user_input(input: &str, preview_limit: usize) -> (String, bool) {
+    let normalized = input.replace('\n', "\\n").replace('\r', "\\r");
+    let total = normalized.chars().count();
+    if total <= preview_limit {
+        return (normalized, false);
+    }
+
+    let mut preview = normalized.chars().take(preview_limit).collect::<String>();
+    preview.push_str("...");
+    (preview, true)
+}
+
+fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
+    let mut assistant_deltas = 0usize;
+    let mut assistant_messages = 0usize;
+    let mut tool_calls = 0usize;
+    let mut approvals = 0usize;
+
+    for event in events {
+        match event {
+            Event::AssistantDelta { .. } => assistant_deltas += 1,
+            Event::AssistantMessage { .. } => assistant_messages += 1,
+            Event::ToolCallStarted { .. } | Event::ToolCallCompleted { .. } => tool_calls += 1,
+            Event::ApprovalRequested { .. } | Event::ApprovalResolved { .. } => approvals += 1,
+            Event::TurnStarted { .. }
+            | Event::TurnCompleted { .. }
+            | Event::AgentSpawned { .. }
+            | Event::AgentStatusChanged { .. }
+            | Event::ShutdownComplete => {}
+        }
+    }
+
+    (assistant_deltas, assistant_messages, tool_calls, approvals)
+}
+
 async fn cleanup_sessions(sessions: Arc<Mutex<HashMap<String, SessionState>>>) {
     let all_sessions = {
         let mut guard = sessions.lock().await;
@@ -694,5 +817,68 @@ async fn cleanup_sessions(sessions: Arc<Mutex<HashMap<String, SessionState>>>) {
         info!(session_id = %session_id, "cleaning session");
         let mut agent = state.agent.lock().await;
         let _ = agent.submit(Op::Shutdown).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{summarize_turn_events, summarize_user_input};
+    use openjax_protocol::Event;
+
+    #[test]
+    fn summarize_user_input_marks_truncated_preview() {
+        let (preview, truncated) = summarize_user_input("abcdef", 3);
+        assert_eq!(preview, "abc...");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn summarize_user_input_escapes_newlines() {
+        let (preview, truncated) = summarize_user_input("hello\nworld", 40);
+        assert_eq!(preview, "hello\\nworld");
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn summarize_turn_events_counts_key_event_types() {
+        let events = vec![
+            Event::TurnStarted { turn_id: 1 },
+            Event::AssistantDelta {
+                turn_id: 1,
+                content_delta: "A".to_string(),
+            },
+            Event::AssistantMessage {
+                turn_id: 1,
+                content: "B".to_string(),
+            },
+            Event::ToolCallStarted {
+                turn_id: 1,
+                tool_name: "read_file".to_string(),
+            },
+            Event::ToolCallCompleted {
+                turn_id: 1,
+                tool_name: "read_file".to_string(),
+                ok: true,
+                output: "ok".to_string(),
+            },
+            Event::ApprovalRequested {
+                turn_id: 1,
+                request_id: "r1".to_string(),
+                target: "command".to_string(),
+                reason: "confirm".to_string(),
+            },
+            Event::ApprovalResolved {
+                turn_id: 1,
+                request_id: "r1".to_string(),
+                approved: true,
+            },
+            Event::TurnCompleted { turn_id: 1 },
+        ];
+
+        let (deltas, messages, tools, approvals) = summarize_turn_events(&events);
+        assert_eq!(deltas, 1);
+        assert_eq!(messages, 1);
+        assert_eq!(tools, 2);
+        assert_eq!(approvals, 2);
     }
 }

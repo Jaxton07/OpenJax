@@ -1,4 +1,4 @@
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -17,6 +17,7 @@ impl DaemonHarness {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
+            .env("OPENJAX_APPROVAL_POLICY", "never")
             .spawn()
             .expect("failed to start openjaxd");
 
@@ -207,5 +208,85 @@ fn m2_invalid_request_returns_error() {
     assert_eq!(
         resp["error"]["code"],
         Value::String("INVALID_REQUEST".to_string())
+    );
+}
+
+#[test]
+fn m3_stream_events_arrive_before_long_turn_completes() {
+    let mut daemon = DaemonHarness::start();
+
+    daemon.send(request("req-start-3", None, "start_session", json!({})));
+    let start_resp = daemon.recv_until(Duration::from_secs(8), |msg| {
+        msg.get("kind") == Some(&Value::String("response".to_string()))
+            && msg.get("request_id") == Some(&Value::String("req-start-3".to_string()))
+    });
+    let session_id = start_resp["result"]["session_id"]
+        .as_str()
+        .expect("session_id missing")
+        .to_string();
+
+    daemon.send(request(
+        "req-stream-3",
+        Some(&session_id),
+        "stream_events",
+        json!({}),
+    ));
+    let stream_resp = daemon.recv_until(Duration::from_secs(8), |msg| {
+        msg.get("kind") == Some(&Value::String("response".to_string()))
+            && msg.get("request_id") == Some(&Value::String("req-stream-3".to_string()))
+    });
+    assert_eq!(stream_resp["ok"], Value::Bool(true));
+
+    let submit_started_at = Instant::now();
+    daemon.send(request(
+        "req-submit-3",
+        Some(&session_id),
+        "submit_turn",
+        json!({ "input": "tool:shell cmd='sleep 2'" }),
+    ));
+    let submit_resp = daemon.recv_until(Duration::from_secs(8), |msg| {
+        msg.get("kind") == Some(&Value::String("response".to_string()))
+            && msg.get("request_id") == Some(&Value::String("req-submit-3".to_string()))
+    });
+    assert_eq!(submit_resp["ok"], Value::Bool(true));
+    let turn_id = submit_resp["result"]["turn_id"]
+        .as_str()
+        .expect("turn_id missing")
+        .to_string();
+
+    let early_event_deadline = Instant::now() + Duration::from_millis(900);
+    let mut saw_tool_started_early = false;
+    while Instant::now() < early_event_deadline {
+        let Ok(msg) = daemon.rx.recv_timeout(Duration::from_millis(100)) else {
+            continue;
+        };
+        if msg.get("kind") != Some(&Value::String("event".to_string())) {
+            continue;
+        }
+        if msg.get("turn_id") != Some(&Value::String(turn_id.clone())) {
+            continue;
+        }
+        if msg.get("event_type") == Some(&Value::String("tool_call_started".to_string())) {
+            saw_tool_started_early = true;
+            break;
+        }
+    }
+    assert!(
+        saw_tool_started_early,
+        "expected tool_call_started before long-running turn completed"
+    );
+
+    let done_msg = daemon.recv_until(Duration::from_secs(8), |msg| {
+        msg.get("kind") == Some(&Value::String("event".to_string()))
+            && msg.get("turn_id") == Some(&Value::String(turn_id.clone()))
+            && msg.get("event_type") == Some(&Value::String("turn_completed".to_string()))
+    });
+    assert_eq!(
+        done_msg.get("event_type"),
+        Some(&Value::String("turn_completed".to_string()))
+    );
+    assert!(
+        submit_started_at.elapsed() >= Duration::from_millis(1500),
+        "long-running turn finished unexpectedly fast"
     );
 }

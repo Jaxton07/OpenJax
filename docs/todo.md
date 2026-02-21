@@ -6,6 +6,7 @@
 4. 拆分openjax-core/src/tools/README.md [x]
 
 5. 优化日志，增加用户输入信息
+6. 优化python tui 的权限请求
 
 
 

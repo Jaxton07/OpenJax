@@ -2,17 +2,32 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from dataclasses import dataclass, field
 import os
+import queue
 import re
 import shutil
 import signal
 import sys
 import threading
+import time
 from collections import deque
 
 from openjax_sdk import OpenJaxAsyncClient
 from openjax_sdk.exceptions import OpenJaxProtocolError, OpenJaxResponseError
 from openjax_sdk.models import EventEnvelope
+
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.patch_stdout import patch_stdout
+except Exception:  # pragma: no cover - optional dependency fallback
+    PromptSession = None  # type: ignore[assignment]
+    patch_stdout = None  # type: ignore[assignment]
+
+_INPUT_REQUEST = object()
+_INPUT_STOP = object()
+_USER_PROMPT_PREFIX = "❯"
+_ASSISTANT_PREFIX = "⏺"
 
 
 class AppState:
@@ -20,10 +35,24 @@ class AppState:
         self.running = True
         self.pending_approvals: dict[str, str] = {}
         self.approval_order: deque[str] = deque()
-        self.is_typing = False
-        self.buffered_events: deque[EventEnvelope] = deque()
         self.stream_turn_id: str | None = None
         self.stream_text_by_turn: dict[str, str] = {}
+        self.waiting_turn_id: str | None = None
+        self.input_ready: asyncio.Event | None = None
+        self.session_id: str | None = None
+        self.input_backend: str = "basic"
+        self.turn_phase: str = "idle"
+        self.tool_turn_stats: dict[str, ToolTurnStats] = {}
+        self.active_tool_starts: dict[tuple[str, str], list[float]] = {}
+
+
+@dataclass
+class ToolTurnStats:
+    calls: int = 0
+    ok_count: int = 0
+    fail_count: int = 0
+    known_duration_ms: int = 0
+    tools: set[str] = field(default_factory=set)
 
 
 _LOGO_GLYPHS: dict[str, tuple[str, ...]] = {
@@ -113,27 +142,34 @@ _OPENJAX_LOGO_TINY = "OPENJAX"
 
 
 async def run() -> None:
-    _configure_readline_keybindings()
+    input_backend = _select_input_backend()
+    if input_backend == "basic":
+        _configure_readline_keybindings()
     daemon_cmd = _daemon_cmd_from_env()
     client = OpenJaxAsyncClient(daemon_cmd=daemon_cmd)
     state = AppState()
+    state.input_ready = asyncio.Event()
+    state.input_ready.set()
     _set_active_state(state)
 
     await client.start()
     try:
         session_id = await client.start_session()
+        state.session_id = session_id
+        state.input_backend = input_backend
         await client.stream_events()
         _print_logo()
-        print(f"OpenJax TUI  session={session_id}")
+        print("OpenJax TUI")
         print(f"cwd={os.getcwd()}")
+        _print_status_bar(state)
         _print_help()
-
-        input_queue: asyncio.Queue[str | None] = asyncio.Queue()
-        _start_input_worker(asyncio.get_running_loop(), input_queue)
 
         event_task = asyncio.create_task(_event_loop(client, state))
         try:
-            await _input_loop(client, state, input_queue)
+            if input_backend == "prompt_toolkit":
+                await _input_loop_prompt_toolkit(client, state)
+            else:
+                await _input_loop_basic(client, state)
         except (KeyboardInterrupt, asyncio.CancelledError):
             if state.running:
                 print("^C")
@@ -178,81 +214,100 @@ def _ignore_sigint_during_shutdown() -> None:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def _start_input_worker(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue[str | None]) -> None:
-    def worker() -> None:
-        while True:
-            try:
-                line = input("> ")
-            except EOFError:
-                with contextlib.suppress(RuntimeError):
-                    loop.call_soon_threadsafe(queue.put_nowait, None)
-                return
-            except KeyboardInterrupt:
-                with contextlib.suppress(RuntimeError):
-                    loop.call_soon_threadsafe(queue.put_nowait, None)
-                return
+async def _input_loop_basic(client: OpenJaxAsyncClient, state: AppState) -> None:
+    if state.input_ready is None:
+        raise RuntimeError("input gate is not initialized")
 
-            with contextlib.suppress(RuntimeError):
-                loop.call_soon_threadsafe(queue.put_nowait, line)
+    line_queue: asyncio.Queue[str | None] = asyncio.Queue()
+    request_queue: queue.Queue[object] = queue.Queue()
+    _start_basic_input_worker(asyncio.get_running_loop(), request_queue, line_queue)
 
-    threading.Thread(target=worker, name="openjax-tui-input", daemon=True).start()
-
-
-async def _input_loop(
-    client: OpenJaxAsyncClient, state: AppState, input_queue: asyncio.Queue[str | None]
-) -> None:
     while state.running:
-        line: str | None
         try:
-            state.is_typing = True
-            line = await input_queue.get()
+            await state.input_ready.wait()
+            request_queue.put_nowait(_INPUT_REQUEST)
+            line = await line_queue.get()
+        except KeyboardInterrupt:
+            state.running = False
+            return
         except asyncio.CancelledError:
             state.running = False
             return
-        finally:
-            state.is_typing = False
 
         if line is None:
             state.running = False
             return
-
-        text = _normalize_input(line).strip()
-        _flush_buffered_events(state)
-        if not text:
-            continue
-        if text == "/exit":
-            state.running = False
+        if not await _handle_user_line(client, state, line):
             return
-        if text == "/help":
-            _print_help()
-            continue
-        if text == "/pending":
-            _print_pending(state)
-            continue
 
-        if text in ("y", "n"):
-            await _resolve_latest_approval(client, state, approved=(text == "y"))
-            continue
 
-        if text.startswith("/approve "):
-            parts = text.split()
-            if len(parts) != 3 or parts[2] not in ("y", "n"):
-                print("usage: /approve <approval_request_id> <y|n>")
-                continue
-            await _resolve_approval_by_id(
-                client=client,
-                state=state,
-                approval_request_id=parts[1],
-                approved=parts[2] == "y",
-            )
-            continue
+async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState) -> None:
+    if state.input_ready is None:
+        raise RuntimeError("input gate is not initialized")
+    if PromptSession is None or patch_stdout is None:
+        await _input_loop_basic(client, state)
+        return
 
-        try:
-            turn_id = await client.submit_turn(text)
-            print(f"\nyou> {text}")
-            print(f"[turn:{turn_id}] thinking...")
-        except OpenJaxResponseError as err:
-            print(f"[error] submit failed: {err.code} {err.message}")
+    session = PromptSession("> ")
+    with patch_stdout():
+        while state.running:
+            try:
+                await state.input_ready.wait()
+                line = await session.prompt_async()
+            except (EOFError, KeyboardInterrupt):
+                state.running = False
+                return
+            except asyncio.CancelledError:
+                state.running = False
+                return
+
+            if not await _handle_user_line(client, state, line):
+                return
+
+
+async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: str) -> bool:
+    text = _normalize_input(line).strip()
+    if not text:
+        return True
+    if text == "/exit":
+        state.running = False
+        return False
+    if text == "/help":
+        _print_help()
+        return True
+    if text == "/pending":
+        _print_pending(state)
+        return True
+
+    if text in ("y", "n"):
+        await _resolve_latest_approval(client, state, approved=(text == "y"))
+        return True
+
+    if text.startswith("/approve "):
+        parts = text.split()
+        if len(parts) != 3 or parts[2] not in ("y", "n"):
+            print("usage: /approve <approval_request_id> <y|n>")
+            return True
+        await _resolve_approval_by_id(
+            client=client,
+            state=state,
+            approval_request_id=parts[1],
+            approved=parts[2] == "y",
+        )
+        return True
+
+    try:
+        turn_id = await client.submit_turn(text)
+        print(f"\n{_USER_PROMPT_PREFIX} {text}")
+        print(f"[turn:{turn_id}] thinking...")
+        state.waiting_turn_id = turn_id
+        state.turn_phase = "thinking"
+        if state.input_ready is not None:
+            state.input_ready.clear()
+    except OpenJaxResponseError as err:
+        print(f"[error] submit failed: {err.code} {err.message}")
+
+    return True
 
 
 async def _event_loop(client: OpenJaxAsyncClient, state: AppState) -> None:
@@ -266,22 +321,32 @@ async def _event_loop(client: OpenJaxAsyncClient, state: AppState) -> None:
             print(f"[error] event stream closed: {err}")
             state.running = False
             return
-        if state.is_typing:
-            state.buffered_events.append(evt)
-        else:
-            _print_event(evt)
+        _print_event(evt)
         if evt.event_type == "approval_requested" and evt.turn_id:
             request_id = str(evt.payload.get("request_id", ""))
             if request_id:
                 state.pending_approvals[request_id] = evt.turn_id
                 state.approval_order.append(request_id)
                 print(f"[approval] use /approve {request_id} y|n, or quick y/n")
+                state.turn_phase = "approval"
+                if state.input_ready is not None:
+                    state.input_ready.set()
         if evt.event_type == "approval_resolved":
             request_id = str(evt.payload.get("request_id", ""))
             _pop_pending(state, request_id)
+            if not state.pending_approvals:
+                state.turn_phase = "thinking" if state.waiting_turn_id else "idle"
+            if state.waiting_turn_id and not state.pending_approvals and state.input_ready is not None:
+                state.input_ready.clear()
+        if evt.event_type == "turn_completed" and evt.turn_id == state.waiting_turn_id:
+            state.waiting_turn_id = None
+            state.turn_phase = "idle"
+            if state.input_ready is not None:
+                state.input_ready.set()
 
 
 def _print_event(evt: EventEnvelope) -> None:
+    state = _active_state
     turn = evt.turn_id or "-"
     t = evt.event_type
     if t == "assistant_delta":
@@ -293,12 +358,14 @@ def _print_event(evt: EventEnvelope) -> None:
         return
     if t == "tool_call_started":
         _finalize_stream_line_if_turn(turn)
-        print(f"[turn:{turn}] tool> {evt.payload.get('tool_name')} ...")
+        _record_tool_started(turn, str(evt.payload.get("tool_name", "")))
         return
     if t == "tool_call_completed":
         _finalize_stream_line_if_turn(turn)
-        print(
-            f"[turn:{turn}] tool> {evt.payload.get('tool_name')} ok={evt.payload.get('ok')}"
+        _record_tool_completed(
+            turn=turn,
+            tool_name=str(evt.payload.get("tool_name", "")),
+            ok=bool(evt.payload.get("ok")),
         )
         return
     if t == "approval_requested":
@@ -320,7 +387,10 @@ def _print_event(evt: EventEnvelope) -> None:
         return
     if t == "turn_completed":
         _finalize_stream_line_if_turn(turn)
+        _print_tool_summary_for_turn(turn)
         print(f"[turn:{turn}] done")
+        if state is not None:
+            state.tool_turn_stats.pop(turn, None)
         return
     if t == "turn_started":
         return
@@ -334,8 +404,51 @@ def _daemon_cmd_from_env() -> list[str]:
     return cmd.split()
 
 
+def _select_input_backend() -> str:
+    if os.environ.get("OPENJAX_TUI_INPUT_BACKEND", "").lower() == "basic":
+        return "basic"
+    if (
+        PromptSession is not None
+        and patch_stdout is not None
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+    ):
+        return "prompt_toolkit"
+    return "basic"
+
+
+def _start_basic_input_worker(
+    loop: asyncio.AbstractEventLoop,
+    request_queue: queue.Queue[object],
+    line_queue: asyncio.Queue[str | None],
+) -> None:
+    def worker() -> None:
+        while True:
+            cmd = request_queue.get()
+            if cmd is _INPUT_STOP:
+                return
+            if cmd is not _INPUT_REQUEST:
+                continue
+            try:
+                line = input(f"{_USER_PROMPT_PREFIX} ")
+            except EOFError:
+                line = None
+            except KeyboardInterrupt:
+                line = None
+
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(line_queue.put_nowait, line)
+            if line is None:
+                return
+
+    threading.Thread(
+        target=worker,
+        name="openjax-tui-basic-input",
+        daemon=True,
+    ).start()
+
+
 def _print_help() -> None:
-    print("-" * 64)
     print("commands:")
     print("  text                submit turn")
     print("  /approve <id> y|n   resolve a specific approval")
@@ -343,7 +456,20 @@ def _print_help() -> None:
     print("  /pending            show pending approvals")
     print("  /help               show help")
     print("  /exit               exit")
-    print("-" * 64)
+
+
+def _print_status_bar(state: AppState) -> None:
+    line = (
+        f"[status] session={state.session_id or '-'}  backend={state.input_backend}  "
+        f"phase={state.turn_phase}  approvals={len(state.pending_approvals)}"
+    )
+    print(line)
+    print(_divider_line())
+
+
+def _divider_line() -> str:
+    columns = shutil.get_terminal_size(fallback=(100, 24)).columns
+    return "─" * max(min(columns, 100), 24)
 
 
 def _text_block_width(text: str) -> int:
@@ -487,9 +613,51 @@ def _pop_pending(state: AppState, approval_request_id: str) -> None:
         state.approval_order.remove(approval_request_id)
 
 
-def _flush_buffered_events(state: AppState) -> None:
-    while state.buffered_events:
-        _print_event(state.buffered_events.popleft())
+def _record_tool_started(turn: str, tool_name: str) -> None:
+    state = _active_state
+    if state is None:
+        return
+    key = (turn, tool_name)
+    starts = state.active_tool_starts.setdefault(key, [])
+    starts.append(time.monotonic())
+
+
+def _record_tool_completed(turn: str, tool_name: str, ok: bool) -> None:
+    state = _active_state
+    if state is None:
+        return
+    stats = state.tool_turn_stats.setdefault(turn, ToolTurnStats())
+    stats.calls += 1
+    if ok:
+        stats.ok_count += 1
+    else:
+        stats.fail_count += 1
+    if tool_name:
+        stats.tools.add(tool_name)
+
+    key = (turn, tool_name)
+    starts = state.active_tool_starts.get(key, [])
+    if starts:
+        elapsed_ms = max(int((time.monotonic() - starts.pop()) * 1000), 0)
+        stats.known_duration_ms += elapsed_ms
+    if not starts:
+        state.active_tool_starts.pop(key, None)
+
+
+def _print_tool_summary_for_turn(turn: str) -> None:
+    state = _active_state
+    if state is None:
+        return
+    stats = state.tool_turn_stats.get(turn)
+    if stats is None or stats.calls == 0:
+        return
+
+    tools = ", ".join(sorted(stats.tools)) if stats.tools else "-"
+    duration = f"{stats.known_duration_ms}ms" if stats.known_duration_ms else "n/a"
+    print(
+        f"[turn:{turn}] tool> calls={stats.calls} ok={stats.ok_count} "
+        f"fail={stats.fail_count} duration={duration} tools=[{tools}]"
+    )
 
 
 def _normalize_input(text: str) -> str:
@@ -549,15 +717,15 @@ def _render_assistant_delta(turn: str, delta: str) -> None:
         _finalize_stream_line()
         state.stream_turn_id = turn
         state.stream_text_by_turn[turn] = ""
+        print(f"{_ASSISTANT_PREFIX} ", end="", flush=True)
     state.stream_text_by_turn[turn] = state.stream_text_by_turn.get(turn, "") + delta
-    text = state.stream_text_by_turn[turn]
-    print(f"\rassistant> {text}", end="", flush=True)
+    print(delta, end="", flush=True)
 
 
 def _render_assistant_message(turn: str, content: str) -> None:
     state = _active_state
     if state is None:
-        print(f"assistant> {content}")
+        print(f"{_ASSISTANT_PREFIX} {content}")
         return
 
     if state.stream_turn_id == turn:
@@ -567,7 +735,7 @@ def _render_assistant_message(turn: str, content: str) -> None:
             return
         _finalize_stream_line()
 
-    print(f"assistant> {content}")
+    print(f"{_ASSISTANT_PREFIX} {content}")
 
 
 def _finalize_stream_line_if_turn(turn: str) -> None:

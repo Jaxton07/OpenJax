@@ -7,7 +7,7 @@ name = "openjax-tui"
 version = "0.1.0"
 description = "Minimal Python TUI for OpenJax SDK"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["prompt_toolkit>=3.0.0,<4"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
