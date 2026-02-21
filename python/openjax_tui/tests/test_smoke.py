@@ -25,10 +25,10 @@ class OpenJaxTuiSmokeTest(unittest.TestCase):
         )
 
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertIn("OPENJAX", proc.stdout)
         self.assertIn("OpenJax TUI", proc.stdout)
         self.assertIn("commands:", proc.stdout)
         self.assertIn("openjax_tui exited", proc.stdout)
-
 
 if __name__ == "__main__":
     unittest.main()

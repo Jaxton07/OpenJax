@@ -1,0 +1,22 @@
+{
+  "include": [
+    "src",
+    "tests"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "src",
+      "extraPaths": [
+        "src",
+        "../openjax_sdk/src"
+      ]
+    },
+    {
+      "root": "tests",
+      "extraPaths": [
+        "src",
+        "../openjax_sdk/src"
+      ]
+    }
+  ]
+}

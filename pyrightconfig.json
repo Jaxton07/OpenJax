@@ -1,0 +1,36 @@
+{
+  "include": [
+    "python/openjax_sdk/src",
+    "python/openjax_sdk/tests",
+    "python/openjax_tui/src",
+    "python/openjax_tui/tests"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "python/openjax_sdk/src",
+      "extraPaths": [
+        "python/openjax_sdk/src"
+      ]
+    },
+    {
+      "root": "python/openjax_sdk/tests",
+      "extraPaths": [
+        "python/openjax_sdk/src"
+      ]
+    },
+    {
+      "root": "python/openjax_tui/src",
+      "extraPaths": [
+        "python/openjax_sdk/src",
+        "python/openjax_tui/src"
+      ]
+    },
+    {
+      "root": "python/openjax_tui/tests",
+      "extraPaths": [
+        "python/openjax_sdk/src",
+        "python/openjax_tui/src"
+      ]
+    }
+  ]
+}
