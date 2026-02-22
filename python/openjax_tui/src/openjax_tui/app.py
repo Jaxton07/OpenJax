@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass, field
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 import queue
 import re
@@ -42,6 +44,11 @@ _PREFIX_CONTINUATION = "  "
 _ANSI_GREEN = "\x1b[32m"
 _ANSI_RED = "\x1b[31m"
 _ANSI_RESET = "\x1b[0m"
+_TUI_LOGGER_NAME = "openjax_tui"
+_TUI_LOG_FILENAME = "openjax_tui.log"
+_TUI_LOG_MAX_BYTES_DEFAULT = 2 * 1024 * 1024
+_TUI_LOG_BACKUP_COUNT = 5
+_tui_logger: logging.Logger | None = None
 
 
 class AppState:
@@ -170,6 +177,7 @@ _OPENJAX_LOGO_TINY = "OPENJAX"
 
 
 async def run() -> None:
+    _setup_tui_logger()
     input_backend, backend_reason = _select_input_backend_with_reason()
     if input_backend == "basic":
         _configure_readline_keybindings()
@@ -192,6 +200,7 @@ async def run() -> None:
         _print_logo()
         print("OpenJax TUI")
         print(f"cwd={os.getcwd()}")
+        _tui_log_info(f"python_tui started backend={input_backend} cwd={os.getcwd()}")
         _print_status_bar(state)
         _print_help()
 
@@ -218,6 +227,7 @@ async def run() -> None:
         await _shutdown_client_quietly(client, graceful=not interrupted)
         _finalize_stream_line(state)
         _set_active_state(None)
+        _tui_log_info("python_tui exited")
         print("openjax_tui exited")
 
 
@@ -506,8 +516,85 @@ def _tui_debug_enabled() -> bool:
 def _tui_debug(message: str) -> None:
     if not _tui_debug_enabled():
         return
-    ts = f"{time.time():.3f}"
-    print(f"[tui-debug] t={ts} {message}", file=sys.stderr, flush=True)
+    logger = _tui_logger
+    if logger is not None:
+        logger.debug(message)
+
+
+def _tui_log_info(message: str) -> None:
+    logger = _tui_logger
+    if logger is not None:
+        logger.info(message)
+
+
+def _setup_tui_logger() -> logging.Logger | None:
+    global _tui_logger
+    if _tui_logger is not None:
+        return _tui_logger
+
+    log_dir = os.environ.get("OPENJAX_TUI_LOG_DIR", os.path.join(".openjax", "logs"))
+    max_bytes = _parse_log_max_bytes(
+        os.environ.get("OPENJAX_TUI_LOG_MAX_BYTES", ""),
+        _TUI_LOG_MAX_BYTES_DEFAULT,
+    )
+    log_path = os.path.join(log_dir, _TUI_LOG_FILENAME)
+
+    with contextlib.suppress(OSError):
+        os.makedirs(log_dir, exist_ok=True)
+
+    logger = logging.getLogger(_TUI_LOGGER_NAME)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        with contextlib.suppress(Exception):
+            handler.close()
+
+    try:
+        handler = RotatingFileHandler(
+            log_path,
+            maxBytes=max_bytes,
+            backupCount=_TUI_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+    except OSError as err:
+        print(f"[warn] failed to initialize tui logger at {log_path}: {err}", file=sys.stderr)
+        _tui_logger = None
+        return None
+
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    logger.addHandler(handler)
+    logger.info(
+        "tui logger initialized path=%s max_bytes=%s backups=%s",
+        log_path,
+        max_bytes,
+        _TUI_LOG_BACKUP_COUNT,
+    )
+    _tui_logger = logger
+    return logger
+
+
+def _parse_log_max_bytes(raw: str, fallback: int) -> int:
+    with contextlib.suppress(ValueError):
+        value = int(raw.strip())
+        if value > 0:
+            return value
+    return fallback
+
+
+def _reset_tui_logger_for_tests() -> None:
+    global _tui_logger
+    logger = _tui_logger
+    if logger is None:
+        return
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        with contextlib.suppress(Exception):
+            handler.close()
+    _tui_logger = None
 
 
 def _print_event(evt: EventEnvelope) -> None:

@@ -2,6 +2,11 @@
 本指南面向本仓库中的自治编码代理。
 请使用可复现命令，遵循现有模式，并验证改动。
 
+
+## 项目概述
+OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型能够与代码库交互。它提供模块化架构，支持工具执行、沙箱环境和多模型支持, 参考codex 的实现。
+本项目是想基于codex 的实现原理打造一个定制化的个人助理，而codex 的tool 工具调用，shell 执行，agent loop, 沙箱机制，等等基本能力是我们的助理agent 也需要的
+
 ## 1) 项目概览
 - OpenJax 是一个以 Rust 为主、包含 Python MVP 组件的代理框架。
 - Rust 工作区成员（`Cargo.toml`）：
@@ -157,3 +162,12 @@
 - `.cursor/rules/`：未找到
 - `.github/copilot-instructions.md`：未找到
 如果这些文件后续出现，请将其视为更高优先级并合并到本指南。
+
+## 17) Python TUI 日志与调试
+- Python TUI 日志文件：`.openjax/logs/openjax_tui.log`。
+- 日志轮转：单文件超过大小阈值后自动轮转，最多保留 5 个备份（`openjax_tui.log.1` ... `.5`）。
+- 默认单文件大小：`2 MiB`；可通过 `OPENJAX_TUI_LOG_MAX_BYTES` 覆盖。
+- 可通过 `OPENJAX_TUI_LOG_DIR` 覆盖日志目录（默认 `.openjax/logs`）。
+- 打开 Python TUI 调试日志写入（仅写入日志文件，不在 TUI 界面回显）：设置 `OPENJAX_TUI_DEBUG=1`。
+- 推荐调试启动命令：
+  - `zsh -lc "OPENJAX_TUI_DEBUG=1 PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m openjax_tui"`
