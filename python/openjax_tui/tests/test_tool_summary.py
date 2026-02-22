@@ -49,7 +49,7 @@ class ToolSummaryTest(unittest.TestCase):
         with patch("openjax_tui.app._supports_ansi_color", return_value=True):
             bullet = _status_bullet(ok=True)
 
-        self.assertEqual(bullet, "⏺")
+        self.assertEqual(bullet, "\x1b[32m⏺\x1b[0m")
 
     def test_tool_line_appends_to_history_in_prompt_toolkit_backend(self) -> None:
         state = AppState()

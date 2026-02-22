@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from collections import deque
+from pathlib import Path
 from typing import Any, Callable
 
 from openjax_sdk import OpenJaxAsyncClient
@@ -31,6 +32,7 @@ try:
     from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.styles import Style
     from prompt_toolkit.widgets import TextArea
+    from prompt_toolkit.completion import Completer, Completion
     _prompt_toolkit_print: Callable[[object], None] | None = print_formatted_text
     _prompt_toolkit_ansi: Callable[[str], object] | None = ANSI
     _prompt_toolkit_style: type[Style] | None = Style
@@ -47,6 +49,8 @@ try:
     _prompt_toolkit_conditional_container: type[ConditionalContainer] | None = (
         ConditionalContainer
     )
+    _prompt_toolkit_completer: type[Completer] | None = Completer
+    _prompt_toolkit_completion: type[Completion] | None = Completion
     _prompt_toolkit_import_error: str | None = None
 except Exception:  # pragma: no cover - optional dependency fallback
     PromptSession = None  # type: ignore[assignment]
@@ -63,6 +67,8 @@ except Exception:  # pragma: no cover - optional dependency fallback
     _prompt_toolkit_formatted_text_control = None
     _prompt_toolkit_condition = None
     _prompt_toolkit_conditional_container = None
+    _prompt_toolkit_completer = None
+    _prompt_toolkit_completion = None
     _prompt_toolkit_import_error = "prompt_toolkit import failed"
 
 try:
@@ -86,6 +92,16 @@ _TUI_LOG_MAX_BYTES_DEFAULT = 2 * 1024 * 1024
 _TUI_LOG_BACKUP_COUNT = 5
 _PRINT_TOOL_TURN_SUMMARY = False
 _tui_logger: logging.Logger | None = None
+_OPENJAX_ROOT_LOG = os.path.join(".openjax", "logs", "openjax.log")
+_COMMAND_ROWS: tuple[str, ...] = (
+    "text                submit turn",
+    "/approve <id> y|n   resolve a specific approval",
+    "y | n               resolve latest pending approval",
+    "/pending            show pending approvals",
+    "/help               show help",
+    "/exit               exit",
+)
+_SLASH_COMMANDS: tuple[str, ...] = ("/approve", "/pending", "/help", "/exit")
 
 
 class AppState:
@@ -110,7 +126,7 @@ class AppState:
         self.prompt_invalidator: Callable[[], None] | None = None
         self.history_blocks: list[str] = []
         self.stream_block_index: int | None = None
-        self.history_setter: Callable[[str], None] | None = None
+        self.history_setter: Callable[[], None] | None = None
 
 
 @dataclass
@@ -233,16 +249,14 @@ async def run() -> None:
     interrupted = False
     try:
         session_id = await client.start_session()
+        version = _resolve_openjax_version()
         state.session_id = session_id
         state.input_backend = input_backend
         state.input_backend_reason = backend_reason
         await client.stream_events()
         _print_logo()
-        print("OpenJax TUI")
-        print(f"cwd={os.getcwd()}")
-        _tui_log_info(f"python_tui started backend={input_backend} cwd={os.getcwd()}")
-        _print_status_bar(state)
-        _print_help()
+        _print_startup_card(version=version)
+        _log_startup_summary(state, version=version)
 
         event_task = asyncio.create_task(_event_loop(client, state))
         try:
@@ -352,22 +366,20 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
     line_queue: asyncio.Queue[str] = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
-    history_view = _prompt_toolkit_text_area(
-        text="",
-        read_only=True,
+    history_control = _prompt_toolkit_formatted_text_control(
+        lambda: (
+            _prompt_toolkit_ansi(_history_text(state))
+            if _prompt_toolkit_ansi is not None
+            else _history_text(state)
+        ),
         focusable=False,
-        scrollbar=True,
+        show_cursor=False,
+    )
+    history_view = _prompt_toolkit_window(
+        content=history_control,
+        always_hide_cursor=True,
         wrap_lines=True,
     )
-
-    def _set_history_text(text: str) -> None:
-        buffer = history_view.buffer
-        buffer.set_document(
-            _prompt_toolkit_document(text=text, cursor_position=len(text)),
-            bypass_readonly=True,
-        )
-
-    state.history_setter = _set_history_text
 
     def _accept_input(buffer: Any) -> bool:
         text = str(getattr(buffer, "text", ""))
@@ -377,11 +389,27 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         loop.call_soon_threadsafe(line_queue.put_nowait, text)
         return True
 
+    slash_completer = _build_slash_command_completer()
     input_view = _prompt_toolkit_text_area(
         prompt=f"{_USER_PROMPT_PREFIX} ",
         multiline=False,
         wrap_lines=False,
         accept_handler=_accept_input,
+        completer=slash_completer,
+        complete_while_typing=True,
+    )
+    slash_hint_panel = _prompt_toolkit_conditional_container(
+        content=_prompt_toolkit_window(
+            content=_prompt_toolkit_formatted_text_control(
+                lambda: _slash_hint_fragments(
+                    str(getattr(input_view.buffer, "text", ""))
+                )
+            ),
+            dont_extend_height=True,
+        ),
+        filter=_prompt_toolkit_condition(
+            lambda: bool(_slash_hint_text(str(getattr(input_view.buffer, "text", ""))))
+        ),
     )
 
     approval_panel = _prompt_toolkit_conditional_container(
@@ -397,7 +425,9 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
     root_container = _prompt_toolkit_hsplit(
         [
             history_view,
+            _prompt_toolkit_window(height=1, char=" "),
             input_view,
+            slash_hint_panel,
             approval_panel,
         ]
     )
@@ -410,6 +440,7 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
     )
 
     state.prompt_invalidator = lambda: _invalidate_prompt_application(app)
+    state.history_setter = state.prompt_invalidator
     _refresh_history_view(state)
     app_task: asyncio.Task[None] = asyncio.create_task(app.run_async())
     try:
@@ -492,6 +523,9 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         else:
             print("[approval] pending request: use Enter/y/n/Tab/Esc or /approve <id> y|n")
         return True
+
+    if state.input_backend == "prompt_toolkit":
+        _emit_ui_line(f"{_USER_PROMPT_PREFIX} {text}")
 
     try:
         turn_id = await client.submit_turn(text)
@@ -614,7 +648,9 @@ def _request_prompt_redraw(state: AppState) -> None:
 
 
 def _history_text(state: AppState) -> str:
-    return "\n\n".join(state.history_blocks)
+    if not state.history_blocks:
+        return "\n"
+    return "\n" + "\n\n".join(state.history_blocks)
 
 
 def _refresh_history_view(state: AppState) -> None:
@@ -622,8 +658,7 @@ def _refresh_history_view(state: AppState) -> None:
     if setter is None:
         return
     with contextlib.suppress(Exception):
-        setter(_history_text(state))
-    _request_prompt_redraw(state)
+        setter()
 
 
 async def _drain_background_task(task: asyncio.Task[Any] | None) -> None:
@@ -894,12 +929,8 @@ def _start_basic_input_worker(
 
 def _print_help() -> None:
     print("commands:")
-    print("  text                submit turn")
-    print("  /approve <id> y|n   resolve a specific approval")
-    print("  y | n               resolve latest pending approval")
-    print("  /pending            show pending approvals")
-    print("  /help               show help")
-    print("  /exit               exit")
+    for row in _COMMAND_ROWS:
+        print(f"  {row}")
 
 
 def _print_status_bar(state: AppState) -> None:
@@ -911,6 +942,128 @@ def _print_status_bar(state: AppState) -> None:
     if state.input_backend_reason:
         print(f"[input] {state.input_backend_reason}")
     print(_divider_line())
+
+
+def _log_startup_summary(state: AppState, version: str) -> None:
+    summary = (
+        "python_tui started "
+        f"version={version} "
+        f"cwd={os.getcwd()} "
+        f"session={state.session_id or '-'} "
+        f"backend={state.input_backend} "
+        f"phase={state.turn_phase} "
+        f"approvals={len(state.pending_approvals)} "
+        f"input_reason={_approval_text_field(state.input_backend_reason)}"
+    )
+    _tui_log_info(summary)
+    _append_openjax_log_line(summary)
+
+
+def _append_openjax_log_line(message: str) -> None:
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    log_path = _OPENJAX_ROOT_LOG
+    with contextlib.suppress(OSError):
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(f"{timestamp} INFO python_tui {message}\n")
+
+
+def _resolve_openjax_version() -> str:
+    env_version = os.environ.get("OPENJAX_VERSION", "").strip()
+    if env_version:
+        return env_version
+
+    cargo_path = Path(__file__).resolve().parents[4] / "Cargo.toml"
+    if not cargo_path.exists():
+        return "dev"
+
+    in_workspace_package = False
+    with contextlib.suppress(OSError):
+        with cargo_path.open("r", encoding="utf-8") as fh:
+            for raw_line in fh:
+                line = raw_line.strip()
+                if line.startswith("[") and line.endswith("]"):
+                    in_workspace_package = line == "[workspace.package]"
+                    continue
+                if not in_workspace_package:
+                    continue
+                match = re.match(r'^version\s*=\s*"([^"]+)"$', line)
+                if match:
+                    return match.group(1)
+    return "dev"
+
+
+def _slash_command_candidates(text_before_cursor: str) -> list[str]:
+    if not text_before_cursor.startswith("/"):
+        return []
+    token = text_before_cursor.split(maxsplit=1)[0]
+    if not token:
+        return list(_SLASH_COMMANDS)
+    return [cmd for cmd in _SLASH_COMMANDS if cmd.startswith(token)]
+
+
+def _slash_hint_text(input_text: str) -> str:
+    candidates = _slash_command_candidates(input_text)
+    if not candidates:
+        return ""
+    joined = "  ".join(candidates)
+    return f" commands: {joined}"
+
+
+def _slash_hint_fragments(input_text: str) -> Any:
+    text = _slash_hint_text(input_text)
+    if not text:
+        return ""
+    return [("bg:default fg:default noreverse", text)]
+
+
+def _build_slash_command_completer() -> Any:
+    if _prompt_toolkit_completer is None or _prompt_toolkit_completion is None:
+        return None
+
+    completion_cls = _prompt_toolkit_completion
+
+    class _SlashCompleter(_prompt_toolkit_completer):
+        def get_completions(self, document: Any, complete_event: Any) -> Any:
+            _ = complete_event
+            text_before_cursor = str(getattr(document, "text_before_cursor", ""))
+            token = text_before_cursor.split(maxsplit=1)[0]
+            for command in _slash_command_candidates(text_before_cursor):
+                yield completion_cls(
+                    command,
+                    start_position=-len(token),
+                )
+
+    return _SlashCompleter()
+
+
+def _format_display_directory(path: str) -> str:
+    home = os.path.expanduser("~")
+    if path == home:
+        return "~"
+    prefix = home + os.sep
+    if path.startswith(prefix):
+        return "~/" + path[len(prefix) :]
+    return path
+
+
+def _print_startup_card(version: str) -> None:
+    model = os.environ.get("OPENJAX_MODEL", "(default)")
+    directory = _format_display_directory(os.getcwd())
+    rows = [
+        f">_ OpenJax TUI (v{version})",
+        "",
+        f"model:     {model}",
+        f"directory: {directory}",
+    ]
+    content_width = max((len(row) for row in rows), default=0) + 2
+    top = "╭" + ("─" * content_width) + "╮"
+    bottom = "╰" + ("─" * content_width) + "╯"
+    print(top)
+    for row in rows:
+        print(f"│ {row.ljust(content_width - 1)}│")
+    print(bottom)
+    print()
 
 
 def _divider_line() -> str:
@@ -1216,6 +1369,13 @@ def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> A
     @kb.add("tab", eager=True)
     def _toggle_action(event: object) -> None:
         if not _approval_mode_active(state):
+            app = getattr(event, "app", None)
+            current_buffer = getattr(app, "current_buffer", None)
+            text = str(getattr(current_buffer, "text", "")).strip()
+            if current_buffer is not None and text.startswith("/"):
+                start_completion = getattr(current_buffer, "start_completion", None)
+                if callable(start_completion):
+                    start_completion(select_first=False)
             return
         _toggle_approval_selection(state)
         app = getattr(event, "app", None)
@@ -1545,7 +1705,8 @@ def _emit_ui_line(text: str) -> None:
 def _status_bullet(ok: bool) -> str:
     state = _active_state
     if state is not None and state.input_backend == "prompt_toolkit":
-        return _ASSISTANT_PREFIX
+        color = _ANSI_GREEN if ok else _ANSI_RED
+        return f"{color}{_ASSISTANT_PREFIX}{_ANSI_RESET}"
     if not _supports_ansi_color():
         return "🟢" if ok else "🔴"
     color = _ANSI_GREEN if ok else _ANSI_RED

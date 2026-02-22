@@ -16,7 +16,7 @@ class OpenJaxTuiSmokeTest(unittest.TestCase):
 
         proc = subprocess.run(
             ["python3", "-m", "openjax_tui"],
-            input="/help\n/exit\n",
+            input="/exit\n",
             text=True,
             cwd=str(root),
             env=env,
@@ -25,9 +25,10 @@ class OpenJaxTuiSmokeTest(unittest.TestCase):
         )
 
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
-        self.assertIn("OPENJAX", proc.stdout)
-        self.assertIn("OpenJax TUI", proc.stdout)
-        self.assertIn("commands:", proc.stdout)
+        self.assertIn(">_ OpenJax TUI (v", proc.stdout)
+        self.assertIn("directory:", proc.stdout)
+        self.assertNotIn("commands:", proc.stdout)
+        self.assertNotIn("[status]", proc.stdout)
         self.assertIn("openjax_tui exited", proc.stdout)
 
 if __name__ == "__main__":
