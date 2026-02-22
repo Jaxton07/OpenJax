@@ -5,8 +5,10 @@
 3. 添加Freeform 工具支持 [x]
 4. 拆分openjax-core/src/tools/README.md [x]
 
-5. 优化日志，增加用户输入信息
+5. 优化日志，增加用户输入信息[x]
 6. 优化python tui 的权限请求
+7. 优化python tui 的markdown 显示支持
+8. 优化python tui 的状态动画
 
 
 

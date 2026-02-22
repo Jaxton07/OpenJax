@@ -31,8 +31,7 @@ class UserPromptRenderTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(keep_running)
         self.assertEqual(client.submitted, ["你好"])
-        self.assertIn("\n❯ 你好\n", out.getvalue())
-        self.assertIn("[turn:1] thinking...\n", out.getvalue())
+        self.assertEqual(out.getvalue(), "")
 
 
 if __name__ == "__main__":

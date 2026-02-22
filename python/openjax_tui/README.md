@@ -5,7 +5,7 @@ Python TUI MVP based on `openjax_sdk`.
 默认输出为精简会话视图：
 1. `❯` 用户输入
 2. `⏺` 助手流式或最终输出
-3. `tool>` 工具调用摘要
+3. `⏺ tools: ...` 工具调用摘要（成功/失败颜色提示）
 4. `approval>` 审批提示
 
 输入区域默认在 TTY 环境下使用 `prompt_toolkit`，可将输入提示固定在底部，同时让事件输出在上方滚动。

@@ -28,6 +28,10 @@ _INPUT_REQUEST = object()
 _INPUT_STOP = object()
 _USER_PROMPT_PREFIX = "❯"
 _ASSISTANT_PREFIX = "⏺"
+_PREFIX_CONTINUATION = "  "
+_ANSI_GREEN = "\x1b[32m"
+_ANSI_RED = "\x1b[31m"
+_ANSI_RESET = "\x1b[0m"
 
 
 class AppState:
@@ -248,7 +252,10 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         await _input_loop_basic(client, state)
         return
 
-    session = PromptSession("> ")
+    session = PromptSession(
+        f"{_USER_PROMPT_PREFIX} ",
+        prompt_continuation=lambda _width, _line_no, _is_soft_wrap: _PREFIX_CONTINUATION,
+    )
     with patch_stdout():
         while state.running:
             try:
@@ -298,8 +305,6 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
 
     try:
         turn_id = await client.submit_turn(text)
-        print(f"\n{_USER_PROMPT_PREFIX} {text}")
-        print(f"[turn:{turn_id}] thinking...")
         state.waiting_turn_id = turn_id
         state.turn_phase = "thinking"
         if state.input_ready is not None:
@@ -371,8 +376,7 @@ def _print_event(evt: EventEnvelope) -> None:
     if t == "approval_requested":
         _finalize_stream_line_if_turn(turn)
         print(
-            "[turn:{turn}] approval> id={rid} target={target} reason={reason}".format(
-                turn=turn,
+            "[approval] id={rid} target={target} reason={reason}".format(
                 rid=evt.payload.get("request_id"),
                 target=evt.payload.get("target"),
                 reason=evt.payload.get("reason"),
@@ -382,19 +386,18 @@ def _print_event(evt: EventEnvelope) -> None:
     if t == "approval_resolved":
         _finalize_stream_line_if_turn(turn)
         print(
-            f"[turn:{turn}] approval> id={evt.payload.get('request_id')} approved={evt.payload.get('approved')}"
+            f"[approval] id={evt.payload.get('request_id')} approved={evt.payload.get('approved')}"
         )
         return
     if t == "turn_completed":
         _finalize_stream_line_if_turn(turn)
         _print_tool_summary_for_turn(turn)
-        print(f"[turn:{turn}] done")
         if state is not None:
             state.tool_turn_stats.pop(turn, None)
         return
     if t == "turn_started":
         return
-    print(f"[turn:{turn}] {t}")
+    print(f"[{t}]")
 
 
 def _daemon_cmd_from_env() -> list[str]:
@@ -654,9 +657,11 @@ def _print_tool_summary_for_turn(turn: str) -> None:
 
     tools = ", ".join(sorted(stats.tools)) if stats.tools else "-"
     duration = f"{stats.known_duration_ms}ms" if stats.known_duration_ms else "n/a"
+    ok = stats.fail_count == 0
+    bullet = _status_bullet(ok)
     print(
-        f"[turn:{turn}] tool> calls={stats.calls} ok={stats.ok_count} "
-        f"fail={stats.fail_count} duration={duration} tools=[{tools}]"
+        f"{bullet} tools: calls={stats.calls} ok={stats.ok_count} "
+        f"fail={stats.fail_count} duration={duration} names=[{tools}]"
     )
 
 
@@ -719,13 +724,13 @@ def _render_assistant_delta(turn: str, delta: str) -> None:
         state.stream_text_by_turn[turn] = ""
         print(f"{_ASSISTANT_PREFIX} ", end="", flush=True)
     state.stream_text_by_turn[turn] = state.stream_text_by_turn.get(turn, "") + delta
-    print(delta, end="", flush=True)
+    print(_align_multiline(delta), end="", flush=True)
 
 
 def _render_assistant_message(turn: str, content: str) -> None:
     state = _active_state
     if state is None:
-        print(f"{_ASSISTANT_PREFIX} {content}")
+        _print_prefixed_block(_ASSISTANT_PREFIX, content)
         return
 
     if state.stream_turn_id == turn:
@@ -735,7 +740,7 @@ def _render_assistant_message(turn: str, content: str) -> None:
             return
         _finalize_stream_line()
 
-    print(f"{_ASSISTANT_PREFIX} {content}")
+    _print_prefixed_block(_ASSISTANT_PREFIX, content)
 
 
 def _finalize_stream_line_if_turn(turn: str) -> None:
@@ -753,3 +758,21 @@ def _finalize_stream_line(state: AppState | None = None) -> None:
     if current.stream_turn_id is not None:
         print()
         current.stream_turn_id = None
+
+
+def _align_multiline(text: str) -> str:
+    if not text:
+        return ""
+    return text.replace("\n", f"\n{_PREFIX_CONTINUATION}")
+
+
+def _print_prefixed_block(prefix: str, content: str) -> None:
+    aligned = _align_multiline(content)
+    print(f"{prefix} {aligned}")
+
+
+def _status_bullet(ok: bool) -> str:
+    if not _supports_ansi_color():
+        return _ASSISTANT_PREFIX
+    color = _ANSI_GREEN if ok else _ANSI_RED
+    return f"{color}{_ASSISTANT_PREFIX}{_ANSI_RESET}"

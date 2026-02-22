@@ -1,92 +1,159 @@
-# Repository Guidelines
+# OpenJax 的 AGENTS 指南
+本指南面向本仓库中的自治编码代理。
+请使用可复现命令，遵循现有模式，并验证改动。
 
-## 项目概述
-OpenJax 的长期愿景是打造一个类似贾维斯（Jarvis）的全能 AI 助理，而不只是编程助手。当前阶段聚焦于夯实底层基础能力：参考 codex 的实现思路，逐步建设 tool 调用、shell 执行、agent loop、沙箱机制和多模型支持等核心能力。
+## 1) 项目概览
+- OpenJax 是一个以 Rust 为主、包含 Python MVP 组件的代理框架。
+- Rust 工作区成员（`Cargo.toml`）：
+  - `openjax-protocol`
+  - `openjax-core`
+  - `openjaxd`
+  - `openjax-cli`
+  - `openjax-tui`
+- Python 包：
+  - `python/openjax_sdk`
+  - `python/openjax_tui`
+- 架构索引：`docs/project-structure-index.md`
 
-项目当前以 Rust 实现内核，并提供 CLI 代理框架，让 AI 模型能够先稳定地与代码库交互；在此基础上，再向更通用的个人助理能力持续演进。
+## 2) 关键路径
+- `openjax-core/`：代理循环、工具、沙箱、审批。
+- `openjax-protocol/`：协议/事件/数据类型。
+- `openjaxd/`：守护进程。
+- `openjax-cli/`：CLI 体验。
+- `openjax-tui/`：Rust TUI。
+- `python/openjax_sdk/`：面向守护进程的异步 SDK。
+- `python/openjax_tui/`：Python TUI MVP。
+- `smoke_test/`：冒烟测试脚本。
 
-[本仓库架构详细介绍](docs/project-structure-index.md)
-[codex 仓库的说明文档详细版](docs/codex-architecture-reference.md)
-[codex 仓库的参考文档简略版](docs/codex-quick-reference.md)
-[codex 仓库本地路径](/Users/ericw/work/code/ai/codex)
+## 3) 命令执行策略
+- 从仓库根目录运行命令。
+- 优先使用 `zsh -lc "..."`（与 `CLAUDE.md` 中的仓库指引一致）。
 
+## 4) 构建命令
+- `zsh -lc "cargo build"`
+- `zsh -lc "cargo build -p openjax-core"`
+- `zsh -lc "cargo build -p openjax-cli"`
+- `zsh -lc "cargo build -p openjax-tui"`
+- `zsh -lc "cargo build -p openjaxd"`
 
-## 项目结构与模块划分
-OpenJax 是 Rust workspace，核心由 4 个 crate 组成：
-- `openjax-core/`：Agent 主循环、模型客户端、工具路由、沙箱与工具处理器。
-- `openjax-protocol/`：跨模块共享的协议与数据结构。
-- `openjax-cli/`：命令行入口与交互层。
-- `openjax-tui/`：Rust TUI（ratatui）实现。
+## 5) Lint 与格式化
+- `zsh -lc "cargo fmt -- --check"`
+- `zsh -lc "cargo clippy --workspace --all-targets -- -D warnings"`
 
-配套目录：
-- `openjax-core/tests/`：核心集成测试（如 sandbox、`apply_patch`）。
-- `openjax-cli/tests/`：CLI 端到端测试。
-- `openjax-tui/tests/`：Rust TUI 交互与渲染测试。
-- `python/openjax_tui/`：Python TUI MVP（当前 Python TUI 主实现）。
-- `python/openjax_sdk/`：Python SDK（供 Python TUI 调用 daemon）。
-- `docs/`：架构、工具设计与实施文档。
-- `smoke_test/`：轻量级冒烟验证。
+## 6) 测试命令
+### 全量测试运行
+- `zsh -lc "cargo test"`
+- `zsh -lc "cargo test --workspace"`
+- `zsh -lc "cargo test -p openjax-core"`
+- `zsh -lc "cargo test -p openjax-cli"`
+- `zsh -lc "cargo test -p openjax-tui"`
 
-## Python TUI 当前实现约定
-Python TUI 目前为 MVP 形态，核心逻辑集中在单文件，后续再按功能逐步拆分。
+### 单个 Rust 集成测试（重要）
+对于 `tests/` 中的文件，使用 `--test <file_stem>`。
+避免对这些测试文件只使用纯过滤器形式。
+- `zsh -lc "cargo test -p openjax-core --test m3_sandbox"`
+- `zsh -lc "cargo test -p openjax-core --test m4_apply_patch"`
+- `zsh -lc "cargo test -p openjax-core --test m5_approval_handler"`
+- `zsh -lc "cargo test -p openjax-core --test m6_submit_stream"`
+- `zsh -lc "cargo test -p openjax-core --test m7_backward_compat_submit"`
+- `zsh -lc "cargo test -p openjax-tui --test m1_app_state"`
+- `zsh -lc "cargo test -p openjax-tui --test m4_approval_overlay"`
 
-当前目录结构（以现状为准）：
-- `python/openjax_tui/src/openjax_tui/app.py`：事件循环、输入处理、审批交互、logo 渲染、流式输出与工具摘要。
-- `python/openjax_tui/src/openjax_tui/__main__.py`：`python -m openjax_tui` 启动入口。
-- `python/openjax_tui/tests/`：输入后端、输入归一化、logo 选择、流式渲染、工具汇总、smoke 测试。
+### Rust 调试输出
+- `zsh -lc "cargo test -p openjax-core -- --nocapture"`
 
-当前行为约束（基于现有实现）：
-- 输入后端默认优先 `prompt_toolkit`（TTY 且依赖可用），否则回退 `basic`。
-- 支持审批相关命令：`/approve <id> y|n`、快捷 `y|n`、`/pending`。
-- Logo 采用 long/short/tiny 三档并按终端宽度选择，终端支持时启用 ANSI 渐变。
-- 工具调用按 turn 聚合，在 `turn_completed` 时输出单行摘要（calls/ok/fail/duration/tools）。
-- `assistant_delta` 与最终 `assistant_message` 需要去重，避免重复渲染。
+### Python 测试（`openjax_tui`）
+设置 `PYTHONPATH` 以便解析本地模块：
+- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest discover -s python/openjax_tui/tests -v"`
+单文件：
+- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest python/openjax_tui/tests/test_input_backend.py -v"`
+单方法：
+- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest openjax_tui.tests.test_input_backend.InputBackendTest.test_force_basic_by_env -v"`
 
-演进要求：
-- Python TUI 改动需优先补充 `python/openjax_tui/tests/` 对应测试。
-- 在完成模块化拆分前，避免继续把高耦合新逻辑堆入 `app.py`；优先提取可测试函数。
-- Python TUI 仅负责交互层，不复制 `openjax-core` 的核心业务逻辑。
+### 冒烟测试
+- `zsh -lc "zsh smoke_test/python_tui_smoke.sh"`
+- `zsh -lc "zsh smoke_test/python_tui_mux_check.sh"`
 
-## 构建、测试与开发命令
-本仓库统一使用 `zsh` 执行命令。
+## 7) Rust 代码风格
+- 工作区版本（edition）是 `2024`。
+- 使用 rustfmt 默认配置格式化；4 空格缩进。
+- 命名：
+  - 函数/模块/变量：`snake_case`
+  - 结构体/枚举/trait：`PascalCase`
+  - 常量/静态变量：`SCREAMING_SNAKE_CASE`
+- 保持模块聚焦且可组合（`openjax-core/src/tools/` 是参考风格）。
+- 优先使用显式类型和枚举，而不是临时拼接的字符串状态。
 
-- `zsh -lc "cargo build"`：构建整个 workspace。
-- `zsh -lc "cargo build -p openjax-cli"`：仅构建 CLI。
-- `zsh -lc "cargo build -p openjax-tui"`：仅构建 Rust TUI。
-- `zsh -lc "cargo test"`：运行全部测试。
-- `zsh -lc "cargo test -p openjax-core m3_sandbox"`：运行沙箱相关测试。
-- `zsh -lc "cargo test -p openjax-core m4_apply_patch"`：运行补丁工具相关测试。
-- `zsh -lc "cargo test -p openjax-core -- --nocapture"`：显示测试过程输出。
-- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest discover -s python/openjax_tui/tests -v"`：运行 Python TUI 测试。
+## 8) Python 代码风格
+- Python 版本是 `>=3.10`。
+- 使用 4 空格缩进和 PEP 8 命名。
+- 为公共与内部函数保留类型注解（测试中也包含 `-> None`）。
+- 使用 `str | None` 联合类型语法。
+- 将 `python/openjax_tui` 保持为 UI/编排层；不要复制 `openjax-core` 的业务逻辑。
 
-## 代码风格与命名规范
-遵循 Rust 默认规范，并在提交前保持 `rustfmt` 格式一致。
-- 缩进：4 个空格。
-- 命名：函数/文件/模块使用 `snake_case`，类型/trait 使用 `PascalCase`，常量使用 `SCREAMING_SNAKE_CASE`。
-- 模块设计：优先小而清晰的职责划分（参考 `openjax-core/src/tools/`）。
-- 注释：简洁说明“意图与约束”，避免解释显而易见的语法。
+## 9) 导入顺序
+### Rust
+1. `pub mod`
+2. `pub use`
+3. 外部 crates
+4. `std`
+5. 内部 crate 导入
+### Python
+1. `from __future__ import annotations`
+2. 标准库
+3. 第三方包
+4. 本地包导入
 
-## 测试规范
-Rust 模块使用 `cargo test`，Python TUI 使用 `python3 -m unittest`。功能改动必须补充对应测试，重点覆盖：
-- `openjax-core/tests/`：工具行为、路径校验、沙箱策略、补丁应用边界。
-- `openjax-cli/tests/`：用户可见交互与命令行为。
-- `openjax-tui/tests/`：Rust TUI 事件映射、布局渲染、审批与终端恢复。
-- `python/openjax_tui/tests/`：Python TUI 输入、渲染、审批命令与 smoke 行为。
+## 10) 类型与 API 表面
+- Rust：对可能失败的操作优先返回 `Result<T, E>`，并为负载使用类型化结构体。
+- Python：为新增/修改函数标注参数和返回值类型。
+- 除非迁移是有意且有文档说明，否则保持现有公共 API 名称不变。
 
-测试命名尽量沿用现有模式（如 `m*_*.rs`），并覆盖正常路径与异常路径。
+## 11) 错误处理
+### Rust
+- 在应用/服务边界使用 `anyhow::Result`。
+- 对结构化工具/领域错误使用 `thiserror` 枚举。
+- 为 IO/进程失败添加上下文（`context`、`with_context`）。
+- 在生产路径中避免 `unwrap()`。
+### Python
+- 优先使用具体异常（`OpenJaxProtocolError`、`OpenJaxResponseError`）。
+- 将 `contextlib.suppress(...)` 限制在清理/关闭路径。
+- 不要静默吞掉非清理类错误。
 
-## 提交与 Pull Request 规范
-当前提交历史以“emoji + Conventional Commit”风格为主，例如：
-- `✨ feat(tools): ...`
-- `♻️ refactor(tools): ...`
-- `🔧 chore(config): ...`
-- `📝 docs: ...`
+## 12) 测试期望
+- 任何行为变更都应包含测试新增/更新。
+- Rust 模式：
+  - 在 `#[cfg(test)]` 块中写单元测试
+  - 在 `tests/` 中写集成测试，文件命名使用 `m*_*.rs`
+- Python 模式：
+  - `unittest`
+  - 文件名 `test_*.py`
+  - 方法名应描述单一行为
+- 覆盖 happy path 和失败/边界场景。
 
-提交信息应聚焦单一变更、使用祈使语。PR 至少包含：
-- 变更目的与行为影响；
-- 涉及模块/路径；
-- 测试证据（命令与结果）；
-- 若行为或接口变化，附带文档/配置更新。
+## 13) Python TUI 护栏
+- 主模块：`python/openjax_tui/src/openjax_tui/app.py`。
+- 保持输入后端行为稳定（TTY 下用 `prompt_toolkit`，否则用 `basic`）。
+- 保持审批命令稳定（`/approve`、`y|n`、`/pending`）。
+- 保持 assistant-delta/final-message 去重行为稳定。
+- 在对 `app.py` 做大改前，先提取辅助函数并增加聚焦测试。
 
-## 安全与配置建议
-禁止硬编码密钥。模型与运行策略通过环境变量配置（如 `OPENAI_API_KEY`、`OPENJAX_MODEL`、`OPENJAX_SANDBOX_MODE`、`OPENJAX_APPROVAL_POLICY`），并根据风险等级选择合适的沙箱与审批策略。
+## 14) Commit/PR 说明
+- 历史记录通常使用 emoji + Conventional Commit 风格。
+- 保持改动范围小且原子化。
+- 在 PR 描述中包含测试证据（命令和结果）。
+
+## 15) 安全与运行时配置
+- 绝不要硬编码密钥。
+- 通过环境变量配置运行时/模型策略：
+  - `OPENAI_API_KEY`
+  - `OPENJAX_MODEL`
+  - `OPENJAX_SANDBOX_MODE`
+  - `OPENJAX_APPROVAL_POLICY`
+
+## 16) Cursor/Copilot 规则文件
+仓库扫描结果：
+- `.cursorrules`：未找到
+- `.cursor/rules/`：未找到
+- `.github/copilot-instructions.md`：未找到
+如果这些文件后续出现，请将其视为更高优先级并合并到本指南。

@@ -21,6 +21,16 @@ class StreamRenderTest(unittest.TestCase):
 
         self.assertEqual(out.getvalue(), "⏺ 你好\n")
 
+    def test_multiline_assistant_alignment(self) -> None:
+        state = AppState()
+        _set_active_state(state)
+        out = io.StringIO()
+
+        with redirect_stdout(out):
+            _render_assistant_message("1", "第一行\n第二行")
+
+        self.assertEqual(out.getvalue(), "⏺ 第一行\n  第二行\n")
+
 
 if __name__ == "__main__":
     unittest.main()
