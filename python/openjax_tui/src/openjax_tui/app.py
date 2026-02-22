@@ -22,12 +22,31 @@ from openjax_sdk.models import EventEnvelope
 
 try:
     from prompt_toolkit import PromptSession, print_formatted_text
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.document import Document
+    from prompt_toolkit.filters import Condition
     from prompt_toolkit.formatted_text import ANSI
+    from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.styles import Style
+    from prompt_toolkit.widgets import TextArea
     _prompt_toolkit_print: Callable[[object], None] | None = print_formatted_text
     _prompt_toolkit_ansi: Callable[[str], object] | None = ANSI
     _prompt_toolkit_style: type[Style] | None = Style
+    _prompt_toolkit_application: type[Application] | None = Application
+    _prompt_toolkit_text_area: type[TextArea] | None = TextArea
+    _prompt_toolkit_document: type[Document] | None = Document
+    _prompt_toolkit_layout: type[Layout] | None = Layout
+    _prompt_toolkit_hsplit: type[HSplit] | None = HSplit
+    _prompt_toolkit_window: type[Window] | None = Window
+    _prompt_toolkit_formatted_text_control: type[FormattedTextControl] | None = (
+        FormattedTextControl
+    )
+    _prompt_toolkit_condition: type[Condition] | None = Condition
+    _prompt_toolkit_conditional_container: type[ConditionalContainer] | None = (
+        ConditionalContainer
+    )
     _prompt_toolkit_import_error: str | None = None
 except Exception:  # pragma: no cover - optional dependency fallback
     PromptSession = None  # type: ignore[assignment]
@@ -35,6 +54,15 @@ except Exception:  # pragma: no cover - optional dependency fallback
     _prompt_toolkit_print = None
     _prompt_toolkit_ansi = None
     _prompt_toolkit_style = None
+    _prompt_toolkit_application = None
+    _prompt_toolkit_text_area = None
+    _prompt_toolkit_document = None
+    _prompt_toolkit_layout = None
+    _prompt_toolkit_hsplit = None
+    _prompt_toolkit_window = None
+    _prompt_toolkit_formatted_text_control = None
+    _prompt_toolkit_condition = None
+    _prompt_toolkit_conditional_container = None
     _prompt_toolkit_import_error = "prompt_toolkit import failed"
 
 try:
@@ -80,6 +108,9 @@ class AppState:
         self.tool_turn_stats: dict[str, ToolTurnStats] = {}
         self.active_tool_starts: dict[tuple[str, str], list[float]] = {}
         self.prompt_invalidator: Callable[[], None] | None = None
+        self.history_blocks: list[str] = []
+        self.stream_block_index: int | None = None
+        self.history_setter: Callable[[str], None] | None = None
 
 
 @dataclass
@@ -299,82 +330,116 @@ async def _input_loop_basic(client: OpenJaxAsyncClient, state: AppState) -> None
 async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState) -> None:
     if state.input_ready is None:
         raise RuntimeError("input gate is not initialized")
-    if PromptSession is None or patch_stdout is None:
+    if (
+        PromptSession is None
+        or patch_stdout is None
+        or _prompt_toolkit_application is None
+        or _prompt_toolkit_text_area is None
+        or _prompt_toolkit_document is None
+        or _prompt_toolkit_layout is None
+        or _prompt_toolkit_hsplit is None
+        or _prompt_toolkit_window is None
+        or _prompt_toolkit_formatted_text_control is None
+        or _prompt_toolkit_condition is None
+        or _prompt_toolkit_conditional_container is None
+    ):
         await _input_loop_basic(client, state)
         return
 
     state.approval_ui_enabled = True
     key_bindings = _build_prompt_key_bindings(client, state)
     prompt_style = _build_prompt_style()
-    session = PromptSession(
-        prompt_continuation=lambda _width, _line_no, _is_soft_wrap: _PREFIX_CONTINUATION,
-        key_bindings=key_bindings,
-        bottom_toolbar=lambda: _approval_toolbar_fragments(state),
-        style=prompt_style,
+    line_queue: asyncio.Queue[str] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    history_view = _prompt_toolkit_text_area(
+        text="",
+        read_only=True,
+        focusable=False,
+        scrollbar=True,
+        wrap_lines=True,
     )
-    state.prompt_invalidator = lambda: _invalidate_prompt_session(session)
+
+    def _set_history_text(text: str) -> None:
+        buffer = history_view.buffer
+        buffer.set_document(
+            _prompt_toolkit_document(text=text, cursor_position=len(text)),
+            bypass_readonly=True,
+        )
+
+    state.history_setter = _set_history_text
+
+    def _accept_input(buffer: Any) -> bool:
+        text = str(getattr(buffer, "text", ""))
+        buffer.text = ""
+        if state.input_ready is not None and not state.input_ready.is_set():
+            return True
+        loop.call_soon_threadsafe(line_queue.put_nowait, text)
+        return True
+
+    input_view = _prompt_toolkit_text_area(
+        prompt=f"{_USER_PROMPT_PREFIX} ",
+        multiline=False,
+        wrap_lines=False,
+        accept_handler=_accept_input,
+    )
+
+    approval_panel = _prompt_toolkit_conditional_container(
+        content=_prompt_toolkit_window(
+            content=_prompt_toolkit_formatted_text_control(
+                lambda: _approval_toolbar_fragments(state)
+            ),
+            dont_extend_height=True,
+        ),
+        filter=_prompt_toolkit_condition(lambda: bool(_approval_toolbar_text(state))),
+    )
+
+    root_container = _prompt_toolkit_hsplit(
+        [
+            history_view,
+            input_view,
+            approval_panel,
+        ]
+    )
+
+    app = _prompt_toolkit_application(
+        layout=_prompt_toolkit_layout(root_container, focused_element=input_view),
+        key_bindings=key_bindings,
+        style=prompt_style,
+        full_screen=False,
+    )
+
+    state.prompt_invalidator = lambda: _invalidate_prompt_application(app)
+    _refresh_history_view(state)
+    app_task: asyncio.Task[None] = asyncio.create_task(app.run_async())
     try:
-        with patch_stdout():
-            while state.running:
-                prompt_task: asyncio.Task[str] | None = None
-                approval_task: asyncio.Task[bool] | None = None
-                try:
-                    await state.input_ready.wait()
-                    _tui_debug(
-                        f"prompt wait start phase={state.turn_phase} approvals={len(state.pending_approvals)}"
-                    )
-                    prompt_task = asyncio.create_task(
-                        session.prompt_async(message=f"{_input_prompt_prefix(state)} ")
-                    )
-                    if state.approval_interrupt is not None:
-                        approval_task = asyncio.create_task(state.approval_interrupt.wait())
+        while state.running:
+            if app_task.done():
+                state.running = False
+                return
+            try:
+                line = await asyncio.wait_for(line_queue.get(), timeout=0.2)
+            except asyncio.TimeoutError:
+                continue
+            except EOFError:
+                state.running = False
+                return
+            except KeyboardInterrupt:
+                state.running = False
+                raise
+            except asyncio.CancelledError:
+                state.running = False
+                return
 
-                    waiters: set[asyncio.Task[object]] = {prompt_task}
-                    if approval_task is not None:
-                        waiters.add(approval_task)
-
-                    done, pending = await asyncio.wait(
-                        waiters,
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-
-                    for pending_task in pending:
-                        await _drain_background_task(pending_task)
-
-                    approval_triggered = (
-                        approval_task is not None
-                        and approval_task in done
-                        and not approval_task.cancelled()
-                        and approval_task.exception() is None
-                        and bool(approval_task.result())
-                    )
-                    if approval_triggered:
-                        if state.approval_interrupt is not None:
-                            state.approval_interrupt.clear()
-                        _tui_debug("approval interrupt triggered; restarting prompt")
-                        await _drain_background_task(prompt_task)
-                        _request_prompt_redraw(state)
-                        continue
-
-                    line = await prompt_task
-                    _tui_debug(f"prompt returned line_len={len(line)}")
-                except EOFError:
-                    state.running = False
-                    return
-                except KeyboardInterrupt:
-                    state.running = False
-                    raise
-                except asyncio.CancelledError:
-                    state.running = False
-                    return
-                finally:
-                    await _drain_background_task(approval_task)
-                    await _drain_background_task(prompt_task)
-
-                if not await _handle_user_line(client, state, line):
-                    return
+            if not await _handle_user_line(client, state, line):
+                return
     finally:
+        state.history_setter = None
         state.prompt_invalidator = None
+        if getattr(app, "is_running", False):
+            with contextlib.suppress(Exception):
+                app.exit(result=None)
+        await _drain_background_task(app_task)
 
 
 async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: str) -> bool:
@@ -530,8 +595,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
         _request_prompt_redraw(state)
 
 
-def _invalidate_prompt_session(session: Any) -> None:
-    app = getattr(session, "app", None)
+def _invalidate_prompt_application(app: Any) -> None:
     if app is None:
         return
     invalidate = getattr(app, "invalidate", None)
@@ -547,6 +611,19 @@ def _request_prompt_redraw(state: AppState) -> None:
     _tui_debug("prompt redraw requested")
     with contextlib.suppress(Exception):
         invalidator()
+
+
+def _history_text(state: AppState) -> str:
+    return "\n\n".join(state.history_blocks)
+
+
+def _refresh_history_view(state: AppState) -> None:
+    setter = state.history_setter
+    if setter is None:
+        return
+    with contextlib.suppress(Exception):
+        setter(_history_text(state))
+    _request_prompt_redraw(state)
 
 
 async def _drain_background_task(task: asyncio.Task[Any] | None) -> None:
@@ -1327,6 +1404,9 @@ def _print_tool_summary_for_turn(turn: str) -> None:
 
 
 def _emit_ui_spacer() -> None:
+    state = _active_state
+    if state is not None and state.input_backend == "prompt_toolkit":
+        return
     print()
 
 
@@ -1383,6 +1463,21 @@ def _render_assistant_delta(turn: str, delta: str) -> None:
         return
     if not delta:
         return
+    if state.input_backend == "prompt_toolkit":
+        if state.stream_turn_id != turn:
+            _finalize_stream_line(state)
+            state.stream_turn_id = turn
+            state.stream_text_by_turn[turn] = ""
+            state.stream_block_index = len(state.history_blocks)
+            state.history_blocks.append(f"{_ASSISTANT_PREFIX} ")
+        state.stream_text_by_turn[turn] = state.stream_text_by_turn.get(turn, "") + delta
+        stream_text = state.stream_text_by_turn.get(turn, "")
+        block = f"{_ASSISTANT_PREFIX} {_align_multiline(stream_text)}"
+        idx = state.stream_block_index
+        if idx is not None and 0 <= idx < len(state.history_blocks):
+            state.history_blocks[idx] = block
+        _refresh_history_view(state)
+        return
     if state.stream_turn_id != turn:
         _finalize_stream_line()
         state.stream_turn_id = turn
@@ -1421,8 +1516,10 @@ def _finalize_stream_line(state: AppState | None = None) -> None:
     if current is None:
         return
     if current.stream_turn_id is not None:
-        print()
+        if current.input_backend != "prompt_toolkit":
+            print()
         current.stream_turn_id = None
+        current.stream_block_index = None
 
 
 def _align_multiline(text: str) -> str:
@@ -1433,23 +1530,22 @@ def _align_multiline(text: str) -> str:
 
 def _print_prefixed_block(prefix: str, content: str) -> None:
     aligned = _align_multiline(content)
-    print(f"{prefix} {aligned}")
+    _emit_ui_line(f"{prefix} {aligned}")
 
 
 def _emit_ui_line(text: str) -> None:
     state = _active_state
-    if (
-        state is not None
-        and state.input_backend == "prompt_toolkit"
-        and _prompt_toolkit_print is not None
-        and _prompt_toolkit_ansi is not None
-    ):
-        _prompt_toolkit_print(_prompt_toolkit_ansi(text))
+    if state is not None and state.input_backend == "prompt_toolkit":
+        state.history_blocks.append(text)
+        _refresh_history_view(state)
         return
     print(text)
 
 
 def _status_bullet(ok: bool) -> str:
+    state = _active_state
+    if state is not None and state.input_backend == "prompt_toolkit":
+        return _ASSISTANT_PREFIX
     if not _supports_ansi_color():
         return "🟢" if ok else "🔴"
     color = _ANSI_GREEN if ok else _ANSI_RED

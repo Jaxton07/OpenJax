@@ -9,6 +9,8 @@
 6. 优化python tui 的权限请求
 7. 优化python tui 的markdown 显示支持
 8. 优化python tui 的状态动画
+9. 修改优化openjax 的系统提示词
+10. 补充ctrl + C 退出时报错的覆盖测试用例，每次修改后都跑
 
 
 
