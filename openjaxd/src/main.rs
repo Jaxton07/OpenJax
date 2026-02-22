@@ -22,6 +22,45 @@ const KIND_EVENT: &str = "event";
 const APPROVAL_TIMEOUT_MS: u64 = 60_000;
 const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
 
+fn approval_bool_field(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "-",
+    }
+}
+
+fn approval_text_field(value: Option<&str>) -> String {
+    let raw = value.unwrap_or("-").trim();
+    if raw.is_empty() {
+        return "-".to_string();
+    }
+    raw.split_whitespace().collect::<Vec<_>>().join("_")
+}
+
+fn log_approval_event(
+    action: &str,
+    request_id: Option<&str>,
+    turn_id: Option<&str>,
+    target: Option<&str>,
+    approved: Option<bool>,
+    resolved: Option<bool>,
+    session_id: Option<&str>,
+    detail: Option<&str>,
+) {
+    info!(
+        "approval_event action={} request_id={} turn_id={} target={} approved={} resolved={} session_id={} detail={}",
+        approval_text_field(Some(action)),
+        approval_text_field(request_id),
+        approval_text_field(turn_id),
+        approval_text_field(target),
+        approval_bool_field(approved),
+        approval_bool_field(resolved),
+        approval_text_field(session_id),
+        approval_text_field(detail),
+    );
+}
+
 #[derive(Debug, Deserialize)]
 struct RequestEnvelope {
     protocol_version: String,
@@ -86,6 +125,16 @@ impl DaemonApprovalHandler {
             Some(tx) => tx.send(approved).is_ok(),
             None => {
                 warn!(approval_request_id = %request_id, "approval request not found");
+                log_approval_event(
+                    "resolve_missing",
+                    Some(request_id),
+                    None,
+                    None,
+                    Some(approved),
+                    Some(false),
+                    None,
+                    Some("request_not_found"),
+                );
                 false
             }
         }
@@ -105,19 +154,61 @@ impl ApprovalHandler for DaemonApprovalHandler {
             pending.insert(request_id.clone(), tx);
         }
         info!(approval_request_id = %request_id, "approval requested");
+        log_approval_event(
+            "requested",
+            Some(&request_id),
+            None,
+            Some(&request.target),
+            None,
+            None,
+            None,
+            Some("handler_waiting"),
+        );
 
         let decision = timeout(Duration::from_millis(APPROVAL_TIMEOUT_MS), rx).await;
         let mut pending = self.pending.lock().await;
         pending.remove(&request_id);
 
         match decision {
-            Ok(Ok(approved)) => Ok(approved),
+            Ok(Ok(approved)) => {
+                log_approval_event(
+                    "handler_decided",
+                    Some(&request_id),
+                    None,
+                    Some(&request.target),
+                    Some(approved),
+                    Some(true),
+                    None,
+                    Some("decision_received"),
+                );
+                Ok(approved)
+            }
             Ok(Err(_)) => {
                 warn!(approval_request_id = %request_id, "approval channel closed");
+                log_approval_event(
+                    "handler_error",
+                    Some(&request_id),
+                    None,
+                    Some(&request.target),
+                    None,
+                    Some(false),
+                    None,
+                    Some("channel_closed"),
+                );
                 Err("approval channel closed".to_string())
             }
             Err(_) => {
                 warn!(approval_request_id = %request_id, timeout_ms = APPROVAL_TIMEOUT_MS, "approval timed out");
+                log_approval_event(
+                    "handler_timeout",
+                    Some(&request_id),
+                    None,
+                    Some(&request.target),
+                    None,
+                    Some(false),
+                    None,
+                    Some("timeout"),
+                );
                 Err("approval timed out".to_string())
             }
         }
@@ -343,7 +434,12 @@ async fn handle_line(
                 let submit_task = tokio::spawn(async move {
                     let mut agent = submit_agent.lock().await;
                     agent
-                        .submit_with_sink(Op::UserTurn { input: submit_input }, event_tx)
+                        .submit_with_sink(
+                            Op::UserTurn {
+                                input: submit_input,
+                            },
+                            event_tx,
+                        )
                         .await
                 });
 
@@ -393,7 +489,9 @@ async fn handle_line(
                 };
 
                 if !response_sent {
-                    let response = if let Some(tid) = first_turn_id(&events).map(|tid| tid.to_string()) {
+                    let response = if let Some(tid) =
+                        first_turn_id(&events).map(|tid| tid.to_string())
+                    {
                         response_turn_id = Some(tid.clone());
                         send_ok(
                             writer_for_events.clone(),
@@ -478,6 +576,8 @@ async fn handle_line(
                 .await;
                 return;
             };
+            let turn_id_param = req.params.get("turn_id").and_then(Value::as_str);
+            let target_param = req.params.get("target").and_then(Value::as_str);
 
             let approval_handler = {
                 let sessions_guard = sessions.lock().await;
@@ -506,6 +606,16 @@ async fn handle_line(
                 approved = approved,
                 resolved = resolved,
                 "approval request processed"
+            );
+            log_approval_event(
+                "resolved_submit",
+                Some(request_id_to_resolve),
+                turn_id_param,
+                target_param,
+                Some(approved),
+                Some(resolved),
+                Some(&session_id),
+                Some("rpc_resolve_approval"),
             );
 
             if resolved {

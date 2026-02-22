@@ -313,11 +313,7 @@ impl Agent {
 
     // ============== Main Submit Method ==============
 
-    pub async fn submit_with_sink(
-        &mut self,
-        op: Op,
-        sink: UnboundedSender<Event>,
-    ) -> Vec<Event> {
+    pub async fn submit_with_sink(&mut self, op: Op, sink: UnboundedSender<Event>) -> Vec<Event> {
         self.event_sink = Some(sink);
         let events = self.submit(op).await;
         self.event_sink = None;
@@ -430,10 +426,13 @@ impl Agent {
             "tool_call started"
         );
 
-        self.push_event(events, Event::ToolCallStarted {
-            turn_id,
-            tool_name: call.name.clone(),
-        });
+        self.push_event(
+            events,
+            Event::ToolCallStarted {
+                turn_id,
+                tool_name: call.name.clone(),
+            },
+        );
 
         // Try execution with retry
         let mut last_error = None;
@@ -445,10 +444,13 @@ impl Agent {
                     retry_config.max_delay_ms,
                 );
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                self.push_event(events, Event::AssistantMessage {
-                    turn_id,
-                    content: format!("tool {} 第 {} 次重试...", call.name, attempt),
-                });
+                self.push_event(
+                    events,
+                    Event::AssistantMessage {
+                        turn_id,
+                        content: format!("tool {} 第 {} 次重试...", call.name, attempt),
+                    },
+                );
                 warn!(
                     turn_id = turn_id,
                     tool_name = %call.name,
@@ -457,7 +459,10 @@ impl Agent {
                 );
             }
 
-            match self.execute_tool_with_live_events(turn_id, &call, events).await {
+            match self
+                .execute_tool_with_live_events(turn_id, &call, events)
+                .await
+            {
                 Ok(output) => {
                     let duration_ms = start_time.elapsed().as_millis();
                     info!(
@@ -469,22 +474,31 @@ impl Agent {
                         "tool_call completed"
                     );
                     if attempt > 0 {
-                        self.push_event(events, Event::AssistantMessage {
-                            turn_id,
-                            content: format!("tool {} 重试成功", call.name),
-                        });
+                        self.push_event(
+                            events,
+                            Event::AssistantMessage {
+                                turn_id,
+                                content: format!("tool {} 重试成功", call.name),
+                            },
+                        );
                     }
-                    self.push_event(events, Event::ToolCallCompleted {
-                        turn_id,
-                        tool_name: call.name.clone(),
-                        ok: true,
-                        output,
-                    });
+                    self.push_event(
+                        events,
+                        Event::ToolCallCompleted {
+                            turn_id,
+                            tool_name: call.name.clone(),
+                            ok: true,
+                            output,
+                        },
+                    );
                     let message = format!("tool {} 执行成功", call.name);
-                    self.push_event(events, Event::AssistantMessage {
-                        turn_id,
-                        content: message.clone(),
-                    });
+                    self.push_event(
+                        events,
+                        Event::AssistantMessage {
+                            turn_id,
+                            content: message.clone(),
+                        },
+                    );
                     self.record_history("assistant", message);
                     return;
                 }
@@ -514,17 +528,23 @@ impl Agent {
                 error = %err,
                 "tool_call completed"
             );
-            self.push_event(events, Event::ToolCallCompleted {
-                turn_id,
-                tool_name: call.name.clone(),
-                ok: false,
-                output: err.to_string(),
-            });
+            self.push_event(
+                events,
+                Event::ToolCallCompleted {
+                    turn_id,
+                    tool_name: call.name.clone(),
+                    ok: false,
+                    output: err.to_string(),
+                },
+            );
             let message = format!("tool {} 执行失败: {}", call.name, err);
-            self.push_event(events, Event::AssistantMessage {
-                turn_id,
-                content: message.clone(),
-            });
+            self.push_event(
+                events,
+                Event::AssistantMessage {
+                    turn_id,
+                    content: message.clone(),
+                },
+            );
             self.record_history("assistant", message);
         }
     }
@@ -581,10 +601,13 @@ impl Agent {
                         "model_request failed"
                     );
                     let message = format!("[model error] {err}");
-                    self.push_event(events, Event::AssistantMessage {
-                        turn_id,
-                        content: message.clone(),
-                    });
+                    self.push_event(
+                        events,
+                        Event::AssistantMessage {
+                            turn_id,
+                            content: message.clone(),
+                        },
+                    );
                     self.record_history("assistant", message);
                     return;
                 }
@@ -624,10 +647,13 @@ impl Agent {
                             "model_repair_request failed"
                         );
                         let message = format!("[model error] {err}");
-                        self.push_event(events, Event::AssistantMessage {
-                            turn_id,
-                            content: message.clone(),
-                        });
+                        self.push_event(
+                            events,
+                            Event::AssistantMessage {
+                                turn_id,
+                                content: message.clone(),
+                            },
+                        );
                         self.record_history("assistant", message);
                         return;
                     }
@@ -645,10 +671,13 @@ impl Agent {
                     normalize_model_decision(parsed)
                 } else {
                     // Still non-JSON after one repair attempt: treat first output as final.
-                    self.push_event(events, Event::AssistantMessage {
-                        turn_id,
-                        content: model_output.clone(),
-                    });
+                    self.push_event(
+                        events,
+                        Event::AssistantMessage {
+                            turn_id,
+                            content: model_output.clone(),
+                        },
+                    );
                     self.record_history("assistant", model_output);
                     return;
                 }
@@ -684,10 +713,13 @@ impl Agent {
                         events,
                     )
                     .await;
-                self.push_event(events, Event::AssistantMessage {
-                    turn_id,
-                    content: message.clone(),
-                });
+                self.push_event(
+                    events,
+                    Event::AssistantMessage {
+                        turn_id,
+                        content: message.clone(),
+                    },
+                );
                 self.record_history("assistant", message);
                 return;
             }
@@ -698,10 +730,13 @@ impl Agent {
                     _ => {
                         warn!(turn_id = turn_id, "model_decision missing tool name");
                         let message = "[model error] tool action missing tool name".to_string();
-                        self.push_event(events, Event::AssistantMessage {
-                            turn_id,
-                            content: message.clone(),
-                        });
+                        self.push_event(
+                            events,
+                            Event::AssistantMessage {
+                                turn_id,
+                                content: message.clone(),
+                            },
+                        );
                         self.record_history("assistant", message);
                         return;
                     }
@@ -720,10 +755,13 @@ impl Agent {
                         "[warning] tool {} with args {:?} was already called recently, skipping",
                         tool_name, args
                     );
-                    self.push_event(events, Event::AssistantMessage {
-                        turn_id,
-                        content: message.clone(),
-                    });
+                    self.push_event(
+                        events,
+                        Event::AssistantMessage {
+                            turn_id,
+                            content: message.clone(),
+                        },
+                    );
                     self.record_history("assistant", message);
                     tool_traces.push(format!(
                         "tool={tool_name}; ok=skipped_duplicate; args={}",
@@ -735,10 +773,13 @@ impl Agent {
                             "检测到连续 {} 次重复工具调用，已提前结束本回合以避免循环。请继续下一轮或换一种指令。",
                             MAX_CONSECUTIVE_DUPLICATE_SKIPS
                         );
-                        self.push_event(events, Event::AssistantMessage {
-                            turn_id,
-                            content: loop_message.clone(),
-                        });
+                        self.push_event(
+                            events,
+                            Event::AssistantMessage {
+                                turn_id,
+                                content: loop_message.clone(),
+                            },
+                        );
                         self.record_history("assistant", loop_message);
                         return;
                     }
@@ -758,12 +799,18 @@ impl Agent {
                     "tool_call started"
                 );
 
-                self.push_event(events, Event::ToolCallStarted {
-                    turn_id,
-                    tool_name: tool_name.clone(),
-                });
+                self.push_event(
+                    events,
+                    Event::ToolCallStarted {
+                        turn_id,
+                        tool_name: tool_name.clone(),
+                    },
+                );
 
-                match self.execute_tool_with_live_events(turn_id, &call, events).await {
+                match self
+                    .execute_tool_with_live_events(turn_id, &call, events)
+                    .await
+                {
                     Ok(output) => {
                         if is_mutating_tool(&tool_name) {
                             // File/content state has changed. Move to a new epoch so read/list
@@ -788,12 +835,15 @@ impl Agent {
 
                         self.record_tool_call(&tool_name, &args, true, &output);
 
-                        self.push_event(events, Event::ToolCallCompleted {
-                            turn_id,
-                            tool_name: tool_name.to_string(),
-                            ok: true,
-                            output: output.to_string(),
-                        });
+                        self.push_event(
+                            events,
+                            Event::ToolCallCompleted {
+                                turn_id,
+                                tool_name: tool_name.to_string(),
+                                ok: true,
+                                output: output.to_string(),
+                            },
+                        );
                         executed_count += 1;
                         consecutive_duplicate_skips = 0;
                     }
@@ -816,14 +866,30 @@ impl Agent {
 
                         self.record_tool_call(&tool_name, &args, false, &err_text);
 
-                        self.push_event(events, Event::ToolCallCompleted {
-                            turn_id,
-                            tool_name: tool_name.to_string(),
-                            ok: false,
-                            output: err_text.to_string(),
-                        });
+                        self.push_event(
+                            events,
+                            Event::ToolCallCompleted {
+                                turn_id,
+                                tool_name: tool_name.to_string(),
+                                ok: false,
+                                output: err_text.to_string(),
+                            },
+                        );
                         executed_count += 1;
                         consecutive_duplicate_skips = 0;
+                        if err_text.to_lowercase().contains("approval rejected") {
+                            let stop_message =
+                                "操作已取消：用户拒绝了工具调用，本回合已停止。".to_string();
+                            self.push_event(
+                                events,
+                                Event::AssistantMessage {
+                                    turn_id,
+                                    content: stop_message.clone(),
+                                },
+                            );
+                            self.record_history("assistant", stop_message);
+                            return;
+                        }
                     }
                 }
 
@@ -836,10 +902,13 @@ impl Agent {
                 "model_decision unsupported action"
             );
             let message = format!("[model error] unsupported action: {}", decision.action);
-            self.push_event(events, Event::AssistantMessage {
-                turn_id,
-                content: message.clone(),
-            });
+            self.push_event(
+                events,
+                Event::AssistantMessage {
+                    turn_id,
+                    content: message.clone(),
+                },
+            );
             self.record_history("assistant", message);
             return;
         }
@@ -866,10 +935,13 @@ impl Agent {
                 MAX_PLANNER_ROUNDS_PER_TURN
             )
         };
-        self.push_event(events, Event::AssistantMessage {
-            turn_id,
-            content: message.clone(),
-        });
+        self.push_event(
+            events,
+            Event::AssistantMessage {
+                turn_id,
+                content: message.clone(),
+            },
+        );
         self.record_history("assistant", message);
     }
 
@@ -919,10 +991,13 @@ impl Agent {
         while let Ok(delta) = delta_rx.try_recv() {
             if !delta.is_empty() {
                 streamed.push_str(&delta);
-                self.push_event(events, Event::AssistantDelta {
-                    turn_id,
-                    content_delta: delta,
-                });
+                self.push_event(
+                    events,
+                    Event::AssistantDelta {
+                        turn_id,
+                        content_delta: delta,
+                    },
+                );
             }
         }
 
@@ -1182,7 +1257,11 @@ Tool execution history:\n{tool_context}\n"
     )
 }
 
-fn build_final_response_prompt(user_input: &str, tool_traces: &[String], seed_message: &str) -> String {
+fn build_final_response_prompt(
+    user_input: &str,
+    tool_traces: &[String],
+    seed_message: &str,
+) -> String {
     let tool_context = if tool_traces.is_empty() {
         "(no tools executed in this turn)".to_string()
     } else {
@@ -1288,8 +1367,7 @@ mod tests {
 
     use super::{
         Agent, ApprovalPolicy, SandboxMode, build_planner_input, model::ModelClient,
-        normalize_model_decision,
-        parse_approval_policy, parse_model_decision, parse_sandbox_mode,
+        normalize_model_decision, parse_approval_policy, parse_model_decision, parse_sandbox_mode,
         should_abort_on_consecutive_duplicate_skips, summarize_user_input,
     };
 
@@ -1502,7 +1580,10 @@ mod tests {
 
         assert_eq!(delta_text, "你好");
         assert_eq!(assistant_message_text, "你好");
-        assert!(first_delta_index.is_some(), "expected assistant delta events");
+        assert!(
+            first_delta_index.is_some(),
+            "expected assistant delta events"
+        );
         assert!(
             assistant_message_index.is_some(),
             "expected final assistant message"

@@ -18,10 +18,10 @@
 
 | 项目 | 环境 | 结果（PASS/FAIL） | 备注 |
 |---|---|---|---|
-| 基础启动 | tmux |  |  |
-| 事件流回归 | tmux |  |  |
+| 基础启动 | tmux | PASS |  |
+| 事件流回归 | tmux | PASS |  |
 | 审批回归 | tmux |  |  |
-| 分离恢复/切 pane | tmux |  |  |
+| 分离恢复/切 pane | tmux | PASS |  |
 | 基础启动 | zellij |  |  |
 | 事件流回归 | zellij |  |  |
 | 审批回归 | zellij |  |  |

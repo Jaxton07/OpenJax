@@ -24,14 +24,17 @@ try:
     from prompt_toolkit import PromptSession, print_formatted_text
     from prompt_toolkit.formatted_text import ANSI
     from prompt_toolkit.patch_stdout import patch_stdout
+    from prompt_toolkit.styles import Style
     _prompt_toolkit_print: Callable[[object], None] | None = print_formatted_text
     _prompt_toolkit_ansi: Callable[[str], object] | None = ANSI
+    _prompt_toolkit_style: type[Style] | None = Style
     _prompt_toolkit_import_error: str | None = None
 except Exception:  # pragma: no cover - optional dependency fallback
     PromptSession = None  # type: ignore[assignment]
     patch_stdout = None  # type: ignore[assignment]
     _prompt_toolkit_print = None
     _prompt_toolkit_ansi = None
+    _prompt_toolkit_style = None
     _prompt_toolkit_import_error = "prompt_toolkit import failed"
 
 try:
@@ -53,6 +56,7 @@ _TUI_LOGGER_NAME = "openjax_tui"
 _TUI_LOG_FILENAME = "openjax_tui.log"
 _TUI_LOG_MAX_BYTES_DEFAULT = 2 * 1024 * 1024
 _TUI_LOG_BACKUP_COUNT = 5
+_PRINT_TOOL_TURN_SUMMARY = False
 _tui_logger: logging.Logger | None = None
 
 
@@ -301,10 +305,12 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
 
     state.approval_ui_enabled = True
     key_bindings = _build_prompt_key_bindings(client, state)
+    prompt_style = _build_prompt_style()
     session = PromptSession(
         prompt_continuation=lambda _width, _line_no, _is_soft_wrap: _PREFIX_CONTINUATION,
         key_bindings=key_bindings,
-        bottom_toolbar=lambda: _approval_toolbar_text(state),
+        bottom_toolbar=lambda: _approval_toolbar_fragments(state),
+        style=prompt_style,
     )
     state.prompt_invalidator = lambda: _invalidate_prompt_session(session)
     try:
@@ -405,6 +411,23 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         )
         return True
 
+    if _approval_mode_active(state):
+        if _use_inline_approval_panel(state):
+            focus_id = _focused_approval_id(state)
+            record = state.pending_approvals.get(focus_id or "")
+            _tui_log_approval_event(
+                action="input_blocked",
+                request_id=focus_id,
+                turn_id=record.turn_id if record else None,
+                target=record.target if record else None,
+                approved=None,
+                resolved=None,
+                detail="pending_request",
+            )
+        else:
+            print("[approval] pending request: use Enter/y/n/Tab/Esc or /approve <id> y|n")
+        return True
+
     try:
         turn_id = await client.submit_turn(text)
         state.waiting_turn_id = turn_id
@@ -449,9 +472,19 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
                 state.approval_order.append(request_id)
             state.approval_focus_id = request_id
             state.approval_selected_action = "allow"
-            print(
-                f"[approval] use /approve {request_id} y|n, quick y/n, or press Enter to confirm default allow"
+            _tui_log_approval_event(
+                action="requested",
+                request_id=request_id,
+                turn_id=evt.turn_id,
+                target=record.target,
+                approved=None,
+                resolved=None,
+                detail="event_received",
             )
+            if not _use_inline_approval_panel(state):
+                print(
+                    f"[approval] use /approve {request_id} y|n, quick y/n, or press Enter to confirm default allow"
+                )
             state.turn_phase = "approval"
             if state.input_ready is not None:
                 state.input_ready.set()
@@ -465,6 +498,18 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
 
     if evt.event_type == "approval_resolved":
         request_id = str(evt.payload.get("request_id", ""))
+        record = state.pending_approvals.get(request_id)
+        approved = evt.payload.get("approved")
+        approved_bool = approved if isinstance(approved, bool) else None
+        _tui_log_approval_event(
+            action="resolved_event",
+            request_id=request_id,
+            turn_id=record.turn_id if record else evt.turn_id,
+            target=record.target if record else None,
+            approved=approved_bool,
+            resolved=True,
+            detail="event_received",
+        )
         _pop_pending(state, request_id)
         if not state.pending_approvals:
             state.turn_phase = "thinking" if state.waiting_turn_id else "idle"
@@ -530,6 +575,40 @@ def _tui_log_info(message: str) -> None:
     logger = _tui_logger
     if logger is not None:
         logger.info(message)
+
+
+def _approval_bool_field(value: bool | None) -> str:
+    if value is None:
+        return "-"
+    return "true" if value else "false"
+
+
+def _approval_text_field(value: str | None) -> str:
+    text = (value or "-").strip()
+    if not text:
+        return "-"
+    return "_".join(text.split())
+
+
+def _tui_log_approval_event(
+    action: str,
+    request_id: str | None = None,
+    turn_id: str | None = None,
+    target: str | None = None,
+    approved: bool | None = None,
+    resolved: bool | None = None,
+    detail: str | None = None,
+) -> None:
+    _tui_log_info(
+        "approval_event "
+        f"action={_approval_text_field(action)} "
+        f"request_id={_approval_text_field(request_id)} "
+        f"turn_id={_approval_text_field(turn_id)} "
+        f"target={_approval_text_field(target)} "
+        f"approved={_approval_bool_field(approved)} "
+        f"resolved={_approval_bool_field(resolved)} "
+        f"detail={_approval_text_field(detail)}"
+    )
 
 
 def _setup_tui_logger() -> logging.Logger | None:
@@ -619,31 +698,38 @@ def _print_event(evt: EventEnvelope) -> None:
         return
     if t == "tool_call_completed":
         _finalize_stream_line_if_turn(turn)
+        tool_name = str(evt.payload.get("tool_name", ""))
+        ok = bool(evt.payload.get("ok"))
+        output = str(evt.payload.get("output", ""))
         _record_tool_completed(
             turn=turn,
-            tool_name=str(evt.payload.get("tool_name", "")),
-            ok=bool(evt.payload.get("ok")),
+            tool_name=tool_name,
+            ok=ok,
         )
+        _print_tool_call_result_line(tool_name=tool_name, ok=ok, output=output)
         return
     if t == "approval_requested":
         _finalize_stream_line_if_turn(turn)
-        print(
-            "[approval] id={rid} target={target} reason={reason}".format(
-                rid=evt.payload.get("request_id"),
-                target=evt.payload.get("target"),
-                reason=evt.payload.get("reason"),
+        if state is None or not _use_inline_approval_panel(state):
+            print(
+                "[approval] id={rid} target={target} reason={reason}".format(
+                    rid=evt.payload.get("request_id"),
+                    target=evt.payload.get("target"),
+                    reason=evt.payload.get("reason"),
+                )
             )
-        )
         return
     if t == "approval_resolved":
         _finalize_stream_line_if_turn(turn)
-        print(
-            f"[approval] id={evt.payload.get('request_id')} approved={evt.payload.get('approved')}"
-        )
+        if state is None or not _use_inline_approval_panel(state):
+            print(
+                f"[approval] id={evt.payload.get('request_id')} approved={evt.payload.get('approved')}"
+            )
         return
     if t == "turn_completed":
         _finalize_stream_line_if_turn(turn)
-        _print_tool_summary_for_turn(turn)
+        if _PRINT_TOOL_TURN_SUMMARY:
+            _print_tool_summary_for_turn(turn)
         if state is not None:
             state.tool_turn_stats.pop(turn, None)
         return
@@ -858,6 +944,22 @@ def _print_pending(state: AppState) -> None:
             )
 
 
+def _use_inline_approval_panel(state: AppState) -> bool:
+    return state.input_backend == "prompt_toolkit" and state.approval_ui_enabled
+
+
+def _build_prompt_style() -> Any:
+    if _prompt_toolkit_style is None:
+        return None
+    return _prompt_toolkit_style.from_dict(
+        {
+            # Keep default terminal background/foreground for toolbar rows.
+            "bottom-toolbar": "noreverse bg:default fg:default",
+            "bottom-toolbar.text-area": "noreverse bg:default fg:default",
+        }
+    )
+
+
 async def _resolve_latest_approval(
     client: OpenJaxAsyncClient, state: AppState, approved: bool
 ) -> None:
@@ -892,13 +994,41 @@ async def _resolve_approval_by_id(
             approved=approved,
             reason="approved_by_tui" if approved else "rejected_by_tui",
         )
-        print(f"[approval] resolved: {approval_request_id} ok={ok}")
+        _tui_log_approval_event(
+            action="resolved_submit",
+            request_id=approval_request_id,
+            turn_id=record.turn_id,
+            target=record.target,
+            approved=approved,
+            resolved=ok,
+            detail="client_submit",
+        )
+        if not _use_inline_approval_panel(state):
+            print(f"[approval] resolved: {approval_request_id} ok={ok}")
         _pop_pending(state, approval_request_id)
     except OpenJaxResponseError as err:
         if _is_expired_approval_error(err):
+            _tui_log_approval_event(
+                action="resolve_expired",
+                request_id=approval_request_id,
+                turn_id=record.turn_id,
+                target=record.target,
+                approved=approved,
+                resolved=False,
+                detail=err.code,
+            )
             print(f"[approval] auto-denied (expired): {approval_request_id}")
             _pop_pending(state, approval_request_id)
             return
+        _tui_log_approval_event(
+            action="resolve_failed",
+            request_id=approval_request_id,
+            turn_id=record.turn_id,
+            target=record.target,
+            approved=approved,
+            resolved=False,
+            detail=err.code,
+        )
         print(f"[approval] resolve failed: {err.code} {err.message}")
 
 
@@ -929,6 +1059,8 @@ def _approval_mode_active(state: AppState) -> bool:
 
 
 def _input_prompt_prefix(state: AppState) -> str:
+    if _use_inline_approval_panel(state):
+        return _USER_PROMPT_PREFIX
     if _approval_mode_active(state):
         return "approval>"
     return _USER_PROMPT_PREFIX
@@ -957,6 +1089,12 @@ def _move_approval_focus(state: AppState, step: int) -> None:
     state.approval_focus_id = pending_ids[next_idx]
 
 
+def _toggle_approval_selection(state: AppState) -> None:
+    state.approval_selected_action = (
+        "deny" if state.approval_selected_action == "allow" else "allow"
+    )
+
+
 def _approval_toolbar_text(state: AppState) -> str:
     if not state.approval_ui_enabled or not _approval_mode_active(state):
         return ""
@@ -968,13 +1106,29 @@ def _approval_toolbar_text(state: AppState) -> str:
         return ""
     total = len(_approval_pending_ids(state))
     selected_allow = state.approval_selected_action == "allow"
-    allow_label = "[ALLOW]" if selected_allow else " allow "
-    deny_label = "[DENY]" if not selected_allow else " deny "
-    target = record.target or "-"
-    return (
-        f" approval {focus_id} ({total} pending) target={target} "
-        f"{allow_label}/{deny_label}  Up/Down switch  Tab toggle  Enter confirm  timeout=auto-deny"
-    )
+    target = (record.target or "-").strip() or "-"
+    reason = " ".join(str(record.reason or "-").split())
+    allow_label = "❯ 1. Yes" if selected_allow else "  1. Yes"
+    deny_label = "❯ 2. No" if not selected_allow else "  2. No"
+    lines = [
+        _divider_line(),
+        f" Approval Request ({total} pending)",
+        f" id: {focus_id}",
+        f" target: {target}",
+        f" reason: {reason}",
+        " Confirm this action?",
+        f" {allow_label}",
+        f" {deny_label}",
+        " Tab/Up/Down switch · Enter confirm · Esc reject · /approve <id> y|n",
+    ]
+    return "\n".join(lines)
+
+
+def _approval_toolbar_fragments(state: AppState) -> Any:
+    text = _approval_toolbar_text(state)
+    if not text:
+        return ""
+    return [("bg:default fg:default noreverse", text)]
 
 
 def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> Any:
@@ -982,38 +1136,34 @@ def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> A
         return None
     kb = KeyBindings()
 
-    @kb.add("tab")
+    @kb.add("tab", eager=True)
     def _toggle_action(event: object) -> None:
         if not _approval_mode_active(state):
             return
-        state.approval_selected_action = (
-            "deny" if state.approval_selected_action == "allow" else "allow"
-        )
+        _toggle_approval_selection(state)
         app = getattr(event, "app", None)
         if app is not None:
             app.invalidate()
 
-    @kb.add("up")
-    def _focus_prev(event: object) -> None:
+    @kb.add("up", eager=True)
+    def _toggle_action_up(event: object) -> None:
         app = getattr(event, "app", None)
-        current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if _approval_mode_active(state) and not str(current_text).strip():
-            _move_approval_focus(state, step=-1)
-            if app is not None:
-                app.invalidate()
+        if not _approval_mode_active(state):
+            return
+        _toggle_approval_selection(state)
+        if app is not None:
+            app.invalidate()
 
-    @kb.add("down")
-    def _focus_next(event: object) -> None:
+    @kb.add("down", eager=True)
+    def _toggle_action_down(event: object) -> None:
         app = getattr(event, "app", None)
-        current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if _approval_mode_active(state) and not str(current_text).strip():
-            _move_approval_focus(state, step=1)
-            if app is not None:
-                app.invalidate()
+        if not _approval_mode_active(state):
+            return
+        _toggle_approval_selection(state)
+        if app is not None:
+            app.invalidate()
 
-    @kb.add("enter")
+    @kb.add("enter", eager=True)
     def _enter_resolve(event: object) -> None:
         app = getattr(event, "app", None)
         current_buffer = getattr(app, "current_buffer", None)
@@ -1025,7 +1175,52 @@ def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> A
             return
         if current_buffer is None:
             return
-        current_buffer.text = "y" if state.approval_selected_action == "allow" else "n"
+        current_buffer.text = ""
+        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
+        if callable(validate_and_handle):
+            validate_and_handle()
+
+    @kb.add("escape", eager=True)
+    def _escape_reject(event: object) -> None:
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        current_text = getattr(current_buffer, "text", "")
+        if not (_approval_mode_active(state) and not str(current_text).strip()):
+            return
+        if current_buffer is None:
+            return
+        state.approval_selected_action = "deny"
+        current_buffer.text = ""
+        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
+        if callable(validate_and_handle):
+            validate_and_handle()
+
+    @kb.add("y", eager=True)
+    def _quick_yes(event: object) -> None:
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        current_text = getattr(current_buffer, "text", "")
+        if not (_approval_mode_active(state) and not str(current_text).strip()):
+            return
+        if current_buffer is None:
+            return
+        state.approval_selected_action = "allow"
+        current_buffer.text = ""
+        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
+        if callable(validate_and_handle):
+            validate_and_handle()
+
+    @kb.add("n", eager=True)
+    def _quick_no(event: object) -> None:
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        current_text = getattr(current_buffer, "text", "")
+        if not (_approval_mode_active(state) and not str(current_text).strip()):
+            return
+        if current_buffer is None:
+            return
+        state.approval_selected_action = "deny"
+        current_buffer.text = ""
         validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
         if callable(validate_and_handle):
             validate_and_handle()
@@ -1071,6 +1266,47 @@ def _record_tool_completed(turn: str, tool_name: str, ok: bool) -> None:
         state.active_tool_starts.pop(key, None)
 
 
+def _print_tool_call_result_line(tool_name: str, ok: bool, output: str) -> None:
+    state = _active_state
+    if state is None:
+        return
+    bullet = _status_bullet(ok)
+    label = _tool_result_label(tool_name, output)
+    if not ok:
+        label = f"{label} (failed)"
+    _finalize_stream_line(state)
+    _emit_ui_spacer()
+    _emit_ui_line(f"{bullet} {label}")
+    _emit_ui_spacer()
+
+
+def _tool_result_label(tool_name: str, output: str) -> str:
+    name = tool_name.strip().lower()
+    if name == "read_file":
+        return "Read 1 file"
+    if name in {"apply_patch", "edit_file_range", "write_file"}:
+        target = _extract_updated_target(output)
+        if target:
+            return f"Update({target})"
+        return "Update file"
+    if name == "list_dir":
+        return "Read directory"
+    if name == "grep_files":
+        return "Search files"
+    if name == "shell":
+        return "Run shell command"
+    if not name:
+        return "Tool call"
+    return name.replace("_", " ").title()
+
+
+def _extract_updated_target(output: str) -> str | None:
+    match = re.search(r"\bUPDATE\s+([^\s:]+)", output)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
 def _print_tool_summary_for_turn(turn: str) -> None:
     state = _active_state
     if state is None:
@@ -1083,10 +1319,15 @@ def _print_tool_summary_for_turn(turn: str) -> None:
     duration = f"{stats.known_duration_ms}ms" if stats.known_duration_ms else "n/a"
     ok = stats.fail_count == 0
     bullet = _status_bullet(ok)
+    _finalize_stream_line(state)
     _emit_ui_line(
         f"{bullet} tools: calls={stats.calls} ok={stats.ok_count} "
         f"fail={stats.fail_count} duration={duration} names=[{tools}]"
     )
+
+
+def _emit_ui_spacer() -> None:
+    print()
 
 
 def _normalize_input(text: str) -> str:

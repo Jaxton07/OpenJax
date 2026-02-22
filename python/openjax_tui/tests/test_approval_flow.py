@@ -145,6 +145,33 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(redraw_calls, ["called"])
         self.assertIn("/approve ap-evt-1 y|n", out.getvalue())
 
+    def test_approval_requested_hides_legacy_hint_in_prompt_toolkit(self) -> None:
+        state = AppState()
+        state.input_backend = "prompt_toolkit"
+        state.approval_ui_enabled = True
+        state.input_ready = asyncio.Event()
+        state.input_ready.clear()
+        state.approval_interrupt = asyncio.Event()
+        state.approval_interrupt.clear()
+        evt = EventEnvelope(
+            protocol_version="1",
+            kind="event",
+            session_id="s1",
+            turn_id="turn-evt",
+            event_type="approval_requested",
+            payload={
+                "request_id": "ap-evt-ptk",
+                "target": "apply_patch",
+                "reason": "tool call requires approval by policy",
+            },
+        )
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _apply_event_state_updates(state, evt)
+
+        self.assertEqual(out.getvalue(), "")
+
     def test_approval_resolved_triggers_prompt_redraw(self) -> None:
         state = AppState()
         state.waiting_turn_id = "turn-keep-thinking"
@@ -200,6 +227,26 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.submitted, [])
         self.assertEqual(client.resolved, [("turn-1", "ap-1", True)])
         self.assertNotIn("ap-1", state.pending_approvals)
+
+    async def test_text_input_is_blocked_while_approval_pending(self) -> None:
+        client = _StubClient()
+        state = AppState()
+        state.pending_approvals["ap-block"] = ApprovalRecord(
+            turn_id="turn-block",
+            target="apply_patch",
+            reason="tool call requires approval by policy",
+        )
+        state.approval_order.append("ap-block")
+        state.approval_focus_id = "ap-block"
+        state.turn_phase = "approval"
+        out = io.StringIO()
+
+        with redirect_stdout(out):
+            keep_running = await _handle_user_line(client, state, "请继续")
+
+        self.assertTrue(keep_running)
+        self.assertEqual(client.submitted, [])
+        self.assertIn("pending request", out.getvalue())
 
     async def test_expired_approval_error_cleans_pending_request(self) -> None:
         client = _StubClient()
@@ -265,16 +312,32 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         state.approval_focus_id = "ap-5"
 
         text = _approval_toolbar_text(state)
-        self.assertIn("approval ap-5", text)
-        self.assertIn("2 pending", text)
+        self.assertIn("Approval Request (2 pending)", text)
+        self.assertIn("id: ap-5", text)
+        self.assertIn("target: shell", text)
+        self.assertIn("❯ 1. Yes", text)
 
         _move_approval_focus(state, step=-1)
         self.assertEqual(state.approval_focus_id, "ap-4")
 
-    def test_prompt_prefix_switches_in_approval_mode(self) -> None:
+    def test_prompt_prefix_stays_normal_for_prompt_toolkit(self) -> None:
         state = AppState()
         self.assertEqual(_input_prompt_prefix(state), "❯")
 
+        state.pending_approvals["ap-6"] = ApprovalRecord(
+            turn_id="turn-6",
+            target="apply_patch",
+            reason="r6",
+        )
+        state.approval_order.append("ap-6")
+        state.approval_focus_id = "ap-6"
+        state.turn_phase = "approval"
+        state.input_backend = "prompt_toolkit"
+        state.approval_ui_enabled = True
+        self.assertEqual(_input_prompt_prefix(state), "❯")
+
+    def test_prompt_prefix_switches_in_approval_mode_for_basic(self) -> None:
+        state = AppState()
         state.pending_approvals["ap-6"] = ApprovalRecord(
             turn_id="turn-6",
             target="apply_patch",

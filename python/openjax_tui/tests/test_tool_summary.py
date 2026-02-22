@@ -22,7 +22,7 @@ class ToolSummaryTest(unittest.TestCase):
     def tearDown(self) -> None:
         _set_active_state(None)
 
-    def test_tool_events_fold_into_single_summary(self) -> None:
+    def test_tool_events_print_immediate_lines(self) -> None:
         state = AppState()
         _set_active_state(state)
         out = io.StringIO()
@@ -37,9 +37,9 @@ class ToolSummaryTest(unittest.TestCase):
             _print_event(_evt("1", "turn_completed", {}))
 
         text = out.getvalue()
-        self.assertIn("🔴 tools: calls=2 ok=1 fail=1 duration=550ms names=[search, shell]", text)
-        self.assertNotIn("tool> shell ...", text)
-        self.assertNotIn("tool> search ...", text)
+        self.assertIn("🟢 Run shell command", text)
+        self.assertIn("🔴 Search (failed)", text)
+        self.assertNotIn("tools: calls=", text)
 
     def test_status_bullet_colored_dot_in_prompt_toolkit_backend(self) -> None:
         state = AppState()
@@ -51,7 +51,7 @@ class ToolSummaryTest(unittest.TestCase):
 
         self.assertEqual(bullet, "\x1b[32m⏺\x1b[0m")
 
-    def test_tool_summary_uses_prompt_toolkit_ansi_renderer(self) -> None:
+    def test_tool_line_uses_prompt_toolkit_ansi_renderer(self) -> None:
         state = AppState()
         state.input_backend = "prompt_toolkit"
         _set_active_state(state)
@@ -68,8 +68,7 @@ class ToolSummaryTest(unittest.TestCase):
 
         self.assertEqual(len(captured), 1)
         self.assertIn("ANSI<", captured[0])
-        self.assertIn("tools: calls=1 ok=1 fail=0", captured[0])
-        self.assertIn("names=[shell]", captured[0])
+        self.assertIn("Run shell command", captured[0])
 
 
 if __name__ == "__main__":
