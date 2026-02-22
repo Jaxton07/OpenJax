@@ -41,7 +41,7 @@ class ToolSummaryTest(unittest.TestCase):
         self.assertNotIn("tool> shell ...", text)
         self.assertNotIn("tool> search ...", text)
 
-    def test_status_bullet_plain_in_prompt_toolkit_backend(self) -> None:
+    def test_status_bullet_colored_dot_in_prompt_toolkit_backend(self) -> None:
         state = AppState()
         state.input_backend = "prompt_toolkit"
         _set_active_state(state)
@@ -49,7 +49,27 @@ class ToolSummaryTest(unittest.TestCase):
         with patch("openjax_tui.app._supports_ansi_color", return_value=True):
             bullet = _status_bullet(ok=True)
 
-        self.assertEqual(bullet, "🟢")
+        self.assertEqual(bullet, "\x1b[32m⏺\x1b[0m")
+
+    def test_tool_summary_uses_prompt_toolkit_ansi_renderer(self) -> None:
+        state = AppState()
+        state.input_backend = "prompt_toolkit"
+        _set_active_state(state)
+        captured: list[str] = []
+
+        with patch("openjax_tui.app.time.monotonic", side_effect=[1.0, 1.2]), patch(
+            "openjax_tui.app._supports_ansi_color", return_value=True
+        ), patch("openjax_tui.app._prompt_toolkit_ansi", side_effect=lambda s: f"ANSI<{s}>"), patch(
+            "openjax_tui.app._prompt_toolkit_print", side_effect=lambda s: captured.append(str(s))
+        ):
+            _print_event(_evt("1", "tool_call_started", {"tool_name": "shell"}))
+            _print_event(_evt("1", "tool_call_completed", {"tool_name": "shell", "ok": True}))
+            _print_event(_evt("1", "turn_completed", {}))
+
+        self.assertEqual(len(captured), 1)
+        self.assertIn("ANSI<", captured[0])
+        self.assertIn("tools: calls=1 ok=1 fail=0", captured[0])
+        self.assertIn("names=[shell]", captured[0])
 
 
 if __name__ == "__main__":

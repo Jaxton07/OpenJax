@@ -63,6 +63,17 @@ class _StubShutdownClient(OpenJaxAsyncClient):
         self.stop_calls += 1
 
 
+class _SlowStopShutdownClient(_StubShutdownClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stop_completed = False
+
+    async def stop(self) -> None:
+        self.stop_calls += 1
+        await asyncio.sleep(1.1)
+        self.stop_completed = True
+
+
 class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
     async def test_quiet_shutdown_skips_session_close_when_interrupted(self) -> None:
         client = _StubShutdownClient()
@@ -79,6 +90,14 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(client.shutdown_calls, 1)
         self.assertEqual(client.stop_calls, 1)
+
+    async def test_quiet_shutdown_waits_for_slow_stop_completion(self) -> None:
+        client = _SlowStopShutdownClient()
+
+        await _shutdown_client_quietly(client, graceful=False)
+
+        self.assertEqual(client.stop_calls, 1)
+        self.assertTrue(client.stop_completed)
 
     async def test_drain_background_task_handles_cancelled_task(self) -> None:
         task: asyncio.Task[None] = asyncio.create_task(asyncio.sleep(10))

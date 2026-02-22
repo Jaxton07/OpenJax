@@ -21,12 +21,17 @@ from openjax_sdk.exceptions import OpenJaxProtocolError, OpenJaxResponseError
 from openjax_sdk.models import EventEnvelope
 
 try:
-    from prompt_toolkit import PromptSession
+    from prompt_toolkit import PromptSession, print_formatted_text
+    from prompt_toolkit.formatted_text import ANSI
     from prompt_toolkit.patch_stdout import patch_stdout
+    _prompt_toolkit_print: Callable[[object], None] | None = print_formatted_text
+    _prompt_toolkit_ansi: Callable[[str], object] | None = ANSI
     _prompt_toolkit_import_error: str | None = None
 except Exception:  # pragma: no cover - optional dependency fallback
     PromptSession = None  # type: ignore[assignment]
     patch_stdout = None  # type: ignore[assignment]
+    _prompt_toolkit_print = None
+    _prompt_toolkit_ansi = None
     _prompt_toolkit_import_error = "prompt_toolkit import failed"
 
 try:
@@ -252,7 +257,7 @@ async def _shutdown_client_quietly(client: OpenJaxAsyncClient, graceful: bool = 
         asyncio.CancelledError,
         TimeoutError,
     ):
-        await asyncio.wait_for(client.stop(), timeout=1.0)
+        await client.stop()
 
 
 def _ignore_sigint_during_shutdown() -> None:
@@ -1078,7 +1083,7 @@ def _print_tool_summary_for_turn(turn: str) -> None:
     duration = f"{stats.known_duration_ms}ms" if stats.known_duration_ms else "n/a"
     ok = stats.fail_count == 0
     bullet = _status_bullet(ok)
-    print(
+    _emit_ui_line(
         f"{bullet} tools: calls={stats.calls} ok={stats.ok_count} "
         f"fail={stats.fail_count} duration={duration} names=[{tools}]"
     )
@@ -1190,10 +1195,20 @@ def _print_prefixed_block(prefix: str, content: str) -> None:
     print(f"{prefix} {aligned}")
 
 
-def _status_bullet(ok: bool) -> str:
+def _emit_ui_line(text: str) -> None:
     state = _active_state
-    if state is not None and state.input_backend == "prompt_toolkit":
-        return "🟢" if ok else "🔴"
+    if (
+        state is not None
+        and state.input_backend == "prompt_toolkit"
+        and _prompt_toolkit_print is not None
+        and _prompt_toolkit_ansi is not None
+    ):
+        _prompt_toolkit_print(_prompt_toolkit_ansi(text))
+        return
+    print(text)
+
+
+def _status_bullet(ok: bool) -> str:
     if not _supports_ansi_color():
         return "🟢" if ok else "🔴"
     color = _ANSI_GREEN if ok else _ANSI_RED
