@@ -5,6 +5,7 @@ import json
 import os
 import uuid
 from collections import defaultdict
+from json import JSONDecodeError
 from typing import Any, AsyncIterator
 
 from .exceptions import OpenJaxProtocolError, OpenJaxResponseError
@@ -27,6 +28,7 @@ class OpenJaxAsyncClient:
         self._protocol_version = protocol_version
         self._proc: asyncio.subprocess.Process | None = None
         self._read_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
         self._pending: dict[str, asyncio.Future[ResponseEnvelope]] = {}
         self._event_queue: asyncio.Queue[EventEnvelope] = asyncio.Queue()
         self._session_id: str | None = None
@@ -50,6 +52,13 @@ class OpenJaxAsyncClient:
             env=env,
         )
         self._read_task = asyncio.create_task(self._read_loop(), name="openjaxd-read-loop")
+        if self._proc.stderr is not None:
+            self._stderr_task = asyncio.create_task(
+                self._drain_stderr_loop(),
+                name="openjaxd-stderr-drain-loop",
+            )
+        else:
+            self._stderr_task = None
         self._stream_closed = False
         self._stream_closed_reason = None
 
@@ -63,6 +72,11 @@ class OpenJaxAsyncClient:
                 await asyncio.wait_for(self._read_task, timeout=2)
             except asyncio.TimeoutError:
                 self._read_task.cancel()
+        if self._stderr_task:
+            try:
+                await asyncio.wait_for(self._stderr_task, timeout=2)
+            except asyncio.TimeoutError:
+                self._stderr_task.cancel()
         try:
             await asyncio.wait_for(self._proc.wait(), timeout=2)
         except asyncio.TimeoutError:
@@ -70,6 +84,7 @@ class OpenJaxAsyncClient:
             await self._proc.wait()
         self._proc = None
         self._read_task = None
+        self._stderr_task = None
         self._pending.clear()
         self._stream_closed = True
 
@@ -131,6 +146,19 @@ class OpenJaxAsyncClient:
         deadline = (loop.time() + timeout) if timeout is not None else None
 
         while True:
+            if self._read_task is not None and self._read_task.done() and self._event_queue.empty():
+                exc = self._read_task.exception()
+                if exc is None:
+                    self._stream_closed = True
+                    self._stream_closed_reason = OpenJaxProtocolError("daemon stream closed")
+                else:
+                    self._stream_closed = True
+                    if isinstance(exc, OpenJaxProtocolError):
+                        self._stream_closed_reason = exc
+                    else:
+                        self._stream_closed_reason = OpenJaxProtocolError(
+                            f"daemon read loop failed: {exc}"
+                        )
             if self._stream_closed and self._event_queue.empty():
                 if self._stream_closed_reason:
                     raise self._stream_closed_reason
@@ -206,35 +234,51 @@ class OpenJaxAsyncClient:
 
     async def _read_loop(self) -> None:
         assert self._proc is not None and self._proc.stdout is not None
+        try:
+            while True:
+                line = await self._proc.stdout.readline()
+                if not line:
+                    self._close_stream(OpenJaxProtocolError("daemon stream closed"))
+                    return
+                text = line.decode("utf-8", errors="replace").strip()
+                if not text:
+                    continue
+                try:
+                    payload = json.loads(text)
+                except JSONDecodeError:
+                    continue
+                kind = payload.get("kind")
+                if kind == "response":
+                    resp = ResponseEnvelope.from_dict(payload)
+                    fut = self._pending.pop(resp.request_id, None)
+                    if fut and not fut.done():
+                        fut.set_result(resp)
+                elif kind == "event":
+                    evt = EventEnvelope.from_dict(payload)
+                    if evt.turn_id and evt.event_type == "assistant_delta":
+                        delta = str(evt.payload.get("content_delta", ""))
+                        self._assistant_delta_buffer[evt.turn_id].append(delta)
+                    if evt.turn_id and evt.event_type == "assistant_message":
+                        content = str(evt.payload.get("content", ""))
+                        self._assistant_delta_buffer[evt.turn_id].append(content)
+                    await self._event_queue.put(evt)
+        except Exception as err:
+            self._close_stream(OpenJaxProtocolError(f"daemon read loop failed: {err}"))
+
+    def _close_stream(self, reason: Exception) -> None:
+        self._stream_closed = True
+        self._stream_closed_reason = reason
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(reason)
+        self._pending.clear()
+
+    async def _drain_stderr_loop(self) -> None:
+        assert self._proc is not None and self._proc.stderr is not None
         while True:
-            line = await self._proc.stdout.readline()
+            line = await self._proc.stderr.readline()
             if not line:
-                self._stream_closed = True
-                self._stream_closed_reason = OpenJaxProtocolError("daemon stream closed")
-                for fut in self._pending.values():
-                    if not fut.done():
-                        fut.set_exception(self._stream_closed_reason)
-                self._pending.clear()
                 return
-            text = line.decode("utf-8").strip()
-            if not text:
-                continue
-            payload = json.loads(text)
-            kind = payload.get("kind")
-            if kind == "response":
-                resp = ResponseEnvelope.from_dict(payload)
-                fut = self._pending.pop(resp.request_id, None)
-                if fut and not fut.done():
-                    fut.set_result(resp)
-            elif kind == "event":
-                evt = EventEnvelope.from_dict(payload)
-                if evt.turn_id and evt.event_type == "assistant_delta":
-                    delta = str(evt.payload.get("content_delta", ""))
-                    self._assistant_delta_buffer[evt.turn_id].append(delta)
-                if evt.turn_id and evt.event_type == "assistant_message":
-                    content = str(evt.payload.get("content", ""))
-                    self._assistant_delta_buffer[evt.turn_id].append(content)
-                await self._event_queue.put(evt)
 
     def _require_session(self) -> None:
         if not self._session_id:

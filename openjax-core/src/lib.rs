@@ -457,21 +457,8 @@ impl Agent {
                 );
             }
 
-            let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
-            match self
-                .tools
-                .execute(
-                    turn_id,
-                    &call,
-                    self.cwd.as_path(),
-                    self.tool_runtime_config,
-                    self.approval_handler.clone(),
-                    Some(tool_event_tx),
-                )
-                .await
-            {
+            match self.execute_tool_with_live_events(turn_id, &call, events).await {
                 Ok(output) => {
-                    self.drain_tool_events(&mut tool_event_rx, events);
                     let duration_ms = start_time.elapsed().as_millis();
                     info!(
                         turn_id = turn_id,
@@ -502,7 +489,6 @@ impl Agent {
                     return;
                 }
                 Err(err) => {
-                    self.drain_tool_events(&mut tool_event_rx, events);
                     last_error = Some(err);
                     // Check if error is retryable (not a validation error)
                     let err_str = last_error.as_ref().unwrap().to_string();
@@ -777,21 +763,8 @@ impl Agent {
                     tool_name: tool_name.clone(),
                 });
 
-                let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
-                match self
-                    .tools
-                    .execute(
-                        turn_id,
-                        &call,
-                        self.cwd.as_path(),
-                        self.tool_runtime_config,
-                        self.approval_handler.clone(),
-                        Some(tool_event_tx),
-                    )
-                    .await
-                {
+                match self.execute_tool_with_live_events(turn_id, &call, events).await {
                     Ok(output) => {
-                        self.drain_tool_events(&mut tool_event_rx, events);
                         if is_mutating_tool(&tool_name) {
                             // File/content state has changed. Move to a new epoch so read/list
                             // calls with the same args can run again against fresh state.
@@ -825,7 +798,6 @@ impl Agent {
                         consecutive_duplicate_skips = 0;
                     }
                     Err(err) => {
-                        self.drain_tool_events(&mut tool_event_rx, events);
                         let duration_ms = start_time.elapsed().as_millis();
                         let err_text = err.to_string();
                         info!(
@@ -988,6 +960,38 @@ impl Agent {
     ) {
         while let Ok(event) = rx.try_recv() {
             self.push_event(events, event);
+        }
+    }
+
+    async fn execute_tool_with_live_events(
+        &self,
+        turn_id: u64,
+        call: &tools::ToolCall,
+        events: &mut Vec<Event>,
+    ) -> anyhow::Result<String> {
+        let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let execute_fut = self.tools.execute(
+            turn_id,
+            call,
+            self.cwd.as_path(),
+            self.tool_runtime_config,
+            self.approval_handler.clone(),
+            Some(tool_event_tx),
+        );
+        tokio::pin!(execute_fut);
+
+        loop {
+            tokio::select! {
+                maybe_event = tool_event_rx.recv() => {
+                    if let Some(event) = maybe_event {
+                        self.push_event(events, event);
+                    }
+                }
+                result = &mut execute_fut => {
+                    self.drain_tool_events(&mut tool_event_rx, events);
+                    return result;
+                }
+            }
         }
     }
 }

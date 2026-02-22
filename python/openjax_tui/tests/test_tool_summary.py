@@ -4,7 +4,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from openjax_sdk.models import EventEnvelope
-from openjax_tui.app import AppState, _print_event, _set_active_state
+from openjax_tui.app import AppState, _print_event, _set_active_state, _status_bullet
 
 
 def _evt(turn_id: str, event_type: str, payload: dict[str, object]) -> EventEnvelope:
@@ -37,9 +37,19 @@ class ToolSummaryTest(unittest.TestCase):
             _print_event(_evt("1", "turn_completed", {}))
 
         text = out.getvalue()
-        self.assertIn("⏺ tools: calls=2 ok=1 fail=1 duration=550ms names=[search, shell]", text)
+        self.assertIn("🔴 tools: calls=2 ok=1 fail=1 duration=550ms names=[search, shell]", text)
         self.assertNotIn("tool> shell ...", text)
         self.assertNotIn("tool> search ...", text)
+
+    def test_status_bullet_plain_in_prompt_toolkit_backend(self) -> None:
+        state = AppState()
+        state.input_backend = "prompt_toolkit"
+        _set_active_state(state)
+
+        with patch("openjax_tui.app._supports_ansi_color", return_value=True):
+            bullet = _status_bullet(ok=True)
+
+        self.assertEqual(bullet, "🟢")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 from collections import deque
+from typing import Any, Callable
 
 from openjax_sdk import OpenJaxAsyncClient
 from openjax_sdk.exceptions import OpenJaxProtocolError, OpenJaxResponseError
@@ -20,9 +21,18 @@ from openjax_sdk.models import EventEnvelope
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
+    _prompt_toolkit_import_error: str | None = None
 except Exception:  # pragma: no cover - optional dependency fallback
     PromptSession = None  # type: ignore[assignment]
     patch_stdout = None  # type: ignore[assignment]
+    _prompt_toolkit_import_error = "prompt_toolkit import failed"
+
+try:
+    from prompt_toolkit.key_binding import KeyBindings
+    _key_bindings_import_error: str | None = None
+except Exception:  # pragma: no cover - optional dependency fallback
+    KeyBindings = None  # type: ignore[assignment]
+    _key_bindings_import_error = "key bindings import failed"
 
 _INPUT_REQUEST = object()
 _INPUT_STOP = object()
@@ -37,17 +47,23 @@ _ANSI_RESET = "\x1b[0m"
 class AppState:
     def __init__(self) -> None:
         self.running = True
-        self.pending_approvals: dict[str, str] = {}
+        self.pending_approvals: dict[str, ApprovalRecord] = {}
         self.approval_order: deque[str] = deque()
+        self.approval_focus_id: str | None = None
+        self.approval_ui_enabled = False
+        self.approval_selected_action = "allow"
         self.stream_turn_id: str | None = None
         self.stream_text_by_turn: dict[str, str] = {}
         self.waiting_turn_id: str | None = None
         self.input_ready: asyncio.Event | None = None
+        self.approval_interrupt: asyncio.Event | None = None
         self.session_id: str | None = None
         self.input_backend: str = "basic"
+        self.input_backend_reason: str = ""
         self.turn_phase: str = "idle"
         self.tool_turn_stats: dict[str, ToolTurnStats] = {}
         self.active_tool_starts: dict[tuple[str, str], list[float]] = {}
+        self.prompt_invalidator: Callable[[], None] | None = None
 
 
 @dataclass
@@ -57,6 +73,14 @@ class ToolTurnStats:
     fail_count: int = 0
     known_duration_ms: int = 0
     tools: set[str] = field(default_factory=set)
+
+
+@dataclass
+class ApprovalRecord:
+    turn_id: str
+    target: str
+    reason: str
+    status: str = "pending"
 
 
 _LOGO_GLYPHS: dict[str, tuple[str, ...]] = {
@@ -146,7 +170,7 @@ _OPENJAX_LOGO_TINY = "OPENJAX"
 
 
 async def run() -> None:
-    input_backend = _select_input_backend()
+    input_backend, backend_reason = _select_input_backend_with_reason()
     if input_backend == "basic":
         _configure_readline_keybindings()
     daemon_cmd = _daemon_cmd_from_env()
@@ -154,13 +178,16 @@ async def run() -> None:
     state = AppState()
     state.input_ready = asyncio.Event()
     state.input_ready.set()
+    state.approval_interrupt = asyncio.Event()
     _set_active_state(state)
 
     await client.start()
+    interrupted = False
     try:
         session_id = await client.start_session()
         state.session_id = session_id
         state.input_backend = input_backend
+        state.input_backend_reason = backend_reason
         await client.stream_events()
         _print_logo()
         print("OpenJax TUI")
@@ -175,6 +202,7 @@ async def run() -> None:
             else:
                 await _input_loop_basic(client, state)
         except (KeyboardInterrupt, asyncio.CancelledError):
+            interrupted = True
             if state.running:
                 print("^C")
             state.running = False
@@ -185,13 +213,15 @@ async def run() -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await event_task
     finally:
-        await _shutdown_client_quietly(client)
+        if interrupted:
+            _ignore_sigint_during_shutdown()
+        await _shutdown_client_quietly(client, graceful=not interrupted)
         _finalize_stream_line(state)
         _set_active_state(None)
         print("openjax_tui exited")
 
 
-async def _shutdown_client_quietly(client: OpenJaxAsyncClient) -> None:
+async def _shutdown_client_quietly(client: OpenJaxAsyncClient, graceful: bool = True) -> None:
     with contextlib.suppress(
         OpenJaxProtocolError,
         OpenJaxResponseError,
@@ -199,9 +229,10 @@ async def _shutdown_client_quietly(client: OpenJaxAsyncClient) -> None:
         BrokenPipeError,
         RuntimeError,
         asyncio.CancelledError,
+        TimeoutError,
     ):
-        if client.session_id:
-            await client.shutdown_session()
+        if graceful and client.session_id:
+            await asyncio.wait_for(client.shutdown_session(), timeout=1.0)
     with contextlib.suppress(
         OpenJaxProtocolError,
         OpenJaxResponseError,
@@ -209,8 +240,9 @@ async def _shutdown_client_quietly(client: OpenJaxAsyncClient) -> None:
         BrokenPipeError,
         RuntimeError,
         asyncio.CancelledError,
+        TimeoutError,
     ):
-        await client.stop()
+        await asyncio.wait_for(client.stop(), timeout=1.0)
 
 
 def _ignore_sigint_during_shutdown() -> None:
@@ -233,7 +265,7 @@ async def _input_loop_basic(client: OpenJaxAsyncClient, state: AppState) -> None
             line = await line_queue.get()
         except KeyboardInterrupt:
             state.running = False
-            return
+            raise
         except asyncio.CancelledError:
             state.running = False
             return
@@ -252,29 +284,84 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         await _input_loop_basic(client, state)
         return
 
+    state.approval_ui_enabled = True
+    key_bindings = _build_prompt_key_bindings(client, state)
     session = PromptSession(
-        f"{_USER_PROMPT_PREFIX} ",
         prompt_continuation=lambda _width, _line_no, _is_soft_wrap: _PREFIX_CONTINUATION,
+        key_bindings=key_bindings,
+        bottom_toolbar=lambda: _approval_toolbar_text(state),
     )
-    with patch_stdout():
-        while state.running:
-            try:
-                await state.input_ready.wait()
-                line = await session.prompt_async()
-            except (EOFError, KeyboardInterrupt):
-                state.running = False
-                return
-            except asyncio.CancelledError:
-                state.running = False
-                return
+    state.prompt_invalidator = lambda: _invalidate_prompt_session(session)
+    try:
+        with patch_stdout():
+            while state.running:
+                prompt_task: asyncio.Task[str] | None = None
+                approval_task: asyncio.Task[bool] | None = None
+                try:
+                    await state.input_ready.wait()
+                    _tui_debug(
+                        f"prompt wait start phase={state.turn_phase} approvals={len(state.pending_approvals)}"
+                    )
+                    prompt_task = asyncio.create_task(
+                        session.prompt_async(message=f"{_input_prompt_prefix(state)} ")
+                    )
+                    if state.approval_interrupt is not None:
+                        approval_task = asyncio.create_task(state.approval_interrupt.wait())
 
-            if not await _handle_user_line(client, state, line):
-                return
+                    waiters: set[asyncio.Task[object]] = {prompt_task}
+                    if approval_task is not None:
+                        waiters.add(approval_task)
+
+                    done, pending = await asyncio.wait(
+                        waiters,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    for pending_task in pending:
+                        await _drain_background_task(pending_task)
+
+                    approval_triggered = (
+                        approval_task is not None
+                        and approval_task in done
+                        and not approval_task.cancelled()
+                        and approval_task.exception() is None
+                        and bool(approval_task.result())
+                    )
+                    if approval_triggered:
+                        if state.approval_interrupt is not None:
+                            state.approval_interrupt.clear()
+                        _tui_debug("approval interrupt triggered; restarting prompt")
+                        await _drain_background_task(prompt_task)
+                        _request_prompt_redraw(state)
+                        continue
+
+                    line = await prompt_task
+                    _tui_debug(f"prompt returned line_len={len(line)}")
+                except EOFError:
+                    state.running = False
+                    return
+                except KeyboardInterrupt:
+                    state.running = False
+                    raise
+                except asyncio.CancelledError:
+                    state.running = False
+                    return
+                finally:
+                    await _drain_background_task(approval_task)
+                    await _drain_background_task(prompt_task)
+
+                if not await _handle_user_line(client, state, line):
+                    return
+    finally:
+        state.prompt_invalidator = None
 
 
 async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: str) -> bool:
     text = _normalize_input(line).strip()
     if not text:
+        if _approval_mode_active(state):
+            approved = state.approval_selected_action == "allow"
+            await _resolve_latest_approval(client, state, approved=approved)
         return True
     if text == "/exit":
         state.running = False
@@ -286,7 +373,7 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         _print_pending(state)
         return True
 
-    if text in ("y", "n"):
+    if text in ("y", "n") and _approval_mode_active(state):
         await _resolve_latest_approval(client, state, approved=(text == "y"))
         return True
 
@@ -326,28 +413,101 @@ async def _event_loop(client: OpenJaxAsyncClient, state: AppState) -> None:
             print(f"[error] event stream closed: {err}")
             state.running = False
             return
+        _tui_debug(
+            f"event received type={evt.event_type} turn_id={evt.turn_id or '-'} payload_keys={sorted(evt.payload.keys())}"
+        )
         _print_event(evt)
-        if evt.event_type == "approval_requested" and evt.turn_id:
-            request_id = str(evt.payload.get("request_id", ""))
-            if request_id:
-                state.pending_approvals[request_id] = evt.turn_id
+        _apply_event_state_updates(state, evt)
+
+
+def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
+    if evt.event_type == "approval_requested" and evt.turn_id:
+        request_id = str(evt.payload.get("request_id", ""))
+        if request_id:
+            record = ApprovalRecord(
+                turn_id=evt.turn_id,
+                target=str(evt.payload.get("target", "")),
+                reason=str(evt.payload.get("reason", "")),
+            )
+            state.pending_approvals[request_id] = record
+            if request_id not in state.approval_order:
                 state.approval_order.append(request_id)
-                print(f"[approval] use /approve {request_id} y|n, or quick y/n")
-                state.turn_phase = "approval"
-                if state.input_ready is not None:
-                    state.input_ready.set()
-        if evt.event_type == "approval_resolved":
-            request_id = str(evt.payload.get("request_id", ""))
-            _pop_pending(state, request_id)
-            if not state.pending_approvals:
-                state.turn_phase = "thinking" if state.waiting_turn_id else "idle"
-            if state.waiting_turn_id and not state.pending_approvals and state.input_ready is not None:
-                state.input_ready.clear()
-        if evt.event_type == "turn_completed" and evt.turn_id == state.waiting_turn_id:
-            state.waiting_turn_id = None
-            state.turn_phase = "idle"
+            state.approval_focus_id = request_id
+            state.approval_selected_action = "allow"
+            print(
+                f"[approval] use /approve {request_id} y|n, quick y/n, or press Enter to confirm default allow"
+            )
+            state.turn_phase = "approval"
             if state.input_ready is not None:
                 state.input_ready.set()
+            if state.approval_interrupt is not None:
+                state.approval_interrupt.set()
+            _tui_debug(
+                f"approval state updated request_id={request_id} pending={len(state.pending_approvals)}"
+            )
+            _request_prompt_redraw(state)
+        return
+
+    if evt.event_type == "approval_resolved":
+        request_id = str(evt.payload.get("request_id", ""))
+        _pop_pending(state, request_id)
+        if not state.pending_approvals:
+            state.turn_phase = "thinking" if state.waiting_turn_id else "idle"
+        if state.waiting_turn_id and not state.pending_approvals and state.input_ready is not None:
+            state.input_ready.clear()
+        _tui_debug(
+            f"approval resolved request_id={request_id} pending={len(state.pending_approvals)} phase={state.turn_phase}"
+        )
+        _request_prompt_redraw(state)
+        return
+
+    if evt.event_type == "turn_completed" and evt.turn_id == state.waiting_turn_id:
+        state.waiting_turn_id = None
+        state.turn_phase = "idle"
+        if state.input_ready is not None:
+            state.input_ready.set()
+        _tui_debug("turn completed; input gate reopened")
+        _request_prompt_redraw(state)
+
+
+def _invalidate_prompt_session(session: Any) -> None:
+    app = getattr(session, "app", None)
+    if app is None:
+        return
+    invalidate = getattr(app, "invalidate", None)
+    if callable(invalidate):
+        invalidate()
+
+
+def _request_prompt_redraw(state: AppState) -> None:
+    invalidator = state.prompt_invalidator
+    if invalidator is None:
+        _tui_debug("prompt redraw skipped: no invalidator")
+        return
+    _tui_debug("prompt redraw requested")
+    with contextlib.suppress(Exception):
+        invalidator()
+
+
+async def _drain_background_task(task: asyncio.Task[Any] | None) -> None:
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    with contextlib.suppress(BaseException):
+        await task
+
+
+def _tui_debug_enabled() -> bool:
+    flag = os.environ.get("OPENJAX_TUI_DEBUG", "")
+    return flag.lower() in {"1", "true", "yes", "on"}
+
+
+def _tui_debug(message: str) -> None:
+    if not _tui_debug_enabled():
+        return
+    ts = f"{time.time():.3f}"
+    print(f"[tui-debug] t={ts} {message}", file=sys.stderr, flush=True)
 
 
 def _print_event(evt: EventEnvelope) -> None:
@@ -408,16 +568,38 @@ def _daemon_cmd_from_env() -> list[str]:
 
 
 def _select_input_backend() -> str:
-    if os.environ.get("OPENJAX_TUI_INPUT_BACKEND", "").lower() == "basic":
-        return "basic"
+    backend, _ = _select_input_backend_with_reason()
+    return backend
+
+
+def _select_input_backend_with_reason() -> tuple[str, str]:
+    env_backend = os.environ.get("OPENJAX_TUI_INPUT_BACKEND", "").lower()
+    if env_backend == "basic":
+        return "basic", "forced by OPENJAX_TUI_INPUT_BACKEND=basic"
+    if env_backend == "prompt_toolkit":
+        if PromptSession is not None and patch_stdout is not None:
+            if KeyBindings is None:
+                return "prompt_toolkit", "forced by env; key bindings unavailable"
+            return "prompt_toolkit", "forced by OPENJAX_TUI_INPUT_BACKEND=prompt_toolkit"
+        return "basic", "env requested prompt_toolkit but dependency unavailable"
     if (
         PromptSession is not None
         and patch_stdout is not None
         and sys.stdin.isatty()
         and sys.stdout.isatty()
     ):
-        return "prompt_toolkit"
-    return "basic"
+        if KeyBindings is None:
+            return "prompt_toolkit", "tty mode; key bindings unavailable"
+        return "prompt_toolkit", "tty mode"
+
+    reason_parts: list[str] = []
+    if PromptSession is None or patch_stdout is None:
+        reason_parts.append(_prompt_toolkit_import_error or "prompt_toolkit unavailable")
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        reason_parts.append("stdin/stdout is not tty")
+    if not reason_parts:
+        reason_parts.append("fallback to basic")
+    return "basic", "; ".join(reason_parts)
 
 
 def _start_basic_input_worker(
@@ -433,7 +615,11 @@ def _start_basic_input_worker(
             if cmd is not _INPUT_REQUEST:
                 continue
             try:
-                line = input(f"{_USER_PROMPT_PREFIX} ")
+                prompt_prefix = _USER_PROMPT_PREFIX
+                active_state = _active_state
+                if active_state is not None and _approval_mode_active(active_state):
+                    prompt_prefix = "approval>"
+                line = input(f"{prompt_prefix} ")
             except EOFError:
                 line = None
             except KeyboardInterrupt:
@@ -467,6 +653,8 @@ def _print_status_bar(state: AppState) -> None:
         f"phase={state.turn_phase}  approvals={len(state.pending_approvals)}"
     )
     print(line)
+    if state.input_backend_reason:
+        print(f"[input] {state.input_backend_reason}")
     print(_divider_line())
 
 
@@ -570,14 +758,22 @@ def _print_pending(state: AppState) -> None:
         return
     print("[approval] pending:")
     for request_id in list(state.approval_order):
-        turn_id = state.pending_approvals.get(request_id)
-        if turn_id:
-            print(f"  {request_id} (turn:{turn_id})")
+        record = state.pending_approvals.get(request_id)
+        if record and record.status == "pending":
+            focus_marker = "*" if request_id == state.approval_focus_id else " "
+            print(
+                f" {focus_marker} {request_id} (turn:{record.turn_id}) target={record.target or '-'}"
+            )
 
 
 async def _resolve_latest_approval(
     client: OpenJaxAsyncClient, state: AppState, approved: bool
 ) -> None:
+    focus_id = _focused_approval_id(state)
+    if focus_id:
+        await _resolve_approval_by_id(client, state, focus_id, approved)
+        return
+
     while state.approval_order:
         approval_request_id = state.approval_order[-1]
         if approval_request_id in state.pending_approvals:
@@ -593,13 +789,13 @@ async def _resolve_approval_by_id(
     approval_request_id: str,
     approved: bool,
 ) -> None:
-    turn_id = state.pending_approvals.get(approval_request_id)
-    if not turn_id:
+    record = state.pending_approvals.get(approval_request_id)
+    if not record or record.status != "pending":
         print(f"[approval] request not found: {approval_request_id}")
         return
     try:
         ok = await client.resolve_approval(
-            turn_id=turn_id,
+            turn_id=record.turn_id,
             request_id=approval_request_id,
             approved=approved,
             reason="approved_by_tui" if approved else "rejected_by_tui",
@@ -607,6 +803,10 @@ async def _resolve_approval_by_id(
         print(f"[approval] resolved: {approval_request_id} ok={ok}")
         _pop_pending(state, approval_request_id)
     except OpenJaxResponseError as err:
+        if _is_expired_approval_error(err):
+            print(f"[approval] auto-denied (expired): {approval_request_id}")
+            _pop_pending(state, approval_request_id)
+            return
         print(f"[approval] resolve failed: {err.code} {err.message}")
 
 
@@ -614,6 +814,138 @@ def _pop_pending(state: AppState, approval_request_id: str) -> None:
     state.pending_approvals.pop(approval_request_id, None)
     with contextlib.suppress(ValueError):
         state.approval_order.remove(approval_request_id)
+    if state.approval_focus_id == approval_request_id:
+        state.approval_focus_id = _focused_approval_id(state)
+
+
+def _focused_approval_id(state: AppState) -> str | None:
+    if state.approval_focus_id and state.approval_focus_id in state.pending_approvals:
+        return state.approval_focus_id
+    while state.approval_order:
+        approval_request_id = state.approval_order[-1]
+        record = state.pending_approvals.get(approval_request_id)
+        if record and record.status == "pending":
+            state.approval_focus_id = approval_request_id
+            return approval_request_id
+        state.approval_order.pop()
+    state.approval_focus_id = None
+    return None
+
+
+def _approval_mode_active(state: AppState) -> bool:
+    return state.turn_phase == "approval" and _focused_approval_id(state) is not None
+
+
+def _input_prompt_prefix(state: AppState) -> str:
+    if _approval_mode_active(state):
+        return "approval>"
+    return _USER_PROMPT_PREFIX
+
+
+def _approval_pending_ids(state: AppState) -> list[str]:
+    ids: list[str] = []
+    for approval_request_id in state.approval_order:
+        record = state.pending_approvals.get(approval_request_id)
+        if record and record.status == "pending":
+            ids.append(approval_request_id)
+    return ids
+
+
+def _move_approval_focus(state: AppState, step: int) -> None:
+    pending_ids = _approval_pending_ids(state)
+    if not pending_ids:
+        state.approval_focus_id = None
+        return
+    focus_id = _focused_approval_id(state)
+    if focus_id is None or focus_id not in pending_ids:
+        state.approval_focus_id = pending_ids[-1]
+        return
+    idx = pending_ids.index(focus_id)
+    next_idx = max(0, min(len(pending_ids) - 1, idx + step))
+    state.approval_focus_id = pending_ids[next_idx]
+
+
+def _approval_toolbar_text(state: AppState) -> str:
+    if not state.approval_ui_enabled or not _approval_mode_active(state):
+        return ""
+    focus_id = _focused_approval_id(state)
+    if not focus_id:
+        return ""
+    record = state.pending_approvals.get(focus_id)
+    if record is None:
+        return ""
+    total = len(_approval_pending_ids(state))
+    selected_allow = state.approval_selected_action == "allow"
+    allow_label = "[ALLOW]" if selected_allow else " allow "
+    deny_label = "[DENY]" if not selected_allow else " deny "
+    target = record.target or "-"
+    return (
+        f" approval {focus_id} ({total} pending) target={target} "
+        f"{allow_label}/{deny_label}  Up/Down switch  Tab toggle  Enter confirm  timeout=auto-deny"
+    )
+
+
+def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> Any:
+    if KeyBindings is None:
+        return None
+    kb = KeyBindings()
+
+    @kb.add("tab")
+    def _toggle_action(event: object) -> None:
+        if not _approval_mode_active(state):
+            return
+        state.approval_selected_action = (
+            "deny" if state.approval_selected_action == "allow" else "allow"
+        )
+        app = getattr(event, "app", None)
+        if app is not None:
+            app.invalidate()
+
+    @kb.add("up")
+    def _focus_prev(event: object) -> None:
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        current_text = getattr(current_buffer, "text", "")
+        if _approval_mode_active(state) and not str(current_text).strip():
+            _move_approval_focus(state, step=-1)
+            if app is not None:
+                app.invalidate()
+
+    @kb.add("down")
+    def _focus_next(event: object) -> None:
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        current_text = getattr(current_buffer, "text", "")
+        if _approval_mode_active(state) and not str(current_text).strip():
+            _move_approval_focus(state, step=1)
+            if app is not None:
+                app.invalidate()
+
+    @kb.add("enter")
+    def _enter_resolve(event: object) -> None:
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        current_text = getattr(current_buffer, "text", "")
+        if not (_approval_mode_active(state) and not str(current_text).strip()):
+            validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
+            if callable(validate_and_handle):
+                validate_and_handle()
+            return
+        if current_buffer is None:
+            return
+        current_buffer.text = "y" if state.approval_selected_action == "allow" else "n"
+        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
+        if callable(validate_and_handle):
+            validate_and_handle()
+
+    return kb
+
+
+def _is_expired_approval_error(err: OpenJaxResponseError) -> bool:
+    if err.code == "APPROVAL_NOT_FOUND":
+        return True
+    message = err.message.lower()
+    return "timed out" in message or "timeout" in message
 
 
 def _record_tool_started(turn: str, tool_name: str) -> None:
@@ -772,7 +1104,10 @@ def _print_prefixed_block(prefix: str, content: str) -> None:
 
 
 def _status_bullet(ok: bool) -> str:
+    state = _active_state
+    if state is not None and state.input_backend == "prompt_toolkit":
+        return "🟢" if ok else "🔴"
     if not _supports_ansi_color():
-        return _ASSISTANT_PREFIX
+        return "🟢" if ok else "🔴"
     color = _ANSI_GREEN if ok else _ANSI_RED
     return f"{color}{_ASSISTANT_PREFIX}{_ANSI_RESET}"

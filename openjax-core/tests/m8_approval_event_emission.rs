@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Notify;
+use tokio::time::{Duration, timeout};
 
 fn temp_workspace_path() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -36,6 +38,21 @@ impl ApprovalHandler for AlwaysApprove {
     }
 }
 
+#[derive(Debug)]
+struct BlockingApprove {
+    entered: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+#[async_trait]
+impl ApprovalHandler for BlockingApprove {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        self.entered.notify_one();
+        self.release.notified().await;
+        Ok(true)
+    }
+}
+
 #[tokio::test]
 async fn emits_approval_requested_and_resolved_events() {
     let workspace = create_workspace();
@@ -62,6 +79,67 @@ async fn emits_approval_requested_and_resolved_events() {
         .find(|event| matches!(event, Event::ApprovalResolved { .. }));
     assert!(requested.is_some());
     assert!(resolved.is_some());
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn submit_with_sink_emits_approval_requested_before_resolution() {
+    let workspace = create_workspace();
+    fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
+
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::AlwaysAsk,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+    agent.set_approval_handler(Arc::new(BlockingApprove {
+        entered: entered.clone(),
+        release: release.clone(),
+    }));
+
+    let (sink_tx, mut sink_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let submit_task = tokio::spawn(async move {
+        agent
+            .submit_with_sink(
+                Op::UserTurn {
+                    input: "tool:read_file path=note.txt".to_string(),
+                },
+                sink_tx,
+            )
+            .await
+    });
+
+    timeout(Duration::from_secs(2), entered.notified())
+        .await
+        .expect("approval handler should be entered");
+
+    let approval_evt = timeout(Duration::from_secs(1), async {
+        loop {
+            let evt = sink_rx
+                .recv()
+                .await
+                .expect("sink should receive events while submit is blocked");
+            if matches!(evt, Event::ApprovalRequested { .. }) {
+                break evt;
+            }
+        }
+    })
+    .await
+    .expect("approval_requested should stream before approval resolution");
+
+    assert!(matches!(approval_evt, Event::ApprovalRequested { .. }));
+
+    release.notify_one();
+    let events = submit_task.await.expect("submit task join");
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Event::ApprovalResolved { .. })),
+        "submit should complete after approval is released"
+    );
 
     let _ = fs::remove_dir_all(workspace);
 }
