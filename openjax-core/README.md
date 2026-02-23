@@ -166,6 +166,14 @@ let events = agent
 | `OPENJAX_LOG_MAX_LINES` | 单文件最大行数 | `10000` |
 | `OPENJAX_LOG_MAX_ARCHIVES` | 最大归档文件数 | `4` |
 
+## 默认系统提示词定位
+
+`openjax-core` 在 Chat Completions 后端内置了默认 system prompt，当前采用三段式结构：
+
+- 基础人格（Persona）：OpenJax 是运行在终端环境中的**全能个人 AI 助理/管家**，不是仅限编程的助手。
+- 行为准则（Behavior）：覆盖系统状态检查、文档与知识处理、代码与调试、命令行执行、计划与日常效率任务；响应强调实用、准确、面向结果。
+- 安全边界（Safety）：对高风险动作先说明假设并确认意图，再继续执行。
+
 ## 测试
 
 运行核心测试：

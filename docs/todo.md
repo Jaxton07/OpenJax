@@ -17,6 +17,8 @@
 14. 优化权限申请和审批逻辑，同一个操作已经同意权限后重试不再需要重新获取权限
 15. 拆分 python/openjax_tui/src/openjax_tui/app.py [x]
 16. 简化python tui 启动命令
+17. 修复现在输入框不能输入y 和 n 的bug, 非权限审批模式下不禁用输入
+18. 修复edit_file_range 的修改失败的bug
 
 
 

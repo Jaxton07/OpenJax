@@ -67,6 +67,7 @@ Rules:\n\
   *** End Patch\n\
   Operations: *** Add File:, *** Update File:, *** Delete File:, *** Move File: from -> to\n\
   IMPORTANT: In Update File, every line after @@ MUST start with space (context), - (remove), or + (add).\n\
+  IMPORTANT: When modifying existing files, preserve the source file's formatting and style (indentation, line endings, spacing, quotes, trailing commas, and surrounding conventions).\n\
 - For edit_file_range, provide args: file_path, start_line, end_line, new_text.\n\
 - IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
 - If a tool was already called and returned results, use those results to decide the next action.\n\

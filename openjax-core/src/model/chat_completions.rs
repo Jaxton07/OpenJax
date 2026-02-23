@@ -7,6 +7,20 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::config::ModelConfig;
 use crate::model::client::ModelClient;
 
+const SYSTEM_PROMPT_PERSONA: &str = "You are OpenJax, an all-purpose personal AI assistant in a terminal environment, similar in spirit to a reliable AI butler.";
+const SYSTEM_PROMPT_BEHAVIOR: &str = "Your job is to help the user get outcomes across many domains: system and environment checks, document and knowledge tasks, coding and debugging, shell workflows, planning, and everyday productivity. \
+Be practical, accurate, and action-oriented. Prefer using available tools when verification or execution is needed. \
+Keep responses concise, clear, and directly useful.";
+const SYSTEM_PROMPT_SAFETY: &str =
+    "For high-impact actions, surface assumptions and confirm intent before proceeding.";
+
+fn default_system_prompt() -> String {
+    format!(
+        "{}\n\nBehavior guidelines:\n{}\n\nSafety boundaries:\n{}",
+        SYSTEM_PROMPT_PERSONA, SYSTEM_PROMPT_BEHAVIOR, SYSTEM_PROMPT_SAFETY
+    )
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ChatCompletionsClient {
     client: Client,
@@ -196,9 +210,7 @@ impl ModelClient for ChatCompletionsClient {
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content:
-                        "You are OpenJax, a pragmatic coding assistant in terminal CLI. Keep responses concise."
-                            .to_string(),
+                    content: default_system_prompt(),
                 },
                 ChatMessage {
                     role: "user".to_string(),
@@ -259,9 +271,7 @@ impl ModelClient for ChatCompletionsClient {
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content:
-                        "You are OpenJax, a pragmatic coding assistant in terminal CLI. Keep responses concise."
-                            .to_string(),
+                    content: default_system_prompt(),
                 },
                 ChatMessage {
                     role: "user".to_string(),
