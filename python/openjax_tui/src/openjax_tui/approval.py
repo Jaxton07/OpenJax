@@ -130,3 +130,85 @@ def is_expired_approval_error(err: OpenJaxResponseError) -> bool:
         return True
     message = err.message.lower()
     return "timed out" in message or "timeout" in message
+
+
+async def resolve_latest_approval(
+    client: Any,
+    state: AppState,
+    approved: bool,
+    *,
+    focused_approval_id_fn: Any,
+    resolve_approval_by_id_fn: Any,
+) -> None:
+    focus_id = focused_approval_id_fn(state)
+    if focus_id:
+        await resolve_approval_by_id_fn(client, state, focus_id, approved)
+        return
+
+    while state.approval_order:
+        approval_request_id = state.approval_order[-1]
+        if approval_request_id in state.pending_approvals:
+            await resolve_approval_by_id_fn(client, state, approval_request_id, approved)
+            return
+        state.approval_order.pop()
+    print("[approval] no pending approvals")
+
+
+async def resolve_approval_by_id(
+    client: Any,
+    state: AppState,
+    approval_request_id: str,
+    approved: bool,
+    *,
+    use_inline_approval_panel_fn: Any,
+    pop_pending_fn: Any,
+    is_expired_approval_error_fn: Any,
+    log_approval_event_fn: Any,
+) -> None:
+    record = state.pending_approvals.get(approval_request_id)
+    if not record or record.status != "pending":
+        print(f"[approval] request not found: {approval_request_id}")
+        return
+    try:
+        ok = await client.resolve_approval(
+            turn_id=record.turn_id,
+            request_id=approval_request_id,
+            approved=approved,
+            reason="approved_by_tui" if approved else "rejected_by_tui",
+        )
+        log_approval_event_fn(
+            action="resolved_submit",
+            request_id=approval_request_id,
+            turn_id=record.turn_id,
+            target=record.target,
+            approved=approved,
+            resolved=ok,
+            detail="client_submit",
+        )
+        if not use_inline_approval_panel_fn(state):
+            print(f"[approval] resolved: {approval_request_id} ok={ok}")
+        pop_pending_fn(state, approval_request_id)
+    except OpenJaxResponseError as err:
+        if is_expired_approval_error_fn(err):
+            log_approval_event_fn(
+                action="resolve_expired",
+                request_id=approval_request_id,
+                turn_id=record.turn_id,
+                target=record.target,
+                approved=approved,
+                resolved=False,
+                detail=err.code,
+            )
+            print(f"[approval] auto-denied (expired): {approval_request_id}")
+            pop_pending_fn(state, approval_request_id)
+            return
+        log_approval_event_fn(
+            action="resolve_failed",
+            request_id=approval_request_id,
+            turn_id=record.turn_id,
+            target=record.target,
+            approved=approved,
+            resolved=False,
+            detail=err.code,
+        )
+        print(f"[approval] resolve failed: {err.code} {err.message}")

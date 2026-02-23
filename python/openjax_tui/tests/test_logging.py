@@ -6,6 +6,7 @@ import unittest
 
 from openjax_tui.app import _reset_tui_logger_for_tests, _setup_tui_logger, _tui_debug
 from openjax_tui import tui_logging
+from openjax_tui import session_logging
 
 
 class LoggingConfigTest(unittest.TestCase):
@@ -73,6 +74,10 @@ class LoggingConfigTest(unittest.TestCase):
     def test_parse_log_max_bytes_in_module(self) -> None:
         self.assertEqual(tui_logging._parse_log_max_bytes("4096", 100), 4096)
         self.assertEqual(tui_logging._parse_log_max_bytes("invalid", 100), 100)
+
+    def test_session_logging_field_helpers(self) -> None:
+        self.assertEqual(session_logging.approval_text_field(" a b "), "a_b")
+        self.assertEqual(session_logging.approval_bool_field(None), "-")
 
 
 if __name__ == "__main__":

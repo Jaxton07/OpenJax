@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 
 from openjax_sdk.exceptions import OpenJaxResponseError
@@ -44,6 +45,20 @@ class ApprovalModuleTest(unittest.TestCase):
             details={},
         )
         self.assertTrue(approval.is_expired_approval_error(err))
+
+    def test_resolve_latest_approval_no_pending(self) -> None:
+        state = AppState()
+
+        async def _run() -> None:
+            await approval.resolve_latest_approval(
+                client=object(),
+                state=state,
+                approved=True,
+                focused_approval_id_fn=lambda s: None,
+                resolve_approval_by_id_fn=lambda *_args, **_kwargs: None,
+            )
+
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":

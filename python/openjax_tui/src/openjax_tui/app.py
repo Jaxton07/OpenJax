@@ -45,6 +45,8 @@ from .approval import (
     move_approval_focus as _move_approval_focus_impl,
     pop_pending as _pop_pending_impl,
     print_pending as _print_pending_impl,
+    resolve_approval_by_id as _resolve_approval_by_id_impl,
+    resolve_latest_approval as _resolve_latest_approval_impl,
     toggle_approval_selection as _toggle_approval_selection_impl,
     use_inline_approval_panel as _use_inline_approval_panel_impl,
 )
@@ -65,6 +67,14 @@ from .render_utils import (
     extract_updated_target as _extract_updated_target_impl,
     tool_result_label as _tool_result_label_impl,
 )
+from .session_logging import (
+    append_openjax_log_line as _append_openjax_log_line_impl,
+    approval_bool_field as _approval_bool_field_impl,
+    approval_text_field as _approval_text_field_impl,
+    log_startup_summary as _log_startup_summary_impl,
+    tui_log_approval_event as _tui_log_approval_event_impl,
+)
+from .prompt_keybindings import build_prompt_key_bindings as _build_prompt_key_bindings_impl
 
 try:
     from prompt_toolkit import PromptSession, print_formatted_text
@@ -583,16 +593,11 @@ async def _drain_background_task(task: asyncio.Task[Any] | None) -> None:
 
 
 def _approval_bool_field(value: bool | None) -> str:
-    if value is None:
-        return "-"
-    return "true" if value else "false"
+    return _approval_bool_field_impl(value)
 
 
 def _approval_text_field(value: str | None) -> str:
-    text = (value or "-").strip()
-    if not text:
-        return "-"
-    return "_".join(text.split())
+    return _approval_text_field_impl(value)
 
 
 def _tui_log_approval_event(
@@ -604,15 +609,15 @@ def _tui_log_approval_event(
     resolved: bool | None = None,
     detail: str | None = None,
 ) -> None:
-    _tui_log_info(
-        "approval_event "
-        f"action={_approval_text_field(action)} "
-        f"request_id={_approval_text_field(request_id)} "
-        f"turn_id={_approval_text_field(turn_id)} "
-        f"target={_approval_text_field(target)} "
-        f"approved={_approval_bool_field(approved)} "
-        f"resolved={_approval_bool_field(resolved)} "
-        f"detail={_approval_text_field(detail)}"
+    _tui_log_approval_event_impl(
+        _tui_log_info,
+        action=action,
+        request_id=request_id,
+        turn_id=turn_id,
+        target=target,
+        approved=approved,
+        resolved=resolved,
+        detail=detail,
     )
 
 
@@ -731,27 +736,17 @@ def _print_status_bar(state: AppState) -> None:
 
 
 def _log_startup_summary(state: AppState, version: str) -> None:
-    summary = (
-        "python_tui started "
-        f"version={version} "
-        f"cwd={os.getcwd()} "
-        f"session={state.session_id or '-'} "
-        f"backend={state.input_backend} "
-        f"phase={state.turn_phase} "
-        f"approvals={len(state.pending_approvals)} "
-        f"input_reason={_approval_text_field(state.input_backend_reason)}"
+    _log_startup_summary_impl(
+        state,
+        version,
+        log_info_fn=_tui_log_info,
+        append_openjax_log_line_fn=_append_openjax_log_line,
+        approval_text_field_fn=_approval_text_field,
     )
-    _tui_log_info(summary)
-    _append_openjax_log_line(summary)
 
 
 def _append_openjax_log_line(message: str) -> None:
-    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    log_path = _OPENJAX_ROOT_LOG
-    with contextlib.suppress(OSError):
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as fh:
-            fh.write(f"{timestamp} INFO python_tui {message}\n")
+    _append_openjax_log_line_impl(message, _OPENJAX_ROOT_LOG)
 
 
 def _slash_command_candidates(text_before_cursor: str) -> list[str]:
@@ -802,18 +797,13 @@ def _build_prompt_style() -> Any:
 async def _resolve_latest_approval(
     client: OpenJaxAsyncClient, state: AppState, approved: bool
 ) -> None:
-    focus_id = _focused_approval_id(state)
-    if focus_id:
-        await _resolve_approval_by_id(client, state, focus_id, approved)
-        return
-
-    while state.approval_order:
-        approval_request_id = state.approval_order[-1]
-        if approval_request_id in state.pending_approvals:
-            await _resolve_approval_by_id(client, state, approval_request_id, approved)
-            return
-        state.approval_order.pop()
-    print("[approval] no pending approvals")
+    await _resolve_latest_approval_impl(
+        client,
+        state,
+        approved,
+        focused_approval_id_fn=_focused_approval_id,
+        resolve_approval_by_id_fn=_resolve_approval_by_id,
+    )
 
 
 async def _resolve_approval_by_id(
@@ -822,53 +812,16 @@ async def _resolve_approval_by_id(
     approval_request_id: str,
     approved: bool,
 ) -> None:
-    record = state.pending_approvals.get(approval_request_id)
-    if not record or record.status != "pending":
-        print(f"[approval] request not found: {approval_request_id}")
-        return
-    try:
-        ok = await client.resolve_approval(
-            turn_id=record.turn_id,
-            request_id=approval_request_id,
-            approved=approved,
-            reason="approved_by_tui" if approved else "rejected_by_tui",
-        )
-        _tui_log_approval_event(
-            action="resolved_submit",
-            request_id=approval_request_id,
-            turn_id=record.turn_id,
-            target=record.target,
-            approved=approved,
-            resolved=ok,
-            detail="client_submit",
-        )
-        if not _use_inline_approval_panel(state):
-            print(f"[approval] resolved: {approval_request_id} ok={ok}")
-        _pop_pending(state, approval_request_id)
-    except OpenJaxResponseError as err:
-        if _is_expired_approval_error(err):
-            _tui_log_approval_event(
-                action="resolve_expired",
-                request_id=approval_request_id,
-                turn_id=record.turn_id,
-                target=record.target,
-                approved=approved,
-                resolved=False,
-                detail=err.code,
-            )
-            print(f"[approval] auto-denied (expired): {approval_request_id}")
-            _pop_pending(state, approval_request_id)
-            return
-        _tui_log_approval_event(
-            action="resolve_failed",
-            request_id=approval_request_id,
-            turn_id=record.turn_id,
-            target=record.target,
-            approved=approved,
-            resolved=False,
-            detail=err.code,
-        )
-        print(f"[approval] resolve failed: {err.code} {err.message}")
+    await _resolve_approval_by_id_impl(
+        client,
+        state,
+        approval_request_id,
+        approved,
+        use_inline_approval_panel_fn=_use_inline_approval_panel,
+        pop_pending_fn=_pop_pending,
+        is_expired_approval_error_fn=_is_expired_approval_error,
+        log_approval_event_fn=_tui_log_approval_event,
+    )
 
 
 def _pop_pending(state: AppState, approval_request_id: str) -> None:
@@ -908,107 +861,24 @@ def _approval_toolbar_fragments(state: AppState) -> Any:
 
 
 def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> Any:
-    if KeyBindings is None:
-        return None
-    kb = KeyBindings()
+    _ = client
 
-    @kb.add("tab", eager=True)
-    def _toggle_action(event: object) -> None:
-        if not _approval_mode_active(state):
-            app = getattr(event, "app", None)
-            current_buffer = getattr(app, "current_buffer", None)
-            text = str(getattr(current_buffer, "text", "")).strip()
-            if current_buffer is not None and text.startswith("/"):
-                start_completion = getattr(current_buffer, "start_completion", None)
-                if callable(start_completion):
-                    start_completion(select_first=False)
-            return
-        _toggle_approval_selection(state)
-        app = getattr(event, "app", None)
-        if app is not None:
-            app.invalidate()
-
-    @kb.add("up", eager=True)
-    def _toggle_action_up(event: object) -> None:
-        app = getattr(event, "app", None)
-        if not _approval_mode_active(state):
-            return
-        _toggle_approval_selection(state)
-        if app is not None:
-            app.invalidate()
-
-    @kb.add("down", eager=True)
-    def _toggle_action_down(event: object) -> None:
-        app = getattr(event, "app", None)
-        if not _approval_mode_active(state):
-            return
-        _toggle_approval_selection(state)
-        if app is not None:
-            app.invalidate()
-
-    @kb.add("enter", eager=True)
-    def _enter_resolve(event: object) -> None:
+    def _on_tab_non_approval(event: object) -> None:
         app = getattr(event, "app", None)
         current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (_approval_mode_active(state) and not str(current_text).strip()):
-            validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-            if callable(validate_and_handle):
-                validate_and_handle()
-            return
-        if current_buffer is None:
-            return
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
+        text = str(getattr(current_buffer, "text", "")).strip()
+        if current_buffer is not None and text.startswith("/"):
+            start_completion = getattr(current_buffer, "start_completion", None)
+            if callable(start_completion):
+                start_completion(select_first=False)
 
-    @kb.add("escape", eager=True)
-    def _escape_reject(event: object) -> None:
-        app = getattr(event, "app", None)
-        current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (_approval_mode_active(state) and not str(current_text).strip()):
-            return
-        if current_buffer is None:
-            return
-        state.approval_selected_action = "deny"
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
-
-    @kb.add("y", eager=True)
-    def _quick_yes(event: object) -> None:
-        app = getattr(event, "app", None)
-        current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (_approval_mode_active(state) and not str(current_text).strip()):
-            return
-        if current_buffer is None:
-            return
-        state.approval_selected_action = "allow"
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
-
-    @kb.add("n", eager=True)
-    def _quick_no(event: object) -> None:
-        app = getattr(event, "app", None)
-        current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (_approval_mode_active(state) and not str(current_text).strip()):
-            return
-        if current_buffer is None:
-            return
-        state.approval_selected_action = "deny"
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
-
-    return kb
+    return _build_prompt_key_bindings_impl(
+        key_bindings_cls=KeyBindings,
+        state=state,
+        approval_mode_active_fn=_approval_mode_active,
+        toggle_approval_selection_fn=_toggle_approval_selection,
+        on_tab_non_approval_fn=_on_tab_non_approval,
+    )
 
 
 def _is_expired_approval_error(err: OpenJaxResponseError) -> bool:
