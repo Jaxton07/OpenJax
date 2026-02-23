@@ -30,6 +30,18 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `python/openjax_tui/`：Python TUI MVP。
 - `smoke_test/`：冒烟测试脚本。
 
+### 子模块 README 导航
+
+优先阅读以下文档以快速进入对应模块上下文：
+- [openjax-protocol/README.md](openjax-protocol/README.md)
+- [openjax-core/README.md](openjax-core/README.md)
+- [openjaxd/README.md](openjaxd/README.md)
+- [openjax-tui/README.md](openjax-tui/README.md)
+- [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
+- [python/openjax_tui/README.md](python/openjax_tui/README.md)
+- [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
+
+
 ## 3) 命令执行策略
 - 从仓库根目录运行命令。
 - 优先使用 `zsh -lc "..."`（与 `CLAUDE.md` 中的仓库指引一致）。
@@ -171,3 +183,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - 打开 Python TUI 调试日志写入（仅写入日志文件，不在 TUI 界面回显）：设置 `OPENJAX_TUI_DEBUG=1`。
 - 推荐调试启动命令：
   - `zsh -lc "OPENJAX_TUI_DEBUG=1 PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m openjax_tui"`
+
+
+## 项目级工作规则
+- 在修改过程中如果发现某个文件内容过多，或者代码量很大，记得提醒用户规划拆分计划
