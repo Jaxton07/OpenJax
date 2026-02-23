@@ -75,6 +75,30 @@ from .session_logging import (
     tui_log_approval_event as _tui_log_approval_event_impl,
 )
 from .prompt_keybindings import build_prompt_key_bindings as _build_prompt_key_bindings_impl
+from .event_dispatch import print_event as _print_event_impl
+from .prompt_runtime import (
+    drain_background_task as _drain_background_task_impl,
+    history_text as _history_text_impl,
+    invalidate_prompt_application as _invalidate_prompt_application_impl,
+    refresh_history_view as _refresh_history_view_impl,
+    request_prompt_redraw as _request_prompt_redraw_impl,
+)
+from .tool_runtime import (
+    emit_ui_spacer as _emit_ui_spacer_impl,
+    print_tool_call_result_line as _print_tool_call_result_line_impl,
+    print_tool_summary_for_turn as _print_tool_summary_for_turn_impl,
+    record_tool_completed as _record_tool_completed_impl,
+    record_tool_started as _record_tool_started_impl,
+    status_bullet as _status_bullet_impl,
+)
+from .assistant_render import (
+    emit_ui_line as _emit_ui_line_impl,
+    finalize_stream_line as _finalize_stream_line_impl,
+    finalize_stream_line_if_turn as _finalize_stream_line_if_turn_impl,
+    print_prefixed_block as _print_prefixed_block_impl,
+    render_assistant_delta as _render_assistant_delta_impl,
+    render_assistant_message as _render_assistant_message_impl,
+)
 
 try:
     from prompt_toolkit import PromptSession, print_formatted_text
@@ -552,44 +576,23 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
 
 
 def _invalidate_prompt_application(app: Any) -> None:
-    if app is None:
-        return
-    invalidate = getattr(app, "invalidate", None)
-    if callable(invalidate):
-        invalidate()
+    _invalidate_prompt_application_impl(app)
 
 
 def _request_prompt_redraw(state: AppState) -> None:
-    invalidator = state.prompt_invalidator
-    if invalidator is None:
-        _tui_debug("prompt redraw skipped: no invalidator")
-        return
-    _tui_debug("prompt redraw requested")
-    with contextlib.suppress(Exception):
-        invalidator()
+    _request_prompt_redraw_impl(state, tui_debug_fn=_tui_debug)
 
 
 def _history_text(state: AppState) -> str:
-    if not state.history_blocks:
-        return "\n"
-    return "\n" + "\n\n".join(state.history_blocks)
+    return _history_text_impl(state)
 
 
 def _refresh_history_view(state: AppState) -> None:
-    setter = state.history_setter
-    if setter is None:
-        return
-    with contextlib.suppress(Exception):
-        setter()
+    _refresh_history_view_impl(state)
 
 
 async def _drain_background_task(task: asyncio.Task[Any] | None) -> None:
-    if task is None:
-        return
-    if not task.done():
-        task.cancel()
-    with contextlib.suppress(BaseException):
-        await task
+    await _drain_background_task_impl(task)
 
 
 def _approval_bool_field(value: bool | None) -> str:
@@ -622,60 +625,19 @@ def _tui_log_approval_event(
 
 
 def _print_event(evt: EventEnvelope) -> None:
-    state = _active_state
-    turn = evt.turn_id or "-"
-    t = evt.event_type
-    if t == "assistant_delta":
-        _render_assistant_delta(turn, str(evt.payload.get("content_delta", "")))
-        return
-    if t == "assistant_message":
-        content = str(evt.payload.get("content", ""))
-        _render_assistant_message(turn, content)
-        return
-    if t == "tool_call_started":
-        _finalize_stream_line_if_turn(turn)
-        _record_tool_started(turn, str(evt.payload.get("tool_name", "")))
-        return
-    if t == "tool_call_completed":
-        _finalize_stream_line_if_turn(turn)
-        tool_name = str(evt.payload.get("tool_name", ""))
-        ok = bool(evt.payload.get("ok"))
-        output = str(evt.payload.get("output", ""))
-        _record_tool_completed(
-            turn=turn,
-            tool_name=tool_name,
-            ok=ok,
-        )
-        _print_tool_call_result_line(tool_name=tool_name, ok=ok, output=output)
-        return
-    if t == "approval_requested":
-        _finalize_stream_line_if_turn(turn)
-        if state is None or not _use_inline_approval_panel(state):
-            print(
-                "[approval] id={rid} target={target} reason={reason}".format(
-                    rid=evt.payload.get("request_id"),
-                    target=evt.payload.get("target"),
-                    reason=evt.payload.get("reason"),
-                )
-            )
-        return
-    if t == "approval_resolved":
-        _finalize_stream_line_if_turn(turn)
-        if state is None or not _use_inline_approval_panel(state):
-            print(
-                f"[approval] id={evt.payload.get('request_id')} approved={evt.payload.get('approved')}"
-            )
-        return
-    if t == "turn_completed":
-        _finalize_stream_line_if_turn(turn)
-        if _PRINT_TOOL_TURN_SUMMARY:
-            _print_tool_summary_for_turn(turn)
-        if state is not None:
-            state.tool_turn_stats.pop(turn, None)
-        return
-    if t == "turn_started":
-        return
-    print(f"[{t}]")
+    _print_event_impl(
+        evt,
+        state=_active_state,
+        print_tool_turn_summary=_PRINT_TOOL_TURN_SUMMARY,
+        render_assistant_delta_fn=_render_assistant_delta,
+        render_assistant_message_fn=_render_assistant_message,
+        finalize_stream_line_if_turn_fn=_finalize_stream_line_if_turn,
+        record_tool_started_fn=_record_tool_started,
+        record_tool_completed_fn=_record_tool_completed,
+        print_tool_call_result_line_fn=_print_tool_call_result_line,
+        use_inline_approval_panel_fn=_use_inline_approval_panel,
+        print_tool_summary_for_turn_fn=_print_tool_summary_for_turn,
+    )
 
 
 def _daemon_cmd_from_env() -> list[str]:
@@ -889,45 +851,43 @@ def _record_tool_started(turn: str, tool_name: str) -> None:
     state = _active_state
     if state is None:
         return
-    key = (turn, tool_name)
-    starts = state.active_tool_starts.setdefault(key, [])
-    starts.append(time.monotonic())
+    _record_tool_started_impl(
+        state,
+        turn,
+        tool_name,
+        monotonic_fn=time.monotonic,
+    )
 
 
 def _record_tool_completed(turn: str, tool_name: str, ok: bool) -> None:
     state = _active_state
     if state is None:
         return
-    stats = state.tool_turn_stats.setdefault(turn, ToolTurnStats())
-    stats.calls += 1
-    if ok:
-        stats.ok_count += 1
-    else:
-        stats.fail_count += 1
-    if tool_name:
-        stats.tools.add(tool_name)
-
-    key = (turn, tool_name)
-    starts = state.active_tool_starts.get(key, [])
-    if starts:
-        elapsed_ms = max(int((time.monotonic() - starts.pop()) * 1000), 0)
-        stats.known_duration_ms += elapsed_ms
-    if not starts:
-        state.active_tool_starts.pop(key, None)
+    _record_tool_completed_impl(
+        state,
+        turn,
+        tool_name,
+        ok,
+        monotonic_fn=time.monotonic,
+        tool_turn_stats_cls=ToolTurnStats,
+    )
 
 
 def _print_tool_call_result_line(tool_name: str, ok: bool, output: str) -> None:
     state = _active_state
     if state is None:
         return
-    bullet = _status_bullet(ok)
-    label = _tool_result_label(tool_name, output)
-    if not ok:
-        label = f"{label} (failed)"
-    _finalize_stream_line(state)
-    _emit_ui_spacer()
-    _emit_ui_line(f"{bullet} {label}")
-    _emit_ui_spacer()
+    _print_tool_call_result_line_impl(
+        state,
+        tool_name,
+        ok,
+        output,
+        status_bullet_fn=_status_bullet,
+        tool_result_label_fn=_tool_result_label,
+        finalize_stream_line_fn=_finalize_stream_line,
+        emit_ui_spacer_fn=lambda s: _emit_ui_spacer(s),
+        emit_ui_line_fn=_emit_ui_line,
+    )
 
 
 def _tool_result_label(tool_name: str, output: str) -> str:
@@ -942,26 +902,17 @@ def _print_tool_summary_for_turn(turn: str) -> None:
     state = _active_state
     if state is None:
         return
-    stats = state.tool_turn_stats.get(turn)
-    if stats is None or stats.calls == 0:
-        return
-
-    tools = ", ".join(sorted(stats.tools)) if stats.tools else "-"
-    duration = f"{stats.known_duration_ms}ms" if stats.known_duration_ms else "n/a"
-    ok = stats.fail_count == 0
-    bullet = _status_bullet(ok)
-    _finalize_stream_line(state)
-    _emit_ui_line(
-        f"{bullet} tools: calls={stats.calls} ok={stats.ok_count} "
-        f"fail={stats.fail_count} duration={duration} names=[{tools}]"
+    _print_tool_summary_for_turn_impl(
+        state,
+        turn,
+        status_bullet_fn=_status_bullet,
+        finalize_stream_line_fn=_finalize_stream_line,
+        emit_ui_line_fn=_emit_ui_line,
     )
 
 
-def _emit_ui_spacer() -> None:
-    state = _active_state
-    if state is not None and state.input_backend == "prompt_toolkit":
-        return
-    print()
+def _emit_ui_spacer(state: AppState | None = None) -> None:
+    _emit_ui_spacer_impl(state or _active_state)
 
 
 def _normalize_input(text: str) -> str:
@@ -981,94 +932,71 @@ def _set_active_state(state: AppState | None) -> None:
 
 
 def _render_assistant_delta(turn: str, delta: str) -> None:
-    state = _active_state
-    if state is None:
-        return
-    if not delta:
-        return
-    if state.input_backend == "prompt_toolkit":
-        if state.stream_turn_id != turn:
-            _finalize_stream_line(state)
-            state.stream_turn_id = turn
-            state.stream_text_by_turn[turn] = ""
-            state.stream_block_index = len(state.history_blocks)
-            state.history_blocks.append(f"{_ASSISTANT_PREFIX} ")
-        state.stream_text_by_turn[turn] = state.stream_text_by_turn.get(turn, "") + delta
-        stream_text = state.stream_text_by_turn.get(turn, "")
-        block = f"{_ASSISTANT_PREFIX} {_align_multiline(stream_text)}"
-        idx = state.stream_block_index
-        if idx is not None and 0 <= idx < len(state.history_blocks):
-            state.history_blocks[idx] = block
-        _refresh_history_view(state)
-        return
-    if state.stream_turn_id != turn:
-        _finalize_stream_line()
-        state.stream_turn_id = turn
-        state.stream_text_by_turn[turn] = ""
-        print(f"{_ASSISTANT_PREFIX} ", end="", flush=True)
-    state.stream_text_by_turn[turn] = state.stream_text_by_turn.get(turn, "") + delta
-    print(_align_multiline(delta), end="", flush=True)
+    _render_assistant_delta_impl(
+        _active_state,
+        turn,
+        delta,
+        assistant_prefix=_ASSISTANT_PREFIX,
+        align_multiline_fn=_align_multiline,
+        finalize_stream_line_fn=_finalize_stream_line,
+        refresh_history_view_fn=_refresh_history_view,
+    )
 
 
 def _render_assistant_message(turn: str, content: str) -> None:
-    state = _active_state
-    if state is None:
-        _print_prefixed_block(_ASSISTANT_PREFIX, content)
-        return
-
-    if state.stream_turn_id == turn:
-        streamed = state.stream_text_by_turn.get(turn, "")
-        if streamed == content:
-            _finalize_stream_line()
-            return
-        _finalize_stream_line()
-
-    _print_prefixed_block(_ASSISTANT_PREFIX, content)
+    _render_assistant_message_impl(
+        _active_state,
+        turn,
+        content,
+        assistant_prefix=_ASSISTANT_PREFIX,
+        print_prefixed_block_fn=lambda state, prefix, text: _print_prefixed_block(
+            prefix, text, state=state
+        ),
+        finalize_stream_line_fn=_finalize_stream_line,
+    )
 
 
 def _finalize_stream_line_if_turn(turn: str) -> None:
-    state = _active_state
-    if state is None:
-        return
-    if state.stream_turn_id == turn:
-        _finalize_stream_line()
+    _finalize_stream_line_if_turn_impl(
+        _active_state,
+        turn,
+        finalize_stream_line_fn=_finalize_stream_line,
+    )
 
 
 def _finalize_stream_line(state: AppState | None = None) -> None:
-    current = state or _active_state
-    if current is None:
-        return
-    if current.stream_turn_id is not None:
-        if current.input_backend != "prompt_toolkit":
-            print()
-        current.stream_turn_id = None
-        current.stream_block_index = None
+    _finalize_stream_line_impl(state or _active_state)
 
 
 def _align_multiline(text: str) -> str:
     return _align_multiline_impl(text, _PREFIX_CONTINUATION)
 
 
-def _print_prefixed_block(prefix: str, content: str) -> None:
-    aligned = _align_multiline(content)
-    _emit_ui_line(f"{prefix} {aligned}")
+def _print_prefixed_block(
+    prefix: str,
+    content: str,
+    state: AppState | None = None,
+) -> None:
+    _print_prefixed_block_impl(
+        state or _active_state,
+        prefix,
+        content,
+        align_multiline_fn=_align_multiline,
+        emit_ui_line_fn=lambda s, text: _emit_ui_line(text, state=s),
+    )
 
 
-def _emit_ui_line(text: str) -> None:
-    state = _active_state
-    if state is not None and state.input_backend == "prompt_toolkit":
-        state.history_blocks.append(text)
-        _refresh_history_view(state)
-        return
-    print(text)
+def _emit_ui_line(text: str, state: AppState | None = None) -> None:
+    _emit_ui_line_impl(state or _active_state, text, refresh_history_view_fn=_refresh_history_view)
 
 
 def _status_bullet(ok: bool) -> str:
-    state = _active_state
-    if state is not None and state.input_backend == "prompt_toolkit":
-        color = _ANSI_GREEN if ok else _ANSI_RED
-        return f"{color}{_ASSISTANT_PREFIX}{_ANSI_RESET}"
-    if not _supports_ansi_color():
-        return "🟢" if ok else "🔴"
-    color = _ANSI_GREEN if ok else _ANSI_RED
-    return f"{color}{_ASSISTANT_PREFIX}{_ANSI_RESET}"
+    return _status_bullet_impl(
+        state=_active_state,
+        ok=ok,
+        assistant_prefix=_ASSISTANT_PREFIX,
+        ansi_green=_ANSI_GREEN,
+        ansi_red=_ANSI_RED,
+        ansi_reset=_ANSI_RESET,
+        supports_ansi_color_fn=_supports_ansi_color,
+    )
