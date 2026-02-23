@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from openjax_tui.app import _reset_tui_logger_for_tests, _setup_tui_logger, _tui_debug
+from openjax_tui import tui_logging
 
 
 class LoggingConfigTest(unittest.TestCase):
@@ -68,6 +69,10 @@ class LoggingConfigTest(unittest.TestCase):
             handler = rotating_handlers[0]
             self.assertEqual(getattr(handler, "maxBytes"), 2048)
             self.assertEqual(getattr(handler, "backupCount"), 5)
+
+    def test_parse_log_max_bytes_in_module(self) -> None:
+        self.assertEqual(tui_logging._parse_log_max_bytes("4096", 100), 4096)
+        self.assertEqual(tui_logging._parse_log_max_bytes("invalid", 100), 100)
 
 
 if __name__ == "__main__":

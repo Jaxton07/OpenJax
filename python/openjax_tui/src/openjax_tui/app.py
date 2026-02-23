@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from dataclasses import dataclass, field
-import logging
-from logging.handlers import RotatingFileHandler
 import os
 import queue
 import re
@@ -13,13 +10,37 @@ import signal
 import sys
 import threading
 import time
-from collections import deque
-from pathlib import Path
 from typing import Any, Callable
 
 from openjax_sdk import OpenJaxAsyncClient
 from openjax_sdk.exceptions import OpenJaxProtocolError, OpenJaxResponseError
 from openjax_sdk.models import EventEnvelope
+from .state import AppState, ApprovalRecord, ToolTurnStats
+from .startup_ui import (
+    _OPENJAX_LOGO_LONG,
+    _OPENJAX_LOGO_SHORT,
+    _OPENJAX_LOGO_TINY,
+    _format_display_directory,
+    _normalize_logo_block,
+    _print_logo,
+    _print_startup_card,
+    _resolve_openjax_version,
+    _select_logo,
+    _supports_ansi_color,
+    _text_block_width,
+)
+from .slash_commands import (
+    build_slash_command_completer as _build_slash_command_completer_impl,
+    slash_command_candidates as _slash_command_candidates_impl,
+    slash_hint_fragments as _slash_hint_fragments_impl,
+    slash_hint_text as _slash_hint_text_impl,
+)
+from .tui_logging import (
+    _reset_tui_logger_for_tests,
+    _setup_tui_logger,
+    _tui_debug,
+    _tui_log_info,
+)
 
 try:
     from prompt_toolkit import PromptSession, print_formatted_text
@@ -86,12 +107,7 @@ _PREFIX_CONTINUATION = "  "
 _ANSI_GREEN = "\x1b[32m"
 _ANSI_RED = "\x1b[31m"
 _ANSI_RESET = "\x1b[0m"
-_TUI_LOGGER_NAME = "openjax_tui"
-_TUI_LOG_FILENAME = "openjax_tui.log"
-_TUI_LOG_MAX_BYTES_DEFAULT = 2 * 1024 * 1024
-_TUI_LOG_BACKUP_COUNT = 5
 _PRINT_TOOL_TURN_SUMMARY = False
-_tui_logger: logging.Logger | None = None
 _OPENJAX_ROOT_LOG = os.path.join(".openjax", "logs", "openjax.log")
 _COMMAND_ROWS: tuple[str, ...] = (
     "text                submit turn",
@@ -102,134 +118,6 @@ _COMMAND_ROWS: tuple[str, ...] = (
     "/exit               exit",
 )
 _SLASH_COMMANDS: tuple[str, ...] = ("/approve", "/pending", "/help", "/exit")
-
-
-class AppState:
-    def __init__(self) -> None:
-        self.running = True
-        self.pending_approvals: dict[str, ApprovalRecord] = {}
-        self.approval_order: deque[str] = deque()
-        self.approval_focus_id: str | None = None
-        self.approval_ui_enabled = False
-        self.approval_selected_action = "allow"
-        self.stream_turn_id: str | None = None
-        self.stream_text_by_turn: dict[str, str] = {}
-        self.waiting_turn_id: str | None = None
-        self.input_ready: asyncio.Event | None = None
-        self.approval_interrupt: asyncio.Event | None = None
-        self.session_id: str | None = None
-        self.input_backend: str = "basic"
-        self.input_backend_reason: str = ""
-        self.turn_phase: str = "idle"
-        self.tool_turn_stats: dict[str, ToolTurnStats] = {}
-        self.active_tool_starts: dict[tuple[str, str], list[float]] = {}
-        self.prompt_invalidator: Callable[[], None] | None = None
-        self.history_blocks: list[str] = []
-        self.stream_block_index: int | None = None
-        self.history_setter: Callable[[], None] | None = None
-
-
-@dataclass
-class ToolTurnStats:
-    calls: int = 0
-    ok_count: int = 0
-    fail_count: int = 0
-    known_duration_ms: int = 0
-    tools: set[str] = field(default_factory=set)
-
-
-@dataclass
-class ApprovalRecord:
-    turn_id: str
-    target: str
-    reason: str
-    status: str = "pending"
-
-
-_LOGO_GLYPHS: dict[str, tuple[str, ...]] = {
-    "O": (
-        " █████ ",
-        "██   ██",
-        "██   ██",
-        "██   ██",
-        "██   ██",
-        " █████ ",
-    ),
-    "P": (
-        "██████ ",
-        "██   ██",
-        "██████ ",
-        "██     ",
-        "██     ",
-        "██     ",
-    ),
-    "E": (
-        "███████",
-        "██     ",
-        "█████  ",
-        "██     ",
-        "██     ",
-        "███████",
-    ),
-    "N": (
-        "██   ██",
-        "███  ██",
-        "████ ██",
-        "██ ████",
-        "██  ███",
-        "██   ██",
-    ),
-    "J": (
-        "   ████",
-        "    ██ ",
-        "    ██ ",
-        "    ██ ",
-        "██  ██ ",
-        " ████  ",
-    ),
-    "A": (
-        "  ███  ",
-        " ██ ██ ",
-        "██   ██",
-        "███████",
-        "██   ██",
-        "██   ██",
-    ),
-    "X": (
-        "██   ██",
-        " ██ ██ ",
-        "  ███  ",
-        "  ███  ",
-        " ██ ██ ",
-        "██   ██",
-    ),
-}
-
-
-def _compose_logo(word: str, letter_spacing: int) -> str:
-    glyphs = [_LOGO_GLYPHS[ch] for ch in word if ch in _LOGO_GLYPHS]
-    if not glyphs:
-        return ""
-
-    height = max((len(glyph) for glyph in glyphs), default=0)
-    normalized_glyphs: list[list[str]] = []
-    for glyph in glyphs:
-        glyph_width = max((len(row) for row in glyph), default=0)
-        rows = [row.ljust(glyph_width) for row in glyph]
-        if len(rows) < height:
-            rows.extend([" " * glyph_width] * (height - len(rows)))
-        normalized_glyphs.append(rows)
-
-    spacer = " " * max(letter_spacing, 1)
-    lines: list[str] = []
-    for row_idx in range(height):
-        lines.append(spacer.join(rows[row_idx] for rows in normalized_glyphs).rstrip())
-    return "\n".join(lines)
-
-
-_OPENJAX_LOGO_LONG = _compose_logo("OPENJAX", letter_spacing=2)
-_OPENJAX_LOGO_SHORT = _compose_logo("OPENJAX", letter_spacing=1)
-_OPENJAX_LOGO_TINY = "OPENJAX"
 
 
 async def run() -> None:
@@ -670,25 +558,6 @@ async def _drain_background_task(task: asyncio.Task[Any] | None) -> None:
         await task
 
 
-def _tui_debug_enabled() -> bool:
-    flag = os.environ.get("OPENJAX_TUI_DEBUG", "")
-    return flag.lower() in {"1", "true", "yes", "on"}
-
-
-def _tui_debug(message: str) -> None:
-    if not _tui_debug_enabled():
-        return
-    logger = _tui_logger
-    if logger is not None:
-        logger.debug(message)
-
-
-def _tui_log_info(message: str) -> None:
-    logger = _tui_logger
-    if logger is not None:
-        logger.info(message)
-
-
 def _approval_bool_field(value: bool | None) -> str:
     if value is None:
         return "-"
@@ -721,76 +590,6 @@ def _tui_log_approval_event(
         f"resolved={_approval_bool_field(resolved)} "
         f"detail={_approval_text_field(detail)}"
     )
-
-
-def _setup_tui_logger() -> logging.Logger | None:
-    global _tui_logger
-    if _tui_logger is not None:
-        return _tui_logger
-
-    log_dir = os.environ.get("OPENJAX_TUI_LOG_DIR", os.path.join(".openjax", "logs"))
-    max_bytes = _parse_log_max_bytes(
-        os.environ.get("OPENJAX_TUI_LOG_MAX_BYTES", ""),
-        _TUI_LOG_MAX_BYTES_DEFAULT,
-    )
-    log_path = os.path.join(log_dir, _TUI_LOG_FILENAME)
-
-    with contextlib.suppress(OSError):
-        os.makedirs(log_dir, exist_ok=True)
-
-    logger = logging.getLogger(_TUI_LOGGER_NAME)
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
-        with contextlib.suppress(Exception):
-            handler.close()
-
-    try:
-        handler = RotatingFileHandler(
-            log_path,
-            maxBytes=max_bytes,
-            backupCount=_TUI_LOG_BACKUP_COUNT,
-            encoding="utf-8",
-        )
-    except OSError as err:
-        print(f"[warn] failed to initialize tui logger at {log_path}: {err}", file=sys.stderr)
-        _tui_logger = None
-        return None
-
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-    )
-    logger.addHandler(handler)
-    logger.info(
-        "tui logger initialized path=%s max_bytes=%s backups=%s",
-        log_path,
-        max_bytes,
-        _TUI_LOG_BACKUP_COUNT,
-    )
-    _tui_logger = logger
-    return logger
-
-
-def _parse_log_max_bytes(raw: str, fallback: int) -> int:
-    with contextlib.suppress(ValueError):
-        value = int(raw.strip())
-        if value > 0:
-            return value
-    return fallback
-
-
-def _reset_tui_logger_for_tests() -> None:
-    global _tui_logger
-    logger = _tui_logger
-    if logger is None:
-        return
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
-        with contextlib.suppress(Exception):
-            handler.close()
-    _tui_logger = None
 
 
 def _print_event(evt: EventEnvelope) -> None:
@@ -968,196 +767,29 @@ def _append_openjax_log_line(message: str) -> None:
             fh.write(f"{timestamp} INFO python_tui {message}\n")
 
 
-def _resolve_openjax_version() -> str:
-    env_version = os.environ.get("OPENJAX_VERSION", "").strip()
-    if env_version:
-        return env_version
-
-    cargo_path = Path(__file__).resolve().parents[4] / "Cargo.toml"
-    if not cargo_path.exists():
-        return "dev"
-
-    in_workspace_package = False
-    with contextlib.suppress(OSError):
-        with cargo_path.open("r", encoding="utf-8") as fh:
-            for raw_line in fh:
-                line = raw_line.strip()
-                if line.startswith("[") and line.endswith("]"):
-                    in_workspace_package = line == "[workspace.package]"
-                    continue
-                if not in_workspace_package:
-                    continue
-                match = re.match(r'^version\s*=\s*"([^"]+)"$', line)
-                if match:
-                    return match.group(1)
-    return "dev"
-
-
 def _slash_command_candidates(text_before_cursor: str) -> list[str]:
-    if not text_before_cursor.startswith("/"):
-        return []
-    token = text_before_cursor.split(maxsplit=1)[0]
-    if not token:
-        return list(_SLASH_COMMANDS)
-    return [cmd for cmd in _SLASH_COMMANDS if cmd.startswith(token)]
+    return _slash_command_candidates_impl(text_before_cursor, _SLASH_COMMANDS)
 
 
 def _slash_hint_text(input_text: str) -> str:
-    candidates = _slash_command_candidates(input_text)
-    if not candidates:
-        return ""
-    joined = "  ".join(candidates)
-    return f" commands: {joined}"
+    return _slash_hint_text_impl(input_text, _SLASH_COMMANDS)
 
 
 def _slash_hint_fragments(input_text: str) -> Any:
-    text = _slash_hint_text(input_text)
-    if not text:
-        return ""
-    return [("bg:default fg:default noreverse", text)]
+    return _slash_hint_fragments_impl(input_text, _SLASH_COMMANDS)
 
 
 def _build_slash_command_completer() -> Any:
-    if _prompt_toolkit_completer is None or _prompt_toolkit_completion is None:
-        return None
-
-    completion_cls = _prompt_toolkit_completion
-
-    class _SlashCompleter(_prompt_toolkit_completer):
-        def get_completions(self, document: Any, complete_event: Any) -> Any:
-            _ = complete_event
-            text_before_cursor = str(getattr(document, "text_before_cursor", ""))
-            token = text_before_cursor.split(maxsplit=1)[0]
-            for command in _slash_command_candidates(text_before_cursor):
-                yield completion_cls(
-                    command,
-                    start_position=-len(token),
-                )
-
-    return _SlashCompleter()
-
-
-def _format_display_directory(path: str) -> str:
-    home = os.path.expanduser("~")
-    if path == home:
-        return "~"
-    prefix = home + os.sep
-    if path.startswith(prefix):
-        return "~/" + path[len(prefix) :]
-    return path
-
-
-def _print_startup_card(version: str) -> None:
-    model = os.environ.get("OPENJAX_MODEL", "(default)")
-    directory = _format_display_directory(os.getcwd())
-    rows = [
-        f">_ OpenJax TUI (v{version})",
-        "",
-        f"model:     {model}",
-        f"directory: {directory}",
-    ]
-    content_width = max((len(row) for row in rows), default=0) + 2
-    top = "╭" + ("─" * content_width) + "╮"
-    bottom = "╰" + ("─" * content_width) + "╯"
-    print(top)
-    for row in rows:
-        print(f"│ {row.ljust(content_width - 1)}│")
-    print(bottom)
-    print()
+    return _build_slash_command_completer_impl(
+        _SLASH_COMMANDS,
+        _prompt_toolkit_completer,
+        _prompt_toolkit_completion,
+    )
 
 
 def _divider_line() -> str:
     columns = shutil.get_terminal_size(fallback=(100, 24)).columns
     return "─" * max(min(columns, 100), 24)
-
-
-def _text_block_width(text: str) -> int:
-    return max((len(line) for line in text.splitlines()), default=0)
-
-
-def _normalize_logo_block(text: str) -> str:
-    lines = text.splitlines()
-    while lines and not lines[0].strip():
-        _ = lines.pop(0)
-    while lines and not lines[-1].strip():
-        _ = lines.pop()
-
-    if not lines:
-        return ""
-
-    non_empty = [line for line in lines if line.strip()]
-    common_indent = min(
-        (len(line) - len(line.lstrip(" ")) for line in non_empty), default=0
-    )
-    normalized = [line[common_indent:].rstrip() for line in lines]
-    return "\n".join(normalized)
-
-
-def _select_logo(columns: int) -> str:
-    long_width = _text_block_width(_normalize_logo_block(_OPENJAX_LOGO_LONG))
-    short_width = _text_block_width(_normalize_logo_block(_OPENJAX_LOGO_SHORT))
-    if columns >= long_width:
-        return _OPENJAX_LOGO_LONG
-    if columns >= short_width:
-        return _OPENJAX_LOGO_SHORT
-    return _OPENJAX_LOGO_TINY
-
-
-def _print_logo() -> None:
-    columns = shutil.get_terminal_size(fallback=(100, 24)).columns
-    plain_logo = _normalize_logo_block(_select_logo(columns))
-    logo = plain_logo
-    if _supports_ansi_color():
-        logo = _apply_horizontal_gradient(logo)
-    print(logo)
-    subtitle = "OPENJAX TERMINAL"
-    subtitle_padding = max((_text_block_width(plain_logo) - len(subtitle)) // 2, 0)
-    print(" " * subtitle_padding + subtitle)
-    print()
-
-
-def _supports_ansi_color() -> bool:
-    if os.environ.get("NO_COLOR"):
-        return False
-    if not sys.stdout.isatty():
-        return False
-    term = os.environ.get("TERM", "")
-    if term == "dumb":
-        return False
-    return True
-
-
-def _apply_horizontal_gradient(text: str) -> str:
-    lines = text.splitlines()
-    if not lines:
-        return text
-
-    width = max((len(line) for line in lines), default=0)
-    if width <= 1:
-        return text
-
-    start = (98, 157, 255)
-    end = (255, 120, 180)
-
-    def lerp(a: int, b: int, t: float) -> int:
-        return int(round(a + (b - a) * t))
-
-    rendered_lines: list[str] = []
-    for line in lines:
-        rendered_chars: list[str] = []
-        for idx, ch in enumerate(line):
-            if ch.isspace():
-                rendered_chars.append(ch)
-                continue
-            t = idx / (width - 1)
-            r = lerp(start[0], end[0], t)
-            g = lerp(start[1], end[1], t)
-            b = lerp(start[2], end[2], t)
-            rendered_chars.append(f"\x1b[38;2;{r};{g};{b}m{ch}")
-        rendered_chars.append("\x1b[0m")
-        rendered_lines.append("".join(rendered_chars))
-
-    return "\n".join(rendered_lines)
 
 
 def _print_pending(state: AppState) -> None:
