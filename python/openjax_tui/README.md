@@ -22,24 +22,22 @@ python/openjax_tui/
 │       ├── assistant_render.py # 助手消息渲染
 │       ├── slash_commands.py   # 斜杠命令处理（/help, /exit 等）
 │       ├── startup_ui.py       # 启动 Logo 和显示工具
-│       ├── render_utils.py     # 文本渲染工具
-│       ├── prompt_runtime.py   # 提示 UI 运行时管理
-│       ├── prompt_keybindings.py # 键盘快捷键配置
+│       ├── prompt_ui.py        # 提示 UI 运行时和键盘快捷键
 │       ├── tui_logging.py      # 日志基础设施
 │       └── session_logging.py  # 会话事件日志
-└── tests/                      # 测试套件（16 个测试文件）
+└── tests/                      # 测试套件（15 个测试文件）
     ├── test_approval_flow.py
-    ├── test_approval_module.py
-    ├── test_assistant_render_module.py
+    ├── test_approval.py
+    ├── test_assistant_render.py
     ├── test_input_backend.py
     ├── test_input_normalize.py
     ├── test_logo_select.py
     ├── test_logging.py
-    ├── test_prompt_keybindings_module.py
-    ├── test_prompt_runtime_module.py
+    ├── test_prompt_keybindings.py
+    ├── test_prompt_ui.py
     ├── test_smoke.py
     ├── test_startup_config.py
-    ├── test_state_module.py
+    ├── test_state.py
     ├── test_stream_render.py
     ├── test_tool_summary.py
     └── test_user_prompt_render.py
@@ -61,12 +59,10 @@ python/openjax_tui/
 
 | 模块 | 功能描述 |
 |------|----------|
-| `assistant_render.py` | 助手消息渲染，处理流式内容更新和最终消息显示 |
+| `assistant_render.py` | 助手消息渲染，处理流式内容更新、最终消息显示、文本对齐、工具标签 |
 | `tool_runtime.py` | 工具执行监控，跟踪开始/完成时间、计算持续时间、彩色结果显示 |
 | `startup_ui.py` | 启动界面，包含响应式 ASCII Logo、版本信息、会话 ID 显示 |
-| `render_utils.py` | 文本处理工具，多行对齐、工具结果标签映射 |
-| `prompt_runtime.py` | 提示 UI 生命周期管理，UI 刷新、历史视图更新 |
-| `prompt_keybindings.py` | `prompt_toolkit` 键盘快捷键配置 |
+| `prompt_ui.py` | 提示 UI 运行时管理和键盘快捷键配置 |
 
 ### 命令与日志模块
 

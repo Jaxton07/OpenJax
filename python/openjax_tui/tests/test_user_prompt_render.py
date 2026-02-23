@@ -33,6 +33,18 @@ class UserPromptRenderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.submitted, ["你好"])
         self.assertEqual(out.getvalue(), "")
 
+    async def test_submit_turn_appends_user_line_in_prompt_toolkit_backend(self) -> None:
+        state = AppState()
+        state.input_backend = "prompt_toolkit"
+        state.history_setter = lambda _: None
+        client = _StubClient()
+
+        keep_running = await _handle_user_line(client, state, "hello")
+
+        self.assertTrue(keep_running)
+        self.assertEqual(client.submitted, ["hello"])
+        self.assertEqual(state.history_blocks, ["❯ hello"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from openjax_tui import prompt_runtime
+from openjax_tui import prompt_ui as prompt_runtime
 from openjax_tui.state import AppState
 
 

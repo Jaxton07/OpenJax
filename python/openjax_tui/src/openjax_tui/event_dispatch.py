@@ -13,9 +13,9 @@ def print_event(
     finalize_stream_line_if_turn_fn: Callable[[str], None],
     record_tool_started_fn: Callable[[str, str], None],
     record_tool_completed_fn: Callable[[str, str, bool], None],
-    print_tool_call_result_line_fn: Callable[[str, bool, str], None],
+    print_tool_call_result_line_fn: Callable[[Any, str, bool, str], None],
     use_inline_approval_panel_fn: Callable[[Any], bool],
-    print_tool_summary_for_turn_fn: Callable[[str], None],
+    print_tool_summary_for_turn_fn: Callable[[Any, str], None],
 ) -> None:
     turn = evt.turn_id or "-"
     t = evt.event_type
@@ -36,7 +36,7 @@ def print_event(
         ok = bool(evt.payload.get("ok"))
         output = str(evt.payload.get("output", ""))
         record_tool_completed_fn(turn, tool_name, ok)
-        print_tool_call_result_line_fn(tool_name, ok, output)
+        print_tool_call_result_line_fn(state, tool_name, ok, output)
         return
     if t == "approval_requested":
         finalize_stream_line_if_turn_fn(turn)
@@ -59,7 +59,7 @@ def print_event(
     if t == "turn_completed":
         finalize_stream_line_if_turn_fn(turn)
         if print_tool_turn_summary:
-            print_tool_summary_for_turn_fn(turn)
+            print_tool_summary_for_turn_fn(state, turn)
         if state is not None:
             state.tool_turn_stats.pop(turn, None)
         return

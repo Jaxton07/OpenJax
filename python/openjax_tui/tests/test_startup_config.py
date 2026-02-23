@@ -15,16 +15,18 @@ class StartupConfigTest(unittest.TestCase):
             self.assertEqual(app._resolve_openjax_version(), "9.9.9-test")
 
     def test_slash_command_candidates(self) -> None:
+        cmds = ("/approve", "/pending", "/help", "/exit")
         self.assertEqual(
-            app._slash_command_candidates("/"),
+            slash_commands.slash_command_candidates("/", cmds),
             ["/approve", "/pending", "/help", "/exit"],
         )
-        self.assertEqual(app._slash_command_candidates("/he"), ["/help"])
-        self.assertEqual(app._slash_command_candidates("hello"), [])
+        self.assertEqual(slash_commands.slash_command_candidates("/he", cmds), ["/help"])
+        self.assertEqual(slash_commands.slash_command_candidates("hello", cmds), [])
 
     def test_slash_hint_text(self) -> None:
-        self.assertIn("/approve", app._slash_hint_text("/"))
-        self.assertEqual(app._slash_hint_text("hello"), "")
+        cmds = ("/approve", "/pending", "/help", "/exit")
+        self.assertIn("/approve", slash_commands.slash_hint_text("/", cmds))
+        self.assertEqual(slash_commands.slash_hint_text("hello", cmds), "")
 
     def test_format_display_directory_uses_tilde(self) -> None:
         home = os.path.expanduser("~")

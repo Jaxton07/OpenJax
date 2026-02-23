@@ -16,11 +16,18 @@ from openjax_tui.app import (
     _approval_toolbar_text,
     _drain_background_task,
     _handle_user_line,
-    _input_prompt_prefix,
-    _move_approval_focus,
-    _resolve_approval_by_id,
     _shutdown_client_quietly,
 )
+from openjax_tui.approval import (
+    input_prompt_prefix as _input_prompt_prefix,
+    move_approval_focus as _move_approval_focus,
+    resolve_approval_by_id,
+    use_inline_approval_panel,
+    pop_pending,
+    is_expired_approval_error,
+)
+from openjax_tui.session_logging import tui_log_approval_event
+from openjax_tui.tui_logging import _tui_log_info
 
 
 class _StubClient(OpenJaxAsyncClient):
@@ -268,7 +275,13 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         out = io.StringIO()
 
         with redirect_stdout(out):
-            await _resolve_approval_by_id(client, state, "ap-2", approved=True)
+            await resolve_approval_by_id(
+                client, state, "ap-2", approved=True,
+                use_inline_approval_panel_fn=use_inline_approval_panel,
+                pop_pending_fn=pop_pending,
+                is_expired_approval_error_fn=is_expired_approval_error,
+                log_approval_event_fn=lambda **kwargs: tui_log_approval_event(_tui_log_info, **kwargs),
+            )
 
         self.assertNotIn("ap-2", state.pending_approvals)
         self.assertEqual(state.approval_focus_id, None)
@@ -311,7 +324,7 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         state.approval_order.append("ap-5")
         state.approval_focus_id = "ap-5"
 
-        text = _approval_toolbar_text(state)
+        text = _approval_toolbar_text(state, "─" * 40)
         self.assertIn("Approval Request (2 pending)", text)
         self.assertIn("id: ap-5", text)
         self.assertIn("target: shell", text)
@@ -322,7 +335,7 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
 
     def test_prompt_prefix_stays_normal_for_prompt_toolkit(self) -> None:
         state = AppState()
-        self.assertEqual(_input_prompt_prefix(state), "❯")
+        self.assertEqual(_input_prompt_prefix(state, "❯"), "❯")
 
         state.pending_approvals["ap-6"] = ApprovalRecord(
             turn_id="turn-6",
@@ -334,7 +347,7 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         state.turn_phase = "approval"
         state.input_backend = "prompt_toolkit"
         state.approval_ui_enabled = True
-        self.assertEqual(_input_prompt_prefix(state), "❯")
+        self.assertEqual(_input_prompt_prefix(state, "❯"), "❯")
 
     def test_prompt_prefix_switches_in_approval_mode_for_basic(self) -> None:
         state = AppState()
@@ -346,7 +359,7 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         state.approval_order.append("ap-6")
         state.approval_focus_id = "ap-6"
         state.turn_phase = "approval"
-        self.assertEqual(_input_prompt_prefix(state), "approval>")
+        self.assertEqual(_input_prompt_prefix(state, "❯"), "approval>")
 
 
 if __name__ == "__main__":

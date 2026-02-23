@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from openjax_tui import prompt_keybindings
+from openjax_tui import prompt_ui as prompt_keybindings
 from openjax_tui.state import AppState
 
 

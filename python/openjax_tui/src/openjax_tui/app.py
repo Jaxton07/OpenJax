@@ -29,32 +29,29 @@ from .startup_ui import (
     _text_block_width,
 )
 from .slash_commands import (
-    build_slash_command_completer as _build_slash_command_completer_impl,
-    slash_command_candidates as _slash_command_candidates_impl,
-    slash_hint_fragments as _slash_hint_fragments_impl,
-    slash_hint_text as _slash_hint_text_impl,
+    build_slash_command_completer as _build_slash_command_completer,
+    slash_command_candidates as _slash_command_candidates,
+    slash_hint_fragments as _slash_hint_fragments,
+    slash_hint_text as _slash_hint_text,
 )
 from .approval import (
-    approval_mode_active as _approval_mode_active_impl,
-    approval_pending_ids as _approval_pending_ids_impl,
-    approval_toolbar_fragments as _approval_toolbar_fragments_impl,
-    approval_toolbar_text as _approval_toolbar_text_impl,
-    focused_approval_id as _focused_approval_id_impl,
-    input_prompt_prefix as _input_prompt_prefix_impl,
-    is_expired_approval_error as _is_expired_approval_error_impl,
-    move_approval_focus as _move_approval_focus_impl,
-    pop_pending as _pop_pending_impl,
-    print_pending as _print_pending_impl,
-    resolve_approval_by_id as _resolve_approval_by_id_impl,
-    resolve_latest_approval as _resolve_latest_approval_impl,
-    toggle_approval_selection as _toggle_approval_selection_impl,
-    use_inline_approval_panel as _use_inline_approval_panel_impl,
+    approval_mode_active as _approval_mode_active,
+    approval_toolbar_fragments as _approval_toolbar_fragments,
+    approval_toolbar_text as _approval_toolbar_text,
+    focused_approval_id as _focused_approval_id,
+    is_expired_approval_error as _is_expired_approval_error,
+    pop_pending as _pop_pending,
+    print_pending as _print_pending,
+    resolve_approval_by_id as _resolve_approval_by_id,
+    resolve_latest_approval as _resolve_latest_approval,
+    toggle_approval_selection as _toggle_approval_selection,
+    use_inline_approval_panel as _use_inline_approval_panel,
 )
 from .input_backend import (
-    configure_readline_keybindings as _configure_readline_keybindings_impl,
-    normalize_input as _normalize_input_impl,
-    select_input_backend_with_reason as _select_input_backend_with_reason_impl,
-    start_basic_input_worker as _start_basic_input_worker_impl,
+    configure_readline_keybindings as _configure_readline_keybindings,
+    normalize_input as _normalize_input,
+    select_input_backend_with_reason as _select_input_backend_with_reason,
+    start_basic_input_worker as _start_basic_input_worker,
 )
 from .tui_logging import (
     _reset_tui_logger_for_tests,
@@ -62,42 +59,39 @@ from .tui_logging import (
     _tui_debug,
     _tui_log_info,
 )
-from .render_utils import (
-    align_multiline as _align_multiline_impl,
-    extract_updated_target as _extract_updated_target_impl,
-    tool_result_label as _tool_result_label_impl,
-)
 from .session_logging import (
-    append_openjax_log_line as _append_openjax_log_line_impl,
-    approval_bool_field as _approval_bool_field_impl,
-    approval_text_field as _approval_text_field_impl,
-    log_startup_summary as _log_startup_summary_impl,
-    tui_log_approval_event as _tui_log_approval_event_impl,
+    append_openjax_log_line as _append_openjax_log_line,
+    approval_bool_field as _approval_bool_field,
+    approval_text_field as _approval_text_field,
+    log_startup_summary as _log_startup_summary,
+    tui_log_approval_event as _tui_log_approval_event,
 )
-from .prompt_keybindings import build_prompt_key_bindings as _build_prompt_key_bindings_impl
-from .event_dispatch import print_event as _print_event_impl
-from .prompt_runtime import (
-    drain_background_task as _drain_background_task_impl,
-    history_text as _history_text_impl,
-    invalidate_prompt_application as _invalidate_prompt_application_impl,
-    refresh_history_view as _refresh_history_view_impl,
-    request_prompt_redraw as _request_prompt_redraw_impl,
+from .event_dispatch import print_event as _print_event
+from .prompt_ui import (
+    build_prompt_key_bindings as _build_prompt_key_bindings_impl,
+    drain_background_task as _drain_background_task,
+    history_text as _history_text,
+    invalidate_prompt_application as _invalidate_prompt_application,
+    refresh_history_view as _refresh_history_view,
+    request_prompt_redraw as _request_prompt_redraw,
 )
 from .tool_runtime import (
-    emit_ui_spacer as _emit_ui_spacer_impl,
-    print_tool_call_result_line as _print_tool_call_result_line_impl,
-    print_tool_summary_for_turn as _print_tool_summary_for_turn_impl,
-    record_tool_completed as _record_tool_completed_impl,
-    record_tool_started as _record_tool_started_impl,
-    status_bullet as _status_bullet_impl,
+    emit_ui_spacer as _emit_ui_spacer,
+    print_tool_call_result_line as _print_tool_call_result_line,
+    print_tool_summary_for_turn as _print_tool_summary_for_turn,
+    record_tool_completed as _record_tool_completed,
+    record_tool_started as _record_tool_started,
+    status_bullet as _status_bullet,
 )
 from .assistant_render import (
-    emit_ui_line as _emit_ui_line_impl,
-    finalize_stream_line as _finalize_stream_line_impl,
-    finalize_stream_line_if_turn as _finalize_stream_line_if_turn_impl,
-    print_prefixed_block as _print_prefixed_block_impl,
-    render_assistant_delta as _render_assistant_delta_impl,
-    render_assistant_message as _render_assistant_message_impl,
+    align_multiline as _align_multiline,
+    emit_ui_line as _emit_ui_line,
+    finalize_stream_line as _finalize_stream_line,
+    finalize_stream_line_if_turn as _finalize_stream_line_if_turn,
+    print_prefixed_block as _print_prefixed_block,
+    render_assistant_delta as _render_assistant_delta,
+    render_assistant_message as _render_assistant_message,
+    tool_result_label as _tool_result_label,
 )
 
 try:
@@ -180,7 +174,14 @@ _SLASH_COMMANDS: tuple[str, ...] = ("/approve", "/pending", "/help", "/exit")
 
 async def run() -> None:
     _setup_tui_logger()
-    input_backend, backend_reason = _select_input_backend_with_reason()
+    input_backend, backend_reason = _select_input_backend_with_reason(
+        prompt_session=PromptSession,
+        patch_stdout=patch_stdout,
+        key_bindings=KeyBindings,
+        prompt_toolkit_import_error=_prompt_toolkit_import_error,
+        stdin_is_tty=sys.stdin.isatty(),
+        stdout_is_tty=sys.stdout.isatty(),
+    )
     if input_backend == "basic":
         _configure_readline_keybindings()
     daemon_cmd = _daemon_cmd_from_env()
@@ -202,7 +203,13 @@ async def run() -> None:
         await client.stream_events()
         _print_logo()
         _print_startup_card(version=version)
-        _log_startup_summary(state, version=version)
+        _log_startup_summary(
+            state,
+            version=version,
+            log_info_fn=_tui_log_info,
+            append_openjax_log_line_fn=lambda msg: _append_openjax_log_line(msg, _OPENJAX_ROOT_LOG),
+            approval_text_field_fn=_approval_text_field,
+        )
 
         event_task = asyncio.create_task(_event_loop(client, state))
         try:
@@ -266,7 +273,7 @@ async def _input_loop_basic(client: OpenJaxAsyncClient, state: AppState) -> None
 
     line_queue: asyncio.Queue[str | None] = asyncio.Queue()
     request_queue: queue.Queue[object] = queue.Queue()
-    _start_basic_input_worker(asyncio.get_running_loop(), request_queue, line_queue)
+    _start_basic_input_worker(asyncio.get_running_loop(), request_queue, line_queue, input_request=_INPUT_REQUEST, input_stop=_INPUT_STOP, user_prompt_prefix=_USER_PROMPT_PREFIX, active_state_getter=lambda: _active_state, approval_mode_active=_approval_mode_active)
 
     while state.running:
         try:
@@ -335,7 +342,7 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         loop.call_soon_threadsafe(line_queue.put_nowait, text)
         return True
 
-    slash_completer = _build_slash_command_completer()
+    slash_completer = _build_slash_command_completer(_SLASH_COMMANDS, _prompt_toolkit_completer, _prompt_toolkit_completion)
     input_view = _prompt_toolkit_text_area(
         prompt=f"{_USER_PROMPT_PREFIX} ",
         multiline=False,
@@ -348,24 +355,24 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         content=_prompt_toolkit_window(
             content=_prompt_toolkit_formatted_text_control(
                 lambda: _slash_hint_fragments(
-                    str(getattr(input_view.buffer, "text", ""))
+                    str(getattr(input_view.buffer, "text", "")), _SLASH_COMMANDS
                 )
             ),
             dont_extend_height=True,
         ),
         filter=_prompt_toolkit_condition(
-            lambda: bool(_slash_hint_text(str(getattr(input_view.buffer, "text", ""))))
+            lambda: bool(_slash_hint_text(str(getattr(input_view.buffer, "text", "")), _SLASH_COMMANDS))
         ),
     )
 
     approval_panel = _prompt_toolkit_conditional_container(
         content=_prompt_toolkit_window(
             content=_prompt_toolkit_formatted_text_control(
-                lambda: _approval_toolbar_fragments(state)
+                lambda: _approval_toolbar_fragments(state, _divider_line())
             ),
             dont_extend_height=True,
         ),
-        filter=_prompt_toolkit_condition(lambda: bool(_approval_toolbar_text(state))),
+        filter=_prompt_toolkit_condition(lambda: bool(_approval_toolbar_text(state, _divider_line()))),
     )
 
     root_container = _prompt_toolkit_hsplit(
@@ -420,11 +427,23 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
 
 
 async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: str) -> bool:
+    async def _resolve_approval_by_id_wrapped(client: OpenJaxAsyncClient, state: AppState, approval_request_id: str, approved: bool) -> None:
+        await _resolve_approval_by_id(
+            client=client,
+            state=state,
+            approval_request_id=approval_request_id,
+            approved=approved,
+            use_inline_approval_panel_fn=_use_inline_approval_panel,
+            pop_pending_fn=_pop_pending,
+            is_expired_approval_error_fn=_is_expired_approval_error,
+            log_approval_event_fn=lambda **kwargs: _tui_log_approval_event(_tui_log_info, **kwargs),
+        )
+
     text = _normalize_input(line).strip()
     if not text:
         if _approval_mode_active(state):
             approved = state.approval_selected_action == "allow"
-            await _resolve_latest_approval(client, state, approved=approved)
+            await _resolve_latest_approval(client, state, approved=approved, focused_approval_id_fn=_focused_approval_id, resolve_approval_by_id_fn=_resolve_approval_by_id_wrapped)
         return True
     if text == "/exit":
         state.running = False
@@ -437,7 +456,7 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         return True
 
     if text in ("y", "n") and _approval_mode_active(state):
-        await _resolve_latest_approval(client, state, approved=(text == "y"))
+        await _resolve_latest_approval(client, state, approved=(text == "y"), focused_approval_id_fn=_focused_approval_id, resolve_approval_by_id_fn=_resolve_approval_by_id_wrapped)
         return True
 
     if text.startswith("/approve "):
@@ -445,11 +464,11 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         if len(parts) != 3 or parts[2] not in ("y", "n"):
             print("usage: /approve <approval_request_id> <y|n>")
             return True
-        await _resolve_approval_by_id(
-            client=client,
-            state=state,
-            approval_request_id=parts[1],
-            approved=parts[2] == "y",
+        await _resolve_approval_by_id_wrapped(
+            client,
+            state,
+            parts[1],
+            parts[2] == "y",
         )
         return True
 
@@ -458,6 +477,7 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
             focus_id = _focused_approval_id(state)
             record = state.pending_approvals.get(focus_id or "")
             _tui_log_approval_event(
+                _tui_log_info,
                 action="input_blocked",
                 request_id=focus_id,
                 turn_id=record.turn_id if record else None,
@@ -471,7 +491,7 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         return True
 
     if state.input_backend == "prompt_toolkit":
-        _emit_ui_line(f"{_USER_PROMPT_PREFIX} {text}")
+        _emit_ui_line(state, f"{_USER_PROMPT_PREFIX} {text}", refresh_history_view_fn=_refresh_history_view)
 
     try:
         turn_id = await client.submit_turn(text)
@@ -499,8 +519,137 @@ async def _event_loop(client: OpenJaxAsyncClient, state: AppState) -> None:
         _tui_debug(
             f"event received type={evt.event_type} turn_id={evt.turn_id or '-'} payload_keys={sorted(evt.payload.keys())}"
         )
-        _print_event(evt)
+        _dispatch_event(evt, state)
         _apply_event_state_updates(state, evt)
+
+
+def _emit_ui_line_for_state(current_state: AppState, text: str) -> None:
+    _emit_ui_line(
+        current_state,
+        text,
+        refresh_history_view_fn=_refresh_history_view,
+    )
+
+
+def _print_prefixed_block_for_state(
+    current_state: AppState, prefix: str, content: str
+) -> None:
+    _print_prefixed_block(
+        current_state,
+        prefix,
+        content,
+        align_multiline_fn=lambda text: _align_multiline(text, _PREFIX_CONTINUATION),
+        emit_ui_line_fn=_emit_ui_line_for_state,
+    )
+
+
+def _status_bullet_for_state(state: AppState, ok: bool) -> str:
+    return _status_bullet(
+        state=state,
+        ok=ok,
+        assistant_prefix=_ASSISTANT_PREFIX,
+        ansi_green=_ANSI_GREEN,
+        ansi_red=_ANSI_RED,
+        ansi_reset=_ANSI_RESET,
+        supports_ansi_color_fn=_supports_ansi_color,
+    )
+
+
+def _render_assistant_delta_for_state(state: AppState, turn: str, delta: str) -> None:
+    _render_assistant_delta(
+        state,
+        turn,
+        delta,
+        assistant_prefix=_ASSISTANT_PREFIX,
+        align_multiline_fn=lambda text: _align_multiline(text, _PREFIX_CONTINUATION),
+        finalize_stream_line_fn=_finalize_stream_line,
+        refresh_history_view_fn=_refresh_history_view,
+    )
+
+
+def _render_assistant_message_for_state(state: AppState, turn: str, content: str) -> None:
+    _render_assistant_message(
+        state,
+        turn,
+        content,
+        assistant_prefix=_ASSISTANT_PREFIX,
+        print_prefixed_block_fn=_print_prefixed_block_for_state,
+        finalize_stream_line_fn=_finalize_stream_line,
+    )
+
+
+def _finalize_stream_line_if_turn_for_state(state: AppState, turn: str) -> None:
+    _finalize_stream_line_if_turn(
+        state,
+        turn,
+        finalize_stream_line_fn=_finalize_stream_line,
+    )
+
+
+def _record_tool_started_for_state(state: AppState, turn: str, tool_name: str) -> None:
+    _record_tool_started(
+        state,
+        turn,
+        tool_name,
+        monotonic_fn=time.monotonic,
+    )
+
+
+def _record_tool_completed_for_state(
+    state: AppState, turn: str, tool_name: str, ok: bool
+) -> None:
+    _record_tool_completed(
+        state,
+        turn,
+        tool_name,
+        ok,
+        monotonic_fn=time.monotonic,
+        tool_turn_stats_cls=ToolTurnStats,
+    )
+
+
+def _print_tool_call_result_line_for_state(
+    current_state: AppState, tool_name: str, ok: bool, output: str
+) -> None:
+    _print_tool_call_result_line(
+        current_state,
+        tool_name,
+        ok,
+        output,
+        status_bullet_fn=lambda current_ok: _status_bullet_for_state(current_state, current_ok),
+        tool_result_label_fn=_tool_result_label,
+        finalize_stream_line_fn=_finalize_stream_line,
+        emit_ui_spacer_fn=_emit_ui_spacer,
+        emit_ui_line_fn=_emit_ui_line_for_state,
+    )
+
+
+def _print_tool_summary_for_turn_for_state(current_state: AppState, turn: str) -> None:
+    _print_tool_summary_for_turn(
+        current_state,
+        turn,
+        status_bullet_fn=lambda ok: _status_bullet_for_state(current_state, ok),
+        finalize_stream_line_fn=_finalize_stream_line,
+        emit_ui_line_fn=_emit_ui_line_for_state,
+    )
+
+
+def _dispatch_event(evt: EventEnvelope, state: AppState) -> None:
+    _print_event(
+        evt,
+        state=state,
+        print_tool_turn_summary=_PRINT_TOOL_TURN_SUMMARY,
+        render_assistant_delta_fn=lambda turn, delta: _render_assistant_delta_for_state(state, turn, delta),
+        render_assistant_message_fn=lambda turn, content: _render_assistant_message_for_state(state, turn, content),
+        finalize_stream_line_if_turn_fn=lambda turn: _finalize_stream_line_if_turn_for_state(state, turn),
+        record_tool_started_fn=lambda turn, tool_name: _record_tool_started_for_state(state, turn, tool_name),
+        record_tool_completed_fn=lambda turn, tool_name, ok: _record_tool_completed_for_state(
+            state, turn, tool_name, ok
+        ),
+        print_tool_call_result_line_fn=_print_tool_call_result_line_for_state,
+        use_inline_approval_panel_fn=_use_inline_approval_panel,
+        print_tool_summary_for_turn_fn=_print_tool_summary_for_turn_for_state,
+    )
 
 
 def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
@@ -518,6 +667,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
             state.approval_focus_id = request_id
             state.approval_selected_action = "allow"
             _tui_log_approval_event(
+                _tui_log_info,
                 action="requested",
                 request_id=request_id,
                 turn_id=evt.turn_id,
@@ -538,7 +688,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
             _tui_debug(
                 f"approval state updated request_id={request_id} pending={len(state.pending_approvals)}"
             )
-            _request_prompt_redraw(state)
+            _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
         return
 
     if evt.event_type == "approval_resolved":
@@ -547,6 +697,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
         approved = evt.payload.get("approved")
         approved_bool = approved if isinstance(approved, bool) else None
         _tui_log_approval_event(
+            _tui_log_info,
             action="resolved_event",
             request_id=request_id,
             turn_id=record.turn_id if record else evt.turn_id,
@@ -563,7 +714,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
         _tui_debug(
             f"approval resolved request_id={request_id} pending={len(state.pending_approvals)} phase={state.turn_phase}"
         )
-        _request_prompt_redraw(state)
+        _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
         return
 
     if evt.event_type == "turn_completed" and evt.turn_id == state.waiting_turn_id:
@@ -572,72 +723,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
         if state.input_ready is not None:
             state.input_ready.set()
         _tui_debug("turn completed; input gate reopened")
-        _request_prompt_redraw(state)
-
-
-def _invalidate_prompt_application(app: Any) -> None:
-    _invalidate_prompt_application_impl(app)
-
-
-def _request_prompt_redraw(state: AppState) -> None:
-    _request_prompt_redraw_impl(state, tui_debug_fn=_tui_debug)
-
-
-def _history_text(state: AppState) -> str:
-    return _history_text_impl(state)
-
-
-def _refresh_history_view(state: AppState) -> None:
-    _refresh_history_view_impl(state)
-
-
-async def _drain_background_task(task: asyncio.Task[Any] | None) -> None:
-    await _drain_background_task_impl(task)
-
-
-def _approval_bool_field(value: bool | None) -> str:
-    return _approval_bool_field_impl(value)
-
-
-def _approval_text_field(value: str | None) -> str:
-    return _approval_text_field_impl(value)
-
-
-def _tui_log_approval_event(
-    action: str,
-    request_id: str | None = None,
-    turn_id: str | None = None,
-    target: str | None = None,
-    approved: bool | None = None,
-    resolved: bool | None = None,
-    detail: str | None = None,
-) -> None:
-    _tui_log_approval_event_impl(
-        _tui_log_info,
-        action=action,
-        request_id=request_id,
-        turn_id=turn_id,
-        target=target,
-        approved=approved,
-        resolved=resolved,
-        detail=detail,
-    )
-
-
-def _print_event(evt: EventEnvelope) -> None:
-    _print_event_impl(
-        evt,
-        state=_active_state,
-        print_tool_turn_summary=_PRINT_TOOL_TURN_SUMMARY,
-        render_assistant_delta_fn=_render_assistant_delta,
-        render_assistant_message_fn=_render_assistant_message,
-        finalize_stream_line_if_turn_fn=_finalize_stream_line_if_turn,
-        record_tool_started_fn=_record_tool_started,
-        record_tool_completed_fn=_record_tool_completed,
-        print_tool_call_result_line_fn=_print_tool_call_result_line,
-        use_inline_approval_panel_fn=_use_inline_approval_panel,
-        print_tool_summary_for_turn_fn=_print_tool_summary_for_turn,
-    )
+        _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
 
 
 def _daemon_cmd_from_env() -> list[str]:
@@ -645,39 +731,6 @@ def _daemon_cmd_from_env() -> list[str]:
     if not cmd:
         return ["cargo", "run", "-q", "-p", "openjaxd"]
     return cmd.split()
-
-
-def _select_input_backend() -> str:
-    backend, _ = _select_input_backend_with_reason()
-    return backend
-
-
-def _select_input_backend_with_reason() -> tuple[str, str]:
-    return _select_input_backend_with_reason_impl(
-        prompt_session=PromptSession,
-        patch_stdout=patch_stdout,
-        key_bindings=KeyBindings,
-        prompt_toolkit_import_error=_prompt_toolkit_import_error,
-        stdin_is_tty=sys.stdin.isatty(),
-        stdout_is_tty=sys.stdout.isatty(),
-    )
-
-
-def _start_basic_input_worker(
-    loop: asyncio.AbstractEventLoop,
-    request_queue: queue.Queue[object],
-    line_queue: asyncio.Queue[str | None],
-) -> None:
-    _start_basic_input_worker_impl(
-        loop,
-        request_queue,
-        line_queue,
-        input_request=_INPUT_REQUEST,
-        input_stop=_INPUT_STOP,
-        user_prompt_prefix=_USER_PROMPT_PREFIX,
-        active_state_getter=lambda: _active_state,
-        approval_mode_active=_approval_mode_active,
-    )
 
 
 def _print_help() -> None:
@@ -697,51 +750,9 @@ def _print_status_bar(state: AppState) -> None:
     print(_divider_line())
 
 
-def _log_startup_summary(state: AppState, version: str) -> None:
-    _log_startup_summary_impl(
-        state,
-        version,
-        log_info_fn=_tui_log_info,
-        append_openjax_log_line_fn=_append_openjax_log_line,
-        approval_text_field_fn=_approval_text_field,
-    )
-
-
-def _append_openjax_log_line(message: str) -> None:
-    _append_openjax_log_line_impl(message, _OPENJAX_ROOT_LOG)
-
-
-def _slash_command_candidates(text_before_cursor: str) -> list[str]:
-    return _slash_command_candidates_impl(text_before_cursor, _SLASH_COMMANDS)
-
-
-def _slash_hint_text(input_text: str) -> str:
-    return _slash_hint_text_impl(input_text, _SLASH_COMMANDS)
-
-
-def _slash_hint_fragments(input_text: str) -> Any:
-    return _slash_hint_fragments_impl(input_text, _SLASH_COMMANDS)
-
-
-def _build_slash_command_completer() -> Any:
-    return _build_slash_command_completer_impl(
-        _SLASH_COMMANDS,
-        _prompt_toolkit_completer,
-        _prompt_toolkit_completion,
-    )
-
-
 def _divider_line() -> str:
     columns = shutil.get_terminal_size(fallback=(100, 24)).columns
     return "─" * max(min(columns, 100), 24)
-
-
-def _print_pending(state: AppState) -> None:
-    _print_pending_impl(state)
-
-
-def _use_inline_approval_panel(state: AppState) -> bool:
-    return _use_inline_approval_panel_impl(state)
 
 
 def _build_prompt_style() -> Any:
@@ -754,72 +765,6 @@ def _build_prompt_style() -> Any:
             "bottom-toolbar.text-area": "noreverse bg:default fg:default",
         }
     )
-
-
-async def _resolve_latest_approval(
-    client: OpenJaxAsyncClient, state: AppState, approved: bool
-) -> None:
-    await _resolve_latest_approval_impl(
-        client,
-        state,
-        approved,
-        focused_approval_id_fn=_focused_approval_id,
-        resolve_approval_by_id_fn=_resolve_approval_by_id,
-    )
-
-
-async def _resolve_approval_by_id(
-    client: OpenJaxAsyncClient,
-    state: AppState,
-    approval_request_id: str,
-    approved: bool,
-) -> None:
-    await _resolve_approval_by_id_impl(
-        client,
-        state,
-        approval_request_id,
-        approved,
-        use_inline_approval_panel_fn=_use_inline_approval_panel,
-        pop_pending_fn=_pop_pending,
-        is_expired_approval_error_fn=_is_expired_approval_error,
-        log_approval_event_fn=_tui_log_approval_event,
-    )
-
-
-def _pop_pending(state: AppState, approval_request_id: str) -> None:
-    _pop_pending_impl(state, approval_request_id)
-
-
-def _focused_approval_id(state: AppState) -> str | None:
-    return _focused_approval_id_impl(state)
-
-
-def _approval_mode_active(state: AppState) -> bool:
-    return _approval_mode_active_impl(state)
-
-
-def _input_prompt_prefix(state: AppState) -> str:
-    return _input_prompt_prefix_impl(state, _USER_PROMPT_PREFIX)
-
-
-def _approval_pending_ids(state: AppState) -> list[str]:
-    return _approval_pending_ids_impl(state)
-
-
-def _move_approval_focus(state: AppState, step: int) -> None:
-    _move_approval_focus_impl(state, step)
-
-
-def _toggle_approval_selection(state: AppState) -> None:
-    _toggle_approval_selection_impl(state)
-
-
-def _approval_toolbar_text(state: AppState) -> str:
-    return _approval_toolbar_text_impl(state, _divider_line())
-
-
-def _approval_toolbar_fragments(state: AppState) -> Any:
-    return _approval_toolbar_fragments_impl(state, _divider_line())
 
 
 def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> Any:
@@ -843,160 +788,9 @@ def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> A
     )
 
 
-def _is_expired_approval_error(err: OpenJaxResponseError) -> bool:
-    return _is_expired_approval_error_impl(err)
-
-
-def _record_tool_started(turn: str, tool_name: str) -> None:
-    state = _active_state
-    if state is None:
-        return
-    _record_tool_started_impl(
-        state,
-        turn,
-        tool_name,
-        monotonic_fn=time.monotonic,
-    )
-
-
-def _record_tool_completed(turn: str, tool_name: str, ok: bool) -> None:
-    state = _active_state
-    if state is None:
-        return
-    _record_tool_completed_impl(
-        state,
-        turn,
-        tool_name,
-        ok,
-        monotonic_fn=time.monotonic,
-        tool_turn_stats_cls=ToolTurnStats,
-    )
-
-
-def _print_tool_call_result_line(tool_name: str, ok: bool, output: str) -> None:
-    state = _active_state
-    if state is None:
-        return
-    _print_tool_call_result_line_impl(
-        state,
-        tool_name,
-        ok,
-        output,
-        status_bullet_fn=_status_bullet,
-        tool_result_label_fn=_tool_result_label,
-        finalize_stream_line_fn=_finalize_stream_line,
-        emit_ui_spacer_fn=lambda s: _emit_ui_spacer(s),
-        emit_ui_line_fn=_emit_ui_line,
-    )
-
-
-def _tool_result_label(tool_name: str, output: str) -> str:
-    return _tool_result_label_impl(tool_name, output)
-
-
-def _extract_updated_target(output: str) -> str | None:
-    return _extract_updated_target_impl(output)
-
-
-def _print_tool_summary_for_turn(turn: str) -> None:
-    state = _active_state
-    if state is None:
-        return
-    _print_tool_summary_for_turn_impl(
-        state,
-        turn,
-        status_bullet_fn=_status_bullet,
-        finalize_stream_line_fn=_finalize_stream_line,
-        emit_ui_line_fn=_emit_ui_line,
-    )
-
-
-def _emit_ui_spacer(state: AppState | None = None) -> None:
-    _emit_ui_spacer_impl(state or _active_state)
-
-
-def _normalize_input(text: str) -> str:
-    return _normalize_input_impl(text)
-
-
-def _configure_readline_keybindings() -> None:
-    _configure_readline_keybindings_impl()
-
-
 _active_state: AppState | None = None
 
 
 def _set_active_state(state: AppState | None) -> None:
     global _active_state
     _active_state = state
-
-
-def _render_assistant_delta(turn: str, delta: str) -> None:
-    _render_assistant_delta_impl(
-        _active_state,
-        turn,
-        delta,
-        assistant_prefix=_ASSISTANT_PREFIX,
-        align_multiline_fn=_align_multiline,
-        finalize_stream_line_fn=_finalize_stream_line,
-        refresh_history_view_fn=_refresh_history_view,
-    )
-
-
-def _render_assistant_message(turn: str, content: str) -> None:
-    _render_assistant_message_impl(
-        _active_state,
-        turn,
-        content,
-        assistant_prefix=_ASSISTANT_PREFIX,
-        print_prefixed_block_fn=lambda state, prefix, text: _print_prefixed_block(
-            prefix, text, state=state
-        ),
-        finalize_stream_line_fn=_finalize_stream_line,
-    )
-
-
-def _finalize_stream_line_if_turn(turn: str) -> None:
-    _finalize_stream_line_if_turn_impl(
-        _active_state,
-        turn,
-        finalize_stream_line_fn=_finalize_stream_line,
-    )
-
-
-def _finalize_stream_line(state: AppState | None = None) -> None:
-    _finalize_stream_line_impl(state or _active_state)
-
-
-def _align_multiline(text: str) -> str:
-    return _align_multiline_impl(text, _PREFIX_CONTINUATION)
-
-
-def _print_prefixed_block(
-    prefix: str,
-    content: str,
-    state: AppState | None = None,
-) -> None:
-    _print_prefixed_block_impl(
-        state or _active_state,
-        prefix,
-        content,
-        align_multiline_fn=_align_multiline,
-        emit_ui_line_fn=lambda s, text: _emit_ui_line(text, state=s),
-    )
-
-
-def _emit_ui_line(text: str, state: AppState | None = None) -> None:
-    _emit_ui_line_impl(state or _active_state, text, refresh_history_view_fn=_refresh_history_view)
-
-
-def _status_bullet(ok: bool) -> str:
-    return _status_bullet_impl(
-        state=_active_state,
-        ok=ok,
-        assistant_prefix=_ASSISTANT_PREFIX,
-        ansi_green=_ANSI_GREEN,
-        ansi_red=_ANSI_RED,
-        ansi_reset=_ANSI_RESET,
-        supports_ansi_color_fn=_supports_ansi_color,
-    )

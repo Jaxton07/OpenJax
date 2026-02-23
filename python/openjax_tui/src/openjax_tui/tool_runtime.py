@@ -71,7 +71,7 @@ def print_tool_call_result_line(
     tool_result_label_fn: Callable[[str, str], str],
     finalize_stream_line_fn: Callable[[Any], None],
     emit_ui_spacer_fn: Callable[[Any], None],
-    emit_ui_line_fn: Callable[[str], None],
+    emit_ui_line_fn: Callable[[Any, str], None],
 ) -> None:
     bullet = status_bullet_fn(ok)
     label = tool_result_label_fn(tool_name, output)
@@ -79,7 +79,7 @@ def print_tool_call_result_line(
         label = f"{label} (failed)"
     finalize_stream_line_fn(state)
     emit_ui_spacer_fn(state)
-    emit_ui_line_fn(f"{bullet} {label}")
+    emit_ui_line_fn(state, f"{bullet} {label}")
     emit_ui_spacer_fn(state)
 
 
@@ -89,7 +89,7 @@ def print_tool_summary_for_turn(
     *,
     status_bullet_fn: Callable[[bool], str],
     finalize_stream_line_fn: Callable[[Any], None],
-    emit_ui_line_fn: Callable[[str], None],
+    emit_ui_line_fn: Callable[[Any, str], None],
 ) -> None:
     stats = state.tool_turn_stats.get(turn)
     if stats is None or stats.calls == 0:
@@ -101,6 +101,7 @@ def print_tool_summary_for_turn(
     bullet = status_bullet_fn(ok)
     finalize_stream_line_fn(state)
     emit_ui_line_fn(
+        state,
         f"{bullet} tools: calls={stats.calls} ok={stats.ok_count} "
         f"fail={stats.fail_count} duration={duration} names=[{tools}]"
     )
