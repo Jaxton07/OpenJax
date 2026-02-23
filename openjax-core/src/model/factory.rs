@@ -66,4 +66,30 @@ mod tests {
         let client = build_model_client_with_config(Some(&config));
         assert_eq!(client.name(), "echo");
     }
+
+    #[test]
+    fn build_model_client_respects_openai_backend_with_config_api_key() {
+        let config = ModelConfig {
+            backend: Some("openai".to_string()),
+            model: Some("gpt-4.1-mini".to_string()),
+            api_key: Some("test-key".to_string()),
+            base_url: Some("https://api.openai.com/v1".to_string()),
+        };
+
+        let client = build_model_client_with_config(Some(&config));
+        assert_eq!(client.name(), "openai-chat-completions");
+    }
+
+    #[test]
+    fn build_model_client_respects_minimax_backend_with_config_api_key() {
+        let config = ModelConfig {
+            backend: Some("minimax".to_string()),
+            model: Some("codex-MiniMax-M2.1".to_string()),
+            api_key: Some("test-key".to_string()),
+            base_url: Some("https://api.minimaxi.com/v1".to_string()),
+        };
+
+        let client = build_model_client_with_config(Some(&config));
+        assert_eq!(client.name(), "minimax-chat-completions");
+    }
 }

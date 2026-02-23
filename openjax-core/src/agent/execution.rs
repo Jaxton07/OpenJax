@@ -3,7 +3,24 @@ use std::time::Instant;
 use openjax_protocol::Event;
 use tracing::{info, warn};
 
-use crate::{Agent, RetryConfig, tools};
+use crate::{Agent, tools};
+
+#[derive(Debug, Clone)]
+struct RetryConfig {
+    max_retries: u32,
+    initial_delay_ms: u64,
+    max_delay_ms: u64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            initial_delay_ms: 500,
+            max_delay_ms: 5000,
+        }
+    }
+}
 
 impl Agent {
     pub(crate) async fn execute_single_tool_call(

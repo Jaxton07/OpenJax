@@ -9,11 +9,29 @@ openjax-core/
 ├── README.md                              # 当前文档
 ├── Cargo.toml                             # crate 配置
 ├── src/
-│   ├── lib.rs                             # Agent 主循环与对外 API（submit/submit_with_sink）
-│   ├── model.rs                           # 模型客户端抽象与多后端实现（OpenAI/GLM/MiniMax/Echo）
+│   ├── lib.rs                             # 对外入口与核心类型定义（薄入口）
 │   ├── config.rs                          # 配置加载（工作区/用户目录）
 │   ├── approval.rs                        # 审批接口与默认 stdin 审批器
 │   ├── logger.rs                          # 日志初始化与滚动归档
+│   ├── tests.rs                           # crate 内部单元测试
+│   ├── agent/                             # Agent 生命周期/回合/执行/状态模块
+│   │   ├── mod.rs                         # agent 子模块导出
+│   │   ├── bootstrap.rs                   # Agent 构造与 runtime 初始化
+│   │   ├── lifecycle.rs                   # thread/depth/sub-agent 生命周期接口
+│   │   ├── turn.rs                        # submit/submit_with_sink 回合入口
+│   │   ├── planner.rs                     # 自然语言规划循环与 final 流式回复
+│   │   ├── execution.rs                   # 单工具执行、重试、live events
+│   │   ├── state.rs                       # 速率限制、历史、重复调用记录
+│   │   ├── events.rs                      # 事件聚合与 sink 推送
+│   │   ├── decision.rs                    # 模型 decision 解析/规范化
+│   │   ├── prompt.rs                      # planner/final/repair prompt 构造
+│   │   └── runtime_policy.rs              # approval/sandbox 解析与优先级
+│   ├── model/                             # 模型客户端抽象与多后端实现
+│   │   ├── mod.rs                         # model 子模块导出
+│   │   ├── client.rs                      # ModelClient trait
+│   │   ├── echo.rs                        # Echo fallback
+│   │   ├── factory.rs                     # backend 选择与 fallback 顺序
+│   │   └── chat_completions.rs            # OpenAI 兼容 ChatCompletions 实现（含流式解析）
 │   └── tools/                             # 工具系统
 │       ├── mod.rs                         # tools 模块导出
 │       ├── router.rs                      # tool: 指令解析与运行时配置
@@ -57,8 +75,9 @@ openjax-core/
 
 | 模块 | 功能描述 |
 |------|----------|
-| `lib.rs` | `Agent` 主入口：维护会话历史、执行 `tool:` 调用、驱动自然语言回合、发出 `openjax_protocol::Event` |
-| `model.rs` | 统一 `ModelClient` 抽象，支持 OpenAI Chat Completions、GLM、MiniMax 与 Echo fallback |
+| `lib.rs` | 对外 API 薄入口：导出 `Agent`、配置/审批/模型构建器与协议类型 |
+| `agent/*` | Agent 内核实现拆分：构造、回合分发、工具执行、规划循环、状态管理与事件推送 |
+| `model/*` | 统一 `ModelClient` 抽象，支持 OpenAI Chat Completions、GLM、MiniMax 与 Echo fallback |
 | `config.rs` | 读取 `.openjax/config/config.toml` 或 `~/.openjax/config.toml`，解析 model/sandbox/agent/tools 配置 |
 | `approval.rs` | 审批抽象 `ApprovalHandler`，默认实现 `StdinApprovalHandler`（`y` 同意） |
 | `logger.rs` | tracing 日志初始化，支持单文件按行数轮转与归档清理 |
@@ -178,3 +197,9 @@ zsh -lc "bash openjax-core/tests/tool/test_apply_patch_e2e.sh"
 - **事件驱动**：所有关键阶段都可观察（开始、审批、完成、失败）。
 - **补丁优先编辑**：`apply_patch` 提供可审计、可回滚的结构化文件修改路径。
 - **兼容性设计**：保留 `exec_command` 别名和 `submit` 行为，降低上层迁移成本。
+
+## 最近重构说明
+
+- `src/lib.rs` 已收敛为薄入口；主业务逻辑迁移至 `src/agent/`。
+- `src/model.rs` 已拆分为 `src/model/` 目录模块（`client/echo/factory/chat_completions`）。
+- crate 内单元测试已从 `lib.rs` 内联模块迁移到 `src/tests.rs`，便于后续持续拆分。

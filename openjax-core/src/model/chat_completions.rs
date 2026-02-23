@@ -33,89 +33,67 @@ struct ChatMessage {
 
 impl ChatCompletionsClient {
     pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
-        let env_api_key = std::env::var("OPENJAX_MINIMAX_API_KEY")
-            .ok()
-            .filter(|v| !v.trim().is_empty());
-
-        let config_api_key = config.and_then(|c| c.api_key.as_ref());
-
-        let api_key = env_api_key.or_else(|| config_api_key.cloned())?;
-
-        let model = std::env::var("OPENJAX_MINIMAX_MODEL")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .or_else(|| config.and_then(|c| c.model.clone()))
-            .unwrap_or_else(|| "codex-MiniMax-M2.1".to_string());
-
-        let base_url = std::env::var("OPENJAX_MINIMAX_BASE_URL")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .or_else(|| config.and_then(|c| c.base_url.clone()))
-            .unwrap_or_else(|| "https://api.minimaxi.com/v1".to_string());
-
-        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-
-        Some(Self {
-            client: Client::new(),
-            api_key,
-            model,
-            endpoint,
-            backend_name: "minimax-chat-completions",
-        })
+        Self::from_provider_config(
+            config,
+            "OPENJAX_MINIMAX_API_KEY",
+            "OPENJAX_MINIMAX_MODEL",
+            "OPENJAX_MINIMAX_BASE_URL",
+            "codex-MiniMax-M2.1",
+            "https://api.minimaxi.com/v1",
+            "minimax-chat-completions",
+        )
     }
 
     pub(crate) fn from_openai_config(config: Option<&ModelConfig>) -> Option<Self> {
-        let env_api_key = std::env::var("OPENAI_API_KEY")
-            .ok()
-            .filter(|v| !v.trim().is_empty());
-
-        let config_api_key = config.and_then(|c| c.api_key.as_ref());
-
-        let api_key = env_api_key.or_else(|| config_api_key.cloned())?;
-
-        let model = std::env::var("OPENJAX_MODEL")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .or_else(|| config.and_then(|c| c.model.clone()))
-            .unwrap_or_else(|| "gpt-4.1-mini".to_string());
-
-        let base_url = std::env::var("OPENAI_BASE_URL")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .or_else(|| config.and_then(|c| c.base_url.clone()))
-            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-
-        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-
-        Some(Self {
-            client: Client::new(),
-            api_key,
-            model,
-            endpoint,
-            backend_name: "openai-chat-completions",
-        })
+        Self::from_provider_config(
+            config,
+            "OPENAI_API_KEY",
+            "OPENJAX_MODEL",
+            "OPENAI_BASE_URL",
+            "gpt-4.1-mini",
+            "https://api.openai.com/v1",
+            "openai-chat-completions",
+        )
     }
 
     pub(crate) fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
-        let env_api_key = std::env::var("OPENJAX_GLM_API_KEY")
+        Self::from_provider_config(
+            config,
+            "OPENJAX_GLM_API_KEY",
+            "OPENJAX_GLM_MODEL",
+            "OPENJAX_GLM_BASE_URL",
+            "GLM-4.7",
+            "https://open.bigmodel.cn/api/coding/paas/v4",
+            "glm-chat-completions",
+        )
+    }
+
+    fn from_provider_config(
+        config: Option<&ModelConfig>,
+        api_key_env: &str,
+        model_env: &str,
+        base_url_env: &str,
+        default_model: &str,
+        default_base_url: &str,
+        backend_name: &'static str,
+    ) -> Option<Self> {
+        let env_api_key = std::env::var(api_key_env)
             .ok()
             .filter(|v| !v.trim().is_empty());
-
         let config_api_key = config.and_then(|c| c.api_key.as_ref());
-
         let api_key = env_api_key.or_else(|| config_api_key.cloned())?;
 
-        let model = std::env::var("OPENJAX_GLM_MODEL")
+        let model = std::env::var(model_env)
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| config.and_then(|c| c.model.clone()))
-            .unwrap_or_else(|| "GLM-4.7".to_string());
+            .unwrap_or_else(|| default_model.to_string());
 
-        let base_url = std::env::var("OPENJAX_GLM_BASE_URL")
+        let base_url = std::env::var(base_url_env)
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| config.and_then(|c| c.base_url.clone()))
-            .unwrap_or_else(|| "https://open.bigmodel.cn/api/coding/paas/v4".to_string());
+            .unwrap_or_else(|| default_base_url.to_string());
 
         let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
@@ -124,7 +102,7 @@ impl ChatCompletionsClient {
             api_key,
             model,
             endpoint,
-            backend_name: "glm-chat-completions",
+            backend_name,
         })
     }
 }

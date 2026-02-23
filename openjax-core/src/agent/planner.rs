@@ -9,7 +9,7 @@ use crate::agent::prompt::{
 };
 use crate::{
     Agent, MAX_CONSECUTIVE_DUPLICATE_SKIPS, MAX_PLANNER_ROUNDS_PER_TURN, MAX_TOOL_CALLS_PER_TURN,
-    is_mutating_tool, should_abort_on_consecutive_duplicate_skips, tools,
+    tools,
 };
 
 impl Agent {
@@ -475,4 +475,15 @@ impl Agent {
             }
         }
     }
+}
+
+pub(crate) fn should_abort_on_consecutive_duplicate_skips(count: usize) -> bool {
+    count >= MAX_CONSECUTIVE_DUPLICATE_SKIPS
+}
+
+fn is_mutating_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "apply_patch" | "edit_file_range" | "shell" | "exec_command"
+    )
 }

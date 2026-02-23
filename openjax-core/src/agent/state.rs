@@ -1,0 +1,100 @@
+use std::collections::HashMap;
+
+use tracing::debug;
+
+use crate::{Agent, MAX_CONVERSATION_HISTORY_ITEMS};
+
+#[derive(Debug, Clone)]
+pub(crate) struct RateLimitConfig {
+    pub(crate) min_delay_between_requests_ms: u64,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            min_delay_between_requests_ms: 1000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ToolCallKey {
+    pub(crate) name: String,
+    pub(crate) args: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ToolCallRecord {
+    pub(crate) key: ToolCallKey,
+    pub(crate) ok: bool,
+    pub(crate) epoch: u64,
+    pub(crate) _output: String,
+}
+
+impl Agent {
+    pub(crate) async fn apply_rate_limit(&mut self) {
+        if let Some(last_time) = self.last_api_call_time {
+            let elapsed = last_time.elapsed();
+            let min_delay = std::time::Duration::from_millis(
+                self.rate_limit_config.min_delay_between_requests_ms,
+            );
+
+            if elapsed < min_delay {
+                let delay = min_delay - elapsed;
+                debug!(
+                    delay_ms = delay.as_millis(),
+                    "rate_limit: delaying API call"
+                );
+                tokio::time::sleep(delay).await;
+            }
+        }
+        self.last_api_call_time = Some(std::time::Instant::now());
+    }
+
+    pub(crate) fn is_duplicate_tool_call(
+        &self,
+        tool_name: &str,
+        args: &HashMap<String, String>,
+    ) -> bool {
+        let key = ToolCallKey {
+            name: tool_name.to_string(),
+            args: serde_json::to_string(args).unwrap_or_default(),
+        };
+
+        self.recent_tool_calls
+            .iter()
+            .any(|record| record.key == key && record.ok && record.epoch == self.state_epoch)
+    }
+
+    pub(crate) fn record_tool_call(
+        &mut self,
+        tool_name: &str,
+        args: &HashMap<String, String>,
+        ok: bool,
+        output: &str,
+    ) {
+        let key = ToolCallKey {
+            name: tool_name.to_string(),
+            args: serde_json::to_string(args).unwrap_or_default(),
+        };
+
+        self.recent_tool_calls.push(ToolCallRecord {
+            key,
+            ok,
+            epoch: self.state_epoch,
+            _output: output.to_string(),
+        });
+
+        if self.recent_tool_calls.len() > 10 {
+            self.recent_tool_calls.remove(0);
+        }
+    }
+
+    pub(crate) fn record_history(&mut self, role: &'static str, content: String) {
+        self.history.push(crate::HistoryEntry { role, content });
+        if self.history.len() > MAX_CONVERSATION_HISTORY_ITEMS {
+            let overflow = self.history.len() - MAX_CONVERSATION_HISTORY_ITEMS;
+            self.history.drain(0..overflow);
+        }
+    }
+}
