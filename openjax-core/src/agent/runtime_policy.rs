@@ -18,10 +18,10 @@ pub(crate) fn parse_sandbox_mode(value: &str) -> Option<tools::SandboxMode> {
 }
 
 pub(crate) fn resolve_approval_policy(config: &Config) -> tools::ApprovalPolicy {
-    if let Ok(val) = std::env::var("OPENJAX_APPROVAL_POLICY") {
-        if let Some(policy) = parse_approval_policy(&val) {
-            return policy;
-        }
+    if let Ok(val) = std::env::var("OPENJAX_APPROVAL_POLICY")
+        && let Some(policy) = parse_approval_policy(&val)
+    {
+        return policy;
     }
 
     if let Some(policy) = config
@@ -37,10 +37,10 @@ pub(crate) fn resolve_approval_policy(config: &Config) -> tools::ApprovalPolicy 
 }
 
 pub(crate) fn resolve_sandbox_mode(config: &Config) -> tools::SandboxMode {
-    if let Ok(val) = std::env::var("OPENJAX_SANDBOX_MODE") {
-        if let Some(mode) = parse_sandbox_mode(&val) {
-            return mode;
-        }
+    if let Ok(val) = std::env::var("OPENJAX_SANDBOX_MODE")
+        && let Some(mode) = parse_sandbox_mode(&val)
+    {
+        return mode;
     }
 
     if let Some(mode) = config

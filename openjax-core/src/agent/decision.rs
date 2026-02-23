@@ -79,11 +79,7 @@ pub(crate) fn normalize_model_decision(mut decision: ModelDecision) -> ModelDeci
         return decision;
     }
 
-    if decision
-        .tool
-        .as_deref()
-        .map_or(true, |t| t.trim().is_empty())
-    {
+    if decision.tool.as_deref().is_none_or(|t| t.trim().is_empty()) {
         decision.tool = Some(action_lower.clone());
     }
 

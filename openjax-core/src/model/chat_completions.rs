@@ -5,48 +5,10 @@ use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::ModelConfig;
-
-#[async_trait]
-pub trait ModelClient: Send + Sync {
-    async fn complete(&self, user_input: &str) -> Result<String>;
-
-    async fn complete_stream(
-        &self,
-        user_input: &str,
-        delta_sender: Option<UnboundedSender<String>>,
-    ) -> Result<String>;
-
-    fn name(&self) -> &'static str;
-}
-
-#[derive(Debug, Default)]
-pub struct EchoModelClient;
-
-#[async_trait]
-impl ModelClient for EchoModelClient {
-    async fn complete(&self, user_input: &str) -> Result<String> {
-        Ok(format!("[Echo fallback] {user_input}"))
-    }
-
-    async fn complete_stream(
-        &self,
-        user_input: &str,
-        delta_sender: Option<UnboundedSender<String>>,
-    ) -> Result<String> {
-        let text = format!("[Echo fallback] {user_input}");
-        if let Some(sender) = delta_sender {
-            let _ = sender.send(text.clone());
-        }
-        Ok(text)
-    }
-
-    fn name(&self) -> &'static str {
-        "echo"
-    }
-}
+use crate::model::client::ModelClient;
 
 #[derive(Debug, Clone)]
-pub struct ChatCompletionsClient {
+pub(crate) struct ChatCompletionsClient {
     client: Client,
     api_key: String,
     model: String,
@@ -70,14 +32,14 @@ struct ChatMessage {
 }
 
 impl ChatCompletionsClient {
-    pub fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
+    pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
         let env_api_key = std::env::var("OPENJAX_MINIMAX_API_KEY")
             .ok()
             .filter(|v| !v.trim().is_empty());
 
         let config_api_key = config.and_then(|c| c.api_key.as_ref());
 
-        let api_key = env_api_key.or_else(|| config_api_key.map(|s| s.clone()))?;
+        let api_key = env_api_key.or_else(|| config_api_key.cloned())?;
 
         let model = std::env::var("OPENJAX_MINIMAX_MODEL")
             .ok()
@@ -102,14 +64,14 @@ impl ChatCompletionsClient {
         })
     }
 
-    pub fn from_openai_config(config: Option<&ModelConfig>) -> Option<Self> {
+    pub(crate) fn from_openai_config(config: Option<&ModelConfig>) -> Option<Self> {
         let env_api_key = std::env::var("OPENAI_API_KEY")
             .ok()
             .filter(|v| !v.trim().is_empty());
 
         let config_api_key = config.and_then(|c| c.api_key.as_ref());
 
-        let api_key = env_api_key.or_else(|| config_api_key.map(|s| s.clone()))?;
+        let api_key = env_api_key.or_else(|| config_api_key.cloned())?;
 
         let model = std::env::var("OPENJAX_MODEL")
             .ok()
@@ -134,14 +96,14 @@ impl ChatCompletionsClient {
         })
     }
 
-    pub fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
+    pub(crate) fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
         let env_api_key = std::env::var("OPENJAX_GLM_API_KEY")
             .ok()
             .filter(|v| !v.trim().is_empty());
 
         let config_api_key = config.and_then(|c| c.api_key.as_ref());
 
-        let api_key = env_api_key.or_else(|| config_api_key.map(|s| s.clone()))?;
+        let api_key = env_api_key.or_else(|| config_api_key.cloned())?;
 
         let model = std::env::var("OPENJAX_GLM_MODEL")
             .ok()
@@ -256,7 +218,9 @@ impl ModelClient for ChatCompletionsClient {
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content: "You are OpenJax, a pragmatic coding assistant in terminal CLI. Keep responses concise.".to_string(),
+                    content:
+                        "You are OpenJax, a pragmatic coding assistant in terminal CLI. Keep responses concise."
+                            .to_string(),
                 },
                 ChatMessage {
                     role: "user".to_string(),
@@ -317,7 +281,9 @@ impl ModelClient for ChatCompletionsClient {
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content: "You are OpenJax, a pragmatic coding assistant in terminal CLI. Keep responses concise.".to_string(),
+                    content:
+                        "You are OpenJax, a pragmatic coding assistant in terminal CLI. Keep responses concise."
+                            .to_string(),
                 },
                 ChatMessage {
                     role: "user".to_string(),
@@ -328,7 +294,7 @@ impl ModelClient for ChatCompletionsClient {
             stream: Some(true),
         };
 
-        let mut resp = self
+        let resp = self
             .client
             .post(&self.endpoint)
             .bearer_auth(&self.api_key)
@@ -353,6 +319,7 @@ impl ModelClient for ChatCompletionsClient {
         let mut assembled = String::new();
         let mut pending: Vec<u8> = Vec::new();
 
+        let mut resp = resp;
         while let Some(chunk) = resp.chunk().await.context("failed reading stream chunk")? {
             pending.extend_from_slice(&chunk);
 
@@ -381,12 +348,12 @@ impl ModelClient for ChatCompletionsClient {
                     )
                 })?;
 
-                if let Some(delta) = extract_delta_content_from_body(&payload) {
-                    if !delta.is_empty() {
-                        assembled.push_str(&delta);
-                        if let Some(sender) = &delta_sender {
-                            let _ = sender.send(delta);
-                        }
+                if let Some(delta) = extract_delta_content_from_body(&payload)
+                    && !delta.is_empty()
+                {
+                    assembled.push_str(&delta);
+                    if let Some(sender) = &delta_sender {
+                        let _ = sender.send(delta);
                     }
                 }
             }
@@ -394,21 +361,21 @@ impl ModelClient for ChatCompletionsClient {
 
         if !pending.is_empty() {
             let line_text = String::from_utf8_lossy(&pending);
-            if let Some(data) = parse_sse_data_line(&line_text) {
-                if data != "[DONE]" {
-                    let payload: serde_json::Value = serde_json::from_str(data).map_err(|err| {
-                        anyhow!(
-                            "failed to parse trailing SSE JSON chunk: {err}; chunk_snippet={}",
-                            response_snippet(data)
-                        )
-                    })?;
-                    if let Some(delta) = extract_delta_content_from_body(&payload) {
-                        if !delta.is_empty() {
-                            assembled.push_str(&delta);
-                            if let Some(sender) = &delta_sender {
-                                let _ = sender.send(delta);
-                            }
-                        }
+            if let Some(data) = parse_sse_data_line(&line_text)
+                && data != "[DONE]"
+            {
+                let payload: serde_json::Value = serde_json::from_str(data).map_err(|err| {
+                    anyhow!(
+                        "failed to parse trailing SSE JSON chunk: {err}; chunk_snippet={}",
+                        response_snippet(data)
+                    )
+                })?;
+                if let Some(delta) = extract_delta_content_from_body(&payload)
+                    && !delta.is_empty()
+                {
+                    assembled.push_str(&delta);
+                    if let Some(sender) = &delta_sender {
+                        let _ = sender.send(delta);
                     }
                 }
             }
@@ -428,48 +395,53 @@ impl ModelClient for ChatCompletionsClient {
     }
 }
 
-pub fn build_model_client() -> Box<dyn ModelClient> {
-    build_model_client_with_config(None)
-}
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
 
-pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn ModelClient> {
-    let backend = config
-        .and_then(|c| c.backend.as_ref())
-        .map(|s| s.to_lowercase());
+    use super::{extract_content_from_body, extract_delta_content_from_body, parse_sse_data_line};
 
-    match backend.as_deref() {
-        Some("glm") => {
-            if let Some(client) = ChatCompletionsClient::from_glm_config(config) {
-                return Box::new(client);
-            }
-        }
-        Some("minimax") => {
-            if let Some(client) = ChatCompletionsClient::from_minimax_config(config) {
-                return Box::new(client);
-            }
-        }
-        Some("openai") => {
-            if let Some(client) = ChatCompletionsClient::from_openai_config(config) {
-                return Box::new(client);
-            }
-        }
-        Some("echo") => {
-            return Box::new(EchoModelClient);
-        }
-        _ => {}
+    #[test]
+    fn extract_content_supports_block_array() {
+        let body = json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "hello"},
+                            {"type": "text", "text": "world"}
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let content = extract_content_from_body(&body);
+        assert_eq!(content.as_deref(), Some("hello\nworld"));
     }
 
-    if let Some(client) = ChatCompletionsClient::from_minimax_config(config) {
-        return Box::new(client);
+    #[test]
+    fn extract_delta_supports_block_array() {
+        let body = json!({
+            "choices": [
+                {
+                    "delta": {
+                        "content": [
+                            {"type": "text", "text": "he"},
+                            {"type": "text", "text": "llo"}
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let content = extract_delta_content_from_body(&body);
+        assert_eq!(content.as_deref(), Some("hello"));
     }
 
-    if let Some(client) = ChatCompletionsClient::from_openai_config(config) {
-        return Box::new(client);
+    #[test]
+    fn parse_sse_data_line_ignores_non_data_lines() {
+        assert_eq!(parse_sse_data_line("event: ping"), None);
+        assert_eq!(parse_sse_data_line("data: {\"x\":1}"), Some("{\"x\":1}"));
     }
-
-    if let Some(client) = ChatCompletionsClient::from_glm_config(config) {
-        return Box::new(client);
-    }
-
-    Box::new(EchoModelClient)
 }

@@ -15,7 +15,7 @@
 12. 添加 多行输入/换行 支持
 13. 继续优化tui, 增加历史会话中用户输入的消息的区分度，优化输入框样式
 14. 优化权限申请和审批逻辑，同一个操作已经同意权限后重试不再需要重新获取权限
-15. 拆分 python/openjax_tui/src/openjax_tui/app.py 
+15. 拆分 python/openjax_tui/src/openjax_tui/app.py [x]
 
 
 
