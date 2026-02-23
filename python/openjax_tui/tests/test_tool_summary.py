@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from openjax_sdk.models import EventEnvelope
 from openjax_tui.app import AppState, _print_event, _set_active_state, _status_bullet
+from openjax_tui import render_utils
 
 
 def _evt(turn_id: str, event_type: str, payload: dict[str, object]) -> EventEnvelope:
@@ -65,6 +66,13 @@ class ToolSummaryTest(unittest.TestCase):
 
         self.assertEqual(len(state.history_blocks), 1)
         self.assertIn("Run shell command", state.history_blocks[0])
+
+    def test_render_utils_module_helpers(self) -> None:
+        self.assertEqual(render_utils.align_multiline("a\nb", "  "), "a\n  b")
+        self.assertEqual(
+            render_utils.tool_result_label("apply_patch", "UPDATE test.txt"),
+            "Update(test.txt)",
+        )
 
 
 if __name__ == "__main__":

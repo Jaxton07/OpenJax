@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from openjax_tui import app
+from openjax_tui import input_backend
 
 
 class InputBackendTest(unittest.TestCase):
@@ -42,6 +43,19 @@ class InputBackendTest(unittest.TestCase):
     def test_backend_reason_when_forced_basic(self) -> None:
         with patch.dict(os.environ, {"OPENJAX_TUI_INPUT_BACKEND": "basic"}, clear=False):
             backend, reason = app._select_input_backend_with_reason()
+            self.assertEqual(backend, "basic")
+            self.assertIn("forced by OPENJAX_TUI_INPUT_BACKEND=basic", reason)
+
+    def test_module_select_input_backend_with_reason(self) -> None:
+        with patch.dict(os.environ, {"OPENJAX_TUI_INPUT_BACKEND": "basic"}, clear=False):
+            backend, reason = input_backend.select_input_backend_with_reason(
+                prompt_session=object(),
+                patch_stdout=object(),
+                key_bindings=object(),
+                prompt_toolkit_import_error=None,
+                stdin_is_tty=True,
+                stdout_is_tty=True,
+            )
             self.assertEqual(backend, "basic")
             self.assertIn("forced by OPENJAX_TUI_INPUT_BACKEND=basic", reason)
 

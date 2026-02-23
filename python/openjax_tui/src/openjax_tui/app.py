@@ -8,7 +8,6 @@ import re
 import shutil
 import signal
 import sys
-import threading
 import time
 from typing import Any, Callable
 
@@ -35,11 +34,36 @@ from .slash_commands import (
     slash_hint_fragments as _slash_hint_fragments_impl,
     slash_hint_text as _slash_hint_text_impl,
 )
+from .approval import (
+    approval_mode_active as _approval_mode_active_impl,
+    approval_pending_ids as _approval_pending_ids_impl,
+    approval_toolbar_fragments as _approval_toolbar_fragments_impl,
+    approval_toolbar_text as _approval_toolbar_text_impl,
+    focused_approval_id as _focused_approval_id_impl,
+    input_prompt_prefix as _input_prompt_prefix_impl,
+    is_expired_approval_error as _is_expired_approval_error_impl,
+    move_approval_focus as _move_approval_focus_impl,
+    pop_pending as _pop_pending_impl,
+    print_pending as _print_pending_impl,
+    toggle_approval_selection as _toggle_approval_selection_impl,
+    use_inline_approval_panel as _use_inline_approval_panel_impl,
+)
+from .input_backend import (
+    configure_readline_keybindings as _configure_readline_keybindings_impl,
+    normalize_input as _normalize_input_impl,
+    select_input_backend_with_reason as _select_input_backend_with_reason_impl,
+    start_basic_input_worker as _start_basic_input_worker_impl,
+)
 from .tui_logging import (
     _reset_tui_logger_for_tests,
     _setup_tui_logger,
     _tui_debug,
     _tui_log_info,
+)
+from .render_utils import (
+    align_multiline as _align_multiline_impl,
+    extract_updated_target as _extract_updated_target_impl,
+    tool_result_label as _tool_result_label_impl,
 )
 
 try:
@@ -662,33 +686,14 @@ def _select_input_backend() -> str:
 
 
 def _select_input_backend_with_reason() -> tuple[str, str]:
-    env_backend = os.environ.get("OPENJAX_TUI_INPUT_BACKEND", "").lower()
-    if env_backend == "basic":
-        return "basic", "forced by OPENJAX_TUI_INPUT_BACKEND=basic"
-    if env_backend == "prompt_toolkit":
-        if PromptSession is not None and patch_stdout is not None:
-            if KeyBindings is None:
-                return "prompt_toolkit", "forced by env; key bindings unavailable"
-            return "prompt_toolkit", "forced by OPENJAX_TUI_INPUT_BACKEND=prompt_toolkit"
-        return "basic", "env requested prompt_toolkit but dependency unavailable"
-    if (
-        PromptSession is not None
-        and patch_stdout is not None
-        and sys.stdin.isatty()
-        and sys.stdout.isatty()
-    ):
-        if KeyBindings is None:
-            return "prompt_toolkit", "tty mode; key bindings unavailable"
-        return "prompt_toolkit", "tty mode"
-
-    reason_parts: list[str] = []
-    if PromptSession is None or patch_stdout is None:
-        reason_parts.append(_prompt_toolkit_import_error or "prompt_toolkit unavailable")
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        reason_parts.append("stdin/stdout is not tty")
-    if not reason_parts:
-        reason_parts.append("fallback to basic")
-    return "basic", "; ".join(reason_parts)
+    return _select_input_backend_with_reason_impl(
+        prompt_session=PromptSession,
+        patch_stdout=patch_stdout,
+        key_bindings=KeyBindings,
+        prompt_toolkit_import_error=_prompt_toolkit_import_error,
+        stdin_is_tty=sys.stdin.isatty(),
+        stdout_is_tty=sys.stdout.isatty(),
+    )
 
 
 def _start_basic_input_worker(
@@ -696,34 +701,16 @@ def _start_basic_input_worker(
     request_queue: queue.Queue[object],
     line_queue: asyncio.Queue[str | None],
 ) -> None:
-    def worker() -> None:
-        while True:
-            cmd = request_queue.get()
-            if cmd is _INPUT_STOP:
-                return
-            if cmd is not _INPUT_REQUEST:
-                continue
-            try:
-                prompt_prefix = _USER_PROMPT_PREFIX
-                active_state = _active_state
-                if active_state is not None and _approval_mode_active(active_state):
-                    prompt_prefix = "approval>"
-                line = input(f"{prompt_prefix} ")
-            except EOFError:
-                line = None
-            except KeyboardInterrupt:
-                line = None
-
-            with contextlib.suppress(RuntimeError):
-                loop.call_soon_threadsafe(line_queue.put_nowait, line)
-            if line is None:
-                return
-
-    threading.Thread(
-        target=worker,
-        name="openjax-tui-basic-input",
-        daemon=True,
-    ).start()
+    _start_basic_input_worker_impl(
+        loop,
+        request_queue,
+        line_queue,
+        input_request=_INPUT_REQUEST,
+        input_stop=_INPUT_STOP,
+        user_prompt_prefix=_USER_PROMPT_PREFIX,
+        active_state_getter=lambda: _active_state,
+        approval_mode_active=_approval_mode_active,
+    )
 
 
 def _print_help() -> None:
@@ -793,21 +780,11 @@ def _divider_line() -> str:
 
 
 def _print_pending(state: AppState) -> None:
-    if not state.pending_approvals:
-        print("[approval] no pending approvals")
-        return
-    print("[approval] pending:")
-    for request_id in list(state.approval_order):
-        record = state.pending_approvals.get(request_id)
-        if record and record.status == "pending":
-            focus_marker = "*" if request_id == state.approval_focus_id else " "
-            print(
-                f" {focus_marker} {request_id} (turn:{record.turn_id}) target={record.target or '-'}"
-            )
+    _print_pending_impl(state)
 
 
 def _use_inline_approval_panel(state: AppState) -> bool:
-    return state.input_backend == "prompt_toolkit" and state.approval_ui_enabled
+    return _use_inline_approval_panel_impl(state)
 
 
 def _build_prompt_style() -> Any:
@@ -895,102 +872,39 @@ async def _resolve_approval_by_id(
 
 
 def _pop_pending(state: AppState, approval_request_id: str) -> None:
-    state.pending_approvals.pop(approval_request_id, None)
-    with contextlib.suppress(ValueError):
-        state.approval_order.remove(approval_request_id)
-    if state.approval_focus_id == approval_request_id:
-        state.approval_focus_id = _focused_approval_id(state)
+    _pop_pending_impl(state, approval_request_id)
 
 
 def _focused_approval_id(state: AppState) -> str | None:
-    if state.approval_focus_id and state.approval_focus_id in state.pending_approvals:
-        return state.approval_focus_id
-    while state.approval_order:
-        approval_request_id = state.approval_order[-1]
-        record = state.pending_approvals.get(approval_request_id)
-        if record and record.status == "pending":
-            state.approval_focus_id = approval_request_id
-            return approval_request_id
-        state.approval_order.pop()
-    state.approval_focus_id = None
-    return None
+    return _focused_approval_id_impl(state)
 
 
 def _approval_mode_active(state: AppState) -> bool:
-    return state.turn_phase == "approval" and _focused_approval_id(state) is not None
+    return _approval_mode_active_impl(state)
 
 
 def _input_prompt_prefix(state: AppState) -> str:
-    if _use_inline_approval_panel(state):
-        return _USER_PROMPT_PREFIX
-    if _approval_mode_active(state):
-        return "approval>"
-    return _USER_PROMPT_PREFIX
+    return _input_prompt_prefix_impl(state, _USER_PROMPT_PREFIX)
 
 
 def _approval_pending_ids(state: AppState) -> list[str]:
-    ids: list[str] = []
-    for approval_request_id in state.approval_order:
-        record = state.pending_approvals.get(approval_request_id)
-        if record and record.status == "pending":
-            ids.append(approval_request_id)
-    return ids
+    return _approval_pending_ids_impl(state)
 
 
 def _move_approval_focus(state: AppState, step: int) -> None:
-    pending_ids = _approval_pending_ids(state)
-    if not pending_ids:
-        state.approval_focus_id = None
-        return
-    focus_id = _focused_approval_id(state)
-    if focus_id is None or focus_id not in pending_ids:
-        state.approval_focus_id = pending_ids[-1]
-        return
-    idx = pending_ids.index(focus_id)
-    next_idx = max(0, min(len(pending_ids) - 1, idx + step))
-    state.approval_focus_id = pending_ids[next_idx]
+    _move_approval_focus_impl(state, step)
 
 
 def _toggle_approval_selection(state: AppState) -> None:
-    state.approval_selected_action = (
-        "deny" if state.approval_selected_action == "allow" else "allow"
-    )
+    _toggle_approval_selection_impl(state)
 
 
 def _approval_toolbar_text(state: AppState) -> str:
-    if not state.approval_ui_enabled or not _approval_mode_active(state):
-        return ""
-    focus_id = _focused_approval_id(state)
-    if not focus_id:
-        return ""
-    record = state.pending_approvals.get(focus_id)
-    if record is None:
-        return ""
-    total = len(_approval_pending_ids(state))
-    selected_allow = state.approval_selected_action == "allow"
-    target = (record.target or "-").strip() or "-"
-    reason = " ".join(str(record.reason or "-").split())
-    allow_label = "❯ 1. Yes" if selected_allow else "  1. Yes"
-    deny_label = "❯ 2. No" if not selected_allow else "  2. No"
-    lines = [
-        _divider_line(),
-        f" Approval Request ({total} pending)",
-        f" id: {focus_id}",
-        f" target: {target}",
-        f" reason: {reason}",
-        " Confirm this action?",
-        f" {allow_label}",
-        f" {deny_label}",
-        " Tab/Up/Down switch · Enter confirm · Esc reject · /approve <id> y|n",
-    ]
-    return "\n".join(lines)
+    return _approval_toolbar_text_impl(state, _divider_line())
 
 
 def _approval_toolbar_fragments(state: AppState) -> Any:
-    text = _approval_toolbar_text(state)
-    if not text:
-        return ""
-    return [("bg:default fg:default noreverse", text)]
+    return _approval_toolbar_fragments_impl(state, _divider_line())
 
 
 def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> Any:
@@ -1098,10 +1012,7 @@ def _build_prompt_key_bindings(client: OpenJaxAsyncClient, state: AppState) -> A
 
 
 def _is_expired_approval_error(err: OpenJaxResponseError) -> bool:
-    if err.code == "APPROVAL_NOT_FOUND":
-        return True
-    message = err.message.lower()
-    return "timed out" in message or "timeout" in message
+    return _is_expired_approval_error_impl(err)
 
 
 def _record_tool_started(turn: str, tool_name: str) -> None:
@@ -1150,30 +1061,11 @@ def _print_tool_call_result_line(tool_name: str, ok: bool, output: str) -> None:
 
 
 def _tool_result_label(tool_name: str, output: str) -> str:
-    name = tool_name.strip().lower()
-    if name == "read_file":
-        return "Read 1 file"
-    if name in {"apply_patch", "edit_file_range", "write_file"}:
-        target = _extract_updated_target(output)
-        if target:
-            return f"Update({target})"
-        return "Update file"
-    if name == "list_dir":
-        return "Read directory"
-    if name == "grep_files":
-        return "Search files"
-    if name == "shell":
-        return "Run shell command"
-    if not name:
-        return "Tool call"
-    return name.replace("_", " ").title()
+    return _tool_result_label_impl(tool_name, output)
 
 
 def _extract_updated_target(output: str) -> str | None:
-    match = re.search(r"\bUPDATE\s+([^\s:]+)", output)
-    if not match:
-        return None
-    return match.group(1).strip()
+    return _extract_updated_target_impl(output)
 
 
 def _print_tool_summary_for_turn(turn: str) -> None:
@@ -1203,42 +1095,11 @@ def _emit_ui_spacer() -> None:
 
 
 def _normalize_input(text: str) -> str:
-    # Strip common CSI/SS3 ANSI sequences (arrow keys, function keys).
-    text = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", text)
-    text = re.sub(r"\x1BO[A-Za-z]", "", text)
-    # Apply backspace/delete semantics if control chars were captured.
-    out: list[str] = []
-    for ch in text:
-        if ch in ("\x08", "\x7f"):
-            if out:
-                out.pop()
-            continue
-        if ch.isprintable() or ch in ("\t", " "):
-            out.append(ch)
-    return "".join(out)
+    return _normalize_input_impl(text)
 
 
 def _configure_readline_keybindings() -> None:
-    # macOS Python often uses libedit/readline; in tmux/zellij arrow keys may emit
-    # CSI/SS3 sequences that are not bound by default, leading to "^[[D" artifacts.
-    try:
-        import readline  # type: ignore
-    except Exception:
-        return
-
-    bindings = [
-        r'"\e[A": previous-history',
-        r'"\e[B": next-history',
-        r'"\e[C": forward-char',
-        r'"\e[D": backward-char',
-        r'"\eOA": previous-history',
-        r'"\eOB": next-history',
-        r'"\eOC": forward-char',
-        r'"\eOD": backward-char',
-    ]
-    for binding in bindings:
-        with contextlib.suppress(Exception):
-            readline.parse_and_bind(binding)
+    _configure_readline_keybindings_impl()
 
 
 _active_state: AppState | None = None
@@ -1315,9 +1176,7 @@ def _finalize_stream_line(state: AppState | None = None) -> None:
 
 
 def _align_multiline(text: str) -> str:
-    if not text:
-        return ""
-    return text.replace("\n", f"\n{_PREFIX_CONTINUATION}")
+    return _align_multiline_impl(text, _PREFIX_CONTINUATION)
 
 
 def _print_prefixed_block(prefix: str, content: str) -> None:
