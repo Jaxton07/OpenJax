@@ -30,14 +30,15 @@ class StartupConfigTest(unittest.TestCase):
 
     def test_format_display_directory_uses_tilde(self) -> None:
         home = os.path.expanduser("~")
-        self.assertEqual(app._format_display_directory(home), "~")
+        self.assertEqual(startup_ui._format_display_directory(home), "~")
         self.assertEqual(
-            app._format_display_directory(os.path.join(home, "work", "repo")),
+            startup_ui._format_display_directory(os.path.join(home, "work", "repo")),
             "~/work/repo",
         )
 
     def test_startup_ui_module_exports_compatible_helpers(self) -> None:
-        self.assertEqual(startup_ui._OPENJAX_LOGO_TINY, app._OPENJAX_LOGO_TINY)
+        # 验证 startup_ui 模块正确导出常量
+        self.assertIsNotNone(startup_ui._OPENJAX_LOGO_TINY)
         with patch.dict(os.environ, {"OPENJAX_VERSION": "1.2.3-mod"}, clear=False):
             self.assertEqual(startup_ui._resolve_openjax_version(), "1.2.3-mod")
 

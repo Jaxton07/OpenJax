@@ -3,49 +3,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import queue
-import re
 import shutil
 import signal
 import sys
-import time
 import traceback
-from collections.abc import Awaitable
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from openjax_sdk import OpenJaxAsyncClient
 from openjax_sdk.exceptions import OpenJaxProtocolError, OpenJaxResponseError
 from openjax_sdk.models import EventEnvelope
-from .state import (
-    AnimationLifecycle,
-    AppState,
-    ApprovalRecord,
-    LiveViewportOwnership,
-    ToolTurnStats,
-    ViewMode,
-)
-from .startup_ui import (
-    _OPENJAX_LOGO_LONG,
-    _OPENJAX_LOGO_SHORT,
-    _OPENJAX_LOGO_TINY,
-    _format_display_directory,
-    _normalize_logo_block,
-    _print_logo,
-    _print_startup_card,
-    _resolve_openjax_version,
-    _select_logo,
-    _supports_ansi_color,
-    _text_block_width,
-)
-from .slash_commands import (
-    build_slash_command_completer as _build_slash_command_completer,
-    slash_command_candidates as _slash_command_candidates,
-    slash_hint_fragments as _slash_hint_fragments,
-    slash_hint_text as _slash_hint_text,
-)
+
 from .approval import (
     approval_mode_active as _approval_mode_active,
-    approval_toolbar_fragments as _approval_toolbar_fragments,
     approval_toolbar_text as _approval_toolbar_text,
     focused_approval_id as _focused_approval_id,
     is_expired_approval_error as _is_expired_approval_error,
@@ -56,96 +26,70 @@ from .approval import (
     toggle_approval_selection as _toggle_approval_selection,
     use_inline_approval_panel as _use_inline_approval_panel,
 )
-from .input_backend import (
-    configure_readline_keybindings as _configure_readline_keybindings,
-    normalize_input as _normalize_input,
-    select_input_backend_with_reason as _select_input_backend_with_reason,
-    start_basic_input_worker as _start_basic_input_worker,
-)
-from .tui_logging import (
-    _reset_tui_logger_for_tests,
-    _setup_tui_logger,
-    _tui_debug,
-    _tui_log_info,
-)
-from .session_logging import (
-    append_openjax_log_line as _append_openjax_log_line,
-    approval_bool_field as _approval_bool_field,
-    approval_text_field as _approval_text_field,
-    log_startup_summary as _log_startup_summary,
-    tui_log_approval_event as _tui_log_approval_event,
-)
 from .event_dispatch import print_event as _print_event
-from .prompt_ui import (
-    build_prompt_key_bindings as _build_prompt_key_bindings_impl,
-    drain_background_task as _drain_background_task,
-    history_text as _history_text,
-    invalidate_prompt_application as _invalidate_prompt_application,
-    refresh_history_view as _refresh_history_view,
-    request_prompt_redraw as _request_prompt_redraw,
+from .debug_utils import format_event_debug_line as _format_event_debug_line
+from .event_handlers import (
+    create_finalize_stream_line_if_turn_fn as _create_finalize_stream_line_if_turn_fn,
+    create_print_tool_call_result_line_fn as _create_print_tool_call_result_line_fn,
+    create_print_tool_summary_for_turn_fn as _create_print_tool_summary_for_turn_fn,
+    create_record_tool_completed_fn as _create_record_tool_completed_fn,
+    create_record_tool_started_fn as _create_record_tool_started_fn,
+    create_render_assistant_delta_fn as _create_render_assistant_delta_fn,
+    create_render_assistant_message_fn as _create_render_assistant_message_fn,
 )
-from .tool_runtime import (
-    emit_ui_spacer as _emit_ui_spacer,
-    print_tool_call_result_line as _print_tool_call_result_line,
-    print_tool_summary_for_turn as _print_tool_summary_for_turn,
-    record_tool_completed as _record_tool_completed,
-    record_tool_started as _record_tool_started,
-    status_bullet as _status_bullet,
-)
-from .assistant_render import (
-    align_multiline as _align_multiline,
-    emit_ui_line as _emit_ui_line,
-    finalize_stream_line as _finalize_stream_line,
-    finalize_stream_line_if_turn as _finalize_stream_line_if_turn,
-    print_prefixed_block as _print_prefixed_block,
-    render_assistant_delta as _render_assistant_delta,
-    render_assistant_message as _render_assistant_message,
-    tool_result_label as _tool_result_label,
-)
-from .viewport_adapter import (
-    HistoryViewportAdapter,
-    TextAreaHistoryViewportAdapter,
-    PilotHistoryViewportAdapter,
-    resolve_history_viewport_impl as _resolve_history_viewport_impl,
-    retain_live_viewport_blocks as _retain_live_viewport_blocks,
-)
-from .status_animation import (
-    STATUS_ANIMATION_INTERVAL_S as _STATUS_ANIMATION_INTERVAL_S,
-    THINKING_STATUS_FRAMES as _THINKING_STATUS_FRAMES,
-    TOOL_WAIT_STATUS_FRAMES as _TOOL_WAIT_STATUS_FRAMES,
-    get_status_indicator_text as _status_indicator_text,
-    run_animation_ticker as _run_status_animation_ticker,
-    start_animation as _start_status_animation,
-    stop_animation as _stop_status_animation,
-    sync_animation_controller as _sync_status_animation_controller,
-)
+from .event_state_manager import EventStateCallbacks, EventStateManager
+from .input_backend import configure_readline_keybindings as _configure_readline_keybindings
+from .input_backend import normalize_input as _normalize_input
+from .input_backend import select_input_backend_with_reason as _select_input_backend_with_reason
 from .input_loops import (
     INPUT_REQUEST as _INPUT_REQUEST,
     INPUT_STOP as _INPUT_STOP,
     USER_PROMPT_PREFIX as _USER_PROMPT_PREFIX,
     InputLoopCallbacks,
-    daemon_cmd_from_env as _daemon_cmd_from_env,
+    daemon_cmd_from_env as _daemon_cmd_from_env_impl,
     handle_user_line as _handle_user_line_impl,
-    run_input_loop_basic as _run_input_loop_basic,
+    run_input_loop_basic as _run_input_loop_basic_impl,
 )
+from .prompt_runtime_loop import PromptToolkitComponents
+from .prompt_runtime_loop import fallback_prompt_toolkit_to_basic as _fallback_prompt_toolkit_to_basic_impl
+from .prompt_runtime_loop import run_prompt_toolkit_loop as _run_prompt_toolkit_loop
+from .prompt_ui import build_prompt_key_bindings as _build_prompt_key_bindings_impl
+from .prompt_ui import drain_background_task as _drain_background_task
+from .prompt_ui import refresh_history_view as _refresh_history_view
+from .prompt_ui import request_prompt_redraw as _request_prompt_redraw
+from .session_logging import append_openjax_log_line as _append_openjax_log_line
+from .session_logging import approval_text_field as _approval_text_field
+from .session_logging import log_startup_summary as _log_startup_summary
+from .session_logging import tui_log_approval_event as _tui_log_approval_event
+from .startup_ui import _print_logo, _print_startup_card, _resolve_openjax_version
+from .state import AppState, ApprovalRecord, ViewMode
+from .status_animation import STATUS_ANIMATION_INTERVAL_S as _STATUS_ANIMATION_INTERVAL_S
+from .status_animation import THINKING_STATUS_FRAMES as _THINKING_STATUS_FRAMES
+from .status_animation import TOOL_WAIT_STATUS_FRAMES as _TOOL_WAIT_STATUS_FRAMES
+from .status_animation import run_animation_ticker as _run_status_animation_ticker
+from .status_animation import start_animation as _start_status_animation
+from .status_animation import stop_animation as _stop_status_animation
+from .status_animation import sync_animation_controller as _sync_status_animation_controller
+from .tui_logging import _setup_tui_logger, _tui_debug, _tui_log_info
+from .viewport_adapter import PilotHistoryViewportAdapter, TextAreaHistoryViewportAdapter
+from .assistant_render import emit_ui_line as _emit_ui_line
+from .assistant_render import finalize_stream_line as _finalize_stream_line
 
 try:
-    from prompt_toolkit import PromptSession, print_formatted_text
+    from prompt_toolkit import PromptSession
     from prompt_toolkit.application import Application
     from prompt_toolkit.application.run_in_terminal import run_in_terminal
+    from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.document import Document
     from prompt_toolkit.filters import Condition
-    from prompt_toolkit.formatted_text import ANSI
-    from prompt_toolkit.layout.dimension import Dimension
     from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
     from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.layout.dimension import Dimension
     from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.styles import Style
     from prompt_toolkit.widgets import TextArea
-    from prompt_toolkit.completion import Completer, Completion
-    _prompt_toolkit_print: Callable[[object], None] | None = print_formatted_text
+
     _prompt_toolkit_run_in_terminal: Callable[..., Any] | None = run_in_terminal
-    _prompt_toolkit_ansi: Callable[[str], object] | None = ANSI
     _prompt_toolkit_dimension: Any | None = Dimension
     _prompt_toolkit_style: type[Style] | None = Style
     _prompt_toolkit_application: Any | None = Application
@@ -167,9 +111,7 @@ try:
 except Exception:  # pragma: no cover - optional dependency fallback
     PromptSession = None  # type: ignore[assignment]
     patch_stdout = None  # type: ignore[assignment]
-    _prompt_toolkit_print = None
     _prompt_toolkit_run_in_terminal = None
-    _prompt_toolkit_ansi = None
     _prompt_toolkit_dimension = None
     _prompt_toolkit_style = None
     _prompt_toolkit_application = None
@@ -187,21 +129,11 @@ except Exception:  # pragma: no cover - optional dependency fallback
 
 try:
     from prompt_toolkit.key_binding import KeyBindings
-    _key_bindings_import_error: str | None = None
 except Exception:  # pragma: no cover - optional dependency fallback
     KeyBindings = None  # type: ignore[assignment]
-    _key_bindings_import_error = "key bindings import failed"
 
-_INPUT_REQUEST = object()
-_INPUT_STOP = object()
-_USER_PROMPT_PREFIX = "❯"
-_ASSISTANT_PREFIX = "⏺"
-_PREFIX_CONTINUATION = "  "
-_ANSI_GREEN = "\x1b[32m"
-_ANSI_RED = "\x1b[31m"
-_ANSI_RESET = "\x1b[0m"
-_PRINT_TOOL_TURN_SUMMARY = False
 _OPENJAX_ROOT_LOG = os.path.join(".openjax", "logs", "openjax.log")
+_PRINT_TOOL_TURN_SUMMARY = False
 _COMMAND_ROWS: tuple[str, ...] = (
     "text                submit turn",
     "/approve <id> y|n   resolve a specific approval",
@@ -213,47 +145,24 @@ _COMMAND_ROWS: tuple[str, ...] = (
 _SLASH_COMMANDS: tuple[str, ...] = ("/approve", "/pending", "/help", "/exit")
 
 
-def _active_tool_call_count(state: AppState, turn_id: str) -> int:
-    count = 0
-    for key, starts in state.active_tool_starts.items():
-        if key[0] == turn_id:
-            count += len(starts)
-    return count
-
-
-def _has_active_tool_calls_after_event(state: AppState, evt: EventEnvelope) -> bool:
-    turn_id = evt.turn_id
-    if not turn_id:
-        return False
-
-    active_count = _active_tool_call_count(state, turn_id)
-    if evt.event_type == "tool_call_started":
-        active_count += 1
-    elif evt.event_type == "tool_call_completed":
-        tool_name = str(evt.payload.get("tool_name", ""))
-        starts = state.active_tool_starts.get((turn_id, tool_name))
-        if starts:
-            active_count = max(0, active_count - 1)
-    return active_count > 0
-
-
-def _update_live_viewport_ownership(state: AppState, evt: EventEnvelope) -> None:
-    if state.view_mode != ViewMode.LIVE_VIEWPORT:
-        return
-
-    turn_id = evt.turn_id
-    if not turn_id:
-        return
-
-    if evt.event_type == "assistant_delta":
-        state.live_viewport_owner_turn_id = turn_id
-        state.live_viewport_turn_ownership[turn_id] = LiveViewportOwnership.ACTIVE
-        return
-
-    if evt.event_type in {"assistant_message", "turn_completed"}:
-        state.live_viewport_turn_ownership[turn_id] = LiveViewportOwnership.RELEASED
-        if state.live_viewport_owner_turn_id == turn_id:
-            state.live_viewport_owner_turn_id = None
+def _prompt_toolkit_components() -> PromptToolkitComponents:
+    return PromptToolkitComponents(
+        prompt_session_cls=PromptSession,
+        patch_stdout=patch_stdout,
+        application_cls=_prompt_toolkit_application,
+        text_area_cls=_prompt_toolkit_text_area,
+        document_cls=_prompt_toolkit_document,
+        layout_cls=_prompt_toolkit_layout,
+        hsplit_cls=_prompt_toolkit_hsplit,
+        window_cls=_prompt_toolkit_window,
+        formatted_text_control_cls=_prompt_toolkit_formatted_text_control,
+        condition_cls=_prompt_toolkit_condition,
+        conditional_container_cls=_prompt_toolkit_conditional_container,
+        dimension_cls=_prompt_toolkit_dimension,
+        completer_cls=_prompt_toolkit_completer,
+        completion_cls=_prompt_toolkit_completion,
+        run_in_terminal_fn=_prompt_toolkit_run_in_terminal,
+    )
 
 
 async def _resolve_approval_by_id_wrapped(
@@ -262,7 +171,6 @@ async def _resolve_approval_by_id_wrapped(
     approval_request_id: str,
     approved: bool,
 ) -> None:
-    """包装后的审批解析函数。"""
     await _resolve_approval_by_id(
         client=client,
         state=state,
@@ -276,19 +184,53 @@ async def _resolve_approval_by_id_wrapped(
 
 
 def _create_input_loop_callbacks() -> InputLoopCallbacks:
-    """创建输入循环回调对象。"""
     return InputLoopCallbacks(
         approval_mode_active=_approval_mode_active,
         focused_approval_id=_focused_approval_id,
         resolve_approval_by_id=_resolve_approval_by_id_wrapped,
         resolve_latest_approval=_resolve_latest_approval,
         use_inline_approval_panel=_use_inline_approval_panel,
-        emit_ui_line=lambda state, text: _emit_ui_line(state, text, refresh_history_view_fn=_refresh_history_view),
+        emit_ui_line=lambda state, text: _emit_ui_line(
+            state,
+            text,
+            refresh_history_view_fn=_refresh_history_view,
+        ),
         print_pending=_print_pending,
         tui_log_approval_event=lambda **kwargs: _tui_log_approval_event(_tui_log_info, **kwargs),
         sync_status_animation_controller=lambda state: _sync_status_animation_controller(
-            state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
+            state,
+            request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug),
         ),
+    )
+
+
+async def _run_input_loop_basic(client: OpenJaxAsyncClient, state: AppState) -> None:
+    callbacks = _create_input_loop_callbacks()
+    await _run_input_loop_basic_impl(
+        client,
+        state,
+        callbacks,
+        handle_user_line_fn=lambda c, s, line: _handle_user_line_impl(c, s, line, callbacks, command_rows=_COMMAND_ROWS, slash_commands=_SLASH_COMMANDS),
+        input_request=_INPUT_REQUEST,
+        input_stop=_INPUT_STOP,
+        user_prompt_prefix=_USER_PROMPT_PREFIX,
+        active_state_getter=lambda: _active_state,
+    )
+
+
+async def _input_loop_basic(client: OpenJaxAsyncClient, state: AppState) -> None:
+    await _run_input_loop_basic(client, state)
+
+
+async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: str) -> bool:
+    callbacks = _create_input_loop_callbacks()
+    return await _handle_user_line_impl(
+        client,
+        state,
+        line,
+        callbacks,
+        command_rows=_COMMAND_ROWS,
+        slash_commands=_SLASH_COMMANDS,
     )
 
 
@@ -298,26 +240,34 @@ async def _fallback_prompt_toolkit_to_basic(
     *,
     reason: str,
 ) -> None:
-    _finalize_stream_line(state)
-    state.live_viewport_owner_turn_id = None
-    state.live_viewport_turn_ownership.clear()
-    state.history_setter = None
-    state.prompt_invalidator = None
-    state.input_backend = "basic"
-    state.input_backend_reason = reason
-    _stop_status_animation(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-
-    # 创建输入循环回调
-    input_callbacks = _create_input_loop_callbacks()
-    await _run_input_loop_basic(
+    await _fallback_prompt_toolkit_to_basic_impl(
         client,
         state,
-        input_callbacks,
-        handle_user_line_fn=lambda c, s, line: _handle_user_line_impl(c, s, line, input_callbacks),
-        input_request=_INPUT_REQUEST,
-        input_stop=_INPUT_STOP,
+        reason=reason,
+        run_input_loop_basic_fn=_run_input_loop_basic,
+        request_prompt_redraw_fn=lambda s: _request_prompt_redraw(s, tui_debug_fn=_tui_debug),
+        finalize_stream_line_fn=_finalize_stream_line,
+    )
+
+
+async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState) -> None:
+    key_bindings = _build_prompt_key_bindings(client, state)
+    prompt_style = _build_prompt_style()
+    await _run_prompt_toolkit_loop(
+        client,
+        state,
+        components=_prompt_toolkit_components(),
+        key_bindings=key_bindings,
+        prompt_style=prompt_style,
+        slash_commands=_SLASH_COMMANDS,
         user_prompt_prefix=_USER_PROMPT_PREFIX,
-        active_state_getter=lambda: _active_state,
+        divider_line_fn=_divider_line,
+        handle_user_line_fn=_handle_user_line,
+        fallback_to_basic_fn=lambda c, s, reason: _fallback_prompt_toolkit_to_basic(c, s, reason=reason),
+        request_prompt_redraw_fn=lambda s: _request_prompt_redraw(s, tui_debug_fn=_tui_debug),
+        drain_background_task_fn=_drain_background_task,
+        tui_log_info_fn=_tui_log_info,
+        tui_debug_fn=_tui_debug,
     )
 
 
@@ -333,8 +283,8 @@ async def run() -> None:
     )
     if input_backend == "basic":
         _configure_readline_keybindings()
-    daemon_cmd = _daemon_cmd_from_env()
-    client = OpenJaxAsyncClient(daemon_cmd=daemon_cmd)
+
+    client = OpenJaxAsyncClient(daemon_cmd=_daemon_cmd_from_env_impl())
     state = AppState()
     state.set_view_mode(os.environ.get("OPENJAX_TUI_VIEW_MODE"))
     state.input_ready = asyncio.Event()
@@ -388,7 +338,10 @@ async def run() -> None:
     finally:
         if interrupted:
             _ignore_sigint_during_shutdown()
-        _stop_status_animation(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
+        _stop_status_animation(
+            state,
+            request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug),
+        )
         await _shutdown_client_quietly(client, graceful=not interrupted)
         _finalize_stream_line(state)
         _set_active_state(None)
@@ -425,435 +378,6 @@ def _ignore_sigint_during_shutdown() -> None:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-async def _input_loop_basic(client: OpenJaxAsyncClient, state: AppState) -> None:
-    if state.input_ready is None:
-        raise RuntimeError("input gate is not initialized")
-
-    line_queue: asyncio.Queue[str | None] = asyncio.Queue()
-    request_queue: queue.Queue[object] = queue.Queue()
-    _start_basic_input_worker(asyncio.get_running_loop(), request_queue, line_queue, input_request=_INPUT_REQUEST, input_stop=_INPUT_STOP, user_prompt_prefix=_USER_PROMPT_PREFIX, active_state_getter=lambda: _active_state, approval_mode_active=_approval_mode_active)
-
-    while state.running:
-        try:
-            await state.input_ready.wait()
-            request_queue.put_nowait(_INPUT_REQUEST)
-            line = await line_queue.get()
-        except KeyboardInterrupt:
-            state.running = False
-            raise
-        except asyncio.CancelledError:
-            state.running = False
-            return
-
-        if line is None:
-            state.running = False
-            return
-        if not await _handle_user_line(client, state, line):
-            return
-
-
-async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState) -> None:
-    if state.input_ready is None:
-        raise RuntimeError("input gate is not initialized")
-    if (
-        PromptSession is None
-        or patch_stdout is None
-        or _prompt_toolkit_application is None
-        or _prompt_toolkit_text_area is None
-        or _prompt_toolkit_document is None
-        or _prompt_toolkit_layout is None
-        or _prompt_toolkit_hsplit is None
-        or _prompt_toolkit_window is None
-        or _prompt_toolkit_formatted_text_control is None
-        or _prompt_toolkit_condition is None
-        or _prompt_toolkit_conditional_container is None
-    ):
-        await _input_loop_basic(client, state)
-        return
-
-    state.approval_ui_enabled = True
-    key_bindings = _build_prompt_key_bindings(client, state)
-    prompt_style = _build_prompt_style()
-    line_queue: asyncio.Queue[str] = asyncio.Queue()
-    loop = asyncio.get_running_loop()
-    max_history_window_lines = max(
-        120, int(os.environ.get("OPENJAX_TUI_HISTORY_WINDOW_LINES", "500"))
-    )
-
-    def _schedule_scrollback_flush(blocks: list[str]) -> None:
-        if not blocks:
-            return
-        scrollback_text = _normalize_history_for_prompt_toolkit("\n\n".join(blocks)).strip()
-        if not scrollback_text:
-            return
-        if _prompt_toolkit_run_in_terminal is None:
-            return
-
-        def _flush_output() -> None:
-            print(scrollback_text, flush=True)
-
-        future = _prompt_toolkit_run_in_terminal(_flush_output)
-        def _ignore_future_error(task: Any) -> None:
-            with contextlib.suppress(Exception):
-                task.result()
-
-        done_callback = getattr(future, "add_done_callback", None)
-        if callable(done_callback):
-            done_callback(_ignore_future_error)
-
-    def _compact_history_window() -> list[str]:
-        if state.view_mode == ViewMode.LIVE_VIEWPORT:
-            return []
-        current_lines = sum(block.count("\n") + 2 for block in state.history_blocks)
-        if current_lines <= max_history_window_lines:
-            return []
-
-        dropped_blocks: list[str] = []
-        dropped_lines = 0
-        while current_lines > max_history_window_lines and len(state.history_blocks) > 1:
-            if state.stream_block_index == 0:
-                break
-            removed = state.history_blocks.pop(0)
-            dropped_blocks.append(removed)
-            removed_lines = removed.count("\n") + 2
-            dropped_lines += removed_lines
-            current_lines -= removed_lines
-
-            if state.stream_block_index is not None:
-                state.stream_block_index = max(state.stream_block_index - 1, 0)
-
-            updated_turn_index: dict[str, int] = {}
-            for turn_id, idx in state.turn_block_index.items():
-                next_idx = idx - 1
-                if next_idx >= 0:
-                    updated_turn_index[turn_id] = next_idx
-            state.turn_block_index = updated_turn_index
-
-        if dropped_blocks:
-            state.history_manual_scroll = max(int(state.history_manual_scroll) - dropped_lines, 0)
-            _tui_debug(
-                "history compacted dropped_blocks={blocks} dropped_lines={lines} remaining_blocks={remaining} remaining_lines={current}".format(
-                    blocks=len(dropped_blocks),
-                    lines=dropped_lines,
-                    remaining=len(state.history_blocks),
-                    current=current_lines,
-                )
-            )
-        return dropped_blocks
-
-    history_adapter: HistoryViewportAdapter
-    viewport_impl = _resolve_history_viewport_impl()
-    use_pilot_viewport = (
-        state.view_mode == ViewMode.LIVE_VIEWPORT and viewport_impl == "pilot"
-    )
-
-    if use_pilot_viewport:
-        pilot_history_text = "\n"
-
-        def _set_pilot_history_text(value: str) -> None:
-            nonlocal pilot_history_text
-            pilot_history_text = value
-
-        history_control = _prompt_toolkit_formatted_text_control(
-            lambda: pilot_history_text
-        )
-        history_window = _prompt_toolkit_window(
-            content=history_control,
-            wrap_lines=True,
-            always_hide_cursor=True,
-            height=(
-                _prompt_toolkit_dimension(weight=1)
-                if _prompt_toolkit_dimension is not None
-                else None
-            ),
-        )
-        history_adapter = PilotHistoryViewportAdapter(
-            state,
-            history_window,
-            set_text_fn=_set_pilot_history_text,
-        )
-    else:
-        history_height = (
-            _prompt_toolkit_dimension(weight=1)
-            if _prompt_toolkit_dimension is not None
-            else None
-        )
-        try:
-            history_view = _prompt_toolkit_text_area(
-                text="\n",
-                multiline=True,
-                wrap_lines=True,
-                read_only=True,
-                focusable=False,
-                scrollbar=True,
-                height=history_height,
-            )
-        except TypeError:
-            # Older prompt_toolkit may not support newer TextArea kwargs (e.g. scrollbar).
-            history_view = _prompt_toolkit_text_area(
-                text="\n",
-                multiline=True,
-                wrap_lines=True,
-                read_only=True,
-                focusable=False,
-                height=history_height,
-            )
-        history_adapter = TextAreaHistoryViewportAdapter(
-            state,
-            history_view,
-            document_cls=_prompt_toolkit_document,
-        )
-
-    def _history_plain_text() -> str:
-        return _normalize_history_for_prompt_toolkit(_history_text(state))
-
-    def _render_history_view() -> None:
-        dropped_blocks = _retain_live_viewport_blocks(state)
-        dropped_blocks.extend(_compact_history_window())
-        history_adapter.refresh(_history_plain_text())
-        if dropped_blocks:
-            _schedule_scrollback_flush(dropped_blocks)
-
-    def _accept_input(buffer: Any) -> bool:
-        text = str(getattr(buffer, "text", ""))
-        buffer.text = ""
-        if state.input_ready is not None and not state.input_ready.is_set():
-            return True
-        loop.call_soon_threadsafe(line_queue.put_nowait, text)
-        return True
-
-    slash_completer = _build_slash_command_completer(_SLASH_COMMANDS, _prompt_toolkit_completer, _prompt_toolkit_completion)
-    input_view = _prompt_toolkit_text_area(
-        prompt=f"{_USER_PROMPT_PREFIX} ",
-        multiline=False,
-        wrap_lines=False,
-        accept_handler=_accept_input,
-        completer=slash_completer,
-        complete_while_typing=True,
-    )
-    slash_hint_panel = _prompt_toolkit_conditional_container(
-        content=_prompt_toolkit_window(
-            content=_prompt_toolkit_formatted_text_control(
-                lambda: _slash_hint_fragments(
-                    str(getattr(input_view.buffer, "text", "")), _SLASH_COMMANDS
-                )
-            ),
-            dont_extend_height=True,
-        ),
-        filter=_prompt_toolkit_condition(
-            lambda: bool(_slash_hint_text(str(getattr(input_view.buffer, "text", "")), _SLASH_COMMANDS))
-        ),
-    )
-    status_panel = _prompt_toolkit_conditional_container(
-        content=_prompt_toolkit_window(
-            content=_prompt_toolkit_formatted_text_control(
-                lambda: _status_indicator_text(state)
-            ),
-            dont_extend_height=True,
-        ),
-        filter=_prompt_toolkit_condition(lambda: bool(_status_indicator_text(state))),
-    )
-
-    approval_panel = _prompt_toolkit_conditional_container(
-        content=_prompt_toolkit_window(
-            content=_prompt_toolkit_formatted_text_control(
-                lambda: _approval_toolbar_fragments(state, _divider_line())
-            ),
-            dont_extend_height=True,
-        ),
-        filter=_prompt_toolkit_condition(lambda: bool(_approval_toolbar_text(state, _divider_line()))),
-    )
-
-    root_container = _prompt_toolkit_hsplit(
-        [
-            history_adapter.container,
-            _prompt_toolkit_window(height=1, char=" "),
-            input_view,
-            status_panel,
-            slash_hint_panel,
-            approval_panel,
-        ]
-    )
-
-    app = _prompt_toolkit_application(
-        layout=_prompt_toolkit_layout(root_container, focused_element=input_view),
-        key_bindings=key_bindings,
-        style=prompt_style,
-        full_screen=False,
-    )
-
-    state.prompt_invalidator = lambda: _invalidate_prompt_application(app)
-    def _refresh_history_with_tail() -> None:
-        _render_history_view()
-        # Keep scroll state and render info in sync.
-        with contextlib.suppress(Exception):
-            history_adapter.sync_manual_scroll_from_render()
-        _invalidate_prompt_application(app)
-
-    state.history_setter = _refresh_history_with_tail
-    _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-
-    if key_bindings is not None:
-        @key_bindings.add("pageup", eager=True)
-        def _history_pageup(event: object) -> None:
-            with contextlib.suppress(Exception):
-                history_adapter.set_manual_scroll(history_adapter.current_scroll() - 20)
-            app_obj = getattr(event, "app", None)
-            if app_obj is not None:
-                app_obj.invalidate()
-
-        @key_bindings.add("pagedown", eager=True)
-        def _history_pagedown(event: object) -> None:
-            with contextlib.suppress(Exception):
-                max_scroll = history_adapter.max_scroll()
-                next_scroll = history_adapter.current_scroll() + 20
-                if max_scroll is not None:
-                    next_scroll = min(next_scroll, max_scroll)
-                    history_adapter.set_manual_scroll(next_scroll)
-                    if next_scroll >= max_scroll:
-                        history_adapter.follow_tail()
-                else:
-                    history_adapter.set_manual_scroll(next_scroll)
-                if max_scroll == 0:
-                    history_adapter.follow_tail()
-            app_obj = getattr(event, "app", None)
-            if app_obj is not None:
-                app_obj.invalidate()
-    _refresh_history_view(state)
-    app_task: asyncio.Task[None] = asyncio.create_task(app.run_async())
-    try:
-        while state.running:
-            if app_task.done():
-                with contextlib.suppress(asyncio.CancelledError):
-                    exc = app_task.exception()
-                    if exc is not None:
-                        _tui_log_info(
-                            f"prompt_toolkit loop failed type={type(exc).__name__} message={exc}"
-                        )
-                        _tui_debug(
-                            "prompt_toolkit loop traceback\n"
-                            + "".join(
-                                traceback.format_exception(
-                                    type(exc),
-                                    exc,
-                                    exc.__traceback__,
-                                )
-                            )
-                        )
-                        raise exc
-                _tui_log_info("prompt_toolkit loop exited unexpectedly; fallback to basic backend")
-                await _fallback_prompt_toolkit_to_basic(
-                    client,
-                    state,
-                    reason="prompt_toolkit_exited_early",
-                )
-                return
-            try:
-                line = await asyncio.wait_for(line_queue.get(), timeout=0.2)
-            except asyncio.TimeoutError:
-                continue
-            except EOFError:
-                state.running = False
-                return
-            except KeyboardInterrupt:
-                state.running = False
-                raise
-            except asyncio.CancelledError:
-                state.running = False
-                return
-
-            if not await _handle_user_line(client, state, line):
-                return
-    finally:
-        _stop_status_animation(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-        state.history_setter = None
-        state.prompt_invalidator = None
-        if getattr(app, "is_running", False):
-            with contextlib.suppress(Exception):
-                app.exit(result=None)
-        await _drain_background_task(app_task)
-
-
-async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: str) -> bool:
-    async def _resolve_approval_by_id_wrapped(client: OpenJaxAsyncClient, state: AppState, approval_request_id: str, approved: bool) -> None:
-        await _resolve_approval_by_id(
-            client=client,
-            state=state,
-            approval_request_id=approval_request_id,
-            approved=approved,
-            use_inline_approval_panel_fn=_use_inline_approval_panel,
-            pop_pending_fn=_pop_pending,
-            is_expired_approval_error_fn=_is_expired_approval_error,
-            log_approval_event_fn=lambda **kwargs: _tui_log_approval_event(_tui_log_info, **kwargs),
-        )
-
-    text = _normalize_input(line).strip()
-    if not text:
-        if _approval_mode_active(state):
-            approved = state.approval_selected_action == "allow"
-            await _resolve_latest_approval(client, state, approved=approved, focused_approval_id_fn=_focused_approval_id, resolve_approval_by_id_fn=_resolve_approval_by_id_wrapped)
-        return True
-    if text == "/exit":
-        state.running = False
-        return False
-    if text == "/help":
-        _print_help()
-        return True
-    if text == "/pending":
-        _print_pending(state)
-        return True
-
-    if text in ("y", "n") and _approval_mode_active(state):
-        await _resolve_latest_approval(client, state, approved=(text == "y"), focused_approval_id_fn=_focused_approval_id, resolve_approval_by_id_fn=_resolve_approval_by_id_wrapped)
-        return True
-
-    if text.startswith("/approve "):
-        parts = text.split()
-        if len(parts) != 3 or parts[2] not in ("y", "n"):
-            print("usage: /approve <approval_request_id> <y|n>")
-            return True
-        await _resolve_approval_by_id_wrapped(
-            client,
-            state,
-            parts[1],
-            parts[2] == "y",
-        )
-        return True
-
-    if _approval_mode_active(state):
-        if _use_inline_approval_panel(state):
-            focus_id = _focused_approval_id(state)
-            record = state.pending_approvals.get(focus_id or "")
-            _tui_log_approval_event(
-                _tui_log_info,
-                action="input_blocked",
-                request_id=focus_id,
-                turn_id=record.turn_id if record else None,
-                target=record.target if record else None,
-                approved=None,
-                resolved=None,
-                detail="pending_request",
-            )
-        else:
-            print("[approval] pending request: use Enter/y/n/Tab/Esc or /approve <id> y|n")
-        return True
-
-    if state.input_backend == "prompt_toolkit":
-        _emit_ui_line(state, f"{_USER_PROMPT_PREFIX} {text}", refresh_history_view_fn=_refresh_history_view)
-
-    try:
-        turn_id = await client.submit_turn(text)
-        state.waiting_turn_id = turn_id
-        state.turn_phase = "thinking"
-        _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-        if state.input_ready is not None:
-            state.input_ready.clear()
-    except OpenJaxResponseError as err:
-        print(f"[error] submit failed: {err.code} {err.message}")
-
-    return True
-
-
 async def _event_loop(client: OpenJaxAsyncClient, state: AppState) -> None:
     while state.running:
         try:
@@ -865,154 +389,8 @@ async def _event_loop(client: OpenJaxAsyncClient, state: AppState) -> None:
             print(f"[error] event stream closed: {err}")
             state.running = False
             return
-        _tui_debug(_format_event_debug_line(evt))
         _dispatch_event(evt, state)
         _apply_event_state_updates(state, evt)
-
-
-def _format_event_debug_line(evt: EventEnvelope) -> str:
-    base = f"event received type={evt.event_type} turn_id={evt.turn_id or '-'}"
-    if evt.event_type == "assistant_delta":
-        delta = str(evt.payload.get("content_delta", ""))
-        preview, truncated = _truncate_debug_preview(delta, limit=80)
-        return (
-            f"{base} payload_keys={sorted(evt.payload.keys())} "
-            f"delta_len={len(delta)} delta_preview={preview!r} delta_truncated={truncated}"
-        )
-    if evt.event_type == "assistant_message":
-        content = str(evt.payload.get("content", ""))
-        preview, truncated = _truncate_debug_preview(content, limit=120)
-        return (
-            f"{base} payload_keys={sorted(evt.payload.keys())} "
-            f"content_len={len(content)} content_preview={preview!r} content_truncated={truncated}"
-        )
-    return f"{base} payload_keys={sorted(evt.payload.keys())}"
-
-
-def _truncate_debug_preview(text: str, limit: int) -> tuple[str, bool]:
-    normalized = text.replace("\n", "\\n").replace("\r", "\\r")
-    if len(normalized) <= limit:
-        return normalized, False
-    return normalized[:limit] + "...", True
-
-
-def _normalize_history_for_prompt_toolkit(text: str) -> str:
-    # TextArea renders plain text; ANSI escapes would leak as raw sequences.
-    normalized = text.replace(f"{_ANSI_GREEN}{_ASSISTANT_PREFIX}{_ANSI_RESET}", "🟢")
-    normalized = normalized.replace(f"{_ANSI_RED}{_ASSISTANT_PREFIX}{_ANSI_RESET}", "🔴")
-    return re.sub(r"\x1b\[[0-9;]*m", "", normalized)
-
-
-def _emit_ui_line_for_state(current_state: AppState, text: str) -> None:
-    _emit_ui_line(
-        current_state,
-        text,
-        refresh_history_view_fn=_refresh_history_view,
-    )
-
-
-def _print_prefixed_block_for_state(
-    current_state: AppState, prefix: str, content: str
-) -> None:
-    _print_prefixed_block(
-        current_state,
-        prefix,
-        content,
-        align_multiline_fn=lambda text: _align_multiline(text, _PREFIX_CONTINUATION),
-        emit_ui_line_fn=_emit_ui_line_for_state,
-    )
-
-
-def _status_bullet_for_state(state: AppState, ok: bool) -> str:
-    return _status_bullet(
-        state=state,
-        ok=ok,
-        assistant_prefix=_ASSISTANT_PREFIX,
-        ansi_green=_ANSI_GREEN,
-        ansi_red=_ANSI_RED,
-        ansi_reset=_ANSI_RESET,
-        supports_ansi_color_fn=_supports_ansi_color,
-    )
-
-
-def _render_assistant_delta_for_state(state: AppState, turn: str, delta: str) -> None:
-    _render_assistant_delta(
-        state,
-        turn,
-        delta,
-        assistant_prefix=_ASSISTANT_PREFIX,
-        align_multiline_fn=lambda text: _align_multiline(text, _PREFIX_CONTINUATION),
-        finalize_stream_line_fn=_finalize_stream_line,
-        refresh_history_view_fn=_refresh_history_view,
-    )
-
-
-def _render_assistant_message_for_state(state: AppState, turn: str, content: str) -> None:
-    _render_assistant_message(
-        state,
-        turn,
-        content,
-        assistant_prefix=_ASSISTANT_PREFIX,
-        print_prefixed_block_fn=_print_prefixed_block_for_state,
-        finalize_stream_line_fn=_finalize_stream_line,
-    )
-
-
-def _finalize_stream_line_if_turn_for_state(state: AppState, turn: str) -> None:
-    _finalize_stream_line_if_turn(
-        state,
-        turn,
-        finalize_stream_line_fn=_finalize_stream_line,
-    )
-
-
-def _record_tool_started_for_state(state: AppState, turn: str, tool_name: str) -> None:
-    _record_tool_started(
-        state,
-        turn,
-        tool_name,
-        monotonic_fn=time.monotonic,
-    )
-
-
-def _record_tool_completed_for_state(
-    state: AppState, turn: str, tool_name: str, ok: bool
-) -> int:
-    return _record_tool_completed(
-        state,
-        turn,
-        tool_name,
-        ok,
-        monotonic_fn=time.monotonic,
-        tool_turn_stats_cls=ToolTurnStats,
-    )
-
-
-def _print_tool_call_result_line_for_state(
-    current_state: AppState, tool_name: str, ok: bool, output: str, *, elapsed_ms: int = 0
-) -> None:
-    _print_tool_call_result_line(
-        current_state,
-        tool_name,
-        ok,
-        output,
-        status_bullet_fn=lambda current_ok: _status_bullet_for_state(current_state, current_ok),
-        tool_result_label_fn=_tool_result_label,
-        finalize_stream_line_fn=_finalize_stream_line,
-        emit_ui_spacer_fn=_emit_ui_spacer,
-        emit_ui_line_fn=_emit_ui_line_for_state,
-        elapsed_ms=elapsed_ms,
-    )
-
-
-def _print_tool_summary_for_turn_for_state(current_state: AppState, turn: str) -> None:
-    _print_tool_summary_for_turn(
-        current_state,
-        turn,
-        status_bullet_fn=lambda ok: _status_bullet_for_state(current_state, ok),
-        finalize_stream_line_fn=_finalize_stream_line,
-        emit_ui_line_fn=_emit_ui_line_for_state,
-    )
 
 
 def _dispatch_event(evt: EventEnvelope, state: AppState) -> None:
@@ -1032,122 +410,55 @@ def _dispatch_event(evt: EventEnvelope, state: AppState) -> None:
         evt,
         state=state,
         print_tool_turn_summary=_PRINT_TOOL_TURN_SUMMARY,
-        render_assistant_delta_fn=lambda turn, delta: _render_assistant_delta_for_state(state, turn, delta),
-        render_assistant_message_fn=lambda turn, content: _render_assistant_message_for_state(state, turn, content),
-        finalize_stream_line_if_turn_fn=lambda turn: _finalize_stream_line_if_turn_for_state(state, turn),
-        record_tool_started_fn=lambda turn, tool_name: _record_tool_started_for_state(state, turn, tool_name),
-        record_tool_completed_fn=lambda turn, tool_name, ok: _record_tool_completed_for_state(
-            state, turn, tool_name, ok
-        ),
-        print_tool_call_result_line_fn=_print_tool_call_result_line_for_state,
+        render_assistant_delta_fn=_create_render_assistant_delta_fn(state),
+        render_assistant_message_fn=_create_render_assistant_message_fn(state),
+        finalize_stream_line_if_turn_fn=_create_finalize_stream_line_if_turn_fn(state),
+        record_tool_started_fn=_create_record_tool_started_fn(state),
+        record_tool_completed_fn=_create_record_tool_completed_fn(state),
+        print_tool_call_result_line_fn=_create_print_tool_call_result_line_fn(state),
         use_inline_approval_panel_fn=_use_inline_approval_panel,
-        print_tool_summary_for_turn_fn=_print_tool_summary_for_turn_for_state,
+        print_tool_summary_for_turn_fn=_create_print_tool_summary_for_turn_fn(state),
+    )
+
+
+def _build_event_state_callbacks(state: AppState) -> EventStateCallbacks:
+    def _sync_animation() -> None:
+        _sync_status_animation_controller(
+            state,
+            request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug),
+        )
+
+    def _request_redraw() -> None:
+        _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
+
+    def _log_approval_event(**kwargs: Any) -> None:
+        _tui_log_approval_event(_tui_log_info, **kwargs)
+
+    def _pop_pending_by_request_id(request_id: str) -> None:
+        _pop_pending(state, request_id)
+
+    def _is_live_viewport_mode() -> bool:
+        return state.view_mode == ViewMode.LIVE_VIEWPORT
+
+    return EventStateCallbacks(
+        sync_animation=_sync_animation,
+        request_redraw=_request_redraw,
+        log_approval_event=_log_approval_event,
+        pop_pending=_pop_pending_by_request_id,
+        use_inline_approval_panel=_use_inline_approval_panel,
+        debug_log=_tui_debug,
+        is_live_viewport_mode=_is_live_viewport_mode,
     )
 
 
 def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
-    _update_live_viewport_ownership(state, evt)
-
-    if evt.turn_id and evt.turn_id == state.waiting_turn_id:
-        if evt.event_type == "tool_call_started":
-            state.turn_phase = "tool_wait"
-            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-        elif evt.event_type == "tool_call_completed":
-            state.turn_phase = (
-                "tool_wait" if _has_active_tool_calls_after_event(state, evt) else "thinking"
-            )
-            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-        elif evt.event_type in {"assistant_delta", "assistant_message"}:
-            if state.turn_phase != "approval":
-                state.turn_phase = "thinking"
-            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-
-    if evt.event_type == "approval_requested" and evt.turn_id:
-        request_id = str(evt.payload.get("request_id", ""))
-        if request_id:
-            record = ApprovalRecord(
-                turn_id=evt.turn_id,
-                target=str(evt.payload.get("target", "")),
-                reason=str(evt.payload.get("reason", "")),
-            )
-            state.pending_approvals[request_id] = record
-            if request_id not in state.approval_order:
-                state.approval_order.append(request_id)
-            state.approval_focus_id = request_id
-            state.approval_selected_action = "allow"
-            _tui_log_approval_event(
-                _tui_log_info,
-                action="requested",
-                request_id=request_id,
-                turn_id=evt.turn_id,
-                target=record.target,
-                approved=None,
-                resolved=None,
-                detail="event_received",
-            )
-            if not _use_inline_approval_panel(state):
-                print(
-                    f"[approval] use /approve {request_id} y|n, quick y/n, or press Enter to confirm default allow"
-                )
-            state.turn_phase = "approval"
-            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-            if state.input_ready is not None:
-                state.input_ready.set()
-            if state.approval_interrupt is not None:
-                state.approval_interrupt.set()
-            _tui_debug(
-                f"approval state updated request_id={request_id} pending={len(state.pending_approvals)}"
-            )
-            _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
-        return
-
-    if evt.event_type == "approval_resolved":
-        request_id = str(evt.payload.get("request_id", ""))
-        record = state.pending_approvals.get(request_id)
-        approved = evt.payload.get("approved")
-        approved_bool = approved if isinstance(approved, bool) else None
-        _tui_log_approval_event(
-            _tui_log_info,
-            action="resolved_event",
-            request_id=request_id,
-            turn_id=record.turn_id if record else evt.turn_id,
-            target=record.target if record else None,
-            approved=approved_bool,
-            resolved=True,
-            detail="event_received",
-        )
-        _pop_pending(state, request_id)
-        if not state.pending_approvals:
-            state.turn_phase = "thinking" if state.waiting_turn_id else "idle"
-        _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-        if state.waiting_turn_id and not state.pending_approvals and state.input_ready is not None:
-            state.input_ready.clear()
-        _tui_debug(
-            f"approval resolved request_id={request_id} pending={len(state.pending_approvals)} phase={state.turn_phase}"
-        )
-        _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
-        return
-
-    if evt.event_type == "turn_completed" and evt.turn_id == state.waiting_turn_id:
-        state.waiting_turn_id = None
-        state.turn_phase = "idle"
-        _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-        if state.input_ready is not None:
-            state.input_ready.set()
-        _tui_debug("turn completed; input gate reopened")
-        # Final safety net for prompt_toolkit: ensure completed turn content is
-        if state.history_setter is not None and (
-            state.history_auto_follow or state.view_mode == ViewMode.LIVE_VIEWPORT
-        ):
-            state.history_setter()
-        _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
+    _tui_debug(_format_event_debug_line(evt))
+    manager = EventStateManager(state, _build_event_state_callbacks(state))
+    manager.apply_event_updates(evt)
 
 
 def _daemon_cmd_from_env() -> list[str]:
-    cmd = os.environ.get("OPENJAX_DAEMON_CMD")
-    if not cmd:
-        return ["cargo", "run", "-q", "-p", "openjaxd"]
-    return cmd.split()
+    return _daemon_cmd_from_env_impl()
 
 
 def _print_help() -> None:
@@ -1177,7 +488,6 @@ def _build_prompt_style() -> Any:
         return None
     return _prompt_toolkit_style.from_dict(
         {
-            # Keep default terminal background/foreground for toolbar rows.
             "bottom-toolbar": "noreverse bg:default fg:default",
             "bottom-toolbar.text-area": "noreverse bg:default fg:default",
         }

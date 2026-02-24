@@ -4,7 +4,11 @@ import os
 import tempfile
 import unittest
 
-from openjax_tui.app import _reset_tui_logger_for_tests, _setup_tui_logger, _tui_debug
+from openjax_tui.tui_logging import (
+    _reset_tui_logger_for_tests,
+    _setup_tui_logger,
+    _tui_debug,
+)
 from openjax_tui import tui_logging
 from openjax_tui import session_logging
 

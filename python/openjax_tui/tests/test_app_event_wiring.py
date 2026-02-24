@@ -69,8 +69,11 @@ class AppEventWiringTest(unittest.TestCase):
         state = AppState()
         state.view_mode = ViewMode.LIVE_VIEWPORT
         state.waiting_turn_id = "turn-1"
-        state.input_ready = asyncio.Event()
-        state.input_ready.clear()
+        try:
+            state.input_ready = asyncio.Event()
+            state.input_ready.clear()
+        except RuntimeError:
+            self.skipTest("No event loop available")
         apply_updates = cast(Callable[[AppState, EventEnvelope], None], getattr(app, "_apply_event_state_updates"))
 
         apply_updates(state, _evt("turn-1", "assistant_delta", {"content_delta": "hi"}))

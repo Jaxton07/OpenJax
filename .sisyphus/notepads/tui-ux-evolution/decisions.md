@@ -31,3 +31,10 @@
 - Kept implementation scope to regression tests and notepads; no production logic changes were introduced.
 - Chose state/assertion-driven stress patterns (burst loops, event interleaving, patched monotonic clock) over timing sleeps so failures remain deterministic in CI.
 - Anchored authoritative-final-content guarantees in both stream rendering and interleaved tool-event scenarios, matching the turn-upsert contract in `assistant_render.render_assistant_message`.
+
+2026-02-24 (Task 8 follow-up)
+- Kept this pass strictly within the requested regression scope: only `test_scrollback_live_mode.py`, `test_stream_render.py`, and `test_tool_summary.py` changed.
+- Modeled resize-adjacent risk deterministically as repeated retain/update cycles around a long active mixed-width tail block, instead of introducing timing or terminal-dependent assertions.
+- For strict timeline duration assertions, used binary-exact monotonic timestamp deltas to avoid float-rounding jitter while preserving deterministic started/running/completed/failed ordering guarantees.
+
+- 2026-02-24: Kept mux probe checks non-blocking in `python_tui_mux_check.sh` (`if ! print_mux_version ...; then ...; fi`) so missing or failing tmux/zellij version probes never prevent the base smoke run from executing.

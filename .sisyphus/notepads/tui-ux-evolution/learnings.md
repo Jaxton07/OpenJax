@@ -62,3 +62,10 @@
 - Session fallback remains explicitly available and covered: `session` mode path is now set directly in regression tests that validate non-live retention behavior.
 - Operator docs now align with runtime truth: `OPENJAX_TUI_VIEW_MODE` default is documented as `live` with `session`/`textarea`/`basic` fallback escape hatches.
 - Task-5 evidence now includes explicit `RED STEP` and `GREEN STEP` sections with real failing/passing command outputs for audit-friendly reproducibility.
+
+2026-02-24 (Task 8 follow-up)
+- Added a bottom-of-viewport stress regression in `test_scrollback_live_mode.py` that seeds many legacy turn blocks, then verifies retain cycles plus resize-adjacent active-turn delta updates keep a single live block losslessly.
+- Added a `>=180` chunk rapid-delta regression in `test_stream_render.py` that proves final-message authority overwrites draft burst content (including CJK/emoji/multiline fragments) without duplication.
+- Added strict ordered timeline regression in `test_tool_summary.py` with interleaved delta/tool lifecycle events and patched monotonic timestamps to lock deterministic started/running/completed/failed order.
+
+- 2026-02-24: `python_tui_smoke.sh` now writes a stable plain-text `SMOKE_CASE_CONFIG view_mode=... viewport_impl=...` marker into each PTY transcript, so live+pilot and live+textarea rollout paths are explicitly asserted without ANSI-dependent matching.

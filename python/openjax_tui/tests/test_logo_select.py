@@ -1,6 +1,6 @@
 import unittest
 
-from openjax_tui.app import (
+from openjax_tui.startup_ui import (
     _OPENJAX_LOGO_LONG,
     _OPENJAX_LOGO_SHORT,
     _OPENJAX_LOGO_TINY,

@@ -19,11 +19,17 @@ print_mux_version() {
   else
     echo "[mux-check] ${bin_name}: INSTALLED (version check failed: ${version_output})"
   fi
+
+  return 0
 }
 
 echo "[mux-check] python: $(python3 --version 2>&1)"
-print_mux_version "tmux" "-V"
-print_mux_version "zellij" "--version"
+if ! print_mux_version "tmux" "-V"; then
+  echo "[mux-check] tmux: probe failure ignored"
+fi
+if ! print_mux_version "zellij" "--version"; then
+  echo "[mux-check] zellij: probe failure ignored"
+fi
 
 echo "[mux-check] running base smoke"
 zsh smoke_test/python_tui_smoke.sh

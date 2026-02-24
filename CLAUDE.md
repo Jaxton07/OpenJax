@@ -184,3 +184,8 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - 打开 Python TUI 调试日志写入（仅写入日志文件，不在 TUI 界面回显）：设置 `OPENJAX_TUI_DEBUG=1`。
 - 推荐调试启动命令：
   - `zsh -lc "OPENJAX_TUI_DEBUG=1 PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m openjax_tui"`
+
+
+## 项目级工作规则
+- 在修改过程中如果发现某个文件内容过多，或者代码量很大，记得提醒用户规划拆分计划
+- 写代码过程中尽量遵循模块化可扩展原则，避免在同一个代码文件添加过多代码。

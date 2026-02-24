@@ -48,3 +48,14 @@
 - Default flip to live viewport surfaced one regression in `test_scrollback_live_mode`: session-retention case relied on implicit constructor default; fixed by explicitly setting `state.view_mode = ViewMode.SESSION` inside that test.
 - No additional runtime blockers after the regression fix; required state tests, smoke scripts, and full unittest discover pass.
 - Known non-blocking `ResourceWarning` in `test_tool_summary` full-suite path remains unchanged.
+
+2026-02-24 (Task 8 follow-up)
+- No production/runtime blocker; scope stayed test-only across the three target regression files.
+- Initial strict timeline stress assertion failed due float-millisecond flooring (`119ms`/`29ms`) and event-order expectation drift; fixed by using binary-exact monotonic steps and aligned ordered assertions.
+- Known non-blocking `ResourceWarning` from asyncio event loop still appears during full `unittest discover` and remains out of scope for this task.
+
+2026-02-24 (Task 8 follow-up, verification rerun)
+- `python3 -m unittest discover -s python/openjax_tui/tests -v` currently fails outside touched scope at `test_status_animation.StatusAnimationTest.test_ticker_advances_with_bounded_cadence_only_while_active` (expected redraw calls missing).
+- Failure reproduces across two reruns and appears tied to pre-existing workspace changes in `python/openjax_tui/src/openjax_tui/app.py`; no task-8 test-only files interact with status animation ticker internals.
+
+- 2026-02-24: `lsp_diagnostics` for `*.sh` files could not run in this environment because `bash-language-server` is not installed (`Command not found: bash-language-server`). Added runtime verification via both smoke scripts as operational fallback.

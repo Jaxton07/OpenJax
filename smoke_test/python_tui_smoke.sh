@@ -51,7 +51,11 @@ def _run_case(log_file: str, view_mode: str, viewport_impl: str, tui_log_dir: st
     )
     os.close(slave_fd)
 
-    transcript = bytearray()
+    transcript = bytearray(
+        f"SMOKE_CASE_CONFIG view_mode={view_mode} viewport_impl={viewport_impl}\n".encode(
+            "utf-8"
+        )
+    )
     started = False
     sent_exit = False
     tool_success_token = "tool list_dir 执行成功".encode("utf-8")
@@ -109,6 +113,7 @@ if __name__ == "__main__":
     raise SystemExit(exit_code)
 PY
 
+  grep -Fq "SMOKE_CASE_CONFIG view_mode=${view_mode} viewport_impl=${viewport_impl}" "$log_file"
   grep -Fq "Read directory [started]" "$log_file"
   grep -Fq "Read directory [running]" "$log_file"
   grep -Fq "Read directory [completed]" "$log_file"
@@ -123,9 +128,9 @@ python3 -m openjax_tui <<'EOF' >/tmp/openjax_tui_smoke_case1.log
 /exit
 EOF
 
-grep -q "OpenJax TUI" /tmp/openjax_tui_smoke_case1.log
-grep -q "commands:" /tmp/openjax_tui_smoke_case1.log
-grep -q "openjax_tui exited" /tmp/openjax_tui_smoke_case1.log
+grep -Fq "OpenJax TUI" /tmp/openjax_tui_smoke_case1.log
+grep -Fq "commands:" /tmp/openjax_tui_smoke_case1.log
+grep -Fq "openjax_tui exited" /tmp/openjax_tui_smoke_case1.log
 
 run_tool_turn_case \
   "case2-pilot" \
