@@ -13,32 +13,40 @@ python/openjax_tui/
 │   └── openjax_tui/            # 主包源代码
 │       ├── __init__.py         # 包入口（导出 run）
 │       ├── __main__.py         # CLI 入口（asyncio main）
-│       ├── app.py              # 主应用编排（事件循环、生命周期管理）
-│       ├── state.py            # 应用状态管理（审批、流式、工具统计）
-│       ├── event_dispatch.py   # 事件处理和路由
-│       ├── approval.py         # 审批工作流管理
-│       ├── input_backend.py    # 输入处理（prompt_toolkit vs basic）
-│       ├── tool_runtime.py     # 工具执行跟踪
-│       ├── assistant_render.py # 助手消息渲染
-│       ├── slash_commands.py   # 斜杠命令处理（/help, /exit 等）
-│       ├── startup_ui.py       # 启动 Logo 和显示工具
-│       ├── prompt_ui.py        # 提示 UI 运行时和键盘快捷键
-│       ├── tui_logging.py      # 日志基础设施
-│       └── session_logging.py  # 会话事件日志
-└── tests/                      # 测试套件（15 个测试文件）
+│       ├── app.py                  # 主应用编排（事件循环、生命周期管理）
+│       ├── state.py                # 应用状态管理（审批、流式、工具统计）
+│       ├── event_dispatch.py       # 事件处理和路由
+│       ├── approval.py             # 审批工作流管理
+│       ├── input_backend.py        # 输入处理（prompt_toolkit vs basic）
+│       ├── input_loops.py          # 输入循环和命令处理
+│       ├── tool_runtime.py         # 工具执行跟踪
+│       ├── assistant_render.py     # 助手消息渲染
+│       ├── slash_commands.py       # 斜杠命令处理（/help, /exit 等）
+│       ├── startup_ui.py           # 启动 Logo 和显示工具
+│       ├── prompt_ui.py            # 提示 UI 运行时和键盘快捷键
+│       ├── viewport_adapter.py     # 视口适配器（Pilot/TextArea 双实现）
+│       ├── status_animation.py     # 状态动画系统（thinking/tool_wait）
+│       ├── tui_logging.py          # 日志基础设施
+│       └── session_logging.py      # 会话事件日志
+└── tests/                          # 测试套件（18 个测试文件）
     ├── test_approval_flow.py
     ├── test_approval.py
+    ├── test_app_event_wiring.py
     ├── test_assistant_render.py
+    ├── test_history_viewport_adapter.py
     ├── test_input_backend.py
     ├── test_input_normalize.py
     ├── test_logo_select.py
     ├── test_logging.py
     ├── test_prompt_keybindings.py
     ├── test_prompt_ui.py
+    ├── test_scrollback_live_mode.py
     ├── test_smoke.py
     ├── test_startup_config.py
     ├── test_state.py
+    ├── test_status_animation.py
     ├── test_stream_render.py
+    ├── test_timeline_unicode_width.py
     ├── test_tool_summary.py
     └── test_user_prompt_render.py
 ```
@@ -54,6 +62,7 @@ python/openjax_tui/
 | `event_dispatch.py` | 事件路由系统，处理 `assistant_delta`、`tool_call_started`、`approval_requested` 等事件 |
 | `approval.py` | 审批工作流管理，支持多审批队列、焦点导航、特定 ID 或最新审批解析 |
 | `input_backend.py` | 双后端输入系统，TTY 环境下使用 `prompt_toolkit`，非 TTY 回退到基础 `input()` |
+| `input_loops.py` | 输入循环实现，包含 basic 输入循环和命令行处理逻辑 |
 
 ### 渲染与 UI 模块
 
@@ -61,6 +70,8 @@ python/openjax_tui/
 |------|----------|
 | `assistant_render.py` | 助手消息渲染，处理流式内容更新、最终消息显示、文本对齐、工具标签 |
 | `tool_runtime.py` | 工具执行监控，跟踪开始/完成时间、计算持续时间、彩色结果显示 |
+| `viewport_adapter.py` | 视口适配器层次结构，支持 Pilot（scrollback-first）和 TextArea（兼容）双实现 |
+| `status_animation.py` | 状态动画系统，提供 thinking 和 tool_wait 状态的动态指示器 |
 | `startup_ui.py` | 启动界面，包含响应式 ASCII Logo、版本信息、会话 ID 显示 |
 | `prompt_ui.py` | 提示 UI 运行时管理和键盘快捷键配置 |
 
