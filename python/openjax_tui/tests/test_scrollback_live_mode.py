@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+# pyright: reportAttributeAccessIssue=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+
 import unittest
 
 from openjax_tui import assistant_render
-from openjax_tui.app import retain_live_viewport_blocks
 from openjax_tui.state import AppState, ViewMode
+from openjax_tui.viewport_adapter import retain_live_viewport_blocks
 
 
 def _noop_refresh(_state: AppState) -> None:
@@ -167,6 +169,66 @@ class ScrollbackLiveModeTest(unittest.TestCase):
         self.assertEqual(state.turn_block_index, {"t39": 0})
         self.assertEqual(state.stream_turn_id, "t39")
         self.assertEqual(state.stream_block_index, 0)
+
+    def test_live_mode_bottom_stress_and_resize_adjacent_updates_are_lossless(self) -> None:
+        state = AppState()
+        state.input_backend = "prompt_toolkit"
+        state.view_mode = ViewMode.LIVE_VIEWPORT
+
+        for idx in range(36):
+            assistant_render.render_assistant_delta(
+                state,
+                f"legacy-{idx}",
+                f"旧块{idx:02d}",
+                assistant_prefix="⏺",
+                align_multiline_fn=lambda text: text.replace("\n", "\n  "),
+                finalize_stream_line_fn=assistant_render.finalize_stream_line,
+                refresh_history_view_fn=_noop_refresh,
+            )
+
+        tail_part_a = "\n".join(
+            [
+                "窗口底部压力行-0",
+                "混合宽度 Cafe\u0301 + 数据流 + 👩\u200d💻",
+                "折行段 " + "尾部片段" * 40,
+            ]
+        )
+        tail_part_b = "\n追加段: " + "🧪验证" * 30
+        expected_stream = tail_part_a + tail_part_b
+
+        assistant_render.render_assistant_delta(
+            state,
+            "active-tail",
+            tail_part_a,
+            assistant_prefix="⏺",
+            align_multiline_fn=lambda text: text.replace("\n", "\n  "),
+            finalize_stream_line_fn=assistant_render.finalize_stream_line,
+            refresh_history_view_fn=_noop_refresh,
+        )
+
+        dropped = retain_live_viewport_blocks(state)
+
+        self.assertEqual(len(dropped), 36)
+        self.assertEqual(state.history_blocks, [f"⏺ {tail_part_a.replace(chr(10), chr(10) + '  ')}"])
+        self.assertEqual(state.turn_block_index, {"active-tail": 0})
+        self.assertEqual(state.stream_turn_id, "active-tail")
+
+        assistant_render.render_assistant_delta(
+            state,
+            "active-tail",
+            tail_part_b,
+            assistant_prefix="⏺",
+            align_multiline_fn=lambda text: text.replace("\n", "\n  "),
+            finalize_stream_line_fn=assistant_render.finalize_stream_line,
+            refresh_history_view_fn=_noop_refresh,
+        )
+
+        self.assertEqual(state.stream_text_by_turn["active-tail"], expected_stream)
+        self.assertEqual(state.history_blocks, [f"⏺ {expected_stream.replace(chr(10), chr(10) + '  ')}"])
+
+        dropped_second = retain_live_viewport_blocks(state)
+        self.assertEqual(dropped_second, [])
+        self.assertEqual(state.history_blocks, [f"⏺ {expected_stream.replace(chr(10), chr(10) + '  ')}"])
 
 
 if __name__ == "__main__":
