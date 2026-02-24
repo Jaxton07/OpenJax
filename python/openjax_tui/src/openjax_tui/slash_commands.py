@@ -3,13 +3,20 @@ from __future__ import annotations
 from typing import Any
 
 
+def _leading_token(text: str) -> str:
+    parts = text.split(maxsplit=1)
+    if not parts:
+        return ""
+    return parts[0]
+
+
 def slash_command_candidates(
     text_before_cursor: str,
     slash_commands: tuple[str, ...],
 ) -> list[str]:
     if not text_before_cursor.startswith("/"):
         return []
-    token = text_before_cursor.split(maxsplit=1)[0]
+    token = _leading_token(text_before_cursor)
     if not token:
         return list(slash_commands)
     return [cmd for cmd in slash_commands if cmd.startswith(token)]
@@ -44,7 +51,7 @@ def build_slash_command_completer(
         def get_completions(self, document: Any, complete_event: Any) -> Any:
             _ = complete_event
             text_before_cursor = str(getattr(document, "text_before_cursor", ""))
-            token = text_before_cursor.split(maxsplit=1)[0]
+            token = _leading_token(text_before_cursor)
             for command in slash_command_candidates(text_before_cursor, slash_commands):
                 yield completion_cls(
                     command,

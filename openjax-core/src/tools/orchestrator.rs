@@ -6,7 +6,9 @@ use crate::tools::hooks::HookExecutor;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::sandboxing::SandboxManager;
 use openjax_protocol::Event;
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -15,6 +17,7 @@ pub struct ToolOrchestrator {
     registry: Arc<ToolRegistry>,
     hook_executor: HookExecutor,
     sandbox_manager: SandboxManager,
+    approved_mutating_turns: Mutex<HashSet<u64>>,
     _config: ToolsConfig,
 }
 
@@ -24,6 +27,7 @@ impl ToolOrchestrator {
             registry,
             hook_executor: HookExecutor::new(),
             sandbox_manager: SandboxManager::new(),
+            approved_mutating_turns: Mutex::new(HashSet::new()),
             _config: ToolsConfig::default(),
         }
     }
@@ -33,6 +37,7 @@ impl ToolOrchestrator {
             registry,
             hook_executor: HookExecutor::new(),
             sandbox_manager: SandboxManager::new(),
+            approved_mutating_turns: Mutex::new(HashSet::new()),
             _config: config,
         }
     }
@@ -66,8 +71,18 @@ impl ToolOrchestrator {
         let is_mutating = self
             .sandbox_manager
             .is_mutating_operation(&invocation.tool_name);
-        let requires_approval =
-            self.should_prompt_approval(invocation.turn.approval_policy, is_mutating);
+        let has_reusable_approval = self.should_reuse_mutating_approval(&invocation, is_mutating);
+        let requires_approval = self
+            .should_prompt_approval(invocation.turn.approval_policy, is_mutating)
+            && !has_reusable_approval;
+
+        if has_reusable_approval {
+            tracing::info!(
+                turn_id = invocation.turn.turn_id,
+                tool_name = %invocation.tool_name,
+                "approval reused for mutating tool"
+            );
+        }
 
         if requires_approval {
             let request_id = Uuid::new_v4().to_string();
@@ -104,6 +119,8 @@ impl ToolOrchestrator {
                     "command rejected by user".to_string(),
                 ));
             }
+
+            self.record_mutating_approval(&invocation, is_mutating);
         }
 
         // 3. 选择合适的沙箱
@@ -144,4 +161,35 @@ impl ToolOrchestrator {
             ApprovalPolicy::Never => false,
         }
     }
+
+    fn should_reuse_mutating_approval(
+        &self,
+        invocation: &ToolInvocation,
+        is_mutating: bool,
+    ) -> bool {
+        if !is_mutating || is_shell_like_tool(&invocation.tool_name) {
+            return false;
+        }
+        let Ok(approved_turns) = self.approved_mutating_turns.lock() else {
+            return false;
+        };
+        approved_turns.contains(&invocation.turn.turn_id)
+    }
+
+    fn record_mutating_approval(&self, invocation: &ToolInvocation, is_mutating: bool) {
+        if !is_mutating || is_shell_like_tool(&invocation.tool_name) {
+            return;
+        }
+        let Ok(mut approved_turns) = self.approved_mutating_turns.lock() else {
+            return;
+        };
+        approved_turns.insert(invocation.turn.turn_id);
+        if approved_turns.len() > 256 {
+            approved_turns.clear();
+        }
+    }
+}
+
+fn is_shell_like_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "shell" | "exec_command")
 }

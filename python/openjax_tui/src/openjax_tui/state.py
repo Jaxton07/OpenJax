@@ -16,6 +16,8 @@ class AppState:
         self.approval_selected_action = "allow"
         self.stream_turn_id: str | None = None
         self.stream_text_by_turn: dict[str, str] = {}
+        self.turn_block_index: dict[str, int] = {}
+        self.assistant_message_by_turn: dict[str, str] = {}
         self.waiting_turn_id: str | None = None
         self.input_ready: asyncio.Event | None = None
         self.approval_interrupt: asyncio.Event | None = None
@@ -29,6 +31,8 @@ class AppState:
         self.history_blocks: list[str] = []
         self.stream_block_index: int | None = None
         self.history_setter: Callable[[], None] | None = None
+        self.history_auto_follow: bool = True
+        self.history_manual_scroll: int = 0
 
 
 @dataclass

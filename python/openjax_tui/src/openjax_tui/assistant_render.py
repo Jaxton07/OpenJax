@@ -62,15 +62,13 @@ def render_assistant_delta(
         if state.stream_turn_id != turn:
             finalize_stream_line_fn(state)
             state.stream_turn_id = turn
+        if turn not in state.stream_text_by_turn:
             state.stream_text_by_turn[turn] = ""
-            state.stream_block_index = len(state.history_blocks)
-            state.history_blocks.append(f"{assistant_prefix} ")
         state.stream_text_by_turn[turn] = state.stream_text_by_turn.get(turn, "") + delta
         stream_text = state.stream_text_by_turn.get(turn, "")
         block = f"{assistant_prefix} {align_multiline_fn(stream_text)}"
-        idx = state.stream_block_index
-        if idx is not None and 0 <= idx < len(state.history_blocks):
-            state.history_blocks[idx] = block
+        idx = _upsert_turn_block(state, turn, block)
+        state.stream_block_index = idx
         refresh_history_view_fn(state)
         return
     if state.stream_turn_id != turn:
@@ -93,6 +91,21 @@ def render_assistant_message(
 ) -> None:
     if state is None:
         print_prefixed_block_fn(state, assistant_prefix, content)
+        return
+
+    state.assistant_message_by_turn[turn] = content
+
+    if state.input_backend == "prompt_toolkit":
+        # Final assistant message is authoritative for the turn. Always upsert
+        # the turn block so UI does not depend on transient streaming state.
+        aligned = content.replace("\n", "\n  ")
+        block = f"{assistant_prefix} {aligned}"
+        _upsert_turn_block(state, turn, block)
+        state.stream_text_by_turn[turn] = content
+        finalize_stream_line_fn(state)
+        setter = getattr(state, "history_setter", None)
+        if callable(setter):
+            setter()
         return
 
     if state.stream_turn_id == turn:
@@ -136,3 +149,15 @@ def tool_result_label(tool_name: str, output: str) -> str:
     if not name:
         return "Tool call"
     return name.replace("_", " ").title()
+
+
+def _upsert_turn_block(state: Any, turn: str, block: str) -> int:
+    idx = state.turn_block_index.get(turn)
+    if idx is not None and 0 <= idx < len(state.history_blocks):
+        state.history_blocks[idx] = block
+        return idx
+
+    state.history_blocks.append(block)
+    idx = len(state.history_blocks) - 1
+    state.turn_block_index[turn] = idx
+    return idx

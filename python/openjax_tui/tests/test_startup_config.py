@@ -49,6 +49,31 @@ class StartupConfigTest(unittest.TestCase):
         )
         self.assertIn("/approve", slash_commands.slash_hint_text("/", cmds))
 
+    def test_slash_completer_handles_empty_cursor_text(self) -> None:
+        cmds = ("/approve", "/pending", "/help", "/exit")
+
+        class DummyCompletion:
+            def __init__(self, text: str, start_position: int) -> None:
+                self.text = text
+                self.start_position = start_position
+
+        class DummyCompleter:
+            pass
+
+        completer = slash_commands.build_slash_command_completer(
+            cmds,
+            DummyCompleter,
+            DummyCompletion,
+        )
+        self.assertIsNotNone(completer)
+
+        empty_doc = type("Doc", (), {"text_before_cursor": ""})()
+        self.assertEqual(list(completer.get_completions(empty_doc, None)), [])
+
+        slash_doc = type("Doc", (), {"text_before_cursor": "/"})()
+        completions = list(completer.get_completions(slash_doc, None))
+        self.assertEqual([c.text for c in completions], list(cmds))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ import shutil
 import signal
 import sys
 import time
+import traceback
 from typing import Any, Callable
 
 from openjax_sdk import OpenJaxAsyncClient
@@ -97,9 +98,11 @@ from .assistant_render import (
 try:
     from prompt_toolkit import PromptSession, print_formatted_text
     from prompt_toolkit.application import Application
+    from prompt_toolkit.application.run_in_terminal import run_in_terminal
     from prompt_toolkit.document import Document
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.formatted_text import ANSI
+    from prompt_toolkit.layout.dimension import Dimension
     from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.patch_stdout import patch_stdout
@@ -107,7 +110,9 @@ try:
     from prompt_toolkit.widgets import TextArea
     from prompt_toolkit.completion import Completer, Completion
     _prompt_toolkit_print: Callable[[object], None] | None = print_formatted_text
+    _prompt_toolkit_run_in_terminal: Callable[..., Any] | None = run_in_terminal
     _prompt_toolkit_ansi: Callable[[str], object] | None = ANSI
+    _prompt_toolkit_dimension: Any | None = Dimension
     _prompt_toolkit_style: type[Style] | None = Style
     _prompt_toolkit_application: type[Application] | None = Application
     _prompt_toolkit_text_area: type[TextArea] | None = TextArea
@@ -129,7 +134,9 @@ except Exception:  # pragma: no cover - optional dependency fallback
     PromptSession = None  # type: ignore[assignment]
     patch_stdout = None  # type: ignore[assignment]
     _prompt_toolkit_print = None
+    _prompt_toolkit_run_in_terminal = None
     _prompt_toolkit_ansi = None
+    _prompt_toolkit_dimension = None
     _prompt_toolkit_style = None
     _prompt_toolkit_application = None
     _prompt_toolkit_text_area = None
@@ -222,6 +229,13 @@ async def run() -> None:
             if state.running:
                 print("^C")
             state.running = False
+            _ignore_sigint_during_shutdown()
+        except Exception as err:
+            interrupted = True
+            state.running = False
+            _tui_log_info(f"python_tui fatal_error type={type(err).__name__} message={err}")
+            _tui_debug("python_tui fatal_traceback\n" + traceback.format_exc())
+            print(f"[error] python_tui crashed: {err}")
             _ignore_sigint_during_shutdown()
         finally:
             state.running = False
@@ -318,21 +332,151 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
     prompt_style = _build_prompt_style()
     line_queue: asyncio.Queue[str] = asyncio.Queue()
     loop = asyncio.get_running_loop()
+    max_history_window_lines = max(
+        120, int(os.environ.get("OPENJAX_TUI_HISTORY_WINDOW_LINES", "500"))
+    )
 
-    history_control = _prompt_toolkit_formatted_text_control(
-        lambda: (
-            _prompt_toolkit_ansi(_history_text(state))
-            if _prompt_toolkit_ansi is not None
-            else _history_text(state)
-        ),
-        focusable=False,
-        show_cursor=False,
-    )
-    history_view = _prompt_toolkit_window(
-        content=history_control,
-        always_hide_cursor=True,
+    def _schedule_scrollback_flush(blocks: list[str]) -> None:
+        if not blocks:
+            return
+        scrollback_text = _normalize_history_for_prompt_toolkit("\n\n".join(blocks)).strip()
+        if not scrollback_text:
+            return
+        if _prompt_toolkit_run_in_terminal is None:
+            return
+
+        def _flush_output() -> None:
+            print(scrollback_text, flush=True)
+
+        future = _prompt_toolkit_run_in_terminal(_flush_output)
+        def _ignore_future_error(task: Any) -> None:
+            with contextlib.suppress(Exception):
+                task.result()
+
+        done_callback = getattr(future, "add_done_callback", None)
+        if callable(done_callback):
+            done_callback(_ignore_future_error)
+
+    def _compact_history_window() -> None:
+        current_lines = sum(block.count("\n") + 2 for block in state.history_blocks)
+        if current_lines <= max_history_window_lines:
+            return
+
+        dropped_blocks: list[str] = []
+        dropped_lines = 0
+        while current_lines > max_history_window_lines and len(state.history_blocks) > 1:
+            if state.stream_block_index == 0:
+                break
+            removed = state.history_blocks.pop(0)
+            dropped_blocks.append(removed)
+            removed_lines = removed.count("\n") + 2
+            dropped_lines += removed_lines
+            current_lines -= removed_lines
+
+            if state.stream_block_index is not None:
+                state.stream_block_index = max(state.stream_block_index - 1, 0)
+
+            updated_turn_index: dict[str, int] = {}
+            for turn_id, idx in state.turn_block_index.items():
+                next_idx = idx - 1
+                if next_idx >= 0:
+                    updated_turn_index[turn_id] = next_idx
+            state.turn_block_index = updated_turn_index
+
+        if dropped_blocks:
+            state.history_manual_scroll = max(int(state.history_manual_scroll) - dropped_lines, 0)
+            _tui_debug(
+                "history compacted dropped_blocks={blocks} dropped_lines={lines} remaining_blocks={remaining} remaining_lines={current}".format(
+                    blocks=len(dropped_blocks),
+                    lines=dropped_lines,
+                    remaining=len(state.history_blocks),
+                    current=current_lines,
+                )
+            )
+            _schedule_scrollback_flush(dropped_blocks)
+
+    history_kwargs = dict(
+        text="\n",
+        multiline=True,
         wrap_lines=True,
+        read_only=True,
+        focusable=False,
+        scrollbar=True,
+        height=(
+            _prompt_toolkit_dimension(weight=1)
+            if _prompt_toolkit_dimension is not None
+            else None
+        ),
     )
+    try:
+        history_view = _prompt_toolkit_text_area(**history_kwargs)
+    except TypeError:
+        # Older prompt_toolkit may not support newer TextArea kwargs (e.g. scrollbar).
+        history_kwargs.pop("scrollbar", None)
+        history_view = _prompt_toolkit_text_area(**history_kwargs)
+    history_window = getattr(history_view, "window", None)
+
+    def _history_plain_text() -> str:
+        return _normalize_history_for_prompt_toolkit(_history_text(state))
+
+    def _current_history_scroll() -> int:
+        if history_window is None:
+            return max(0, int(state.history_manual_scroll))
+        render_info = getattr(history_window, "render_info", None)
+        if render_info is not None:
+            with contextlib.suppress(Exception):
+                return max(0, int(getattr(render_info, "vertical_scroll", 0)))
+        return max(0, int(state.history_manual_scroll))
+
+    def _current_history_max_scroll() -> int | None:
+        if history_window is None:
+            return None
+        render_info = getattr(history_window, "render_info", None)
+        if render_info is None:
+            return None
+        with contextlib.suppress(Exception):
+            content_height = int(getattr(render_info, "content_height", 0))
+            window_height = int(getattr(render_info, "window_height", 0))
+            return max(content_height - window_height, 0)
+        return None
+
+    def _apply_history_text() -> None:
+        if _prompt_toolkit_document is None:
+            return
+        text = _history_plain_text()
+        history_buffer = getattr(history_view, "buffer", None)
+        if history_buffer is None:
+            return
+
+        if state.history_auto_follow:
+            cursor_position = len(text)
+        else:
+            current_cursor = int(getattr(history_buffer, "cursor_position", 0))
+            cursor_position = min(max(current_cursor, 0), len(text))
+
+        with contextlib.suppress(Exception):
+            history_buffer.set_document(
+                _prompt_toolkit_document(text=text, cursor_position=cursor_position),
+                bypass_readonly=True,
+            )
+
+        if history_window is not None:
+            with contextlib.suppress(Exception):
+                if state.history_auto_follow:
+                    history_window.vertical_scroll = 10**9
+                else:
+                    history_window.vertical_scroll = max(0, int(state.history_manual_scroll))
+
+    def _sync_manual_scroll_from_render() -> None:
+        state.history_manual_scroll = _current_history_scroll()
+        if state.history_auto_follow:
+            return
+        render_info = getattr(history_window, "render_info", None)
+        if render_info is not None and bool(getattr(render_info, "bottom_visible", False)):
+            state.history_auto_follow = True
+            if history_window is not None:
+                with contextlib.suppress(Exception):
+                    history_window.vertical_scroll = 10**9
 
     def _accept_input(buffer: Any) -> bool:
         text = str(getattr(buffer, "text", ""))
@@ -393,13 +537,81 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
     )
 
     state.prompt_invalidator = lambda: _invalidate_prompt_application(app)
-    state.history_setter = state.prompt_invalidator
+    def _refresh_history_with_tail() -> None:
+        _compact_history_window()
+        _apply_history_text()
+        # Keep scroll state and render info in sync.
+        with contextlib.suppress(Exception):
+            _sync_manual_scroll_from_render()
+        _invalidate_prompt_application(app)
+
+    state.history_setter = _refresh_history_with_tail
+
+    if key_bindings is not None:
+        @key_bindings.add("pageup", eager=True)
+        def _history_pageup(event: object) -> None:
+            state.history_auto_follow = False
+            with contextlib.suppress(Exception):
+                state.history_manual_scroll = max(_current_history_scroll() - 20, 0)
+                if history_window is not None:
+                    history_window.vertical_scroll = state.history_manual_scroll
+            app_obj = getattr(event, "app", None)
+            if app_obj is not None:
+                app_obj.invalidate()
+
+        @key_bindings.add("pagedown", eager=True)
+        def _history_pagedown(event: object) -> None:
+            with contextlib.suppress(Exception):
+                max_scroll = _current_history_max_scroll()
+                next_scroll = _current_history_scroll() + 20
+                if max_scroll is not None:
+                    next_scroll = min(next_scroll, max_scroll)
+                    state.history_manual_scroll = next_scroll
+                    if history_window is not None:
+                        history_window.vertical_scroll = state.history_manual_scroll
+                    if next_scroll >= max_scroll:
+                        state.history_auto_follow = True
+                        if history_window is not None:
+                            history_window.vertical_scroll = 10**9
+                    else:
+                        state.history_auto_follow = False
+                else:
+                    state.history_manual_scroll = next_scroll
+                    if history_window is not None:
+                        history_window.vertical_scroll = state.history_manual_scroll
+                if max_scroll == 0:
+                    state.history_auto_follow = True
+                    if history_window is not None:
+                        history_window.vertical_scroll = 10**9
+            app_obj = getattr(event, "app", None)
+            if app_obj is not None:
+                app_obj.invalidate()
     _refresh_history_view(state)
     app_task: asyncio.Task[None] = asyncio.create_task(app.run_async())
     try:
         while state.running:
             if app_task.done():
-                state.running = False
+                with contextlib.suppress(asyncio.CancelledError):
+                    exc = app_task.exception()
+                    if exc is not None:
+                        _tui_log_info(
+                            f"prompt_toolkit loop failed type={type(exc).__name__} message={exc}"
+                        )
+                        _tui_debug(
+                            "prompt_toolkit loop traceback\n"
+                            + "".join(
+                                traceback.format_exception(
+                                    type(exc),
+                                    exc,
+                                    exc.__traceback__,
+                                )
+                            )
+                        )
+                        raise exc
+                _tui_log_info("prompt_toolkit loop exited unexpectedly; fallback to basic backend")
+                state.input_backend = "basic"
+                state.input_backend_reason = "prompt_toolkit_exited_early"
+                await _input_loop_basic(client, state)
                 return
             try:
                 line = await asyncio.wait_for(line_queue.get(), timeout=0.2)
@@ -516,11 +728,42 @@ async def _event_loop(client: OpenJaxAsyncClient, state: AppState) -> None:
             print(f"[error] event stream closed: {err}")
             state.running = False
             return
-        _tui_debug(
-            f"event received type={evt.event_type} turn_id={evt.turn_id or '-'} payload_keys={sorted(evt.payload.keys())}"
-        )
+        _tui_debug(_format_event_debug_line(evt))
         _dispatch_event(evt, state)
         _apply_event_state_updates(state, evt)
+
+
+def _format_event_debug_line(evt: EventEnvelope) -> str:
+    base = f"event received type={evt.event_type} turn_id={evt.turn_id or '-'}"
+    if evt.event_type == "assistant_delta":
+        delta = str(evt.payload.get("content_delta", ""))
+        preview, truncated = _truncate_debug_preview(delta, limit=80)
+        return (
+            f"{base} payload_keys={sorted(evt.payload.keys())} "
+            f"delta_len={len(delta)} delta_preview={preview!r} delta_truncated={truncated}"
+        )
+    if evt.event_type == "assistant_message":
+        content = str(evt.payload.get("content", ""))
+        preview, truncated = _truncate_debug_preview(content, limit=120)
+        return (
+            f"{base} payload_keys={sorted(evt.payload.keys())} "
+            f"content_len={len(content)} content_preview={preview!r} content_truncated={truncated}"
+        )
+    return f"{base} payload_keys={sorted(evt.payload.keys())}"
+
+
+def _truncate_debug_preview(text: str, limit: int) -> tuple[str, bool]:
+    normalized = text.replace("\n", "\\n").replace("\r", "\\r")
+    if len(normalized) <= limit:
+        return normalized, False
+    return normalized[:limit] + "...", True
+
+
+def _normalize_history_for_prompt_toolkit(text: str) -> str:
+    # TextArea renders plain text; ANSI escapes would leak as raw sequences.
+    normalized = text.replace(f"{_ANSI_GREEN}{_ASSISTANT_PREFIX}{_ANSI_RESET}", "🟢")
+    normalized = normalized.replace(f"{_ANSI_RED}{_ASSISTANT_PREFIX}{_ANSI_RESET}", "🔴")
+    return re.sub(r"\x1b\[[0-9;]*m", "", normalized)
 
 
 def _emit_ui_line_for_state(current_state: AppState, text: str) -> None:
@@ -635,6 +878,18 @@ def _print_tool_summary_for_turn_for_state(current_state: AppState, turn: str) -
 
 
 def _dispatch_event(evt: EventEnvelope, state: AppState) -> None:
+    if evt.event_type == "assistant_message" and evt.turn_id is not None:
+        streamed = state.stream_text_by_turn.get(evt.turn_id, "")
+        content = str(evt.payload.get("content", ""))
+        if streamed and streamed != content:
+            _tui_debug(
+                "assistant content mismatch turn_id={turn} streamed_len={streamed_len} content_len={content_len}".format(
+                    turn=evt.turn_id,
+                    streamed_len=len(streamed),
+                    content_len=len(content),
+                )
+            )
+
     _print_event(
         evt,
         state=state,
@@ -723,6 +978,10 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
         if state.input_ready is not None:
             state.input_ready.set()
         _tui_debug("turn completed; input gate reopened")
+        # Final safety net for prompt_toolkit: ensure completed turn content is
+        # visible at tail when auto-follow is enabled.
+        if state.history_auto_follow and state.history_setter is not None:
+            state.history_setter()
         _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
 
 

@@ -56,6 +56,10 @@ impl Agent {
         tool_name: &str,
         args: &HashMap<String, String>,
     ) -> bool {
+        if should_skip_duplicate_detection(tool_name) {
+            return false;
+        }
+
         let key = ToolCallKey {
             name: tool_name.to_string(),
             args: serde_json::to_string(args).unwrap_or_default(),
@@ -97,4 +101,8 @@ impl Agent {
             self.history.drain(0..overflow);
         }
     }
+}
+
+fn should_skip_duplicate_detection(tool_name: &str) -> bool {
+    matches!(tool_name, "read_file" | "list_dir" | "grep_files")
 }

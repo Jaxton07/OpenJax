@@ -56,6 +56,7 @@ Rules:\n\
 - At most one action per response.\n\
 - You can call tools up to {remaining_calls} more times this turn.\n\
 - If task can be answered now, return final.\n\
+- IMPORTANT: All values inside args MUST be JSON strings (not numbers/booleans). Example: \"start_line\":\"6\".\n\
 - For shell, put shell command in args.cmd.\n\
 - For apply_patch, use this EXACT format (note the space prefix for context lines):\n\
   *** Begin Patch\n\
@@ -69,10 +70,16 @@ Rules:\n\
   IMPORTANT: In Update File, every line after @@ MUST start with space (context), - (remove), or + (add).\n\
   IMPORTANT: When modifying existing files, preserve the source file's formatting and style (indentation, line endings, spacing, quotes, trailing commas, and surrounding conventions).\n\
 - For edit_file_range, provide args: file_path, start_line, end_line, new_text.\n\
+- Tool selection policy:\n\
+  - Prefer edit_file_range for single-file edits when exact line range is known.\n\
+  - Prefer apply_patch for multi-file edits or file operations (add/delete/move/rename).\n\
+  - If apply_patch fails with context mismatch (e.g., hunk context not found), call read_file before any further edits.\n\
+  - For single-file follow-up fixes after that failure, prefer edit_file_range instead of retrying apply_patch on stale context.\n\
 - IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
 - If a tool was already called and returned results, use those results to decide the next action.\n\
 - Only call a tool again if you need different arguments or if the previous call failed.\n\
-- After a successful apply_patch, at most one read_file call is allowed for verification, then return final.\n\
+- After a successful apply_patch, do not call apply_patch again until you call read_file and inspect the latest file content.\n\
+- After verification read_file, if the result already satisfies the request, return final immediately.\n\
 - If verification already shows the requested content/changes are present, return final immediately.\n\
 \n\
 Conversation history (most recent last):\n{history_context}\n\

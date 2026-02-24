@@ -7,6 +7,11 @@ use crate::agent::decision::{normalize_model_decision, parse_model_decision};
 use crate::agent::prompt::{
     build_final_response_prompt, build_json_repair_prompt, build_planner_input, truncate_for_prompt,
 };
+use crate::agent::tool_guard::ApplyPatchReadGuard;
+use crate::agent::tool_policy::{
+    approval_rejected_stop_message, duplicate_skip_abort_message, duplicate_tool_call_warning,
+    is_approval_rejected_error, should_abort_on_consecutive_duplicate_skips,
+};
 use crate::{
     Agent, MAX_CONSECUTIVE_DUPLICATE_SKIPS, MAX_PLANNER_ROUNDS_PER_TURN, MAX_TOOL_CALLS_PER_TURN,
     tools,
@@ -23,6 +28,7 @@ impl Agent {
         let mut executed_count = 0usize;
         let mut planner_rounds = 0usize;
         let mut consecutive_duplicate_skips = 0usize;
+        let mut apply_patch_read_guard = ApplyPatchReadGuard::default();
 
         debug!(
             turn_id = turn_id,
@@ -177,6 +183,15 @@ impl Agent {
                         events,
                     )
                     .await;
+                let (preview, preview_truncated) = summarize_log_preview(&message, 300);
+                let preview_json = serde_json::json!({ "final_response": preview }).to_string();
+                info!(
+                    turn_id = turn_id,
+                    output_len = message.len(),
+                    output_preview = %preview_json,
+                    output_truncated = preview_truncated,
+                    "final_response"
+                );
                 self.push_event(
                     events,
                     Event::AssistantMessage {
@@ -208,6 +223,44 @@ impl Agent {
 
                 let args = decision.args.clone().unwrap_or_default();
 
+                if let Some(message) =
+                    apply_patch_read_guard.block_user_message_for_tool(&tool_name)
+                {
+                    warn!(
+                        turn_id = turn_id,
+                        reason = apply_patch_read_guard
+                            .block_log_reason_for_tool(&tool_name)
+                            .unwrap_or("unknown"),
+                        "apply_patch blocked by read-before-repatch guard"
+                    );
+
+                    self.push_event(
+                        events,
+                        Event::ToolCallStarted {
+                            turn_id,
+                            tool_name: tool_name.clone(),
+                        },
+                    );
+
+                    self.record_tool_call(&tool_name, &args, false, &message);
+                    tool_traces.push(format!(
+                        "tool={tool_name}; ok=false; output={}",
+                        truncate_for_prompt(&message)
+                    ));
+                    self.push_event(
+                        events,
+                        Event::ToolCallCompleted {
+                            turn_id,
+                            tool_name: tool_name.to_string(),
+                            ok: false,
+                            output: message.to_string(),
+                        },
+                    );
+                    executed_count += 1;
+                    consecutive_duplicate_skips = 0;
+                    continue;
+                }
+
                 if self.is_duplicate_tool_call(&tool_name, &args) {
                     warn!(
                         turn_id = turn_id,
@@ -215,10 +268,7 @@ impl Agent {
                         args = ?args,
                         "duplicate_tool_call detected, skipping"
                     );
-                    let message = format!(
-                        "[warning] tool {} with args {:?} was already called recently, skipping",
-                        tool_name, args
-                    );
+                    let message = duplicate_tool_call_warning(&tool_name, &args);
                     self.push_event(
                         events,
                         Event::AssistantMessage {
@@ -232,11 +282,12 @@ impl Agent {
                         serde_json::to_string(&args).unwrap_or_default()
                     ));
                     consecutive_duplicate_skips = consecutive_duplicate_skips.saturating_add(1);
-                    if should_abort_on_consecutive_duplicate_skips(consecutive_duplicate_skips) {
-                        let loop_message = format!(
-                            "检测到连续 {} 次重复工具调用，已提前结束本回合以避免循环。请继续下一轮或换一种指令。",
-                            MAX_CONSECUTIVE_DUPLICATE_SKIPS
-                        );
+                    if should_abort_on_consecutive_duplicate_skips(
+                        consecutive_duplicate_skips,
+                        MAX_CONSECUTIVE_DUPLICATE_SKIPS,
+                    ) {
+                        let loop_message =
+                            duplicate_skip_abort_message(MAX_CONSECUTIVE_DUPLICATE_SKIPS);
                         self.push_event(
                             events,
                             Event::AssistantMessage {
@@ -276,6 +327,8 @@ impl Agent {
                     .await
                 {
                     Ok(output) => {
+                        apply_patch_read_guard.on_tool_success(&tool_name);
+
                         if is_mutating_tool(&tool_name) {
                             // File/content state has changed. Move to a new epoch so read/list
                             // calls with the same args can run again against fresh state.
@@ -314,6 +367,7 @@ impl Agent {
                     Err(err) => {
                         let duration_ms = start_time.elapsed().as_millis();
                         let err_text = err.to_string();
+                        apply_patch_read_guard.on_tool_failure(&tool_name, &err_text);
                         info!(
                             turn_id = turn_id,
                             tool_name = %tool_name,
@@ -341,9 +395,8 @@ impl Agent {
                         );
                         executed_count += 1;
                         consecutive_duplicate_skips = 0;
-                        if err_text.to_lowercase().contains("approval rejected") {
-                            let stop_message =
-                                "操作已取消：用户拒绝了工具调用，本回合已停止。".to_string();
+                        if is_approval_rejected_error(&err_text) {
+                            let stop_message = approval_rejected_stop_message();
                             self.push_event(
                                 events,
                                 Event::AssistantMessage {
@@ -477,13 +530,21 @@ impl Agent {
     }
 }
 
-pub(crate) fn should_abort_on_consecutive_duplicate_skips(count: usize) -> bool {
-    count >= MAX_CONSECUTIVE_DUPLICATE_SKIPS
-}
-
 fn is_mutating_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
         "apply_patch" | "edit_file_range" | "shell" | "exec_command"
     )
+}
+
+fn summarize_log_preview(text: &str, limit: usize) -> (String, bool) {
+    let normalized = text.replace('\n', "\\n").replace('\r', "\\r");
+    let total = normalized.chars().count();
+    if total <= limit {
+        return (normalized, false);
+    }
+
+    let mut preview = normalized.chars().take(limit).collect::<String>();
+    preview.push_str("...");
+    (preview, true)
 }

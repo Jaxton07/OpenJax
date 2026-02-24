@@ -7,4 +7,6 @@ pub(crate) mod planner;
 pub(crate) mod prompt;
 pub(crate) mod runtime_policy;
 pub(crate) mod state;
+pub(crate) mod tool_guard;
+pub(crate) mod tool_policy;
 pub(crate) mod turn;
