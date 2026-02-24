@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import unittest
+from contextlib import redirect_stdout
 
 from openjax_tui import assistant_render
 from openjax_tui.state import AppState
@@ -25,6 +27,23 @@ class AssistantRenderModuleTest(unittest.TestCase):
         )
         self.assertEqual(state.history_blocks, ["line"])
         self.assertEqual(called, ["refresh"])
+
+    def test_emit_ui_line_adds_blank_line_between_basic_blocks(self) -> None:
+        state = AppState()
+        state.input_backend = "basic"
+        out = io.StringIO()
+        with redirect_stdout(out):
+            assistant_render.emit_ui_line(
+                state,
+                "first",
+                refresh_history_view_fn=lambda _s: None,
+            )
+            assistant_render.emit_ui_line(
+                state,
+                "second",
+                refresh_history_view_fn=lambda _s: None,
+            )
+        self.assertEqual(out.getvalue(), "first\n\nsecond\n")
 
 
 if __name__ == "__main__":

@@ -80,8 +80,8 @@ def normalize_history_for_prompt_toolkit(
     Returns:
         清理后的文本
     """
-    # 将带颜色的前缀替换为表情符号
-    normalized = text.replace(f"{ansi_green}{assistant_prefix}{ansi_reset}", "🟢")
-    normalized = normalized.replace(f"{ansi_red}{assistant_prefix}{ansi_reset}", "🔴")
+    # 将带颜色的前缀替换为无色前缀
+    normalized = text.replace(f"{ansi_green}{assistant_prefix}{ansi_reset}", assistant_prefix)
+    normalized = normalized.replace(f"{ansi_red}{assistant_prefix}{ansi_reset}", assistant_prefix)
     # 移除所有 ANSI 转义序列
     return re.sub(r"\x1b\[[0-9;]*m", "", normalized)

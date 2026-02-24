@@ -9,7 +9,11 @@ def emit_ui_line(state: Any, text: str, *, refresh_history_view_fn: Callable[[An
         state.history_blocks.append(text)
         refresh_history_view_fn(state)
         return
+    if state is not None and getattr(state, "last_basic_ui_block_emitted", False):
+        print()
     print(text)
+    if state is not None:
+        state.last_basic_ui_block_emitted = True
 
 
 def print_prefixed_block(

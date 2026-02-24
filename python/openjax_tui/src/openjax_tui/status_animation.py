@@ -9,7 +9,7 @@ from .state import AnimationLifecycle, AppState
 # 动画常量
 STATUS_ANIMATION_INTERVAL_S: float = 1.0 / 7.0
 THINKING_STATUS_FRAMES: tuple[str, ...] = ("", ".", "..", "...")
-TOOL_WAIT_STATUS_FRAMES: tuple[str, ...] = ("|", "/", "-", "\\")
+TOOL_WAIT_STATUS_FRAMES: tuple[str, ...] = (".", "..", "...")
 
 
 def _status_animation_phase(state: AppState) -> str | None:
@@ -56,10 +56,10 @@ def get_status_indicator_text(state: AppState) -> str:
     if phase is None:
         return ""
     if phase == "tool_wait":
-        frame = TOOL_WAIT_STATUS_FRAMES[
-            state.animation_frame_index % len(TOOL_WAIT_STATUS_FRAMES)
-        ]
-        return f" status: waiting for tool results {frame}"
+        turn_id = state.waiting_turn_id or ""
+        label = state.active_tool_display_label_by_turn.get(turn_id, "Working")
+        frame = TOOL_WAIT_STATUS_FRAMES[state.animation_frame_index % len(TOOL_WAIT_STATUS_FRAMES)]
+        return f" status: {label}{frame}"
     frame = THINKING_STATUS_FRAMES[
         state.animation_frame_index % len(THINKING_STATUS_FRAMES)
     ]

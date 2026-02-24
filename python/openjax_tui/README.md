@@ -13,32 +13,42 @@ python/openjax_tui/
 │   └── openjax_tui/            # 主包源代码
 │       ├── __init__.py         # 包入口（导出 run）
 │       ├── __main__.py         # CLI 入口（asyncio main）
-│       ├── app.py                  # 主应用编排（事件循环、生命周期管理）
-│       ├── state.py                # 应用状态管理（审批、流式、工具统计）
-│       ├── event_dispatch.py       # 事件处理和路由
-│       ├── approval.py             # 审批工作流管理
-│       ├── input_backend.py        # 输入处理（prompt_toolkit vs basic）
-│       ├── input_loops.py          # 输入循环和命令处理
-│       ├── tool_runtime.py         # 工具执行跟踪
-│       ├── assistant_render.py     # 助手消息渲染
-│       ├── slash_commands.py       # 斜杠命令处理（/help, /exit 等）
-│       ├── startup_ui.py           # 启动 Logo 和显示工具
-│       ├── prompt_ui.py            # 提示 UI 运行时和键盘快捷键
-│       ├── viewport_adapter.py     # 视口适配器（Pilot/TextArea 双实现）
-│       ├── status_animation.py     # 状态动画系统（thinking/tool_wait）
-│       ├── tui_logging.py          # 日志基础设施
-│       └── session_logging.py      # 会话事件日志
-└── tests/                          # 测试套件（18 个测试文件）
+│       ├── app.py                 # 主应用编排（事件循环、生命周期管理）
+│       ├── approval.py            # 审批工作流管理
+│       ├── assistant_render.py    # 助手消息渲染
+│       ├── debug_utils.py         # 调试日志与历史文本规范化工具
+│       ├── event_dispatch.py      # 事件处理和路由
+│       ├── event_handlers.py      # 事件处理适配器（闭包工厂）
+│       ├── event_state_manager.py # 事件状态更新管理器
+│       ├── input_backend.py       # 输入处理（prompt_toolkit vs basic）
+│       ├── input_loops.py         # 输入循环和命令处理
+│       ├── prompt_runtime_loop.py # prompt_toolkit 运行时组装与 fallback
+│       ├── prompt_ui.py           # 提示 UI 运行时和键盘快捷键
+│       ├── session_logging.py     # 会话事件日志
+│       ├── slash_commands.py      # 斜杠命令处理（/help, /exit 等）
+│       ├── startup_ui.py          # 启动 Logo 和显示工具
+│       ├── state.py               # 应用状态管理（审批、流式、工具统计）
+│       ├── status_animation.py    # 状态动画系统（thinking/tool_wait）
+│       ├── tool_runtime.py        # 工具执行跟踪
+│       ├── tui_logging.py         # 日志基础设施
+│       └── viewport_adapter.py    # 视口适配器（Pilot/TextArea 双实现）
+└── tests/                         # 测试套件（26 个测试文件）
+    ├── test_app_event_wiring.py
     ├── test_approval_flow.py
     ├── test_approval.py
-    ├── test_app_event_wiring.py
     ├── test_assistant_render.py
+    ├── test_debug_utils.py
+    ├── test_event_handlers.py
+    ├── test_event_state_manager.py
+    ├── test_event_state_manager_integration.py
     ├── test_history_viewport_adapter.py
     ├── test_input_backend.py
+    ├── test_input_loops_commands.py
     ├── test_input_normalize.py
     ├── test_logo_select.py
     ├── test_logging.py
     ├── test_prompt_keybindings.py
+    ├── test_prompt_runtime_loop.py
     ├── test_prompt_ui.py
     ├── test_scrollback_live_mode.py
     ├── test_smoke.py
@@ -57,12 +67,15 @@ python/openjax_tui/
 
 | 模块 | 功能描述 |
 |------|----------|
-| `app.py` | 主应用编排，初始化异步事件循环、管理 OpenJaxAsyncClient 连接、处理用户输入和守护进程事件的主循环 |
+| `app.py` | 主应用编排与兼容层，负责生命周期管理，并将输入循环、事件状态更新、prompt runtime 委托到子模块 |
 | `state.py` | 集中式状态管理，包含 `AppState` 类跟踪审批队列、流式状态、工具统计、UI 历史等 |
 | `event_dispatch.py` | 事件路由系统，处理 `assistant_delta`、`tool_call_started`、`approval_requested` 等事件 |
+| `event_handlers.py` | 事件处理适配器工厂，创建渲染/工具运行统计相关闭包，降低 `app.py` 组装复杂度 |
+| `event_state_manager.py` | 事件状态管理器，统一处理 turn phase、审批状态和 live viewport ownership 更新 |
 | `approval.py` | 审批工作流管理，支持多审批队列、焦点导航、特定 ID 或最新审批解析 |
 | `input_backend.py` | 双后端输入系统，TTY 环境下使用 `prompt_toolkit`，非 TTY 回退到基础 `input()` |
 | `input_loops.py` | 输入循环实现，包含 basic 输入循环和命令行处理逻辑 |
+| `debug_utils.py` | 调试辅助工具，提供事件日志格式化、调试预览截断与 prompt 历史 ANSI 清理 |
 
 ### 渲染与 UI 模块
 
@@ -74,6 +87,7 @@ python/openjax_tui/
 | `status_animation.py` | 状态动画系统，提供 thinking 和 tool_wait 状态的动态指示器 |
 | `startup_ui.py` | 启动界面，包含响应式 ASCII Logo、版本信息、会话 ID 显示 |
 | `prompt_ui.py` | 提示 UI 运行时管理和键盘快捷键配置 |
+| `prompt_runtime_loop.py` | prompt_toolkit 运行时组装模块，负责历史窗口维护、scrollback flush、fallback 到 basic |
 
 ### 命令与日志模块
 
@@ -106,8 +120,9 @@ python3 -m openjax_tui
 
 1. `❯` 用户输入
 2. `⏺` 助手流式或最终输出
-3. `⏺ tools: ...` 工具调用摘要（成功/失败颜色提示）
-4. `approval>` 审批提示
+3. 状态栏展示工具进行中动画（如 `status: Reading...`）
+4. 工具完成后仅保留一行历史（如 `⏺ Read 1 file (test.txt) · 1ms`，成功/失败用红绿颜色区分）
+5. `approval>` 审批提示
 
 输入区域默认在 TTY 环境下使用 `prompt_toolkit`，可将输入提示固定在底部，同时让事件输出在上方滚动。
 

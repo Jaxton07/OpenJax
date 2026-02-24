@@ -160,6 +160,7 @@ async def run_prompt_toolkit_loop(
         return
 
     state.approval_ui_enabled = True
+    state.last_scrollback_flush_emitted = False
     line_queue: asyncio.Queue[str] = asyncio.Queue()
     loop = asyncio.get_running_loop()
     max_history_window_lines = max(
@@ -169,14 +170,17 @@ async def run_prompt_toolkit_loop(
     def _schedule_scrollback_flush(blocks: list[str]) -> None:
         if not blocks:
             return
-        scrollback_text = _normalize_history_for_prompt_toolkit("\n\n".join(blocks)).strip()
+        scrollback_text = "\n\n".join(blocks).rstrip()
         if not scrollback_text:
             return
         if components.run_in_terminal_fn is None:
             return
 
         def _flush_output() -> None:
+            if state.last_scrollback_flush_emitted:
+                print()
             print(scrollback_text, flush=True)
+            state.last_scrollback_flush_emitted = True
 
         future = components.run_in_terminal_fn(_flush_output)
 

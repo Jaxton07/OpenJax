@@ -43,12 +43,14 @@ class EventStateManagerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         state.active_tool_starts[("turn-1", "shell")] = [1.0]
         manager.apply_event_updates(_evt("turn-1", "tool_call_started", {"tool_name": "shell"}))
         self.assertEqual(state.turn_phase, "tool_wait")
+        self.assertEqual(state.active_tool_display_label_by_turn.get("turn-1"), "Running")
 
         state.active_tool_starts[("turn-1", "shell")] = []
         manager.apply_event_updates(
             _evt("turn-1", "tool_call_completed", {"tool_name": "shell", "ok": True})
         )
         self.assertEqual(state.turn_phase, "thinking")
+        self.assertNotIn("turn-1", state.active_tool_display_label_by_turn)
 
         manager.apply_event_updates(_evt("turn-1", "turn_completed"))
         self.assertEqual(state.turn_phase, "idle")

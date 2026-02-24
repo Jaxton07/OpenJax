@@ -97,9 +97,9 @@ class EventHandlerIntegrationTest(unittest.TestCase):
             result_ok = fn(True)
             result_fail = fn(False)
 
-        # 无 ANSI 时返回表情符号
-        self.assertIn("🟢", result_ok)
-        self.assertIn("🔴", result_fail)
+        # 无 ANSI 时返回无色前缀
+        self.assertEqual(result_ok, "⏺")
+        self.assertEqual(result_fail, "⏺")
 
 
 if __name__ == "__main__":

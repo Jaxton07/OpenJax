@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from typing import Any, Callable
 
@@ -59,7 +60,7 @@ def status_bullet(
         color = ansi_green if ok else ansi_red
         return f"{color}{assistant_prefix}{ansi_reset}"
     if not supports_ansi_color_fn():
-        return "🟢" if ok else "🔴"
+        return assistant_prefix
     color = ansi_green if ok else ansi_red
     return f"{color}{assistant_prefix}{ansi_reset}"
 
@@ -78,24 +79,18 @@ def print_tool_call_result_line(
     elapsed_ms: int = 0,
 ) -> None:
     label = tool_result_label_fn(tool_name, output)
-    result_text = _summarize_tool_output(output)
-    started_line = _format_timeline_line(label=label, lifecycle="started")
-    running_line = _format_timeline_line(label=label, lifecycle="running")
-    terminal_state = "completed" if ok else "failed"
-    completed_line = _format_timeline_line(
+    target = _tool_target_from_output(tool_name, output)
+    error_text = _summarize_tool_output(output) if not ok else ""
+    completed_line = _format_tool_completion_line(
         label=label,
-        lifecycle=terminal_state,
+        target=target,
         elapsed_ms=elapsed_ms,
-        result_text=result_text,
+        ok=ok,
+        error_text=error_text,
     )
-    if not ok:
-        completed_line = f"{completed_line} [failed]"
     finalize_stream_line_fn(state)
-    emit_ui_spacer_fn(state)
-    emit_ui_line_fn(state, f"- {started_line}")
-    emit_ui_line_fn(state, f"- {running_line}")
     emit_ui_line_fn(state, f"{status_bullet_fn(ok)} {completed_line}")
-    emit_ui_spacer_fn(state)
+    _ = emit_ui_spacer_fn
 
 
 def print_tool_summary_for_turn(
@@ -123,24 +118,41 @@ def print_tool_summary_for_turn(
 
 
 def emit_ui_spacer(state: Any) -> None:
-    if state is not None and state.input_backend == "prompt_toolkit":
-        return
-    print()
+    _ = state
 
 
-def _format_timeline_line(
+def _format_tool_completion_line(
     *,
     label: str,
-    lifecycle: str,
+    target: str | None,
     elapsed_ms: int = 0,
-    result_text: str | None = None,
+    ok: bool,
+    error_text: str = "",
 ) -> str:
-    row = f"{label} [{lifecycle}]"
-    if lifecycle in {"completed", "failed"}:
-        row = f"{row} {max(elapsed_ms, 0)}ms"
-        if result_text:
-            row = f"{row} {result_text}"
+    row = label if not target else f"{label} ({target})"
+    row = f"{row} · {max(elapsed_ms, 0)}ms"
+    if not ok and error_text:
+        row = f"{row} · {error_text}"
     return row
+
+
+def _tool_target_from_output(tool_name: str, output: str) -> str | None:
+    name = tool_name.strip().lower()
+    if name != "read_file":
+        return None
+    normalized = " ".join(output.split())
+    if not normalized:
+        return None
+    patterns = (
+        r"\b(?:READ|Read)\s+([^\s:]+)",
+        r"\bpath(?:=|:)\s*([^\s,]+)",
+        r"\bfile(?:=|:)\s*([^\s,]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if match:
+            return match.group(1).strip("()[]{}\"'")
+    return None
 
 
 def _summarize_tool_output(output: str, *, max_len: int = 60) -> str:

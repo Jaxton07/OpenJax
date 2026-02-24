@@ -27,7 +27,7 @@ def _render_completed_line(output: str) -> str:
     tool_runtime.print_tool_call_result_line(
         state=None,
         tool_name="shell",
-        ok=True,
+        ok=False,
         output=output,
         status_bullet_fn=lambda ok: "OK",
         tool_result_label_fn=lambda _name, _out: "Tool",
@@ -40,7 +40,7 @@ def _render_completed_line(output: str) -> str:
 
 
 def _extract_snippet(line: str) -> str:
-    marker = "[completed] 7ms "
+    marker = "Tool · 7ms · "
     _, _, snippet = line.partition(marker)
     return snippet
 

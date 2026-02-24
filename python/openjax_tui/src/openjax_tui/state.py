@@ -45,12 +45,15 @@ class AppState:
         self.turn_phase: str = "idle"
         self.tool_turn_stats: dict[str, ToolTurnStats] = {}
         self.active_tool_starts: dict[tuple[str, str], list[float]] = {}
+        self.active_tool_display_label_by_turn: dict[str, str] = {}
         self.prompt_invalidator: Callable[[], None] | None = None
         self.history_blocks: list[str] = []
         self.stream_block_index: int | None = None
+        self.last_basic_ui_block_emitted: bool = False
         self.history_setter: Callable[[], None] | None = None
         self.history_auto_follow: bool = True
         self.history_manual_scroll: int = 0
+        self.last_scrollback_flush_emitted: bool = False
         self.view_mode: ViewMode = ViewMode.LIVE_VIEWPORT
         self.animation_lifecycle: AnimationLifecycle = AnimationLifecycle.IDLE
         self.animation_task: asyncio.Task[None] | None = None

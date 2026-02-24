@@ -12,6 +12,7 @@ from openjax_tui.event_state_manager import (
     EventStateManager,
     get_active_tool_call_count,
     has_active_tool_calls_after_event,
+    tool_wait_display_label,
     update_live_viewport_ownership,
 )
 from openjax_tui.state import AppState, LiveViewportOwnership, ViewMode
@@ -148,6 +149,7 @@ class EventStateManagerTest(unittest.TestCase):
         manager.apply_event_updates(evt)
 
         self.assertEqual(state.turn_phase, "tool_wait")
+        self.assertEqual(state.active_tool_display_label_by_turn.get("turn1"), "Running")
         callbacks.sync_animation.assert_called_once()
 
     def test_apply_event_updates_handles_approval_requested(self) -> None:
@@ -208,6 +210,15 @@ class EventStateManagerTest(unittest.TestCase):
         self.assertIsNone(state.waiting_turn_id)
         self.assertEqual(state.turn_phase, "idle")
         self.assertTrue(state.input_ready.is_set())
+
+
+class ToolDisplayLabelTest(unittest.TestCase):
+    def test_tool_display_label_mapping(self) -> None:
+        self.assertEqual(tool_wait_display_label("read_file"), "Reading")
+        self.assertEqual(tool_wait_display_label("list_dir"), "Scanning")
+        self.assertEqual(tool_wait_display_label("grep_files"), "Searching")
+        self.assertEqual(tool_wait_display_label("shell"), "Running")
+        self.assertEqual(tool_wait_display_label("unknown"), "Working")
 
 
 if __name__ == "__main__":

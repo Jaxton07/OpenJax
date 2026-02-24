@@ -45,13 +45,29 @@ def has_active_tool_calls_after_event(state: AppState, evt: EventEnvelope) -> bo
 
     active_count = get_active_tool_call_count(state, turn_id)
     if evt.event_type == "tool_call_started":
-        active_count += 1
+        tool_name = str(evt.payload.get("tool_name", ""))
+        starts = state.active_tool_starts.get((turn_id, tool_name))
+        if not starts:
+            active_count += 1
     elif evt.event_type == "tool_call_completed":
         tool_name = str(evt.payload.get("tool_name", ""))
         starts = state.active_tool_starts.get((turn_id, tool_name))
         if starts:
             active_count = max(0, active_count - 1)
     return active_count > 0
+
+
+def tool_wait_display_label(tool_name: str) -> str:
+    normalized = tool_name.strip().lower()
+    if normalized == "read_file":
+        return "Reading"
+    if normalized == "list_dir":
+        return "Scanning"
+    if normalized == "grep_files":
+        return "Searching"
+    if normalized == "shell":
+        return "Running"
+    return "Working"
 
 
 def update_live_viewport_ownership(state: AppState, evt: EventEnvelope) -> None:
@@ -108,9 +124,25 @@ class EventStateManager:
             evt: 事件信封
         """
         update_live_viewport_ownership(self.state, evt)
+        self._update_tool_display_state(evt)
         self._update_turn_phase(evt)
         self._handle_approval_events(evt)
         self._handle_turn_completion(evt)
+
+    def _update_tool_display_state(self, evt: EventEnvelope) -> None:
+        turn_id = evt.turn_id
+        if not turn_id:
+            return
+        if evt.event_type == "tool_call_started":
+            tool_name = str(evt.payload.get("tool_name", ""))
+            self.state.active_tool_display_label_by_turn[turn_id] = tool_wait_display_label(tool_name)
+            return
+        if evt.event_type == "tool_call_completed":
+            if not has_active_tool_calls_after_event(self.state, evt):
+                self.state.active_tool_display_label_by_turn.pop(turn_id, None)
+            return
+        if evt.event_type == "turn_completed":
+            self.state.active_tool_display_label_by_turn.pop(turn_id, None)
 
     def _update_turn_phase(self, evt: EventEnvelope) -> None:
         """更新 turn phase 状态。
@@ -241,6 +273,7 @@ class EventStateManager:
         if evt.event_type != "turn_completed" or evt.turn_id != self.state.waiting_turn_id:
             return
 
+        self.state.active_tool_display_label_by_turn.pop(evt.turn_id, None)
         self.state.waiting_turn_id = None
         self.state.turn_phase = "idle"
         self.callbacks.sync_animation()

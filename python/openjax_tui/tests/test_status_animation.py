@@ -10,6 +10,7 @@ from openjax_sdk import OpenJaxAsyncClient
 from openjax_sdk.models import EventEnvelope
 from openjax_tui import app
 from openjax_tui.state import AnimationLifecycle, AppState
+from openjax_tui.status_animation import get_status_indicator_text
 
 
 def _evt(turn_id: str, event_type: str, payload: dict[str, object] | None = None) -> EventEnvelope:
@@ -113,6 +114,15 @@ class StatusAnimationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(state.turn_phase, "idle")
         self.assertIsNone(state.animation_task)
+
+    async def test_tool_wait_status_uses_reading_label(self) -> None:
+        state = AppState()
+        state.waiting_turn_id = "turn-1"
+        state.turn_phase = "tool_wait"
+        state.animation_frame_index = 1
+        state.active_tool_display_label_by_turn["turn-1"] = "Reading"
+
+        self.assertEqual(get_status_indicator_text(state), " status: Reading..")
 
     async def test_turn_completion_cancels_animation(self) -> None:
         state = AppState()

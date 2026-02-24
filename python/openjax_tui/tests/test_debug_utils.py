@@ -134,16 +134,16 @@ class NormalizeHistoryForPromptToolkitTest(unittest.TestCase):
         self.assertEqual(result, "hello world")
 
     def test_green_prefix_replaced(self) -> None:
-        """绿色前缀应被替换为表情符号。"""
+        """绿色前缀应被替换为无色前缀。"""
         text = "\x1b[32m⏺\x1b[0m message"
         result = normalize_history_for_prompt_toolkit(text)
-        self.assertEqual(result, "🟢 message")
+        self.assertEqual(result, "⏺ message")
 
     def test_red_prefix_replaced(self) -> None:
-        """红色前缀应被替换为表情符号。"""
+        """红色前缀应被替换为无色前缀。"""
         text = "\x1b[31m⏺\x1b[0m message"
         result = normalize_history_for_prompt_toolkit(text)
-        self.assertEqual(result, "🔴 message")
+        self.assertEqual(result, "⏺ message")
 
     def test_ansi_sequences_removed(self) -> None:
         """ANSI 转义序列应被移除。"""
@@ -157,7 +157,7 @@ class NormalizeHistoryForPromptToolkitTest(unittest.TestCase):
         result = normalize_history_for_prompt_toolkit(
             text, assistant_prefix=">>", ansi_green="\x1b[32m", ansi_reset="\x1b[0m"
         )
-        self.assertEqual(result, "🟢 message")
+        self.assertEqual(result, ">> message")
 
 
 if __name__ == "__main__":
