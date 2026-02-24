@@ -148,7 +148,7 @@ class StatusAnimationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(task)
         client = OpenJaxAsyncClient(daemon_cmd=["true"])
 
-        with patch("openjax_tui.app._input_loop_basic", new=AsyncMock()) as mocked_basic:
+        with patch.object(app, "_run_input_loop_basic", new=AsyncMock()) as mocked_basic:
             await fallback_to_basic(
                 client=client,
                 state=state,

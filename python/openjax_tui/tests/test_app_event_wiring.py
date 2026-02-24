@@ -116,7 +116,7 @@ class AppFallbackWiringTest(unittest.IsolatedAsyncioTestCase):
         client = app.OpenJaxAsyncClient(daemon_cmd=["true"])
         fallback_to_basic = cast(Callable[..., Awaitable[None]], getattr(app, "_fallback_prompt_toolkit_to_basic"))
 
-        with patch("openjax_tui.app._input_loop_basic", new=AsyncMock()) as mocked_basic:
+        with patch.object(app, "_run_input_loop_basic", new=AsyncMock()) as mocked_basic:
             await fallback_to_basic(client=client, state=state, reason="prompt_toolkit_exited_early")
 
         self.assertEqual(state.input_backend, "basic")

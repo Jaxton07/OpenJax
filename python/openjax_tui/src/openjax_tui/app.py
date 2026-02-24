@@ -119,6 +119,15 @@ from .status_animation import (
     stop_animation as _stop_status_animation,
     sync_animation_controller as _sync_status_animation_controller,
 )
+from .input_loops import (
+    INPUT_REQUEST as _INPUT_REQUEST,
+    INPUT_STOP as _INPUT_STOP,
+    USER_PROMPT_PREFIX as _USER_PROMPT_PREFIX,
+    InputLoopCallbacks,
+    daemon_cmd_from_env as _daemon_cmd_from_env,
+    handle_user_line as _handle_user_line_impl,
+    run_input_loop_basic as _run_input_loop_basic,
+)
 
 try:
     from prompt_toolkit import PromptSession, print_formatted_text
@@ -247,6 +256,42 @@ def _update_live_viewport_ownership(state: AppState, evt: EventEnvelope) -> None
             state.live_viewport_owner_turn_id = None
 
 
+async def _resolve_approval_by_id_wrapped(
+    client: OpenJaxAsyncClient,
+    state: AppState,
+    approval_request_id: str,
+    approved: bool,
+) -> None:
+    """包装后的审批解析函数。"""
+    await _resolve_approval_by_id(
+        client=client,
+        state=state,
+        approval_request_id=approval_request_id,
+        approved=approved,
+        use_inline_approval_panel_fn=_use_inline_approval_panel,
+        pop_pending_fn=_pop_pending,
+        is_expired_approval_error_fn=_is_expired_approval_error,
+        log_approval_event_fn=lambda **kwargs: _tui_log_approval_event(_tui_log_info, **kwargs),
+    )
+
+
+def _create_input_loop_callbacks() -> InputLoopCallbacks:
+    """创建输入循环回调对象。"""
+    return InputLoopCallbacks(
+        approval_mode_active=_approval_mode_active,
+        focused_approval_id=_focused_approval_id,
+        resolve_approval_by_id=_resolve_approval_by_id_wrapped,
+        resolve_latest_approval=_resolve_latest_approval,
+        use_inline_approval_panel=_use_inline_approval_panel,
+        emit_ui_line=lambda state, text: _emit_ui_line(state, text, refresh_history_view_fn=_refresh_history_view),
+        print_pending=_print_pending,
+        tui_log_approval_event=lambda **kwargs: _tui_log_approval_event(_tui_log_info, **kwargs),
+        sync_status_animation_controller=lambda state: _sync_status_animation_controller(
+            state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
+        ),
+    )
+
+
 async def _fallback_prompt_toolkit_to_basic(
     client: OpenJaxAsyncClient,
     state: AppState,
@@ -261,7 +306,19 @@ async def _fallback_prompt_toolkit_to_basic(
     state.input_backend = "basic"
     state.input_backend_reason = reason
     _stop_status_animation(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
-    await _input_loop_basic(client, state)
+
+    # 创建输入循环回调
+    input_callbacks = _create_input_loop_callbacks()
+    await _run_input_loop_basic(
+        client,
+        state,
+        input_callbacks,
+        handle_user_line_fn=lambda c, s, line: _handle_user_line_impl(c, s, line, input_callbacks),
+        input_request=_INPUT_REQUEST,
+        input_stop=_INPUT_STOP,
+        user_prompt_prefix=_USER_PROMPT_PREFIX,
+        active_state_getter=lambda: _active_state,
+    )
 
 
 async def run() -> None:
