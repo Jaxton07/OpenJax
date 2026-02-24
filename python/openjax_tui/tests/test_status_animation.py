@@ -40,7 +40,7 @@ class StatusAnimationTest(unittest.IsolatedAsyncioTestCase):
                 state.turn_phase = "idle"
             await asyncio.sleep(0)
 
-        await run_ticker(state, sleep_fn=fake_sleep)
+        await run_ticker(state, sleep_fn=fake_sleep, request_prompt_redraw_fn=lambda: redraw_calls.append("redraw"))
 
         self.assertGreaterEqual(animation_interval, 1.0 / 8.0)
         self.assertTrue(delays)

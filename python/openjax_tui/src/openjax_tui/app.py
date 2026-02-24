@@ -109,6 +109,16 @@ from .viewport_adapter import (
     resolve_history_viewport_impl as _resolve_history_viewport_impl,
     retain_live_viewport_blocks as _retain_live_viewport_blocks,
 )
+from .status_animation import (
+    STATUS_ANIMATION_INTERVAL_S as _STATUS_ANIMATION_INTERVAL_S,
+    THINKING_STATUS_FRAMES as _THINKING_STATUS_FRAMES,
+    TOOL_WAIT_STATUS_FRAMES as _TOOL_WAIT_STATUS_FRAMES,
+    get_status_indicator_text as _status_indicator_text,
+    run_animation_ticker as _run_status_animation_ticker,
+    start_animation as _start_status_animation,
+    stop_animation as _stop_status_animation,
+    sync_animation_controller as _sync_status_animation_controller,
+)
 
 try:
     from prompt_toolkit import PromptSession, print_formatted_text
@@ -192,109 +202,6 @@ _COMMAND_ROWS: tuple[str, ...] = (
     "/exit               exit",
 )
 _SLASH_COMMANDS: tuple[str, ...] = ("/approve", "/pending", "/help", "/exit")
-_STATUS_ANIMATION_INTERVAL_S = 1.0 / 7.0
-_THINKING_STATUS_FRAMES: tuple[str, ...] = ("", ".", "..", "...")
-_TOOL_WAIT_STATUS_FRAMES: tuple[str, ...] = ("|", "/", "-", "\\")
-
-
-def _status_animation_phase(state: AppState) -> str | None:
-    if state.turn_phase == "thinking":
-        return "thinking"
-    if state.turn_phase == "tool_wait":
-        return "tool_wait"
-    return None
-
-
-def _status_animation_frame_count(state: AppState) -> int:
-    phase = _status_animation_phase(state)
-    if phase == "tool_wait":
-        return len(_TOOL_WAIT_STATUS_FRAMES)
-    return len(_THINKING_STATUS_FRAMES)
-
-
-def _status_indicator_text(state: AppState) -> str:
-    phase = _status_animation_phase(state)
-    if phase is None:
-        return ""
-    if phase == "tool_wait":
-        frame = _TOOL_WAIT_STATUS_FRAMES[
-            state.animation_frame_index % len(_TOOL_WAIT_STATUS_FRAMES)
-        ]
-        return f" status: waiting for tool results {frame}"
-    frame = _THINKING_STATUS_FRAMES[
-        state.animation_frame_index % len(_THINKING_STATUS_FRAMES)
-    ]
-    return f" status: thinking{frame}"
-
-
-def _status_animation_should_run(state: AppState) -> bool:
-    return (
-        state.running
-        and state.input_backend == "prompt_toolkit"
-        and state.prompt_invalidator is not None
-        and _status_animation_phase(state) is not None
-    )
-
-
-async def _run_status_animation_ticker(
-    state: AppState,
-    *,
-    sleep_fn: Callable[[float], Awaitable[None]] = asyncio.sleep,
-) -> None:
-    state.animation_lifecycle = AnimationLifecycle.ACTIVE
-    try:
-        while _status_animation_should_run(state):
-            await sleep_fn(_STATUS_ANIMATION_INTERVAL_S)
-            if not _status_animation_should_run(state):
-                break
-            frame_count = _status_animation_frame_count(state)
-            state.animation_frame_index = (state.animation_frame_index + 1) % frame_count
-            _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
-    finally:
-        if state.animation_task is asyncio.current_task():
-            state.animation_task = None
-        if not _status_animation_should_run(state):
-            state.animation_lifecycle = AnimationLifecycle.IDLE
-            state.animation_frame_index = 0
-
-
-def _start_status_animation(state: AppState) -> None:
-    if not _status_animation_should_run(state):
-        return
-    task = state.animation_task
-    if task is not None and not task.done():
-        return
-    state.animation_lifecycle = AnimationLifecycle.PREPARING
-    state.animation_frame_index = 0
-    state.animation_task = asyncio.create_task(_run_status_animation_ticker(state))
-    _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
-
-
-def _stop_status_animation(state: AppState) -> None:
-    task = state.animation_task
-    previous_lifecycle = state.animation_lifecycle
-    had_frame = state.animation_frame_index != 0
-    state.animation_task = None
-    if task is not None and not task.done():
-        state.animation_lifecycle = AnimationLifecycle.SETTLING
-        task.cancel()
-    else:
-        state.animation_lifecycle = AnimationLifecycle.IDLE
-    if had_frame:
-        state.animation_frame_index = 0
-    if (
-        (task is not None and not task.done())
-        or had_frame
-        or previous_lifecycle != state.animation_lifecycle
-    ):
-        _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
-
-
-def _sync_status_animation_controller(state: AppState) -> None:
-    if _status_animation_should_run(state):
-        _start_status_animation(state)
-        return
-    _stop_status_animation(state)
 
 
 def _active_tool_call_count(state: AppState, turn_id: str) -> int:
@@ -353,7 +260,7 @@ async def _fallback_prompt_toolkit_to_basic(
     state.prompt_invalidator = None
     state.input_backend = "basic"
     state.input_backend_reason = reason
-    _stop_status_animation(state)
+    _stop_status_animation(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
     await _input_loop_basic(client, state)
 
 
@@ -424,7 +331,7 @@ async def run() -> None:
     finally:
         if interrupted:
             _ignore_sigint_during_shutdown()
-        _stop_status_animation(state)
+        _stop_status_animation(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
         await _shutdown_client_quietly(client, graceful=not interrupted)
         _finalize_stream_line(state)
         _set_active_state(None)
@@ -727,7 +634,7 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         _invalidate_prompt_application(app)
 
     state.history_setter = _refresh_history_with_tail
-    _sync_status_animation_controller(state)
+    _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
 
     if key_bindings is not None:
         @key_bindings.add("pageup", eager=True)
@@ -801,7 +708,7 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
             if not await _handle_user_line(client, state, line):
                 return
     finally:
-        _stop_status_animation(state)
+        _stop_status_animation(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
         state.history_setter = None
         state.prompt_invalidator = None
         if getattr(app, "is_running", False):
@@ -881,7 +788,7 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         turn_id = await client.submit_turn(text)
         state.waiting_turn_id = turn_id
         state.turn_phase = "thinking"
-        _sync_status_animation_controller(state)
+        _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
         if state.input_ready is not None:
             state.input_ready.clear()
     except OpenJaxResponseError as err:
@@ -1087,16 +994,16 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
     if evt.turn_id and evt.turn_id == state.waiting_turn_id:
         if evt.event_type == "tool_call_started":
             state.turn_phase = "tool_wait"
-            _sync_status_animation_controller(state)
+            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
         elif evt.event_type == "tool_call_completed":
             state.turn_phase = (
                 "tool_wait" if _has_active_tool_calls_after_event(state, evt) else "thinking"
             )
-            _sync_status_animation_controller(state)
+            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
         elif evt.event_type in {"assistant_delta", "assistant_message"}:
             if state.turn_phase != "approval":
                 state.turn_phase = "thinking"
-            _sync_status_animation_controller(state)
+            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
 
     if evt.event_type == "approval_requested" and evt.turn_id:
         request_id = str(evt.payload.get("request_id", ""))
@@ -1126,7 +1033,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
                     f"[approval] use /approve {request_id} y|n, quick y/n, or press Enter to confirm default allow"
                 )
             state.turn_phase = "approval"
-            _sync_status_animation_controller(state)
+            _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
             if state.input_ready is not None:
                 state.input_ready.set()
             if state.approval_interrupt is not None:
@@ -1155,7 +1062,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
         _pop_pending(state, request_id)
         if not state.pending_approvals:
             state.turn_phase = "thinking" if state.waiting_turn_id else "idle"
-        _sync_status_animation_controller(state)
+        _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
         if state.waiting_turn_id and not state.pending_approvals and state.input_ready is not None:
             state.input_ready.clear()
         _tui_debug(
@@ -1167,7 +1074,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
     if evt.event_type == "turn_completed" and evt.turn_id == state.waiting_turn_id:
         state.waiting_turn_id = None
         state.turn_phase = "idle"
-        _sync_status_animation_controller(state)
+        _sync_status_animation_controller(state, request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug))
         if state.input_ready is not None:
             state.input_ready.set()
         _tui_debug("turn completed; input gate reopened")
