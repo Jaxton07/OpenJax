@@ -34,8 +34,10 @@ class ApprovalModuleTest(unittest.TestCase):
         state.approval_order.append("ap-2")
         state.approval_focus_id = "ap-2"
         text = approval.approval_toolbar_text(state, "----")
-        self.assertIn("ap-2", text)
-        self.assertIn("write_file", text)
+        self.assertIn("Permission Request", text)
+        self.assertIn("Action: write_file", text)
+        self.assertIn("Reason: policy check", text)
+        self.assertNotIn("id:", text)
 
     def test_is_expired_approval_error(self) -> None:
         err = OpenJaxResponseError(

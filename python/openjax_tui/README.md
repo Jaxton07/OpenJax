@@ -120,9 +120,10 @@ python3 -m openjax_tui
 
 1. `❯` 用户输入
 2. `⏺` 助手流式或最终输出
-3. 状态栏展示工具进行中动画（如 `status: Reading...`）
+3. 输入框上方展示当前状态动画（如 `Reading...`、`Thinking...`）
 4. 工具完成后仅保留一行历史（如 `⏺ Read 1 file (test.txt) · 1ms`，成功/失败用红绿颜色区分）
-5. `approval>` 审批提示
+5. prompt_toolkit 输入框使用圆角边框展示，并固定在距底部约 5 行位置
+6. 输入框下方保留审批区域用于展示权限申请详情
 
 输入区域默认在 TTY 环境下使用 `prompt_toolkit`，可将输入提示固定在底部，同时让事件输出在上方滚动。
 
@@ -162,6 +163,7 @@ OPENJAX_TUI_INPUT_BACKEND=basic
 | `OPENJAX_TUI_INPUT_BACKEND` | 输入后端：`prompt_toolkit` 或 `basic` | 自动检测 TTY |
 | `OPENJAX_TUI_VIEW_MODE` | 会话视图模式：`live`/`live_viewport`（scrollback-first 默认）或 `session`（兼容回退） | `live` |
 | `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL` | prompt_toolkit 历史视口实现：`pilot`（推荐）或 `textarea`（回退） | `pilot` |
+| `OPENJAX_TUI_INPUT_BOTTOM_OFFSET` | prompt_toolkit 模式下输入框距底部保留行数（审批区域高度） | `10` |
 | `OPENJAX_TUI_DEBUG` | 启用调试日志（`1` 开启）| 未设置 |
 | `OPENJAX_TUI_LOG_DIR` | 日志目录 | `.openjax/logs` |
 | `OPENJAX_TUI_LOG_MAX_BYTES` | 单个日志文件大小限制 | `2097152` (2MB) |

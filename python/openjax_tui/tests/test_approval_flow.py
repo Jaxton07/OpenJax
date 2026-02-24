@@ -325,9 +325,9 @@ class ApprovalFlowTest(unittest.IsolatedAsyncioTestCase):
         state.approval_focus_id = "ap-5"
 
         text = _approval_toolbar_text(state, "─" * 40)
-        self.assertIn("Approval Request (2 pending)", text)
-        self.assertIn("id: ap-5", text)
-        self.assertIn("target: shell", text)
+        self.assertIn("Permission Request", text)
+        self.assertIn("Action: shell", text)
+        self.assertIn("Reason: r2", text)
         self.assertIn("❯ 1. Yes", text)
 
         _move_approval_focus(state, step=-1)

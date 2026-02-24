@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from typing import Any, Callable
 
 
@@ -62,6 +63,47 @@ def build_prompt_key_bindings(
         return None
     kb = key_bindings_cls()
 
+    def _set_approval_flash(message: str) -> None:
+        state.approval_flash_message = message
+        state.approval_flash_until = time.monotonic() + 1.6
+        previous_handle = getattr(state, "approval_flash_clear_handle", None)
+        if previous_handle is not None:
+            with contextlib.suppress(Exception):
+                previous_handle.cancel()
+
+        def _clear_flash() -> None:
+            if time.monotonic() < state.approval_flash_until:
+                return
+            state.approval_flash_message = ""
+            state.approval_flash_until = 0.0
+            state.approval_flash_clear_handle = None
+            invalidator = getattr(state, "prompt_invalidator", None)
+            if callable(invalidator):
+                with contextlib.suppress(Exception):
+                    invalidator()
+
+        with contextlib.suppress(RuntimeError):
+            loop = asyncio.get_running_loop()
+            state.approval_flash_clear_handle = loop.call_later(1.7, _clear_flash)
+
+        invalidator = getattr(state, "prompt_invalidator", None)
+        if callable(invalidator):
+            with contextlib.suppress(Exception):
+                invalidator()
+
+    def _submit_approval_without_losing_input(event: object, flash_message: str) -> None:
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        if current_buffer is None:
+            return
+        existing_text = str(getattr(current_buffer, "text", ""))
+        current_buffer.text = ""
+        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
+        if callable(validate_and_handle):
+            validate_and_handle()
+        current_buffer.text = existing_text
+        _set_approval_flash(flash_message)
+
     @kb.add("tab", eager=True)
     def _toggle_action(event: object) -> None:
         if not approval_mode_active_fn(state):
@@ -94,62 +136,25 @@ def build_prompt_key_bindings(
     def _enter_resolve(event: object) -> None:
         app = getattr(event, "app", None)
         current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (approval_mode_active_fn(state) and not str(current_text).strip()):
+        if not approval_mode_active_fn(state):
             validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
             if callable(validate_and_handle):
                 validate_and_handle()
             return
-        if current_buffer is None:
-            return
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
+        flash_message = (
+            "Approved" if state.approval_selected_action == "allow" else "Rejected"
+        )
+        _submit_approval_without_losing_input(event, flash_message)
 
     @kb.add("escape", eager=True)
     def _escape_reject(event: object) -> None:
         app = getattr(event, "app", None)
         current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (approval_mode_active_fn(state) and not str(current_text).strip()):
+        if not approval_mode_active_fn(state):
             return
         if current_buffer is None:
             return
         state.approval_selected_action = "deny"
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
-
-    @kb.add("y", eager=True)
-    def _quick_yes(event: object) -> None:
-        app = getattr(event, "app", None)
-        current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (approval_mode_active_fn(state) and not str(current_text).strip()):
-            return
-        if current_buffer is None:
-            return
-        state.approval_selected_action = "allow"
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
-
-    @kb.add("n", eager=True)
-    def _quick_no(event: object) -> None:
-        app = getattr(event, "app", None)
-        current_buffer = getattr(app, "current_buffer", None)
-        current_text = getattr(current_buffer, "text", "")
-        if not (approval_mode_active_fn(state) and not str(current_text).strip()):
-            return
-        if current_buffer is None:
-            return
-        state.approval_selected_action = "deny"
-        current_buffer.text = ""
-        validate_and_handle = getattr(current_buffer, "validate_and_handle", None)
-        if callable(validate_and_handle):
-            validate_and_handle()
+        _submit_approval_without_losing_input(event, "Rejected")
 
     return kb

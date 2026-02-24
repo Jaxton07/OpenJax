@@ -82,7 +82,7 @@ try:
     from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.document import Document
     from prompt_toolkit.filters import Condition
-    from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
+    from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, VSplit, Window
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.layout.dimension import Dimension
     from prompt_toolkit.patch_stdout import patch_stdout
@@ -97,6 +97,7 @@ try:
     _prompt_toolkit_document: type[Document] | None = Document
     _prompt_toolkit_layout: type[Layout] | None = Layout
     _prompt_toolkit_hsplit: type[HSplit] | None = HSplit
+    _prompt_toolkit_vsplit: type[VSplit] | None = VSplit
     _prompt_toolkit_window: type[Window] | None = Window
     _prompt_toolkit_formatted_text_control: type[FormattedTextControl] | None = (
         FormattedTextControl
@@ -119,6 +120,7 @@ except Exception:  # pragma: no cover - optional dependency fallback
     _prompt_toolkit_document = None
     _prompt_toolkit_layout = None
     _prompt_toolkit_hsplit = None
+    _prompt_toolkit_vsplit = None
     _prompt_toolkit_window = None
     _prompt_toolkit_formatted_text_control = None
     _prompt_toolkit_condition = None
@@ -154,6 +156,7 @@ def _prompt_toolkit_components() -> PromptToolkitComponents:
         document_cls=_prompt_toolkit_document,
         layout_cls=_prompt_toolkit_layout,
         hsplit_cls=_prompt_toolkit_hsplit,
+        vsplit_cls=_prompt_toolkit_vsplit,
         window_cls=_prompt_toolkit_window,
         formatted_text_control_cls=_prompt_toolkit_formatted_text_control,
         condition_cls=_prompt_toolkit_condition,

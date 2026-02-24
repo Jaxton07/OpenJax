@@ -54,6 +54,9 @@ class AppState:
         self.history_auto_follow: bool = True
         self.history_manual_scroll: int = 0
         self.last_scrollback_flush_emitted: bool = False
+        self.approval_flash_message: str = ""
+        self.approval_flash_until: float = 0.0
+        self.approval_flash_clear_handle: object | None = None
         self.view_mode: ViewMode = ViewMode.LIVE_VIEWPORT
         self.animation_lifecycle: AnimationLifecycle = AnimationLifecycle.IDLE
         self.animation_task: asyncio.Task[None] | None = None

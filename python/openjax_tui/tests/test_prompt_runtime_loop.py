@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import unittest
 from unittest.mock import AsyncMock
 
@@ -10,11 +11,19 @@ from openjax_tui.prompt_runtime_loop import (
     compact_history_window,
     fallback_prompt_toolkit_to_basic,
     run_prompt_toolkit_loop,
+    _status_line_text,
 )
 from openjax_tui.state import AppState, ViewMode
 
 
 class PromptRuntimeLoopTest(unittest.IsolatedAsyncioTestCase):
+    def test_status_line_uses_approval_flash_message_when_active(self) -> None:
+        state = AppState()
+        state.turn_phase = "thinking"
+        state.approval_flash_message = "Approved"
+        state.approval_flash_until = time.monotonic() + 10
+        self.assertEqual(_status_line_text(state), "Approved")
+
     async def test_fallback_to_basic_resets_prompt_runtime_state(self) -> None:
         state = AppState()
         state.input_backend = "prompt_toolkit"
@@ -62,6 +71,7 @@ class PromptRuntimeLoopTest(unittest.IsolatedAsyncioTestCase):
                 document_cls=None,
                 layout_cls=None,
                 hsplit_cls=None,
+                vsplit_cls=None,
                 window_cls=None,
                 formatted_text_control_cls=None,
                 condition_cls=None,

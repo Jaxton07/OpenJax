@@ -122,7 +122,7 @@ class StatusAnimationTest(unittest.IsolatedAsyncioTestCase):
         state.animation_frame_index = 1
         state.active_tool_display_label_by_turn["turn-1"] = "Reading"
 
-        self.assertEqual(get_status_indicator_text(state), " status: Reading..")
+        self.assertEqual(get_status_indicator_text(state), "Reading..")
 
     async def test_turn_completion_cancels_animation(self) -> None:
         state = AppState()

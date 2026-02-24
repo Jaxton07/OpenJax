@@ -3,20 +3,20 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
+import time
 import traceback
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from openjax_sdk import OpenJaxAsyncClient
 
-from .approval import approval_toolbar_fragments as _approval_toolbar_fragments
 from .approval import approval_toolbar_text as _approval_toolbar_text
 from .debug_utils import normalize_history_for_prompt_toolkit as _normalize_history_for_prompt_toolkit
 from .prompt_ui import history_text as _history_text
 from .prompt_ui import invalidate_prompt_application as _invalidate_prompt_application
 from .prompt_ui import refresh_history_view as _refresh_history_view
 from .slash_commands import build_slash_command_completer as _build_slash_command_completer
-from .slash_commands import slash_hint_fragments as _slash_hint_fragments
 from .slash_commands import slash_hint_text as _slash_hint_text
 from .state import AppState, ViewMode
 from .status_animation import get_status_indicator_text as _status_indicator_text
@@ -40,6 +40,7 @@ class PromptToolkitComponents:
     document_cls: Any | None
     layout_cls: Any | None
     hsplit_cls: Any | None
+    vsplit_cls: Any | None
     window_cls: Any | None
     formatted_text_control_cls: Any | None
     condition_cls: Any | None
@@ -59,12 +60,24 @@ def prompt_toolkit_runtime_available(components: PromptToolkitComponents) -> boo
         components.document_cls,
         components.layout_cls,
         components.hsplit_cls,
+        components.vsplit_cls,
         components.window_cls,
         components.formatted_text_control_cls,
         components.condition_cls,
         components.conditional_container_cls,
     )
     return all(item is not None for item in required)
+
+
+def _status_line_text(state: AppState) -> str:
+    flash_message = str(getattr(state, "approval_flash_message", "")).strip()
+    if flash_message:
+        flash_until = float(getattr(state, "approval_flash_until", 0.0))
+        if time.monotonic() < flash_until:
+            return flash_message
+        state.approval_flash_message = ""
+        state.approval_flash_until = 0.0
+    return _status_indicator_text(state)
 
 
 def compact_history_window(
@@ -166,6 +179,7 @@ async def run_prompt_toolkit_loop(
     max_history_window_lines = max(
         120, int(os.environ.get("OPENJAX_TUI_HISTORY_WINDOW_LINES", "500"))
     )
+    input_bottom_offset = max(1, int(os.environ.get("OPENJAX_TUI_INPUT_BOTTOM_OFFSET", "10")))
 
     def _schedule_scrollback_flush(blocks: list[str]) -> None:
         if not blocks:
@@ -289,47 +303,73 @@ async def run_prompt_toolkit_loop(
         completer=slash_completer,
         complete_while_typing=True,
     )
-    slash_hint_panel = components.conditional_container_cls(
-        content=components.window_cls(
-            content=components.formatted_text_control_cls(
-                lambda: _slash_hint_fragments(
-                    str(getattr(input_view.buffer, "text", "")),
-                    slash_commands,
-                )
-            ),
-            dont_extend_height=True,
+    slash_hint_panel = components.window_cls(
+        content=components.formatted_text_control_cls(
+            lambda: _slash_hint_text(str(getattr(input_view.buffer, "text", "")), slash_commands)
         ),
-        filter=components.condition_cls(
-            lambda: bool(
-                _slash_hint_text(str(getattr(input_view.buffer, "text", "")), slash_commands)
-            )
-        ),
+        dont_extend_height=True,
+        height=1,
     )
-    status_panel = components.conditional_container_cls(
-        content=components.window_cls(
-            content=components.formatted_text_control_cls(lambda: _status_indicator_text(state)),
-            dont_extend_height=True,
+    status_panel = components.window_cls(
+        content=components.formatted_text_control_cls(
+            lambda: _status_line_text(state)
         ),
-        filter=components.condition_cls(lambda: bool(_status_indicator_text(state))),
+        dont_extend_height=True,
+        height=1,
     )
-    approval_panel = components.conditional_container_cls(
-        content=components.window_cls(
-            content=components.formatted_text_control_cls(
-                lambda: _approval_toolbar_fragments(state, divider_line_fn())
+
+    def _border_line(left: str, right: str) -> str:
+        width = max(shutil.get_terminal_size(fallback=(100, 24)).columns - 2, 8)
+        return f"{left}{'─' * width}{right}"
+
+    input_top_border = components.window_cls(
+        content=components.formatted_text_control_cls(lambda: _border_line("╭", "╮")),
+        dont_extend_height=True,
+        height=1,
+    )
+    input_bottom_border = components.window_cls(
+        content=components.formatted_text_control_cls(lambda: _border_line("╰", "╯")),
+        dont_extend_height=True,
+        height=1,
+    )
+    input_middle_row = components.vsplit_cls(
+        [
+            components.window_cls(
+                content=components.formatted_text_control_cls("│"),
+                width=1,
+                dont_extend_height=True,
+                height=1,
             ),
-            dont_extend_height=True,
+            input_view,
+            components.window_cls(
+                content=components.formatted_text_control_cls("│"),
+                width=1,
+                dont_extend_height=True,
+                height=1,
+            ),
+        ],
+        height=1,
+    )
+
+    approval_lines = max(1, input_bottom_offset - 1)
+    approval_panel = components.window_cls(
+        content=components.formatted_text_control_cls(
+            lambda: _approval_toolbar_text(state, divider_line_fn())
         ),
-        filter=components.condition_cls(
-            lambda: bool(_approval_toolbar_text(state, divider_line_fn()))
-        ),
+        wrap_lines=True,
+        always_hide_cursor=True,
+        height=approval_lines,
+        dont_extend_height=True,
     )
 
     root_container = components.hsplit_cls(
         [
             history_adapter.container,
             components.window_cls(height=1, char=" "),
-            input_view,
             status_panel,
+            input_top_border,
+            input_middle_row,
+            input_bottom_border,
             slash_hint_panel,
             approval_panel,
         ]

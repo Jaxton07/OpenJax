@@ -98,7 +98,6 @@ def approval_toolbar_text(state: AppState, divider_line: str) -> str:
     record = state.pending_approvals.get(focus_id)
     if record is None:
         return ""
-    total = len(approval_pending_ids(state))
     selected_allow = state.approval_selected_action == "allow"
     target = (record.target or "-").strip() or "-"
     reason = " ".join(str(record.reason or "-").split())
@@ -106,14 +105,13 @@ def approval_toolbar_text(state: AppState, divider_line: str) -> str:
     deny_label = "❯ 2. No" if not selected_allow else "  2. No"
     lines = [
         divider_line,
-        f" Approval Request ({total} pending)",
-        f" id: {focus_id}",
-        f" target: {target}",
-        f" reason: {reason}",
-        " Confirm this action?",
+        " Permission Request",
+        f" Action: {target}",
+        f" Reason: {reason}",
+        " Choose an option:",
         f" {allow_label}",
         f" {deny_label}",
-        " Tab/Up/Down switch · Enter confirm · Esc reject · /approve <id> y|n",
+        " Up/Down switch · Enter confirm · Esc reject",
     ]
     return "\n".join(lines)
 

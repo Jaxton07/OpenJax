@@ -59,11 +59,11 @@ def get_status_indicator_text(state: AppState) -> str:
         turn_id = state.waiting_turn_id or ""
         label = state.active_tool_display_label_by_turn.get(turn_id, "Working")
         frame = TOOL_WAIT_STATUS_FRAMES[state.animation_frame_index % len(TOOL_WAIT_STATUS_FRAMES)]
-        return f" status: {label}{frame}"
+        return f"{label}{frame}"
     frame = THINKING_STATUS_FRAMES[
         state.animation_frame_index % len(THINKING_STATUS_FRAMES)
     ]
-    return f" status: thinking{frame}"
+    return f"Thinking{frame}"
 
 
 def should_run_animation(state: AppState) -> bool:
