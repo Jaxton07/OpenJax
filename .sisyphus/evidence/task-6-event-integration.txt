@@ -1,0 +1,14 @@
+=== Task 6: Event Integration Happy Path ===
+Timestamp: 2026-02-24T04:37:24Z
+
+Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest python/openjax_tui/tests/test_app_event_wiring.py -v
+
+test_apply_updates_live_viewport_ownership_across_turn_lifecycle (python.openjax_tui.tests.test_app_event_wiring.AppEventWiringTest) ... ok
+test_apply_updates_tool_completion_without_dispatch_side_effect_dependency (python.openjax_tui.tests.test_app_event_wiring.AppEventWiringTest) ... ok
+test_dispatch_event_tool_call_completed_uses_runtime_adapters (python.openjax_tui.tests.test_app_event_wiring.AppEventWiringTest) ... ok
+test_fallback_to_basic_clears_live_viewport_and_stream_markers (python.openjax_tui.tests.test_app_event_wiring.AppFallbackWiringTest) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.010s
+
+OK

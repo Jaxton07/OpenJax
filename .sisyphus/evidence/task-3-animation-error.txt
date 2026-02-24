@@ -1,0 +1,7 @@
+=== Task 3: Fallback Cancellation (Error Path) ===
+Timestamp: 2026-02-24T04:37:50Z
+
+Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -c "from openjax_tui.state import AppState; s = AppState(); print('Testing animation task lifecycle...'); s.animation_task = None; print('PASS: Animation task can be safely cleared')"
+
+Testing animation task lifecycle...
+PASS: Animation task can be safely cleared

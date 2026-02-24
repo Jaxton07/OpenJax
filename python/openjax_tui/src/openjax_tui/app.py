@@ -10,12 +10,20 @@ import signal
 import sys
 import time
 import traceback
+from collections.abc import Awaitable
 from typing import Any, Callable
 
 from openjax_sdk import OpenJaxAsyncClient
 from openjax_sdk.exceptions import OpenJaxProtocolError, OpenJaxResponseError
 from openjax_sdk.models import EventEnvelope
-from .state import AppState, ApprovalRecord, ToolTurnStats
+from .state import (
+    AnimationLifecycle,
+    AppState,
+    ApprovalRecord,
+    LiveViewportOwnership,
+    ToolTurnStats,
+    ViewMode,
+)
 from .startup_ui import (
     _OPENJAX_LOGO_LONG,
     _OPENJAX_LOGO_SHORT,
@@ -114,7 +122,7 @@ try:
     _prompt_toolkit_ansi: Callable[[str], object] | None = ANSI
     _prompt_toolkit_dimension: Any | None = Dimension
     _prompt_toolkit_style: type[Style] | None = Style
-    _prompt_toolkit_application: type[Application] | None = Application
+    _prompt_toolkit_application: Any | None = Application
     _prompt_toolkit_text_area: type[TextArea] | None = TextArea
     _prompt_toolkit_document: type[Document] | None = Document
     _prompt_toolkit_layout: type[Layout] | None = Layout
@@ -177,6 +185,376 @@ _COMMAND_ROWS: tuple[str, ...] = (
     "/exit               exit",
 )
 _SLASH_COMMANDS: tuple[str, ...] = ("/approve", "/pending", "/help", "/exit")
+_STATUS_ANIMATION_INTERVAL_S = 1.0 / 7.0
+_THINKING_STATUS_FRAMES: tuple[str, ...] = ("", ".", "..", "...")
+_TOOL_WAIT_STATUS_FRAMES: tuple[str, ...] = ("|", "/", "-", "\\")
+
+
+class HistoryViewportAdapter:
+    def __init__(self, state: AppState) -> None:
+        self.state = state
+
+    @property
+    def container(self) -> Any:
+        raise NotImplementedError
+
+    def append_block(self, block: str) -> int:
+        self.state.history_blocks.append(block)
+        return len(self.state.history_blocks) - 1
+
+    def update_block(self, index: int, block: str) -> None:
+        if 0 <= index < len(self.state.history_blocks):
+            self.state.history_blocks[index] = block
+
+    def set_text(self, text: str) -> None:
+        raise NotImplementedError
+
+    def current_scroll(self) -> int:
+        raise NotImplementedError
+
+    def max_scroll(self) -> int | None:
+        raise NotImplementedError
+
+    def apply_scroll(self) -> None:
+        raise NotImplementedError
+
+    def refresh(self, text: str) -> None:
+        self.set_text(text)
+        self.apply_scroll()
+
+    def set_manual_scroll(self, value: int) -> None:
+        self.state.history_manual_scroll = max(0, int(value))
+        self.state.history_auto_follow = False
+        self.apply_scroll()
+
+    def follow_tail(self) -> None:
+        self.state.history_auto_follow = True
+        self.state.history_manual_scroll = max(0, int(self.current_scroll()))
+        self.apply_scroll()
+
+    def sync_manual_scroll_from_render(self) -> None:
+        self.state.history_manual_scroll = self.current_scroll()
+        if self.state.history_auto_follow:
+            return
+        window_max = self.max_scroll()
+        if window_max is None:
+            return
+        if self.state.history_manual_scroll >= window_max:
+            self.follow_tail()
+
+
+class TextAreaHistoryViewportAdapter(HistoryViewportAdapter):
+    def __init__(self, state: AppState, history_view: Any, *, document_cls: Any) -> None:
+        super().__init__(state)
+        self._history_view = history_view
+        self._history_window = getattr(history_view, "window", None)
+        self._document_cls = document_cls
+
+    @property
+    def container(self) -> Any:
+        return self._history_view
+
+    def set_text(self, text: str) -> None:
+        if self._document_cls is None:
+            return
+        history_buffer = getattr(self._history_view, "buffer", None)
+        if history_buffer is None:
+            return
+        if self.state.history_auto_follow:
+            cursor_position = len(text)
+        else:
+            current_cursor = int(getattr(history_buffer, "cursor_position", 0))
+            cursor_position = min(max(current_cursor, 0), len(text))
+        with contextlib.suppress(Exception):
+            history_buffer.set_document(
+                self._document_cls(text=text, cursor_position=cursor_position),
+                bypass_readonly=True,
+            )
+
+    def current_scroll(self) -> int:
+        if self._history_window is None:
+            return max(0, int(self.state.history_manual_scroll))
+        render_info = getattr(self._history_window, "render_info", None)
+        if render_info is not None:
+            with contextlib.suppress(Exception):
+                return max(0, int(getattr(render_info, "vertical_scroll", 0)))
+        return max(0, int(self.state.history_manual_scroll))
+
+    def max_scroll(self) -> int | None:
+        if self._history_window is None:
+            return None
+        render_info = getattr(self._history_window, "render_info", None)
+        if render_info is None:
+            return None
+        with contextlib.suppress(Exception):
+            content_height = int(getattr(render_info, "content_height", 0))
+            window_height = int(getattr(render_info, "window_height", 0))
+            return max(content_height - window_height, 0)
+        return None
+
+    def apply_scroll(self) -> None:
+        if self._history_window is None:
+            return
+        with contextlib.suppress(Exception):
+            if self.state.history_auto_follow:
+                self._history_window.vertical_scroll = 10**9
+            else:
+                self._history_window.vertical_scroll = max(0, int(self.state.history_manual_scroll))
+
+
+class PilotHistoryViewportAdapter(HistoryViewportAdapter):
+    def __init__(
+        self,
+        state: AppState,
+        history_window: Any,
+        *,
+        set_text_fn: Callable[[str], None],
+    ) -> None:
+        super().__init__(state)
+        self._history_window = history_window
+        self._set_text_fn = set_text_fn
+
+    @property
+    def container(self) -> Any:
+        return self._history_window
+
+    def set_text(self, text: str) -> None:
+        self._set_text_fn(text)
+
+    def current_scroll(self) -> int:
+        render_info = getattr(self._history_window, "render_info", None)
+        if render_info is not None:
+            with contextlib.suppress(Exception):
+                return max(0, int(getattr(render_info, "vertical_scroll", 0)))
+        return max(0, int(self.state.history_manual_scroll))
+
+    def max_scroll(self) -> int | None:
+        render_info = getattr(self._history_window, "render_info", None)
+        if render_info is None:
+            return None
+        with contextlib.suppress(Exception):
+            content_height = int(getattr(render_info, "content_height", 0))
+            window_height = int(getattr(render_info, "window_height", 0))
+            return max(content_height - window_height, 0)
+        return None
+
+    def apply_scroll(self) -> None:
+        with contextlib.suppress(Exception):
+            if self.state.history_auto_follow:
+                self._history_window.vertical_scroll = 10**9
+            else:
+                self._history_window.vertical_scroll = max(0, int(self.state.history_manual_scroll))
+
+
+def _resolve_history_viewport_impl() -> str:
+    requested = os.environ.get("OPENJAX_TUI_HISTORY_VIEWPORT_IMPL", "pilot")
+    normalized = requested.strip().lower()
+    if normalized == "textarea":
+        return "textarea"
+    return "pilot"
+
+
+def _retain_live_viewport_blocks(state: AppState) -> list[str]:
+    if state.view_mode != ViewMode.LIVE_VIEWPORT:
+        return []
+    if not state.history_blocks:
+        return []
+
+    keep_index: int | None = None
+    if (
+        state.stream_turn_id is not None
+        and state.stream_block_index is not None
+        and 0 <= state.stream_block_index < len(state.history_blocks)
+    ):
+        keep_index = state.stream_block_index
+
+    dropped_blocks: list[str] = []
+    if keep_index is None:
+        dropped_blocks = list(state.history_blocks)
+        state.history_blocks = []
+        state.turn_block_index = {}
+        state.stream_block_index = None
+        state.history_manual_scroll = 0
+        return dropped_blocks
+
+    retained_block = state.history_blocks[keep_index]
+    for idx, block in enumerate(state.history_blocks):
+        if idx != keep_index:
+            dropped_blocks.append(block)
+    state.history_blocks = [retained_block]
+
+    if state.stream_turn_id is not None:
+        state.turn_block_index = {state.stream_turn_id: 0}
+        state.stream_block_index = 0
+    else:
+        state.turn_block_index = {}
+        state.stream_block_index = None
+    state.history_manual_scroll = 0
+    return dropped_blocks
+
+
+def retain_live_viewport_blocks(state: AppState) -> list[str]:
+    return _retain_live_viewport_blocks(state)
+
+
+def _status_animation_phase(state: AppState) -> str | None:
+    if state.turn_phase == "thinking":
+        return "thinking"
+    if state.turn_phase == "tool_wait":
+        return "tool_wait"
+    return None
+
+
+def _status_animation_frame_count(state: AppState) -> int:
+    phase = _status_animation_phase(state)
+    if phase == "tool_wait":
+        return len(_TOOL_WAIT_STATUS_FRAMES)
+    return len(_THINKING_STATUS_FRAMES)
+
+
+def _status_indicator_text(state: AppState) -> str:
+    phase = _status_animation_phase(state)
+    if phase is None:
+        return ""
+    if phase == "tool_wait":
+        frame = _TOOL_WAIT_STATUS_FRAMES[
+            state.animation_frame_index % len(_TOOL_WAIT_STATUS_FRAMES)
+        ]
+        return f" status: waiting for tool results {frame}"
+    frame = _THINKING_STATUS_FRAMES[
+        state.animation_frame_index % len(_THINKING_STATUS_FRAMES)
+    ]
+    return f" status: thinking{frame}"
+
+
+def _status_animation_should_run(state: AppState) -> bool:
+    return (
+        state.running
+        and state.input_backend == "prompt_toolkit"
+        and state.prompt_invalidator is not None
+        and _status_animation_phase(state) is not None
+    )
+
+
+async def _run_status_animation_ticker(
+    state: AppState,
+    *,
+    sleep_fn: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> None:
+    state.animation_lifecycle = AnimationLifecycle.ACTIVE
+    try:
+        while _status_animation_should_run(state):
+            await sleep_fn(_STATUS_ANIMATION_INTERVAL_S)
+            if not _status_animation_should_run(state):
+                break
+            frame_count = _status_animation_frame_count(state)
+            state.animation_frame_index = (state.animation_frame_index + 1) % frame_count
+            _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
+    finally:
+        if state.animation_task is asyncio.current_task():
+            state.animation_task = None
+        if not _status_animation_should_run(state):
+            state.animation_lifecycle = AnimationLifecycle.IDLE
+            state.animation_frame_index = 0
+
+
+def _start_status_animation(state: AppState) -> None:
+    if not _status_animation_should_run(state):
+        return
+    task = state.animation_task
+    if task is not None and not task.done():
+        return
+    state.animation_lifecycle = AnimationLifecycle.PREPARING
+    state.animation_frame_index = 0
+    state.animation_task = asyncio.create_task(_run_status_animation_ticker(state))
+    _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
+
+
+def _stop_status_animation(state: AppState) -> None:
+    task = state.animation_task
+    previous_lifecycle = state.animation_lifecycle
+    had_frame = state.animation_frame_index != 0
+    state.animation_task = None
+    if task is not None and not task.done():
+        state.animation_lifecycle = AnimationLifecycle.SETTLING
+        task.cancel()
+    else:
+        state.animation_lifecycle = AnimationLifecycle.IDLE
+    if had_frame:
+        state.animation_frame_index = 0
+    if (
+        (task is not None and not task.done())
+        or had_frame
+        or previous_lifecycle != state.animation_lifecycle
+    ):
+        _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
+
+
+def _sync_status_animation_controller(state: AppState) -> None:
+    if _status_animation_should_run(state):
+        _start_status_animation(state)
+        return
+    _stop_status_animation(state)
+
+
+def _active_tool_call_count(state: AppState, turn_id: str) -> int:
+    count = 0
+    for key, starts in state.active_tool_starts.items():
+        if key[0] == turn_id:
+            count += len(starts)
+    return count
+
+
+def _has_active_tool_calls_after_event(state: AppState, evt: EventEnvelope) -> bool:
+    turn_id = evt.turn_id
+    if not turn_id:
+        return False
+
+    active_count = _active_tool_call_count(state, turn_id)
+    if evt.event_type == "tool_call_started":
+        active_count += 1
+    elif evt.event_type == "tool_call_completed":
+        tool_name = str(evt.payload.get("tool_name", ""))
+        starts = state.active_tool_starts.get((turn_id, tool_name))
+        if starts:
+            active_count = max(0, active_count - 1)
+    return active_count > 0
+
+
+def _update_live_viewport_ownership(state: AppState, evt: EventEnvelope) -> None:
+    if state.view_mode != ViewMode.LIVE_VIEWPORT:
+        return
+
+    turn_id = evt.turn_id
+    if not turn_id:
+        return
+
+    if evt.event_type == "assistant_delta":
+        state.live_viewport_owner_turn_id = turn_id
+        state.live_viewport_turn_ownership[turn_id] = LiveViewportOwnership.ACTIVE
+        return
+
+    if evt.event_type in {"assistant_message", "turn_completed"}:
+        state.live_viewport_turn_ownership[turn_id] = LiveViewportOwnership.RELEASED
+        if state.live_viewport_owner_turn_id == turn_id:
+            state.live_viewport_owner_turn_id = None
+
+
+async def _fallback_prompt_toolkit_to_basic(
+    client: OpenJaxAsyncClient,
+    state: AppState,
+    *,
+    reason: str,
+) -> None:
+    _finalize_stream_line(state)
+    state.live_viewport_owner_turn_id = None
+    state.live_viewport_turn_ownership.clear()
+    state.history_setter = None
+    state.prompt_invalidator = None
+    state.input_backend = "basic"
+    state.input_backend_reason = reason
+    _stop_status_animation(state)
+    await _input_loop_basic(client, state)
 
 
 async def run() -> None:
@@ -194,6 +572,7 @@ async def run() -> None:
     daemon_cmd = _daemon_cmd_from_env()
     client = OpenJaxAsyncClient(daemon_cmd=daemon_cmd)
     state = AppState()
+    state.set_view_mode(os.environ.get("OPENJAX_TUI_VIEW_MODE"))
     state.input_ready = asyncio.Event()
     state.input_ready.set()
     state.approval_interrupt = asyncio.Event()
@@ -245,6 +624,7 @@ async def run() -> None:
     finally:
         if interrupted:
             _ignore_sigint_during_shutdown()
+        _stop_status_animation(state)
         await _shutdown_client_quietly(client, graceful=not interrupted)
         _finalize_stream_line(state)
         _set_active_state(None)
@@ -357,10 +737,12 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         if callable(done_callback):
             done_callback(_ignore_future_error)
 
-    def _compact_history_window() -> None:
+    def _compact_history_window() -> list[str]:
+        if state.view_mode == ViewMode.LIVE_VIEWPORT:
+            return []
         current_lines = sum(block.count("\n") + 2 for block in state.history_blocks)
         if current_lines <= max_history_window_lines:
-            return
+            return []
 
         dropped_blocks: list[str] = []
         dropped_lines = 0
@@ -393,90 +775,80 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
                     current=current_lines,
                 )
             )
-            _schedule_scrollback_flush(dropped_blocks)
+        return dropped_blocks
 
-    history_kwargs = dict(
-        text="\n",
-        multiline=True,
-        wrap_lines=True,
-        read_only=True,
-        focusable=False,
-        scrollbar=True,
-        height=(
+    history_adapter: HistoryViewportAdapter
+    viewport_impl = _resolve_history_viewport_impl()
+    use_pilot_viewport = (
+        state.view_mode == ViewMode.LIVE_VIEWPORT and viewport_impl == "pilot"
+    )
+
+    if use_pilot_viewport:
+        pilot_history_text = "\n"
+
+        def _set_pilot_history_text(value: str) -> None:
+            nonlocal pilot_history_text
+            pilot_history_text = value
+
+        history_control = _prompt_toolkit_formatted_text_control(
+            lambda: pilot_history_text
+        )
+        history_window = _prompt_toolkit_window(
+            content=history_control,
+            wrap_lines=True,
+            always_hide_cursor=True,
+            height=(
+                _prompt_toolkit_dimension(weight=1)
+                if _prompt_toolkit_dimension is not None
+                else None
+            ),
+        )
+        history_adapter = PilotHistoryViewportAdapter(
+            state,
+            history_window,
+            set_text_fn=_set_pilot_history_text,
+        )
+    else:
+        history_height = (
             _prompt_toolkit_dimension(weight=1)
             if _prompt_toolkit_dimension is not None
             else None
-        ),
-    )
-    try:
-        history_view = _prompt_toolkit_text_area(**history_kwargs)
-    except TypeError:
-        # Older prompt_toolkit may not support newer TextArea kwargs (e.g. scrollbar).
-        history_kwargs.pop("scrollbar", None)
-        history_view = _prompt_toolkit_text_area(**history_kwargs)
-    history_window = getattr(history_view, "window", None)
+        )
+        try:
+            history_view = _prompt_toolkit_text_area(
+                text="\n",
+                multiline=True,
+                wrap_lines=True,
+                read_only=True,
+                focusable=False,
+                scrollbar=True,
+                height=history_height,
+            )
+        except TypeError:
+            # Older prompt_toolkit may not support newer TextArea kwargs (e.g. scrollbar).
+            history_view = _prompt_toolkit_text_area(
+                text="\n",
+                multiline=True,
+                wrap_lines=True,
+                read_only=True,
+                focusable=False,
+                height=history_height,
+            )
+        history_adapter = TextAreaHistoryViewportAdapter(
+            state,
+            history_view,
+            document_cls=_prompt_toolkit_document,
+        )
 
     def _history_plain_text() -> str:
         return _normalize_history_for_prompt_toolkit(_history_text(state))
 
-    def _current_history_scroll() -> int:
-        if history_window is None:
-            return max(0, int(state.history_manual_scroll))
-        render_info = getattr(history_window, "render_info", None)
-        if render_info is not None:
-            with contextlib.suppress(Exception):
-                return max(0, int(getattr(render_info, "vertical_scroll", 0)))
-        return max(0, int(state.history_manual_scroll))
-
-    def _current_history_max_scroll() -> int | None:
-        if history_window is None:
-            return None
-        render_info = getattr(history_window, "render_info", None)
-        if render_info is None:
-            return None
-        with contextlib.suppress(Exception):
-            content_height = int(getattr(render_info, "content_height", 0))
-            window_height = int(getattr(render_info, "window_height", 0))
-            return max(content_height - window_height, 0)
-        return None
-
-    def _apply_history_text() -> None:
-        if _prompt_toolkit_document is None:
-            return
-        text = _history_plain_text()
-        history_buffer = getattr(history_view, "buffer", None)
-        if history_buffer is None:
-            return
-
-        if state.history_auto_follow:
-            cursor_position = len(text)
-        else:
-            current_cursor = int(getattr(history_buffer, "cursor_position", 0))
-            cursor_position = min(max(current_cursor, 0), len(text))
-
-        with contextlib.suppress(Exception):
-            history_buffer.set_document(
-                _prompt_toolkit_document(text=text, cursor_position=cursor_position),
-                bypass_readonly=True,
-            )
-
-        if history_window is not None:
-            with contextlib.suppress(Exception):
-                if state.history_auto_follow:
-                    history_window.vertical_scroll = 10**9
-                else:
-                    history_window.vertical_scroll = max(0, int(state.history_manual_scroll))
-
-    def _sync_manual_scroll_from_render() -> None:
-        state.history_manual_scroll = _current_history_scroll()
-        if state.history_auto_follow:
-            return
-        render_info = getattr(history_window, "render_info", None)
-        if render_info is not None and bool(getattr(render_info, "bottom_visible", False)):
-            state.history_auto_follow = True
-            if history_window is not None:
-                with contextlib.suppress(Exception):
-                    history_window.vertical_scroll = 10**9
+    def _render_history_view() -> None:
+        dropped_blocks = _retain_live_viewport_blocks(state)
+        dropped_blocks.extend(_compact_history_window())
+        history_adapter.refresh(_history_plain_text())
+        if dropped_blocks:
+            _schedule_scrollback_flush(dropped_blocks)
 
     def _accept_input(buffer: Any) -> bool:
         text = str(getattr(buffer, "text", ""))
@@ -508,6 +880,15 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
             lambda: bool(_slash_hint_text(str(getattr(input_view.buffer, "text", "")), _SLASH_COMMANDS))
         ),
     )
+    status_panel = _prompt_toolkit_conditional_container(
+        content=_prompt_toolkit_window(
+            content=_prompt_toolkit_formatted_text_control(
+                lambda: _status_indicator_text(state)
+            ),
+            dont_extend_height=True,
+        ),
+        filter=_prompt_toolkit_condition(lambda: bool(_status_indicator_text(state))),
+    )
 
     approval_panel = _prompt_toolkit_conditional_container(
         content=_prompt_toolkit_window(
@@ -521,9 +902,10 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
 
     root_container = _prompt_toolkit_hsplit(
         [
-            history_view,
+            history_adapter.container,
             _prompt_toolkit_window(height=1, char=" "),
             input_view,
+            status_panel,
             slash_hint_panel,
             approval_panel,
         ]
@@ -538,23 +920,20 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
 
     state.prompt_invalidator = lambda: _invalidate_prompt_application(app)
     def _refresh_history_with_tail() -> None:
-        _compact_history_window()
-        _apply_history_text()
+        _render_history_view()
         # Keep scroll state and render info in sync.
         with contextlib.suppress(Exception):
-            _sync_manual_scroll_from_render()
+            history_adapter.sync_manual_scroll_from_render()
         _invalidate_prompt_application(app)
 
     state.history_setter = _refresh_history_with_tail
+    _sync_status_animation_controller(state)
 
     if key_bindings is not None:
         @key_bindings.add("pageup", eager=True)
         def _history_pageup(event: object) -> None:
-            state.history_auto_follow = False
             with contextlib.suppress(Exception):
-                state.history_manual_scroll = max(_current_history_scroll() - 20, 0)
-                if history_window is not None:
-                    history_window.vertical_scroll = state.history_manual_scroll
+                history_adapter.set_manual_scroll(history_adapter.current_scroll() - 20)
             app_obj = getattr(event, "app", None)
             if app_obj is not None:
                 app_obj.invalidate()
@@ -562,27 +941,17 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
         @key_bindings.add("pagedown", eager=True)
         def _history_pagedown(event: object) -> None:
             with contextlib.suppress(Exception):
-                max_scroll = _current_history_max_scroll()
-                next_scroll = _current_history_scroll() + 20
+                max_scroll = history_adapter.max_scroll()
+                next_scroll = history_adapter.current_scroll() + 20
                 if max_scroll is not None:
                     next_scroll = min(next_scroll, max_scroll)
-                    state.history_manual_scroll = next_scroll
-                    if history_window is not None:
-                        history_window.vertical_scroll = state.history_manual_scroll
+                    history_adapter.set_manual_scroll(next_scroll)
                     if next_scroll >= max_scroll:
-                        state.history_auto_follow = True
-                        if history_window is not None:
-                            history_window.vertical_scroll = 10**9
-                    else:
-                        state.history_auto_follow = False
+                        history_adapter.follow_tail()
                 else:
-                    state.history_manual_scroll = next_scroll
-                    if history_window is not None:
-                        history_window.vertical_scroll = state.history_manual_scroll
+                    history_adapter.set_manual_scroll(next_scroll)
                 if max_scroll == 0:
-                    state.history_auto_follow = True
-                    if history_window is not None:
-                        history_window.vertical_scroll = 10**9
+                    history_adapter.follow_tail()
             app_obj = getattr(event, "app", None)
             if app_obj is not None:
                 app_obj.invalidate()
@@ -609,9 +978,11 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
                         )
                         raise exc
                 _tui_log_info("prompt_toolkit loop exited unexpectedly; fallback to basic backend")
-                state.input_backend = "basic"
-                state.input_backend_reason = "prompt_toolkit_exited_early"
-                await _input_loop_basic(client, state)
+                await _fallback_prompt_toolkit_to_basic(
+                    client,
+                    state,
+                    reason="prompt_toolkit_exited_early",
+                )
                 return
             try:
                 line = await asyncio.wait_for(line_queue.get(), timeout=0.2)
@@ -630,6 +1001,7 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
             if not await _handle_user_line(client, state, line):
                 return
     finally:
+        _stop_status_animation(state)
         state.history_setter = None
         state.prompt_invalidator = None
         if getattr(app, "is_running", False):
@@ -709,6 +1081,7 @@ async def _handle_user_line(client: OpenJaxAsyncClient, state: AppState, line: s
         turn_id = await client.submit_turn(text)
         state.waiting_turn_id = turn_id
         state.turn_phase = "thinking"
+        _sync_status_animation_controller(state)
         if state.input_ready is not None:
             state.input_ready.clear()
     except OpenJaxResponseError as err:
@@ -840,8 +1213,8 @@ def _record_tool_started_for_state(state: AppState, turn: str, tool_name: str) -
 
 def _record_tool_completed_for_state(
     state: AppState, turn: str, tool_name: str, ok: bool
-) -> None:
-    _record_tool_completed(
+) -> int:
+    return _record_tool_completed(
         state,
         turn,
         tool_name,
@@ -852,7 +1225,7 @@ def _record_tool_completed_for_state(
 
 
 def _print_tool_call_result_line_for_state(
-    current_state: AppState, tool_name: str, ok: bool, output: str
+    current_state: AppState, tool_name: str, ok: bool, output: str, *, elapsed_ms: int = 0
 ) -> None:
     _print_tool_call_result_line(
         current_state,
@@ -864,6 +1237,7 @@ def _print_tool_call_result_line_for_state(
         finalize_stream_line_fn=_finalize_stream_line,
         emit_ui_spacer_fn=_emit_ui_spacer,
         emit_ui_line_fn=_emit_ui_line_for_state,
+        elapsed_ms=elapsed_ms,
     )
 
 
@@ -908,6 +1282,22 @@ def _dispatch_event(evt: EventEnvelope, state: AppState) -> None:
 
 
 def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
+    _update_live_viewport_ownership(state, evt)
+
+    if evt.turn_id and evt.turn_id == state.waiting_turn_id:
+        if evt.event_type == "tool_call_started":
+            state.turn_phase = "tool_wait"
+            _sync_status_animation_controller(state)
+        elif evt.event_type == "tool_call_completed":
+            state.turn_phase = (
+                "tool_wait" if _has_active_tool_calls_after_event(state, evt) else "thinking"
+            )
+            _sync_status_animation_controller(state)
+        elif evt.event_type in {"assistant_delta", "assistant_message"}:
+            if state.turn_phase != "approval":
+                state.turn_phase = "thinking"
+            _sync_status_animation_controller(state)
+
     if evt.event_type == "approval_requested" and evt.turn_id:
         request_id = str(evt.payload.get("request_id", ""))
         if request_id:
@@ -936,6 +1326,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
                     f"[approval] use /approve {request_id} y|n, quick y/n, or press Enter to confirm default allow"
                 )
             state.turn_phase = "approval"
+            _sync_status_animation_controller(state)
             if state.input_ready is not None:
                 state.input_ready.set()
             if state.approval_interrupt is not None:
@@ -964,6 +1355,7 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
         _pop_pending(state, request_id)
         if not state.pending_approvals:
             state.turn_phase = "thinking" if state.waiting_turn_id else "idle"
+        _sync_status_animation_controller(state)
         if state.waiting_turn_id and not state.pending_approvals and state.input_ready is not None:
             state.input_ready.clear()
         _tui_debug(
@@ -975,12 +1367,14 @@ def _apply_event_state_updates(state: AppState, evt: EventEnvelope) -> None:
     if evt.event_type == "turn_completed" and evt.turn_id == state.waiting_turn_id:
         state.waiting_turn_id = None
         state.turn_phase = "idle"
+        _sync_status_animation_controller(state)
         if state.input_ready is not None:
             state.input_ready.set()
         _tui_debug("turn completed; input gate reopened")
         # Final safety net for prompt_toolkit: ensure completed turn content is
-        # visible at tail when auto-follow is enabled.
-        if state.history_auto_follow and state.history_setter is not None:
+        if state.history_setter is not None and (
+            state.history_auto_follow or state.view_mode == ViewMode.LIVE_VIEWPORT
+        ):
             state.history_setter()
         _request_prompt_redraw(state, tui_debug_fn=_tui_debug)
 

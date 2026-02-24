@@ -1,0 +1,11 @@
+=== Task 9: Smoke Live Happy Path ===
+Timestamp: 2026-02-24T04:37:32Z
+
+Command: zsh -lc 'zsh smoke_test/python_tui_smoke.sh'
+
+[smoke] case1: help + exit
+[smoke] case2-pilot: tool turn view_mode=live viewport=pilot
+[smoke] case3-textarea: tool turn view_mode=live viewport=textarea
+[smoke] openjax_tui smoke passed
+
+Exit code: 0

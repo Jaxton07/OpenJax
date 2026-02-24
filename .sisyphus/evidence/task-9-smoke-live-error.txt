@@ -1,0 +1,22 @@
+=== Task 9: Multiplexer Wrapper Failure Guard (Error Path) ===
+Timestamp: 2026-02-24T04:38:14Z
+
+Command: which tmux zellij 2>/dev/null || echo 'Multiplexers not installed - testing graceful handling'
+
+/opt/homebrew/bin/tmux
+/opt/homebrew/bin/zellij
+
+Command: zsh -lc 'zsh smoke_test/python_tui_mux_check.sh' 2>&1 | tail -30
+
+[mux-check] python: Python 3.9.6
+[mux-check] tmux: tmux 3.6a
+[mux-check] zellij: zellij 0.43.1
+[mux-check] running base smoke
+[smoke] case1: help + exit
+[smoke] case2-pilot: tool turn view_mode=live viewport=pilot
+[smoke] case3-textarea: tool turn view_mode=live viewport=textarea
+[smoke] openjax_tui smoke passed
+[mux-check] done
+[mux-check] next: run manual checklist in docs/tui/python-tui-regression-checklist.md
+
+Exit code: 0

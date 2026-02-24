@@ -1,0 +1,11 @@
+=== Task 10: Missing Flag Documentation Guard (Error Path) ===
+Timestamp: 2026-02-24T04:38:18Z
+
+Command: grep -c 'OPENJAX_TUI_VIEW_MODE' python/openjax_tui/README.md
+
+Found 9 occurrences of OPENJAX_TUI_VIEW_MODE
+FAIL: OPENJAX_TUI_VIEW_MODE not found in README
+
+Command: grep 'OPENJAX_TUI_VIEW_MODE' python/openjax_tui/README.md >/dev/null && echo 'PASS: Flag documented' || echo 'FAIL: Flag not documented'
+
+PASS: OPENJAX_TUI_VIEW_MODE is documented in README

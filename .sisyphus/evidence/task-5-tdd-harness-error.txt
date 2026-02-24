@@ -1,0 +1,25 @@
+=== Task 5: Regression Safety (Error Path) ===
+Timestamp: 2026-02-24T04:37:57Z
+
+Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest discover -s python/openjax_tui/tests -v 2>&1 | tail -20
+
+test_event_dispatch_ignores_turn_started (test_tool_summary.ToolSummaryTest) ... ok
+test_interleaved_delta_tool_bursts_preserve_order_and_final_authority (test_tool_summary.ToolSummaryTest) ... ok
+test_render_utils_module_helpers (test_tool_summary.ToolSummaryTest) ... ok
+test_status_bullet_colored_dot_in_prompt_toolkit_backend (test_tool_summary.ToolSummaryTest) ... ok
+test_tool_events_print_immediate_lines (test_tool_summary.ToolSummaryTest) ... /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py:681: ResourceWarning: unclosed event loop <_UnixSelectorEventLoop running=False closed=False debug=False>
+  _warn(f"unclosed event loop {self!r}", ResourceWarning, source=self)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_tool_line_appends_to_history_in_prompt_toolkit_backend (test_tool_summary.ToolSummaryTest) ... ok
+test_tool_runtime_status_bullet_without_ansi (test_tool_summary.ToolSummaryTest) ... ok
+test_submit_turn_appends_user_line_in_prompt_toolkit_backend (test_user_prompt_render.UserPromptRenderTest) ... ok
+test_submit_turn_renders_user_prefix (test_user_prompt_render.UserPromptRenderTest) ... ok
+
+----------------------------------------------------------------------
+Ran 94 tests in 1.426s
+
+OK
+[approval] no pending approvals
+[approval] resolved: ap-3 ok=True
+[approval] resolved: ap-1 ok=True

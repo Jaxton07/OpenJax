@@ -1,0 +1,123 @@
+=== Task 10: Rollout Docs Happy Path ===
+Timestamp: 2026-02-24T04:37:37Z
+
+Command: grep -E 'OPENJAX_TUI_VIEW_MODE|live|history' python/openjax_tui/README.md
+
+`OPENJAX_TUI_VIEW_MODE` 控制历史渲染模式：
+- `live`：滚动优先模式，实时更新活动 turn 并尽快下沉已完成内容到终端 scrollback。
+- `pilot`（默认）：当前推荐实现，配合 `OPENJAX_TUI_VIEW_MODE=live` 提供 scrollback-first 行为。
+| `OPENJAX_TUI_VIEW_MODE` | 会话视图模式：`session`（兼容保底）或 `live`（scrollback-first） | `session` |
+1. 默认保持 `OPENJAX_TUI_VIEW_MODE=session`，先在现网观察稳定性基线。
+2. 试点开启 `OPENJAX_TUI_VIEW_MODE=live`（仍保持 `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=pilot`）。
+3. 若发现 live 视口异常，可先回退 `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=textarea`，必要时再整体回退到 `OPENJAX_TUI_VIEW_MODE=session`。
+OPENJAX_TUI_VIEW_MODE=live \
+OPENJAX_TUI_VIEW_MODE=session \
+- 若仍异常，切换 `OPENJAX_TUI_VIEW_MODE=session` 并开启 `OPENJAX_TUI_DEBUG=1` 收集 `.openjax/logs/openjax_tui.log`。
+
+Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest discover -s python/openjax_tui/tests -v
+
+test_apply_updates_live_viewport_ownership_across_turn_lifecycle (test_app_event_wiring.AppEventWiringTest) ... ok
+test_apply_updates_tool_completion_without_dispatch_side_effect_dependency (test_app_event_wiring.AppEventWiringTest) ... ok
+test_dispatch_event_tool_call_completed_uses_runtime_adapters (test_app_event_wiring.AppEventWiringTest) ... ok
+test_fallback_to_basic_clears_live_viewport_and_stream_markers (test_app_event_wiring.AppFallbackWiringTest) ... ok
+test_approval_toolbar_text_has_request (test_approval.ApprovalModuleTest) ... ok
+test_input_prompt_prefix_for_basic_approval (test_approval.ApprovalModuleTest) ... ok
+test_is_expired_approval_error (test_approval.ApprovalModuleTest) ... ok
+test_resolve_latest_approval_no_pending (test_approval.ApprovalModuleTest) ... ok
+test_approval_requested_hides_legacy_hint_in_prompt_toolkit (test_approval_flow.ApprovalFlowTest) ... ok
+test_approval_requested_updates_state_and_triggers_prompt_redraw (test_approval_flow.ApprovalFlowTest) ... ok
+test_approval_resolved_triggers_prompt_redraw (test_approval_flow.ApprovalFlowTest) ... ok
+test_drain_background_task_consumes_task_exception (test_approval_flow.ApprovalFlowTest) ... ok
+test_drain_background_task_handles_cancelled_task (test_approval_flow.ApprovalFlowTest) ... ok
+test_empty_input_confirms_selected_action_in_approval_ui (test_approval_flow.ApprovalFlowTest) ... ok
+test_expired_approval_error_cleans_pending_request (test_approval_flow.ApprovalFlowTest) ... ok
+test_prompt_prefix_stays_normal_for_prompt_toolkit (test_approval_flow.ApprovalFlowTest) ... ok
+test_prompt_prefix_switches_in_approval_mode_for_basic (test_approval_flow.ApprovalFlowTest) ... ok
+test_quiet_shutdown_closes_session_when_graceful (test_approval_flow.ApprovalFlowTest) ... ok
+test_quiet_shutdown_skips_session_close_when_interrupted (test_approval_flow.ApprovalFlowTest) ... ok
+test_quiet_shutdown_waits_for_slow_stop_completion (test_approval_flow.ApprovalFlowTest) ... ok
+test_text_input_is_blocked_while_approval_pending (test_approval_flow.ApprovalFlowTest) ... ok
+test_toolbar_and_focus_switching (test_approval_flow.ApprovalFlowTest) ... ok
+test_y_with_active_approval_resolves_focused_request (test_approval_flow.ApprovalFlowTest) ... ok
+test_y_without_approval_submits_normal_turn (test_approval_flow.ApprovalFlowTest) ... ok
+test_emit_ui_line_appends_history_in_prompt_toolkit (test_assistant_render.AssistantRenderModuleTest) ... ok
+test_finalize_stream_line_resets_state (test_assistant_render.AssistantRenderModuleTest) ... ok
+test_pilot_adapter_append_update_refresh_follow (test_history_viewport_adapter.HistoryViewportAdapterTest) ... ok
+test_textarea_adapter_append_update_refresh_follow (test_history_viewport_adapter.HistoryViewportAdapterTest) ... ok
+test_backend_reason_when_forced_basic (test_input_backend.InputBackendTest) ... ok
+test_force_basic_by_env (test_input_backend.InputBackendTest) ... ok
+test_force_prompt_toolkit_by_env (test_input_backend.InputBackendTest) ... ok
+test_force_prompt_toolkit_when_keybindings_unavailable (test_input_backend.InputBackendTest) ... ok
+test_module_select_input_backend_with_reason (test_input_backend.InputBackendTest) ... ok
+test_prompt_toolkit_when_tty_and_available (test_input_backend.InputBackendTest) ... ok
+test_apply_backspace_semantics (test_input_normalize.NormalizeInputTest) ... ok
+test_module_normalize_input (test_input_normalize.NormalizeInputTest) ... ok
+test_strip_arrow_escape_sequences (test_input_normalize.NormalizeInputTest) ... ok
+test_parse_log_max_bytes_in_module (test_logging.LoggingConfigTest) ... ok
+test_session_logging_field_helpers (test_logging.LoggingConfigTest) ... ok
+test_setup_tui_logger_respects_rotation_config (test_logging.LoggingConfigTest) ... ok
+test_setup_tui_logger_writes_to_expected_file (test_logging.LoggingConfigTest) ... ok
+test_select_long_when_terminal_is_wide (test_logo_select.LogoSelectTest) ... ok
+test_select_short_when_terminal_fits_short_only (test_logo_select.LogoSelectTest) ... ok
+test_select_tiny_when_terminal_is_narrow (test_logo_select.LogoSelectTest) ... ok
+test_build_returns_none_without_keybindings_cls (test_prompt_keybindings.PromptKeybindingsModuleTest) ... ok
+test_drain_background_task_none (test_prompt_ui.PromptRuntimeModuleTest) ... ok
+test_history_text_empty (test_prompt_ui.PromptRuntimeModuleTest) ... ok
+test_refresh_history_view_no_setter (test_prompt_ui.PromptRuntimeModuleTest) ... ok
+test_live_mode_flushes_all_when_no_active_stream (test_scrollback_live_mode.ScrollbackLiveModeTest) ... ok
+test_live_mode_flushes_all_when_stream_index_is_out_of_range (test_scrollback_live_mode.ScrollbackLiveModeTest) ... ok
+test_live_mode_flushes_all_when_stream_turn_missing_even_with_index (test_scrollback_live_mode.ScrollbackLiveModeTest) ... ok
+test_live_mode_keeps_only_in_progress_turn_block (test_scrollback_live_mode.ScrollbackLiveModeTest) ... ok
+test_live_mode_long_mixed_width_tail_keeps_active_block_lossless (test_scrollback_live_mode.ScrollbackLiveModeTest) ... ok
+test_live_mode_rapid_turn_burst_only_keeps_latest_active_turn (test_scrollback_live_mode.ScrollbackLiveModeTest) ... ok
+test_session_mode_does_not_retain_or_flush (test_scrollback_live_mode.ScrollbackLiveModeTest) ... ok
+test_run_and_exit (test_smoke.OpenJaxTuiSmokeTest) ... ok
+test_run_and_exit_command_in_temp_workspace (test_smoke.OpenJaxTuiSmokeTest) ... ok
+test_format_display_directory_uses_tilde (test_startup_config.StartupConfigTest) ... ok
+test_resolve_openjax_version_from_env (test_startup_config.StartupConfigTest) ... ok
+test_slash_command_candidates (test_startup_config.StartupConfigTest) ... ok
+test_slash_commands_module_helpers (test_startup_config.StartupConfigTest) ... ok
+test_slash_completer_handles_empty_cursor_text (test_startup_config.StartupConfigTest) ... ok
+test_slash_hint_text (test_startup_config.StartupConfigTest) ... ok
+test_startup_ui_module_exports_compatible_helpers (test_startup_config.StartupConfigTest) ... ok
+test_approval_record_defaults (test_state.StateModuleTest) ... ok
+test_appstate_defaults (test_state.StateModuleTest) ... ok
+test_live_viewport_ownership_value_contract (test_state.StateModuleTest) ... ok
+test_normalize_view_mode_accepts_valid_values (test_state.StateModuleTest) ... ok
+test_normalize_view_mode_defaults_to_session (test_state.StateModuleTest) ... ok
+test_set_view_mode_uses_deterministic_normalization (test_state.StateModuleTest) ... ok
+test_fallback_to_basic_cancels_animation_ticker (test_status_animation.StatusAnimationTest) ... ok
+test_single_ticker_task_source_of_truth (test_status_animation.StatusAnimationTest) ... ok
+test_sync_controller_does_not_spawn_ticker_for_basic_backend (test_status_animation.StatusAnimationTest) ... ok
+test_ticker_advances_with_bounded_cadence_only_while_active (test_status_animation.StatusAnimationTest) ... ok
+test_tool_completion_with_other_active_calls_stays_in_tool_wait (test_status_animation.StatusAnimationTest) ... ok
+test_tool_event_for_non_waiting_turn_does_not_flip_phase (test_status_animation.StatusAnimationTest) ... ok
+test_turn_completion_cancels_animation (test_status_animation.StatusAnimationTest) ... ok
+test_delta_renders_incrementally_and_message_dedupes (test_stream_render.StreamRenderTest) ... ok
+test_final_message_overrides_mixed_width_stream_without_duplication (test_stream_render.StreamRenderTest) ... ok
+test_multiline_assistant_alignment (test_stream_render.StreamRenderTest) ... ok
+test_rapid_delta_burst_final_message_is_authoritative_in_prompt_toolkit (test_stream_render.StreamRenderTest) ... ok
+test_cjk_and_emoji_snippet_uses_display_width_limit (test_timeline_unicode_width.TimelineUnicodeWidthTest) ... ok
+test_combining_marks_do_not_trigger_false_truncation (test_timeline_unicode_width.TimelineUnicodeWidthTest) ... ok
+test_multiline_output_collapses_to_readable_single_row (test_timeline_unicode_width.TimelineUnicodeWidthTest) ... ok
+test_truncation_keeps_zwj_cluster_readable (test_timeline_unicode_width.TimelineUnicodeWidthTest) ... ok
+test_event_dispatch_ignores_turn_started (test_tool_summary.ToolSummaryTest) ... ok
+test_interleaved_delta_tool_bursts_preserve_order_and_final_authority (test_tool_summary.ToolSummaryTest) ... ok
+test_render_utils_module_helpers (test_tool_summary.ToolSummaryTest) ... ok
+test_status_bullet_colored_dot_in_prompt_toolkit_backend (test_tool_summary.ToolSummaryTest) ... ok
+test_tool_events_print_immediate_lines (test_tool_summary.ToolSummaryTest) ... /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py:681: ResourceWarning: unclosed event loop <_UnixSelectorEventLoop running=False closed=False debug=False>
+  _warn(f"unclosed event loop {self!r}", ResourceWarning, source=self)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_tool_line_appends_to_history_in_prompt_toolkit_backend (test_tool_summary.ToolSummaryTest) ... ok
+test_tool_runtime_status_bullet_without_ansi (test_tool_summary.ToolSummaryTest) ... ok
+test_submit_turn_appends_user_line_in_prompt_toolkit_backend (test_user_prompt_render.UserPromptRenderTest) ... ok
+test_submit_turn_renders_user_prefix (test_user_prompt_render.UserPromptRenderTest) ... ok
+
+----------------------------------------------------------------------
+Ran 94 tests in 1.399s
+
+OK
+[approval] no pending approvals
+[approval] resolved: ap-3 ok=True
+[approval] resolved: ap-1 ok=True

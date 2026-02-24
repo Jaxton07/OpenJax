@@ -1,0 +1,30 @@
+=== Task 1: State Contract Happy Path ===
+Timestamp: 2026-02-24T04:36:57Z
+
+Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest python/openjax_tui/tests/test_state.py -v
+
+test_approval_record_defaults (python.openjax_tui.tests.test_state.StateModuleTest) ... ok
+test_appstate_defaults (python.openjax_tui.tests.test_state.StateModuleTest) ... ok
+test_live_viewport_ownership_value_contract (python.openjax_tui.tests.test_state.StateModuleTest) ... ok
+test_normalize_view_mode_accepts_valid_values (python.openjax_tui.tests.test_state.StateModuleTest) ... ok
+test_normalize_view_mode_defaults_to_session (python.openjax_tui.tests.test_state.StateModuleTest) ... ok
+test_set_view_mode_uses_deterministic_normalization (python.openjax_tui.tests.test_state.StateModuleTest) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.000s
+
+OK
+
+Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest python/openjax_tui/tests/test_input_backend.py -v
+
+test_backend_reason_when_forced_basic (python.openjax_tui.tests.test_input_backend.InputBackendTest) ... ok
+test_force_basic_by_env (python.openjax_tui.tests.test_input_backend.InputBackendTest) ... ok
+test_force_prompt_toolkit_by_env (python.openjax_tui.tests.test_input_backend.InputBackendTest) ... ok
+test_force_prompt_toolkit_when_keybindings_unavailable (python.openjax_tui.tests.test_input_backend.InputBackendTest) ... ok
+test_module_select_input_backend_with_reason (python.openjax_tui.tests.test_input_backend.InputBackendTest) ... ok
+test_prompt_toolkit_when_tty_and_available (python.openjax_tui.tests.test_input_backend.InputBackendTest) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK

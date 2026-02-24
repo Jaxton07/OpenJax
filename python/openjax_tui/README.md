@@ -100,11 +100,23 @@ python3 -m openjax_tui
 
 输入区域默认在 TTY 环境下使用 `prompt_toolkit`，可将输入提示固定在底部，同时让事件输出在上方滚动。
 
+滚动历史区域默认采用 scrollback-first 路线：历史消息优先写入终端 scrollback，视口中只保留当前活动 turn，降低长会话下的截断风险。
+
+`OPENJAX_TUI_VIEW_MODE` 控制历史渲染模式：
+
+- `live` / `live_viewport`（默认）：滚动优先模式，实时更新活动 turn 并尽快下沉已完成内容到终端 scrollback。
+- `session`：稳定兼容模式，使用会话块视图，适合作为保底回退配置。
+
 若需回退基础输入模式，可设置：
 
 ```bash
 OPENJAX_TUI_INPUT_BACKEND=basic
 ```
+
+`OPENJAX_TUI_HISTORY_VIEWPORT_IMPL` 控制 prompt_toolkit 历史视口适配器：
+
+- `pilot`（默认）：当前推荐实现，配合 `OPENJAX_TUI_VIEW_MODE=live` 提供 scrollback-first 行为。
+- `textarea`：兼容回退实现，保留旧 TextArea 视口路径，便于现场快速规避新适配器相关问题。
 
 ## 交互命令
 
@@ -122,10 +134,45 @@ OPENJAX_TUI_INPUT_BACKEND=basic
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `OPENJAX_TUI_INPUT_BACKEND` | 输入后端：`prompt_toolkit` 或 `basic` | 自动检测 TTY |
+| `OPENJAX_TUI_VIEW_MODE` | 会话视图模式：`live`/`live_viewport`（scrollback-first 默认）或 `session`（兼容回退） | `live` |
+| `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL` | prompt_toolkit 历史视口实现：`pilot`（推荐）或 `textarea`（回退） | `pilot` |
 | `OPENJAX_TUI_DEBUG` | 启用调试日志（`1` 开启）| 未设置 |
 | `OPENJAX_TUI_LOG_DIR` | 日志目录 | `.openjax/logs` |
 | `OPENJAX_TUI_LOG_MAX_BYTES` | 单个日志文件大小限制 | `2097152` (2MB) |
 | `OPENJAX_DAEMON_CMD` | 守护进程启动命令 | `cargo run -q -p openjaxd` |
+
+## Rollout 与回退策略
+
+当前运行策略建议按以下顺序排障：
+
+1. 默认使用 `OPENJAX_TUI_VIEW_MODE=live`（或兼容别名 `live_viewport`）+ `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=pilot`。
+2. 若发现 live 视口异常，先回退 `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=textarea`。
+3. 若仍异常，再整体回退到 `OPENJAX_TUI_VIEW_MODE=session`，必要时同时 `OPENJAX_TUI_INPUT_BACKEND=basic`。
+
+推荐试点启动命令：
+
+```bash
+OPENJAX_TUI_VIEW_MODE=live \
+OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=pilot \
+PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src \
+python3 -m openjax_tui
+```
+
+推荐保底回退命令：
+
+```bash
+OPENJAX_TUI_VIEW_MODE=session \
+OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=textarea \
+OPENJAX_TUI_INPUT_BACKEND=basic \
+PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src \
+python3 -m openjax_tui
+```
+
+操作员排障要点：
+
+- 先区分输入后端：TTY 默认 `prompt_toolkit`，非 TTY 或显式 `OPENJAX_TUI_INPUT_BACKEND=basic` 使用 basic 后端。
+- 若 `prompt_toolkit` 路径出现视口相关问题，优先切换 `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=textarea` 复测。
+- 若仍异常，切换 `OPENJAX_TUI_VIEW_MODE=session` 并开启 `OPENJAX_TUI_DEBUG=1` 收集 `.openjax/logs/openjax_tui.log`。
 
 ## 调试启动
 

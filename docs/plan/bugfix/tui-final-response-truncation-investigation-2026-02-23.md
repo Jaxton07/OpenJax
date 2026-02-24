@@ -148,3 +148,40 @@ OPENJAX_TUI_DEBUG=1 PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src pyt
 - `/Users/ericw/work/code/ai/openJax/python/openjax_tui/tests/test_startup_config.py`
 - `/Users/ericw/work/code/ai/openJax/.openjax/logs/openjax.log`
 - `/Users/ericw/work/code/ai/openJax/.openjax/logs/openjax_tui.log`
+
+---
+
+## 9. Rollout 默认值、兼容窗口与操作指引（2026-02-24）
+
+### 9.1 视图与适配器语义
+
+1. `OPENJAX_TUI_VIEW_MODE`
+   - `session`：兼容保底模式（当前默认），优先保证稳定输出行为。
+   - `live`：scrollback-first 模式，实时保留活动 turn，完成内容尽快写入终端 scrollback。
+2. `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL`
+   - `pilot`：当前默认与推荐实现，适配 live 视图路径。
+   - `textarea`：兼容回退实现，用于规避 pilot 相关视口问题。
+
+### 9.2 兼容窗口策略
+
+1. 兼容窗口内默认建议：`OPENJAX_TUI_VIEW_MODE=session` + `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=pilot`。
+2. 试点放量建议：按会话或机器逐步开启 `OPENJAX_TUI_VIEW_MODE=live`，并保持 `OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=pilot`。
+3. 异常时回退顺序：先 `pilot -> textarea`，再 `live -> session`，最后必要时切 `OPENJAX_TUI_INPUT_BACKEND=basic`。
+
+### 9.3 操作员验证与排障命令
+
+1. live 试点启动：
+
+```bash
+OPENJAX_TUI_VIEW_MODE=live OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=pilot PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m openjax_tui
+```
+
+2. 兼容回退启动：
+
+```bash
+OPENJAX_TUI_VIEW_MODE=session OPENJAX_TUI_HISTORY_VIEWPORT_IMPL=textarea OPENJAX_TUI_INPUT_BACKEND=basic PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m openjax_tui
+```
+
+3. 后端判定与日志收集：
+   - TTY 下默认走 `prompt_toolkit`，非 TTY 或显式 `OPENJAX_TUI_INPUT_BACKEND=basic` 走 basic。
+   - 排障时建议加 `OPENJAX_TUI_DEBUG=1` 并采集 `.openjax/logs/openjax_tui.log`。

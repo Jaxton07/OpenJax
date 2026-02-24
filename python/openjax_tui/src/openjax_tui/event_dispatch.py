@@ -12,8 +12,8 @@ def print_event(
     render_assistant_message_fn: Callable[[str, str], None],
     finalize_stream_line_if_turn_fn: Callable[[str], None],
     record_tool_started_fn: Callable[[str, str], None],
-    record_tool_completed_fn: Callable[[str, str, bool], None],
-    print_tool_call_result_line_fn: Callable[[Any, str, bool, str], None],
+    record_tool_completed_fn: Callable[[str, str, bool], int],
+    print_tool_call_result_line_fn: Callable[..., None],
     use_inline_approval_panel_fn: Callable[[Any], bool],
     print_tool_summary_for_turn_fn: Callable[[Any, str], None],
 ) -> None:
@@ -35,8 +35,8 @@ def print_event(
         tool_name = str(evt.payload.get("tool_name", ""))
         ok = bool(evt.payload.get("ok"))
         output = str(evt.payload.get("output", ""))
-        record_tool_completed_fn(turn, tool_name, ok)
-        print_tool_call_result_line_fn(state, tool_name, ok, output)
+        elapsed_ms = record_tool_completed_fn(turn, tool_name, ok)
+        print_tool_call_result_line_fn(state, tool_name, ok, output, elapsed_ms=elapsed_ms)
         return
     if t == "approval_requested":
         finalize_stream_line_if_turn_fn(turn)
