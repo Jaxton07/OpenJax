@@ -128,6 +128,30 @@ class TestCommandPalette(unittest.TestCase):
         self.assertIn("help", [cmd.name for cmd in palette.filtered_commands])
         self.assertIn("hello", [cmd.name for cmd in palette.filtered_commands])
 
+    def test_filter_commands_strips_leading_slash(self) -> None:
+        """Test filtering supports slash-prefixed query."""
+        commands = [
+            Command(name="help", description="Show help", handler=MagicMock()),
+            Command(name="exit", description="Exit", handler=MagicMock()),
+        ]
+        palette = CommandPalette(commands=commands)
+
+        palette.filter_commands("/he")
+        self.assertEqual(len(palette.filtered_commands), 1)
+        self.assertEqual(palette.filtered_commands[0].name, "help")
+
+    def test_filter_commands_prefers_exact_prefix(self) -> None:
+        """Test sorting puts best name match first."""
+        commands = [
+            Command(name="clear", description="Clear chat", handler=MagicMock()),
+            Command(name="help", description="Show help", handler=MagicMock()),
+            Command(name="shell", description="Open shell", handler=MagicMock()),
+        ]
+        palette = CommandPalette(commands=commands)
+
+        palette.filter_commands("he")
+        self.assertEqual(palette.filtered_commands[0].name, "help")
+
     def test_execute_command_valid_index(self) -> None:
         """Test executing command with valid index."""
         handler = MagicMock()
@@ -190,6 +214,29 @@ class TestCommandPalette(unittest.TestCase):
         palette.dismiss()
 
         self.assertIn("Dismissed", posted_messages)
+
+    def test_execute_best_match(self) -> None:
+        """Test executing best match helper."""
+        handler = MagicMock()
+        commands = [
+            Command(name="help", description="Show help", handler=handler),
+        ]
+        palette = CommandPalette(commands=commands)
+        palette.dismiss = MagicMock()
+
+        executed = palette.execute_best_match()
+        self.assertTrue(executed)
+        handler.assert_called_once()
+        palette.dismiss.assert_called_once()
+
+    def test_execute_best_match_empty(self) -> None:
+        """Test executing best match with empty candidates."""
+        palette = CommandPalette(commands=[])
+        palette.dismiss = MagicMock()
+
+        executed = palette.execute_best_match()
+        self.assertFalse(executed)
+        palette.dismiss.assert_not_called()
 
 
 if __name__ == "__main__":

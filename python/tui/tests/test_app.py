@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from openjax_tui.app import OpenJaxApp
 from openjax_tui.screens.chat import ChatScreen
 from openjax_tui.state import TurnPhase
+from textual.widgets import Input
 
 
 class TestOpenJaxApp(unittest.TestCase):
@@ -125,6 +126,30 @@ class TestChatScreen(unittest.TestCase):
         """Test that the screen has command palette method."""
         screen = ChatScreen()
         self.assertTrue(hasattr(screen, "show_command_palette"))
+
+    def test_on_key_moves_palette_selection_down(self) -> None:
+        """Down key should move command selection when slash mode is active."""
+        screen = ChatScreen()
+        chat_input = MagicMock(spec=Input)
+        chat_input.value = "/he"
+        palette = MagicMock()
+
+        def query_one(selector, *_args, **_kwargs):
+            if selector == "#chat-input":
+                return chat_input
+            if selector == "#command-palette":
+                return palette
+            raise Exception("not found")
+
+        screen.query_one = MagicMock(side_effect=query_one)
+
+        event = MagicMock()
+        event.key = "down"
+
+        screen.on_key(event)
+
+        palette.move_selection.assert_called_once_with(1)
+        event.stop.assert_called_once()
 
 
 class TestCommands(unittest.TestCase):

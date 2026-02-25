@@ -95,71 +95,11 @@ ScrollbarCorner {
 
 /* 命令面板样式 */
 #command-palette {
-    position: absolute;
-    top: 20%;
-    left: 20%;
-    width: 60%;
+    width: 100%;
     height: auto;
-    max-height: 50%;
+    max-height: 7;
     background: $surface;
-    border: thick $primary;
-    padding: 1;
-}
-
-#command-palette-container {
-    width: 100%;
-    height: auto;
-}
-
-#command-input {
-    width: 100%;
-    background: $background;
-    color: $text;
-    border: solid $border;
-}
-
-#command-list {
-    width: 100%;
-    height: auto;
-    max-height: 20;
-    border: none;
-    background: transparent;
-    margin-top: 1;
-}
-
-#command-list > ListItem {
-    width: 100%;
-    height: auto;
+    border: round $primary;
     padding: 0 1;
-    background: transparent;
-}
-
-#command-list > ListItem.--highlight {
-    background: $primary;
-    color: $background;
-}
-
-.command-item {
-    width: 100%;
-    height: auto;
-}
-
-.command-name {
-    width: auto;
-    color: $primary;
-    text-style: bold;
-}
-
-.command-description {
-    width: 1fr;
-    color: $secondary;
-    margin-left: 2;
-}
-
-#command-list > ListItem.--highlight .command-name {
-    color: $background;
-}
-
-#command-list > ListItem.--highlight .command-description {
-    color: $background;
+    margin-bottom: 1;
 }

@@ -30,6 +30,15 @@ python -m openjax_tui
 openjax-tui
 ```
 
+## Logging
+
+- Default log file: `.openjax/logs/openjax_tui.log`
+- Rotation: keep 5 backups, single file default max `2 MiB`
+- Env vars:
+  - `OPENJAX_TUI_LOG_DIR` override log directory
+  - `OPENJAX_TUI_LOG_MAX_BYTES` override single-file max bytes
+  - `OPENJAX_TUI_DEBUG=1` enable debug-level logs
+
 ## Development
 
 ```bash

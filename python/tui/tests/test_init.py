@@ -33,14 +33,22 @@ class TestPackageInit(unittest.TestCase):
         """Test that main function runs the app."""
         from openjax_tui import main
 
-        with patch("openjax_tui.app.OpenJaxApp") as mock_app_class:
+        with (
+            patch("openjax_tui.app.OpenJaxApp") as mock_app_class,
+            patch("openjax_tui.logging_setup.setup_logging") as mock_setup_logging,
+            patch("openjax_tui.logging_setup.get_logger") as mock_get_logger,
+        ):
             mock_app = MagicMock()
             mock_app_class.return_value = mock_app
+            mock_logger = MagicMock()
+            mock_setup_logging.return_value = mock_logger
+            mock_get_logger.return_value = mock_logger
 
             main()
 
             mock_app_class.assert_called_once()
             mock_app.run.assert_called_once()
+            mock_setup_logging.assert_called_once()
 
 
 class TestModuleEntryPoint(unittest.TestCase):

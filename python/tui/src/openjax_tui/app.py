@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import sys
+import logging
 
 from textual.app import App
 from textual.reactive import reactive
 
+from .logging_setup import get_logger
 from .screens.chat import ChatScreen
 from .state import AppState, TurnPhase
+
+logger = logging.getLogger("openjax_tui")
 
 
 class OpenJaxApp(App):
@@ -27,9 +30,12 @@ class OpenJaxApp(App):
         """Initialize the application."""
         super().__init__(**kwargs)
         self.state = AppState()
+        get_logger()
+        logger.info("app initialized")
 
     def on_mount(self) -> None:
         """Push the chat screen when app mounts."""
+        logger.info("mounting chat screen")
         self.push_screen(ChatScreen())
 
     def action_help_quit(self) -> None:
@@ -38,6 +44,7 @@ class OpenJaxApp(App):
 
     def action_help(self) -> None:
         """Show help information."""
+        logger.info("action_help triggered")
         help_text = """
 [bold cyan]OpenJax TUI 帮助[/bold cyan]
 
@@ -62,6 +69,7 @@ class OpenJaxApp(App):
 
     def action_clear(self) -> None:
         """Clear conversation history."""
+        logger.info("action_clear triggered")
         self.state.clear_messages()
         if isinstance(self.screen, ChatScreen):
             self.screen.clear_messages()
@@ -69,11 +77,13 @@ class OpenJaxApp(App):
 
     def action_exit(self) -> None:
         """Exit the application."""
+        logger.info("action_exit triggered")
         self.exit()
 
     def action_pending(self) -> None:
         """Show pending approvals."""
         count = self.state.get_pending_approval_count()
+        logger.info("action_pending triggered count=%s", count)
         if count == 0:
             msg = "[dim]没有待处理的审批请求[/dim]"
         else:
@@ -84,6 +94,7 @@ class OpenJaxApp(App):
 
     def action_command_palette(self) -> None:
         """Open the command palette."""
+        logger.info("action_command_palette triggered")
         if isinstance(self.screen, ChatScreen):
             self.screen.show_command_palette()
 
@@ -93,16 +104,19 @@ class OpenJaxApp(App):
         Args:
             text: The message text to submit
         """
-        # Add to state
-        self.state.add_message("user", text)
+        logger.info("submit_message text_len=%s", len(text))
+        try:
+            self.state.add_message("user", text)
 
-        # Show in UI
-        if isinstance(self.screen, ChatScreen):
-            self.screen.add_user_message(text)
+            if isinstance(self.screen, ChatScreen):
+                self.screen.add_user_message(text)
 
-        # TODO: In Phase 3, integrate with SDK to send to backend
-        # For now, just echo a mock response
-        self._mock_response(text)
+            # TODO: In Phase 3, integrate with SDK to send to backend
+            # For now, just echo a mock response
+            self._mock_response(text)
+        except Exception:
+            logger.exception("submit_message failed")
+            raise
 
     def _mock_response(self, user_text: str) -> None:
         """Generate a mock response (for testing without SDK).
@@ -110,20 +124,20 @@ class OpenJaxApp(App):
         Args:
             user_text: The user's input text
         """
-        # Simulate processing
-        self.state.set_turn_phase(TurnPhase.THINKING)
-        self.turn_phase = TurnPhase.THINKING
+        logger.info("mock_response start")
+        try:
+            self.state.set_turn_phase(TurnPhase.THINKING)
+            self.turn_phase = TurnPhase.THINKING
 
-        # Mock response
-        response = f"收到消息: {user_text}\n\n(这是模拟响应，Phase 3 将集成真实 SDK)"
+            response = f"收到消息: {user_text}\n\n(这是模拟响应，Phase 3 将集成真实 SDK)"
+            self.state.add_message("assistant", response)
 
-        # Add to state
-        self.state.add_message("assistant", response)
-
-        # Show in UI
-        if isinstance(self.screen, ChatScreen):
-            self.screen.add_assistant_message(response)
-
-        # Reset phase
-        self.state.set_turn_phase(TurnPhase.IDLE)
-        self.turn_phase = TurnPhase.IDLE
+            if isinstance(self.screen, ChatScreen):
+                self.screen.add_assistant_message(response)
+        except Exception:
+            logger.exception("mock_response failed")
+            raise
+        finally:
+            self.state.set_turn_phase(TurnPhase.IDLE)
+            self.turn_phase = TurnPhase.IDLE
+            logger.info("mock_response end")

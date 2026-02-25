@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.events import Key
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog
 
 from ..commands import create_commands
 from ..widgets.command_palette import CommandPalette
+
+logger = logging.getLogger("openjax_tui")
 
 
 def get_quit_key() -> str:
@@ -39,6 +43,7 @@ class ChatScreen(Screen):
 
     def on_mount(self) -> None:
         """Called when screen is mounted."""
+        logger.info("chat_screen mounted")
         log = self.query_one("#chat-log", RichLog)
         log.write("[bold green]欢迎使用 OpenJax TUI![/bold green]")
         # Show platform-specific quit key
@@ -47,34 +52,90 @@ class ChatScreen(Screen):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle input changes to detect '/' for command palette."""
-        # Check if input is just "/" to open command palette
-        if event.value == "/":
-            # Clear the input and open command palette
-            self.query_one("#chat-input", Input).value = ""
-            self.show_command_palette()
+        value = event.value
+        if value.startswith("/"):
+            logger.info("input_changed slash query=%s", value)
+            palette = self.show_command_palette()
+            palette.refresh_commands(value[1:])
+            return
+        self.dismiss_command_palette()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
-        if event.value.strip():
-            # Submit message to app
-            self.app.submit_message(event.value.strip())
-            # Clear input after submission
-            self.query_one("#chat-input", Input).value = ""
+        value = event.value.strip()
+        if not value:
+            return
 
-    def show_command_palette(self) -> None:
+        if value.startswith("/"):
+            logger.info("slash_command submitted query=%s", value)
+            try:
+                palette = self.query_one("#command-palette", CommandPalette)
+            except Exception:
+                palette = self.show_command_palette()
+                palette.refresh_commands(value[1:])
+
+            try:
+                if palette.execute_best_match():
+                    self.query_one("#chat-input", Input).value = ""
+                    logger.info("slash_command executed query=%s", value)
+                else:
+                    self.add_system_message(f"[yellow]未找到命令: {value}[/yellow]")
+                    logger.info("slash_command no_match query=%s", value)
+            except Exception:
+                logger.exception("slash_command execution failed query=%s", value)
+                self.add_system_message("[red]命令执行失败，请查看日志[/red]")
+            return
+
+        logger.info("chat submit text_len=%s", len(value))
+        self.app.submit_message(value)
+        self.query_one("#chat-input", Input).value = ""
+
+    def on_key(self, event: Key) -> None:
+        """Handle up/down keys for command candidate navigation."""
+        if event.key not in {"up", "down"}:
+            return
+
+        try:
+            chat_input = self.query_one("#chat-input", Input)
+            palette = self.query_one("#command-palette", CommandPalette)
+        except Exception:
+            return
+
+        if not chat_input.value.startswith("/"):
+            return
+
+        direction = 1 if event.key == "down" else -1
+        palette.move_selection(direction)
+        event.stop()
+
+    def show_command_palette(self) -> CommandPalette:
         """Show the command palette overlay."""
-        # Create commands with reference to app
+        try:
+            existing = self.query_one("#command-palette", CommandPalette)
+            return existing
+        except Exception:
+            pass
+
         commands = create_commands(self.app)
         palette = CommandPalette(commands=commands, id="command-palette")
-        self.mount(palette)
+        container = self.query_one("#chat-container", Vertical)
+        input_widget = self.query_one("#chat-input", Input)
+        container.mount(palette, before=input_widget)
+        logger.info("command_palette shown")
+        return palette
+
+    def dismiss_command_palette(self) -> None:
+        """Dismiss command palette if visible."""
+        try:
+            palette = self.query_one("#command-palette", CommandPalette)
+        except Exception:
+            return
+        palette.remove()
+        logger.info("command_palette dismissed")
 
     def on_command_palette_dismissed(self, event: CommandPalette.Dismissed) -> None:
         """Handle command palette dismissal."""
-        # Remove the palette from the screen
-        palette = self.query_one("#command-palette", CommandPalette)
-        if palette:
-            palette.remove()
-        # Focus back to input
+        self.dismiss_command_palette()
         self.query_one("#chat-input", Input).focus()
 
     def add_user_message(self, text: str) -> None:

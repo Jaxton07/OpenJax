@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Callable
 
-from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.reactive import reactive
-from textual.widgets import Input, Label, ListItem, ListView, Static
+from textual.widgets import Static
+
+logger = logging.getLogger("openjax_tui")
 
 
 @dataclass
@@ -22,19 +23,7 @@ class Command:
 
 
 class CommandPalette(Static):
-    """Command palette widget for fuzzy command search.
-
-    Usage:
-        - Type "/" to open
-        - Type to filter commands
-        - Enter to execute first match
-        - Escape to close
-    """
-
-    # Reactive state
-    query: reactive[str] = reactive("")
-    commands: reactive[list[Command]] = reactive(lambda: [])
-    filtered_commands: reactive[list[Command]] = reactive(lambda: [])
+    """Inline command list shown above chat input."""
 
     def __init__(self, commands: list[Command] | None = None, **kwargs) -> None:
         """Initialize command palette.
@@ -44,96 +33,78 @@ class CommandPalette(Static):
             **kwargs: Additional arguments passed to Static
         """
         super().__init__(**kwargs)
-        self.commands = commands or []
+        self.query = ""
+        self.commands = list(commands or [])
         self.filtered_commands = self.commands.copy()
-
-    def compose(self):
-        """Compose the command palette layout."""
-        with Vertical(id="command-palette-container"):
-            yield Input(
-                placeholder="输入命令...",
-                id="command-input",
-            )
-            yield ListView(id="command-list")
+        self.selected_index = 0
 
     def on_mount(self) -> None:
         """Called when widget is mounted."""
-        self.update_command_list()
-        # Focus the input
-        self.query_one("#command-input", Input).focus()
-
-    def watch_query(self, query: str) -> None:
-        """Watch for query changes and filter commands."""
-        self.filter_commands(query)
+        self.refresh_commands("")
 
     def filter_commands(self, query: str) -> None:
-        """Filter commands based on query.
+        """Filter and rank commands based on query.
 
         Args:
             query: Search query string
         """
-        query = query.lower().strip()
-        if not query:
+        normalized_query = query.lower().strip().lstrip("/")
+        if not normalized_query:
             self.filtered_commands = self.commands.copy()
         else:
-            # Fuzzy match: command name or description contains query
-            self.filtered_commands = [
-                cmd
-                for cmd in self.commands
-                if query in cmd.name.lower() or query in cmd.description.lower()
-            ]
+            scored: list[tuple[int, Command]] = []
+            for cmd in self.commands:
+                score = self._score_command(normalized_query, cmd)
+                if score is not None:
+                    scored.append((score, cmd))
+            scored.sort(key=lambda pair: (pair[0], pair[1].name))
+            self.filtered_commands = [cmd for _, cmd in scored]
+
+    def refresh_commands(self, query: str) -> None:
+        """Refresh visible commands for a query."""
+        self.query = query
+        self.filter_commands(query)
+        self.selected_index = 0
         self.update_command_list()
+        logger.info("command_palette refresh query=%s matches=%s", query, len(self.filtered_commands))
+
+    @staticmethod
+    def _score_command(query: str, cmd: Command) -> int | None:
+        """Return a score for a command; lower score means better match."""
+        name = cmd.name.lower()
+        description = cmd.description.lower()
+        if name == query:
+            return 0
+        if name.startswith(query):
+            return 10 + (len(name) - len(query))
+        if query in name:
+            return 100 + name.index(query)
+        if query in description:
+            return 300 + description.index(query)
+
+        position = -1
+        gap_penalty = 0
+        for char in query:
+            next_pos = name.find(char, position + 1)
+            if next_pos < 0:
+                return None
+            if position >= 0:
+                gap_penalty += next_pos - position - 1
+            position = next_pos
+        return 500 + gap_penalty
 
     def update_command_list(self) -> None:
-        """Update the command list display."""
-        # Check if widget is mounted before trying to update UI
-        if not self.is_mounted:
+        """Render current command candidates."""
+        if not self.filtered_commands:
+            self.update("[dim]无匹配命令[/dim]")
             return
 
-        try:
-            list_view = self.query_one("#command-list", ListView)
-        except Exception:
-            # Widget not fully mounted yet
-            return
-
-        list_view.clear()
-
-        for i, cmd in enumerate(self.filtered_commands):
-            # Create list item with command info
-            item = ListItem(
-                Horizontal(
-                    Label(f"/{cmd.name}", classes="command-name"),
-                    Label(cmd.description, classes="command-description"),
-                    classes="command-item",
-                ),
-                id=f"cmd-{i}",
-            )
-            list_view.append(item)
-
-        # Highlight first item if available
-        if self.filtered_commands:
-            list_view.index = 0
-
-    def on_input_changed(self, event: Input.Changed) -> None:
-        """Handle input changes."""
-        self.query = event.value
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle input submission (Enter key).
-
-        Executes the first filtered command.
-        """
-        if self.filtered_commands:
-            # Execute the first command
-            self.execute_command(0)
-
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle list item selection."""
-        # Get the index from the item id
-        item_id = event.item.id
-        if item_id and item_id.startswith("cmd-"):
-            index = int(item_id.split("-")[1])
-            self.execute_command(index)
+        lines: list[str] = []
+        for index, cmd in enumerate(self.filtered_commands):
+            prefix = "› " if index == self.selected_index else "  "
+            line = f"{prefix}[bold]/{cmd.name}[/bold]  [dim]{cmd.description}[/dim]"
+            lines.append(line)
+        self.update("\n".join(lines))
 
     def execute_command(self, index: int) -> None:
         """Execute command at given index.
@@ -143,14 +114,23 @@ class CommandPalette(Static):
         """
         if 0 <= index < len(self.filtered_commands):
             cmd = self.filtered_commands[index]
-            # Close palette first
+            logger.info("command_palette execute name=%s index=%s", cmd.name, index)
             self.dismiss()
-            # Execute command handler
             cmd.handler()
+
+    def execute_best_match(self) -> bool:
+        """Execute the top ranked command.
+
+        Returns:
+            True if a command was executed, False otherwise.
+        """
+        if not self.filtered_commands:
+            return False
+        self.execute_command(self.selected_index)
+        return True
 
     def dismiss(self) -> None:
         """Dismiss the command palette."""
-        # Notify parent to remove this widget
         self.post_message(self.Dismissed())
 
     def on_key(self, event) -> None:
@@ -166,19 +146,18 @@ class CommandPalette(Static):
             self.move_selection(-1)
 
     def move_selection(self, direction: int) -> None:
-        """Move selection in command list.
+        """Move selection in command candidates.
 
         Args:
             direction: 1 for down, -1 for up
         """
-        list_view = self.query_one("#command-list", ListView)
         if not self.filtered_commands:
             return
 
-        current_index = list_view.index or 0
-        new_index = current_index + direction
+        new_index = self.selected_index + direction
         new_index = max(0, min(new_index, len(self.filtered_commands) - 1))
-        list_view.index = new_index
+        self.selected_index = new_index
+        self.update_command_list()
 
     class Dismissed(Message):
         """Message sent when palette is dismissed."""
