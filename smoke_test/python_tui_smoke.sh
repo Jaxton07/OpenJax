@@ -73,7 +73,7 @@ def _run_case(log_file: str, view_mode: str, viewport_impl: str, tui_log_dir: st
             elif proc.poll() is not None:
                 break
 
-        if not started and b">_ OpenJax TUI" in transcript:
+        if not started and b">_ OpenJax" in transcript:
             os.write(master_fd, b"tool:list_dir dir_path=.\r")
             started = True
 

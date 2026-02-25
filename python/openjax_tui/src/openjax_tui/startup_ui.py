@@ -133,7 +133,7 @@ def _print_startup_card(version: str) -> None:
     model = os.environ.get("OPENJAX_MODEL", "(default)")
     directory = _format_display_directory(os.getcwd())
     rows = [
-        f">_ OpenJax TUI (v{version})",
+        f">_ OpenJax (v{version})",
         "",
         f"model:     {model}",
         f"directory: {directory}",

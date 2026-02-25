@@ -3,29 +3,40 @@ use async_trait::async_trait;
 use openjax_protocol::{Event, Op};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{
-    Agent, ApprovalPolicy, SandboxMode,
+    Agent, ApprovalPolicy, FinalResponseMode, SandboxMode,
     agent::{
         decision::{normalize_model_decision, parse_model_decision},
-        planner::should_abort_on_consecutive_duplicate_skips,
         prompt::{build_planner_input, summarize_user_input},
         runtime_policy::{parse_approval_policy, parse_sandbox_mode},
+        tool_policy::should_abort_on_consecutive_duplicate_skips,
     },
     model::ModelClient,
 };
 
+#[derive(Clone)]
 struct ScriptedStreamingModel {
-    complete_calls: Mutex<usize>,
+    complete_calls: Arc<Mutex<usize>>,
+    stream_calls: Arc<Mutex<usize>>,
 }
 
 impl ScriptedStreamingModel {
     fn new() -> Self {
         Self {
-            complete_calls: Mutex::new(0),
+            complete_calls: Arc::new(Mutex::new(0)),
+            stream_calls: Arc::new(Mutex::new(0)),
         }
+    }
+
+    fn complete_call_count(&self) -> usize {
+        *self.complete_calls.lock().expect("complete_calls lock")
+    }
+
+    fn stream_call_count(&self) -> usize {
+        *self.stream_calls.lock().expect("stream_calls lock")
     }
 }
 
@@ -42,6 +53,8 @@ impl ModelClient for ScriptedStreamingModel {
         _user_input: &str,
         delta_sender: Option<UnboundedSender<String>>,
     ) -> Result<String> {
+        let mut stream_calls = self.stream_calls.lock().expect("stream_calls lock");
+        *stream_calls += 1;
         if let Some(sender) = delta_sender {
             let _ = sender.send("你".to_string());
             let _ = sender.send("好".to_string());
@@ -106,13 +119,13 @@ fn duplicate_detection_is_turn_local_when_cleared() {
         PathBuf::from("."),
     );
     let mut args = HashMap::new();
-    args.insert("path".to_string(), "test.txt".to_string());
+    args.insert("cmd".to_string(), "echo hi".to_string());
 
-    agent.record_tool_call("read_file", &args, true, "ok");
-    assert!(agent.is_duplicate_tool_call("read_file", &args));
+    agent.record_tool_call("shell", &args, true, "ok");
+    assert!(agent.is_duplicate_tool_call("shell", &args));
 
     agent.recent_tool_calls.clear();
-    assert!(!agent.is_duplicate_tool_call("read_file", &args));
+    assert!(!agent.is_duplicate_tool_call("shell", &args));
 }
 
 #[test]
@@ -150,13 +163,13 @@ fn duplicate_detection_resets_after_mutation_epoch_change() {
         PathBuf::from("."),
     );
     let mut args = HashMap::new();
-    args.insert("path".to_string(), "test.txt".to_string());
+    args.insert("cmd".to_string(), "echo hi".to_string());
 
-    agent.record_tool_call("read_file", &args, true, "old");
-    assert!(agent.is_duplicate_tool_call("read_file", &args));
+    agent.record_tool_call("shell", &args, true, "old");
+    assert!(agent.is_duplicate_tool_call("shell", &args));
 
     agent.state_epoch = agent.state_epoch.saturating_add(1);
-    assert!(!agent.is_duplicate_tool_call("read_file", &args));
+    assert!(!agent.is_duplicate_tool_call("shell", &args));
 }
 
 #[test]
@@ -168,10 +181,10 @@ fn planner_prompt_contains_apply_patch_verification_rule() {
 
 #[test]
 fn aborts_after_consecutive_duplicate_skips() {
-    assert!(!should_abort_on_consecutive_duplicate_skips(0));
-    assert!(!should_abort_on_consecutive_duplicate_skips(1));
-    assert!(should_abort_on_consecutive_duplicate_skips(2));
-    assert!(should_abort_on_consecutive_duplicate_skips(3));
+    assert!(!should_abort_on_consecutive_duplicate_skips(0, 2));
+    assert!(!should_abort_on_consecutive_duplicate_skips(1, 2));
+    assert!(should_abort_on_consecutive_duplicate_skips(2, 2));
+    assert!(should_abort_on_consecutive_duplicate_skips(3, 2));
 }
 
 #[test]
@@ -195,7 +208,10 @@ async fn final_action_emits_assistant_delta_before_message() {
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
-    agent.model_client = Box::new(ScriptedStreamingModel::new());
+    agent.final_response_mode = FinalResponseMode::FinalWriter;
+    let model = ScriptedStreamingModel::new();
+    let model_probe = model.clone();
+    agent.model_client = Box::new(model);
 
     let events = agent
         .submit(Op::UserTurn {
@@ -239,4 +255,56 @@ async fn final_action_emits_assistant_delta_before_message() {
             < assistant_message_index.expect("assistant message index"),
         "assistant delta should be emitted before final assistant message"
     );
+    assert_eq!(model_probe.complete_call_count(), 1);
+    assert_eq!(model_probe.stream_call_count(), 1);
+}
+
+#[tokio::test]
+async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    agent.final_response_mode = FinalResponseMode::PlannerOnly;
+    let model = ScriptedStreamingModel::new();
+    let model_probe = model.clone();
+    agent.model_client = Box::new(model);
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "你好".to_string(),
+        })
+        .await;
+
+    let mut delta_text = String::new();
+    let mut first_delta_index: Option<usize> = None;
+    let mut assistant_message_index: Option<usize> = None;
+    let mut assistant_message_text = String::new();
+
+    for (idx, event) in events.iter().enumerate() {
+        match event {
+            Event::AssistantDelta { content_delta, .. } => {
+                if first_delta_index.is_none() {
+                    first_delta_index = Some(idx);
+                }
+                delta_text.push_str(content_delta);
+            }
+            Event::AssistantMessage { content, .. } => {
+                assistant_message_index = Some(idx);
+                assistant_message_text = content.clone();
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(delta_text, "seed");
+    assert_eq!(assistant_message_text, "seed");
+    assert!(
+        first_delta_index.expect("first delta")
+            < assistant_message_index.expect("assistant message index"),
+        "assistant delta should be emitted before final assistant message"
+    );
+    assert_eq!(model_probe.complete_call_count(), 1);
+    assert_eq!(model_probe.stream_call_count(), 0);
 }

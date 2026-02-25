@@ -13,8 +13,8 @@ use crate::agent::tool_policy::{
     is_approval_rejected_error, should_abort_on_consecutive_duplicate_skips,
 };
 use crate::{
-    Agent, MAX_CONSECUTIVE_DUPLICATE_SKIPS, MAX_PLANNER_ROUNDS_PER_TURN, MAX_TOOL_CALLS_PER_TURN,
-    tools,
+    Agent, FinalResponseMode, MAX_CONSECUTIVE_DUPLICATE_SKIPS, MAX_PLANNER_ROUNDS_PER_TURN,
+    MAX_TOOL_CALLS_PER_TURN, SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS, tools,
 };
 
 impl Agent {
@@ -172,17 +172,32 @@ impl Agent {
                     turn_id = turn_id,
                     phase = "completed",
                     action = "final",
+                    final_response_mode = self.final_response_mode.as_str(),
                     "natural_language_turn completed"
                 );
-                let message = self
-                    .stream_final_assistant_reply(
+                let message = if self.final_response_mode == FinalResponseMode::FinalWriter {
+                    info!(
+                        turn_id = turn_id,
+                        mode = self.final_response_mode.as_str(),
+                        "final_writer_request started"
+                    );
+                    self.stream_final_assistant_reply(
                         turn_id,
                         user_input,
                         &tool_traces,
                         &seed_message,
                         events,
                     )
-                    .await;
+                    .await
+                } else {
+                    info!(
+                        turn_id = turn_id,
+                        mode = self.final_response_mode.as_str(),
+                        "final_writer_request skipped"
+                    );
+                    self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
+                    seed_message
+                };
                 let (preview, preview_truncated) = summarize_log_preview(&message, 300);
                 let preview_json = serde_json::json!({ "final_response": preview }).to_string();
                 info!(
@@ -511,6 +526,12 @@ impl Agent {
 
         match result {
             Ok(full_text) => {
+                info!(
+                    turn_id = turn_id,
+                    output_len = full_text.len(),
+                    streamed_len = streamed.len(),
+                    "final_writer_request completed"
+                );
                 if streamed.is_empty() {
                     return full_text;
                 }
@@ -526,6 +547,46 @@ impl Agent {
                 warn!(turn_id = turn_id, error = %err, "final response streaming failed; fallback to planner message");
                 seed_message.to_string()
             }
+        }
+    }
+
+    fn emit_synthetic_assistant_deltas(
+        &mut self,
+        turn_id: u64,
+        message: &str,
+        events: &mut Vec<Event>,
+    ) {
+        if message.is_empty() {
+            return;
+        }
+
+        let mut chunk = String::new();
+        let mut chunk_len = 0usize;
+
+        for ch in message.chars() {
+            chunk.push(ch);
+            chunk_len += 1;
+            if chunk_len >= SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS {
+                self.push_event(
+                    events,
+                    Event::AssistantDelta {
+                        turn_id,
+                        content_delta: chunk.clone(),
+                    },
+                );
+                chunk.clear();
+                chunk_len = 0;
+            }
+        }
+
+        if !chunk.is_empty() {
+            self.push_event(
+                events,
+                Event::AssistantDelta {
+                    turn_id,
+                    content_delta: chunk,
+                },
+            );
         }
     }
 }

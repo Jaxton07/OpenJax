@@ -26,7 +26,7 @@ class OpenJaxTuiSmokeTest(unittest.TestCase):
         )
 
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
-        self.assertIn(">_ OpenJax TUI (v", proc.stdout)
+        self.assertIn(">_ OpenJax (v", proc.stdout)
         self.assertIn("directory:", proc.stdout)
         self.assertNotIn("commands:", proc.stdout)
         self.assertNotIn("[status]", proc.stdout)

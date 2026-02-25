@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::agent::runtime_policy::{resolve_approval_policy, resolve_sandbox_mode};
 use crate::agent::state::RateLimitConfig;
-use crate::{Agent, Config, approval, model, tools};
+use crate::{Agent, Config, FinalResponseMode, approval, model, tools};
 
 impl Agent {
     pub fn new() -> Self {
@@ -75,6 +75,7 @@ impl Agent {
             rate_limit_config: RateLimitConfig::default(),
             recent_tool_calls: Vec::new(),
             state_epoch: 0,
+            final_response_mode: FinalResponseMode::from_env(),
             approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
             event_sink: None,
         }

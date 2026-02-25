@@ -56,6 +56,9 @@ Rules:\n\
 - At most one action per response.\n\
 - You can call tools up to {remaining_calls} more times this turn.\n\
 - If task can be answered now, return final.\n\
+- If action is final, message must be the direct, user-facing final answer (not a draft or meta explanation).\n\
+- In final.message, avoid mentioning internal planning, hidden reasoning, or tool traces unless the user explicitly asks.\n\
+- If required information is missing, use final.message to ask one concise clarification question.\n\
 - IMPORTANT: All values inside args MUST be JSON strings (not numbers/booleans). Example: \"start_line\":\"6\".\n\
 - For shell, put shell command in args.cmd.\n\
 - For apply_patch, use this EXACT format (note the space prefix for context lines):\n\

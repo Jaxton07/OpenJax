@@ -153,6 +153,7 @@ let events = agent
 | `OPENJAX_APPROVAL_POLICY` | 审批策略：`always_ask` / `on_request` / `never` | `on_request` |
 | `OPENJAX_SANDBOX_MODE` | 沙箱模式：`workspace_write` / `danger_full_access` | `workspace_write` |
 | `OPENJAX_MODEL` | OpenAI 模型名 | `gpt-4.1-mini` |
+| `OPENJAX_FINAL_WRITER` | Final writer 开关：`on/off`（`off` 时跳过二次模型请求，直接使用 planner final.message） | `off` |
 | `OPENAI_API_KEY` | OpenAI API Key | 未设置 |
 | `OPENAI_BASE_URL` | OpenAI 兼容接口地址 | `https://api.openai.com/v1` |
 | `OPENJAX_GLM_API_KEY` | GLM API Key | 未设置 |
