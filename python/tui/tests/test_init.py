@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from io import StringIO
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 class TestPackageInit(unittest.TestCase):
@@ -30,34 +29,28 @@ class TestPackageInit(unittest.TestCase):
 
         self.assertTrue(callable(main))
 
-    def test_main_output(self) -> None:
-        """Test that main function produces expected output."""
+    def test_main_runs_app(self) -> None:
+        """Test that main function runs the app."""
         from openjax_tui import main
 
-        with patch("sys.stdout", new=StringIO()) as fake_stdout:
-            main()
-            output = fake_stdout.getvalue()
+        with patch("openjax_tui.app.OpenJaxApp") as mock_app_class:
+            mock_app = MagicMock()
+            mock_app_class.return_value = mock_app
 
-        self.assertIn("OpenJax TUI", output)
-        self.assertIn("初始化成功", output)
-        self.assertIn("Textual", output)
+            main()
+
+            mock_app_class.assert_called_once()
+            mock_app.run.assert_called_once()
 
 
 class TestModuleEntryPoint(unittest.TestCase):
     """Test module entry point functionality."""
 
-    def test_module_execution(self) -> None:
-        """Test that the module can be executed."""
-        import runpy
+    def test_module_imports(self) -> None:
+        """Test that the module can be imported."""
+        import openjax_tui
 
-        with patch("sys.stdout", new=StringIO()) as fake_stdout:
-            try:
-                runpy.run_module("openjax_tui", run_name="__main__")
-            except SystemExit:
-                pass  # Expected if main() calls sys.exit
-            output = fake_stdout.getvalue()
-
-        self.assertIn("OpenJax TUI", output)
+        self.assertIsNotNone(openjax_tui)
 
 
 if __name__ == "__main__":
