@@ -119,6 +119,83 @@ class PromptKeybindingsModuleTest(unittest.TestCase):
         self.assertEqual(buffer.validated, 3)
         self.assertEqual(state.approval_flash_message, "Rejected")
 
+    def test_shift_enter_inserts_newline_in_non_approval_mode(self) -> None:
+        state = AppState()
+
+        class _FakeKeyBindings:
+            def __init__(self) -> None:
+                self.handlers: dict[str, object] = {}
+
+            def add(self, key: str, eager: bool = False):  # noqa: ANN001
+                _ = eager
+
+                def _decorator(fn):  # noqa: ANN001
+                    self.handlers[key] = fn
+                    return fn
+
+                return _decorator
+
+        class _FakeBuffer:
+            def __init__(self) -> None:
+                self.text = "line1"
+
+            def insert_text(self, text: str) -> None:
+                self.text += text
+
+        buffer = _FakeBuffer()
+        event = SimpleNamespace(app=SimpleNamespace(current_buffer=buffer))
+        kb = prompt_keybindings.build_prompt_key_bindings(
+            key_bindings_cls=_FakeKeyBindings,
+            state=state,
+            approval_mode_active_fn=lambda _s: False,
+            toggle_approval_selection_fn=lambda _s: None,
+            on_tab_non_approval_fn=lambda _evt: None,
+        )
+        assert kb is not None
+        self.assertIn("c-j", kb.handlers)
+        kb.handlers["s-enter"](event)
+        self.assertEqual(buffer.text, "line1\n")
+
+    def test_shift_enter_falls_back_to_ctrl_j_when_key_is_unsupported(self) -> None:
+        state = AppState()
+
+        class _FakeKeyBindings:
+            def __init__(self) -> None:
+                self.handlers: dict[str, object] = {}
+
+            def add(self, key: str, eager: bool = False):  # noqa: ANN001
+                _ = eager
+                if key == "s-enter":
+                    raise ValueError("Invalid key: s-enter")
+
+                def _decorator(fn):  # noqa: ANN001
+                    self.handlers[key] = fn
+                    return fn
+
+                return _decorator
+
+        class _FakeBuffer:
+            def __init__(self) -> None:
+                self.text = "line1"
+
+            def insert_text(self, text: str) -> None:
+                self.text += text
+
+        buffer = _FakeBuffer()
+        event = SimpleNamespace(app=SimpleNamespace(current_buffer=buffer))
+        kb = prompt_keybindings.build_prompt_key_bindings(
+            key_bindings_cls=_FakeKeyBindings,
+            state=state,
+            approval_mode_active_fn=lambda _s: False,
+            toggle_approval_selection_fn=lambda _s: None,
+            on_tab_non_approval_fn=lambda _evt: None,
+        )
+        assert kb is not None
+        self.assertNotIn("s-enter", kb.handlers)
+        self.assertIn("c-j", kb.handlers)
+        kb.handlers["c-j"](event)
+        self.assertEqual(buffer.text, "line1\n")
+
 
 if __name__ == "__main__":
     unittest.main()

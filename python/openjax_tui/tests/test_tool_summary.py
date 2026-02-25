@@ -43,7 +43,7 @@ class ToolSummaryTest(unittest.TestCase):
                 monotonic_fn=__import__("time").monotonic,
                 tool_turn_stats_cls=ToolTurnStats,
             ),
-            print_tool_call_result_line_fn=lambda s, tool_name, ok, output, elapsed_ms=0: tr.print_tool_call_result_line(
+            print_tool_call_result_line_fn=lambda s, tool_name, ok, output, elapsed_ms=0, target_hint=None: tr.print_tool_call_result_line(
                 s,
                 tool_name,
                 ok,
@@ -54,6 +54,7 @@ class ToolSummaryTest(unittest.TestCase):
                 emit_ui_spacer_fn=lambda _s: None,
                 emit_ui_line_fn=lambda _s, text: print(text),
                 elapsed_ms=elapsed_ms,
+                target_hint=target_hint,
             ),
             use_inline_approval_panel_fn=lambda _s: False,
             print_tool_summary_for_turn_fn=lambda *_args, **_kwargs: None,
@@ -101,11 +102,44 @@ class ToolSummaryTest(unittest.TestCase):
                 _evt(
                     "1",
                     "tool_call_completed",
-                    {"tool_name": "read_file", "ok": True, "output": "Read test.txt L1: hello"},
+                    {
+                        "tool_name": "read_file",
+                        "ok": True,
+                        "output": "L1: hello",
+                        "args": {"file_path": "test.txt"},
+                    },
                 ),
             )
 
         self.assertRegex(out.getvalue(), r"⏺ Read 1 file \(test\.txt\) · \d+ms")
+
+    def test_duration_switches_to_seconds_and_minutes(self) -> None:
+        state = AppState()
+        out = io.StringIO()
+
+        with redirect_stdout(out), patch("time.monotonic", side_effect=[1.0, 20.304, 30.0, 95.4]):
+            self._print_event(state, _evt("1", "tool_call_started", {"tool_name": "shell"}))
+            self._print_event(
+                state,
+                _evt(
+                    "1",
+                    "tool_call_completed",
+                    {"tool_name": "shell", "ok": True, "output": "done"},
+                ),
+            )
+            self._print_event(state, _evt("2", "tool_call_started", {"tool_name": "shell"}))
+            self._print_event(
+                state,
+                _evt(
+                    "2",
+                    "tool_call_completed",
+                    {"tool_name": "shell", "ok": True, "output": "done"},
+                ),
+            )
+
+        text = out.getvalue()
+        self.assertIn("Run shell command · 19.3s", text)
+        self.assertIn("Run shell command · 1m05.4s", text)
 
     def test_status_bullet_colored_dot_in_prompt_toolkit_backend(self) -> None:
         state = AppState()
@@ -163,7 +197,7 @@ class ToolSummaryTest(unittest.TestCase):
                     monotonic_fn=__import__("time").monotonic,
                     tool_turn_stats_cls=ToolTurnStats,
                 ),
-                print_tool_call_result_line_fn=lambda s, tool_name, ok, output, elapsed_ms=0: tr.print_tool_call_result_line(
+                print_tool_call_result_line_fn=lambda s, tool_name, ok, output, elapsed_ms=0, target_hint=None: tr.print_tool_call_result_line(
                     s,
                     tool_name,
                     ok,
@@ -174,6 +208,7 @@ class ToolSummaryTest(unittest.TestCase):
                     emit_ui_spacer_fn=lambda _s: None,
                     emit_ui_line_fn=_emit_ui_line,
                     elapsed_ms=elapsed_ms,
+                    target_hint=target_hint,
                 ),
                 use_inline_approval_panel_fn=lambda _s: False,
                 print_tool_summary_for_turn_fn=lambda *_args, **_kwargs: None,
@@ -196,7 +231,7 @@ class ToolSummaryTest(unittest.TestCase):
                     monotonic_fn=__import__("time").monotonic,
                     tool_turn_stats_cls=ToolTurnStats,
                 ),
-                print_tool_call_result_line_fn=lambda s, tool_name, ok, output, elapsed_ms=0: tr.print_tool_call_result_line(
+                print_tool_call_result_line_fn=lambda s, tool_name, ok, output, elapsed_ms=0, target_hint=None: tr.print_tool_call_result_line(
                     s,
                     tool_name,
                     ok,
@@ -207,6 +242,7 @@ class ToolSummaryTest(unittest.TestCase):
                     emit_ui_spacer_fn=lambda _s: None,
                     emit_ui_line_fn=_emit_ui_line,
                     elapsed_ms=elapsed_ms,
+                    target_hint=target_hint,
                 ),
                 use_inline_approval_panel_fn=lambda _s: False,
                 print_tool_summary_for_turn_fn=lambda *_args, **_kwargs: None,

@@ -77,9 +77,10 @@ def print_tool_call_result_line(
     emit_ui_spacer_fn: Callable[[Any], None],
     emit_ui_line_fn: Callable[[Any, str], None],
     elapsed_ms: int = 0,
+    target_hint: str | None = None,
 ) -> None:
     label = tool_result_label_fn(tool_name, output)
-    target = _tool_target_from_output(tool_name, output)
+    target = target_hint or _tool_target_from_output(tool_name, output)
     error_text = _summarize_tool_output(output) if not ok else ""
     completed_line = _format_tool_completion_line(
         label=label,
@@ -130,7 +131,7 @@ def _format_tool_completion_line(
     error_text: str = "",
 ) -> str:
     row = label if not target else f"{label} ({target})"
-    row = f"{row} · {max(elapsed_ms, 0)}ms"
+    row = f"{row} · {_format_duration(max(elapsed_ms, 0))}"
     if not ok and error_text:
         row = f"{row} · {error_text}"
     return row
@@ -153,6 +154,18 @@ def _tool_target_from_output(tool_name: str, output: str) -> str | None:
         if match:
             return match.group(1).strip("()[]{}\"'")
     return None
+
+
+def _format_duration(elapsed_ms: int) -> str:
+    ms = max(elapsed_ms, 0)
+    if ms < 1000:
+        return f"{ms}ms"
+    total_seconds = ms / 1000.0
+    if total_seconds < 60:
+        return f"{total_seconds:.1f}s"
+    minutes = int(total_seconds // 60)
+    seconds = total_seconds - (minutes * 60)
+    return f"{minutes}m{seconds:04.1f}s"
 
 
 def _summarize_tool_output(output: str, *, max_len: int = 60) -> str:

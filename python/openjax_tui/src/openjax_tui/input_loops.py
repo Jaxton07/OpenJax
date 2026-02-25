@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import queue
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -176,7 +177,7 @@ async def handle_user_line(
         return True
 
     if state.input_backend == "prompt_toolkit":
-        callbacks.emit_ui_line(state, f"{USER_PROMPT_PREFIX} {text}")
+        callbacks.emit_ui_line(state, _format_user_message_bubble(text))
 
     try:
         turn_id = await client.submit_turn(text)
@@ -208,3 +209,43 @@ def daemon_cmd_from_env() -> list[str]:
     if not cmd:
         return ["cargo", "run", "-q", "-p", "openjaxd"]
     return cmd.split()
+
+
+def _format_user_message_bubble(text: str) -> str:
+    lines = text.splitlines() or [text]
+    width = max((_display_width(line) for line in lines), default=0)
+    width = max(width, 1)
+    top = f"╭{'─' * width}╮"
+    middle = [
+        f"│{line}{' ' * max(0, width - _display_width(line))}│"
+        for line in lines
+    ]
+    bottom = f"╰{'─' * width}╯"
+    return "\n".join([top, *middle, bottom])
+
+
+def _display_width(text: str) -> int:
+    return sum(_char_display_width(ch) for ch in text)
+
+
+def _char_display_width(ch: str) -> int:
+    if _is_zero_width(ch):
+        return 0
+    codepoint = ord(ch)
+    if (
+        0x1F300 <= codepoint <= 0x1FAFF
+        or 0x1F000 <= codepoint <= 0x1F02F
+        or 0x2600 <= codepoint <= 0x27BF
+    ):
+        return 2
+    return 2 if unicodedata.east_asian_width(ch) in {"W", "F"} else 1
+
+
+def _is_zero_width(ch: str) -> bool:
+    codepoint = ord(ch)
+    if codepoint == 0x200D or 0xFE00 <= codepoint <= 0xFE0F:
+        return True
+    if unicodedata.combining(ch):
+        return True
+    category = unicodedata.category(ch)
+    return category in {"Cf", "Cc", "Cs"}

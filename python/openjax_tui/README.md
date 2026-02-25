@@ -119,10 +119,11 @@ python3 -m openjax_tui
 默认输出为精简会话视图：
 
 1. `❯` 用户输入
-2. `⏺` 助手流式或最终输出
+2. 用户输入在 prompt_toolkit 模式下以浅色气泡（圆角边框）显示
+3. `⏺` 助手流式或最终输出
 3. 输入框上方展示当前状态动画（如 `Reading...`、`Thinking...`）
-4. 工具完成后仅保留一行历史（如 `⏺ Read 1 file (test.txt) · 1ms`，成功/失败用红绿颜色区分）
-5. prompt_toolkit 输入框使用圆角边框展示，并固定在距底部约 5 行位置
+4. 工具完成后仅保留一行历史（如 `⏺ Read 1 file (test.txt) · 1ms`，时长会自动切换 `ms/s/m+s` 单位）
+5. prompt_toolkit 输入框使用圆角边框展示，并固定在距底部约 10 行位置
 6. 输入框下方保留审批区域用于展示权限申请详情
 
 输入区域默认在 TTY 环境下使用 `prompt_toolkit`，可将输入提示固定在底部，同时让事件输出在上方滚动。
@@ -150,6 +151,7 @@ OPENJAX_TUI_INPUT_BACKEND=basic
 | 命令 | 说明 |
 |------|------|
 | 直接输入文本 | 提交一个 turn |
+| `Shift + Enter`（prompt_toolkit，终端支持时）/ `Ctrl + J` | 在输入框内换行 |
 | `/approve <id> y\|n` | 回传指定审批 |
 | `y` 或 `n` | 快速回传最新待处理审批 |
 | `/pending` | 查看待处理审批队列 |

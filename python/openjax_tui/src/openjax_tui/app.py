@@ -136,6 +136,8 @@ except Exception:  # pragma: no cover - optional dependency fallback
 
 _OPENJAX_ROOT_LOG = os.path.join(".openjax", "logs", "openjax.log")
 _PRINT_TOOL_TURN_SUMMARY = False
+_KEYBOARD_ENHANCEMENT_PUSH_SEQ = "\x1b[>7u"
+_KEYBOARD_ENHANCEMENT_POP_SEQ = "\x1b[<1u"
 _COMMAND_ROWS: tuple[str, ...] = (
     "text                submit turn",
     "/approve <id> y|n   resolve a specific approval",
@@ -145,6 +147,58 @@ _COMMAND_ROWS: tuple[str, ...] = (
     "/exit               exit",
 )
 _SLASH_COMMANDS: tuple[str, ...] = ("/approve", "/pending", "/help", "/exit")
+
+
+def _is_tty_stream(stream: Any) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    if not callable(isatty):
+        return False
+    with contextlib.suppress(Exception):
+        return bool(isatty())
+    return False
+
+
+def _write_ansi_sequence(sequence: str, *, stream: Any | None = None) -> bool:
+    target = sys.stdout if stream is None else stream
+    if not _is_tty_stream(target):
+        return False
+    try:
+        buffer = getattr(target, "buffer", None)
+        if buffer is not None and callable(getattr(buffer, "write", None)):
+            buffer.write(sequence.encode("utf-8"))
+            flush_buffer = getattr(buffer, "flush", None)
+            if callable(flush_buffer):
+                flush_buffer()
+            return True
+        write = getattr(target, "write", None)
+        if not callable(write):
+            return False
+        write(sequence)
+        flush = getattr(target, "flush", None)
+        if callable(flush):
+            flush()
+        return True
+    except Exception as exc:
+        _tui_debug(
+            f"keyboard enhancement ansi write failed type={type(exc).__name__} message={exc}"
+        )
+        return False
+
+
+def _enable_keyboard_enhancement(*, stream: Any | None = None) -> bool:
+    # Matches crossterm PushKeyboardEnhancementFlags for
+    # DISAMBIGUATE_ESCAPE_CODES|REPORT_EVENT_TYPES|REPORT_ALTERNATE_KEYS.
+    return _write_ansi_sequence(_KEYBOARD_ENHANCEMENT_PUSH_SEQ, stream=stream)
+
+
+def _disable_keyboard_enhancement(*, stream: Any | None = None) -> bool:
+    # Matches crossterm PopKeyboardEnhancementFlags.
+    return _write_ansi_sequence(_KEYBOARD_ENHANCEMENT_POP_SEQ, stream=stream)
+
+
+def _keyboard_enhancement_enabled_by_env() -> bool:
+    raw = str(os.environ.get("OPENJAX_TUI_ENABLE_KEYBOARD_ENHANCEMENT", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _prompt_toolkit_components() -> PromptToolkitComponents:
@@ -276,6 +330,7 @@ async def _input_loop_prompt_toolkit(client: OpenJaxAsyncClient, state: AppState
 
 async def run() -> None:
     _setup_tui_logger()
+    keyboard_enhancement_active = False
     input_backend, backend_reason = _select_input_backend_with_reason(
         prompt_session=PromptSession,
         patch_stdout=patch_stdout,
@@ -317,6 +372,14 @@ async def run() -> None:
         event_task = asyncio.create_task(_event_loop(client, state))
         try:
             if input_backend == "prompt_toolkit":
+                if _keyboard_enhancement_enabled_by_env():
+                    keyboard_enhancement_active = _enable_keyboard_enhancement()
+                    if keyboard_enhancement_active:
+                        _tui_log_info("keyboard enhancement enabled for prompt_toolkit")
+                    else:
+                        _tui_log_info("keyboard enhancement unavailable for prompt_toolkit")
+                else:
+                    _tui_log_info("keyboard enhancement disabled by default")
                 await _input_loop_prompt_toolkit(client, state)
             else:
                 await _input_loop_basic(client, state)
@@ -341,6 +404,8 @@ async def run() -> None:
     finally:
         if interrupted:
             _ignore_sigint_during_shutdown()
+        if keyboard_enhancement_active:
+            _disable_keyboard_enhancement()
         _stop_status_animation(
             state,
             request_prompt_redraw_fn=lambda: _request_prompt_redraw(state, tui_debug_fn=_tui_debug),

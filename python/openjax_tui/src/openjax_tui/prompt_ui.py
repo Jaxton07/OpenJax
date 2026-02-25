@@ -146,6 +146,19 @@ def build_prompt_key_bindings(
         )
         _submit_approval_without_losing_input(event, flash_message)
 
+    def _insert_newline(event: object) -> None:
+        if approval_mode_active_fn(state):
+            return
+        app = getattr(event, "app", None)
+        current_buffer = getattr(app, "current_buffer", None)
+        insert_text = getattr(current_buffer, "insert_text", None)
+        if callable(insert_text):
+            insert_text("\n")
+
+    for key in ("s-enter", "c-j"):
+        with contextlib.suppress(Exception):
+            kb.add(key, eager=True)(_insert_newline)
+
     @kb.add("escape", eager=True)
     def _escape_reject(event: object) -> None:
         app = getattr(event, "app", None)

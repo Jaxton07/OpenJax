@@ -169,7 +169,7 @@ def create_print_tool_call_result_line_fn(
     emit_ui_line_fn = create_emit_ui_line_fn(state)
 
     def _print_tool_call_result_line_fn(
-        _state: Any, tool_name: str, ok: bool, output: str, *, elapsed_ms: int = 0
+        _state: Any, tool_name: str, ok: bool, output: str, *, elapsed_ms: int = 0, target_hint: str | None = None
     ) -> None:
         _ = _state  # _state 是 event_dispatch 传递的，但我们使用闭包中的 state
         _print_tool_call_result_line(
@@ -183,6 +183,7 @@ def create_print_tool_call_result_line_fn(
             emit_ui_spacer_fn=_emit_ui_spacer,
             emit_ui_line_fn=emit_ui_line_fn,
             elapsed_ms=elapsed_ms,
+            target_hint=target_hint,
         )
     return _print_tool_call_result_line_fn
 

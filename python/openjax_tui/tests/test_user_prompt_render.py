@@ -61,7 +61,30 @@ class UserPromptRenderTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(keep_running)
         self.assertEqual(client.submitted, ["hello"])
-        self.assertEqual(state.history_blocks, ["❯ hello"])
+        self.assertEqual(
+            state.history_blocks,
+            [
+                "╭─────╮\n│hello│\n╰─────╯",
+            ],
+        )
+
+    async def test_submit_turn_appends_cjk_line_with_aligned_border(self) -> None:
+        state = AppState()
+        state.input_backend = "prompt_toolkit"
+        state.history_setter = lambda _: None
+        client = _StubClient()
+        callbacks = _create_test_callbacks()
+
+        keep_running = await _handle_user_line(client, state, "你好", callbacks)
+
+        self.assertTrue(keep_running)
+        self.assertEqual(client.submitted, ["你好"])
+        self.assertEqual(
+            state.history_blocks,
+            [
+                "╭────╮\n│你好│\n╰────╯",
+            ],
+        )
 
 
 if __name__ == "__main__":

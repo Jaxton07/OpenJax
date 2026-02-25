@@ -3,6 +3,22 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
+def _extract_tool_target_hint(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    args = payload.get("args")
+    if isinstance(args, dict):
+        for key in ("file_path", "path", "file", "target"):
+            value = args.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    for key in ("file_path", "path", "file", "target"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def print_event(
     evt: Any,
     *,
@@ -36,7 +52,18 @@ def print_event(
         ok = bool(evt.payload.get("ok"))
         output = str(evt.payload.get("output", ""))
         elapsed_ms = record_tool_completed_fn(turn, tool_name, ok)
-        print_tool_call_result_line_fn(state, tool_name, ok, output, elapsed_ms=elapsed_ms)
+        target_hint = _extract_tool_target_hint(evt.payload)
+        try:
+            print_tool_call_result_line_fn(
+                state,
+                tool_name,
+                ok,
+                output,
+                elapsed_ms=elapsed_ms,
+                target_hint=target_hint,
+            )
+        except TypeError:
+            print_tool_call_result_line_fn(state, tool_name, ok, output, elapsed_ms=elapsed_ms)
         return
     if t == "approval_requested":
         finalize_stream_line_if_turn_fn(turn)

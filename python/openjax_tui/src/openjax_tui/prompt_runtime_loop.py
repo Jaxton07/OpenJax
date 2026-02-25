@@ -297,8 +297,8 @@ async def run_prompt_toolkit_loop(
     )
     input_view = components.text_area_cls(
         prompt=f"{user_prompt_prefix} ",
-        multiline=False,
-        wrap_lines=False,
+        multiline=True,
+        wrap_lines=True,
         accept_handler=_accept_input,
         completer=slash_completer,
         complete_while_typing=True,
