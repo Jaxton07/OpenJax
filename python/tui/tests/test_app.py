@@ -9,6 +9,7 @@ from openjax_tui.app import OpenJaxApp
 from openjax_tui.event_mapper import UiOperation
 from openjax_tui.screens.chat import ChatScreen
 from openjax_tui.state import Message, TurnPhase
+from openjax_tui.widgets.approval_popup import ApprovalPopup
 from textual.widgets import Input
 
 
@@ -134,6 +135,41 @@ class TestOpenJaxApp(unittest.TestCase):
 
         app._render_state.assert_called_once()
 
+    def test_apply_ui_operations_syncs_popup_on_approval_change(self) -> None:
+        app = OpenJaxApp()
+        app._render_state = MagicMock()
+        app._sync_approval_popup = MagicMock()
+
+        app._apply_ui_operations([UiOperation(kind="approval_added", request_id="r1")])
+
+        app._sync_approval_popup.assert_called_once()
+
+    def test_handle_popup_selection_cancel_does_not_call_runtime(self) -> None:
+        app = OpenJaxApp()
+        app._render_state = MagicMock()
+        app._hide_approval_popup = MagicMock()
+        runtime = MagicMock()
+        runtime.resolve_approval = AsyncMock(return_value=True)
+        app._runtime = runtime
+
+        app.handle_approval_popup_selection("cancel")
+
+        app._hide_approval_popup.assert_called_once()
+        runtime.resolve_approval.assert_not_called()
+
+    def test_show_approval_popup_uses_focus_request(self) -> None:
+        app = OpenJaxApp()
+        screen = MagicMock()
+        app._get_chat_screen = MagicMock(return_value=screen)
+        app.state.add_approval("a1", "shell", turn_id="t1")
+        app.state.add_approval("a2", "read_file", turn_id="t2")
+        app.state.approval_focus_id = "a1"
+
+        app._show_approval_popup_for_focus()
+
+        shown = screen.show_approval_popup.call_args[0][0]
+        self.assertEqual(shown.id, "a1")
+
 
 class TestChatScreen(unittest.TestCase):
     """Test the chat screen."""
@@ -184,6 +220,25 @@ class TestChatScreen(unittest.TestCase):
         screen.on_key(event)
 
         palette.move_selection.assert_called_once_with(1)
+        event.stop.assert_called_once()
+
+    def test_on_key_prioritizes_approval_popup(self) -> None:
+        """Approval popup should consume up/down before command palette."""
+        screen = ChatScreen()
+        popup = MagicMock(spec=ApprovalPopup)
+
+        def query_one(selector, *_args, **_kwargs):
+            if selector == "#approval-popup":
+                return popup
+            raise Exception("not found")
+
+        screen.query_one = MagicMock(side_effect=query_one)
+        event = MagicMock()
+        event.key = "down"
+
+        screen.on_key(event)
+
+        popup.move_selection.assert_called_once_with(1)
         event.stop.assert_called_once()
 
     def test_write_message_renders_failed_tool_status_in_red(self) -> None:

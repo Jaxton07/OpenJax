@@ -109,6 +109,16 @@ ScrollbarCorner {
     margin-bottom: 1;
 }
 
+#approval-popup {
+    width: 100%;
+    height: auto;
+    max-height: 8;
+    background: ansi_default;
+    border: round $secondary;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
 Header * {
     background: ansi_default;
 }

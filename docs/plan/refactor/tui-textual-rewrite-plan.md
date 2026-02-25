@@ -52,7 +52,7 @@
 | `AppState` | `App` 类的 `reactive` 属性 |
 | `HistoryViewportAdapter` | `RichLog` / `Static` + `ScrollableContainer` |
 | `prompt_invalidator` | 自动响应式刷新 |
-| `approval_toolbar` | `ApprovalScreen` 全屏审批 |
+| `approval_toolbar` | `ApprovalPopup` 输入框上方审批弹窗 |
 | `status_animation` | `set_interval` + `reactive` |
 | `slash_commands` | `CommandPalette` + `/` 触发 |
 | `event_dispatch` | `App` 事件处理方法 |
@@ -75,7 +75,7 @@ python/tui/
 │       ├── screens/            # 屏幕组件
 │       │   ├── __init__.py
 │       │   ├── chat_screen.py      # 主对话界面
-│       │   ├── approval_screen.py  # 全屏审批
+│       │   ├── approval_popup.py   # 输入框上方审批弹窗
 │       │   ├── config_screen.py    # 配置界面
 │       │   └── help_screen.py      # 快捷键帮助
 │       ├── widgets/            # 可复用组件
@@ -93,7 +93,7 @@ python/tui/
     ├── test_app.py
     ├── test_screens/
     │   ├── test_chat_screen.py
-    │   ├── test_approval_screen.py
+    │   ├── test_approval_popup.py
     │   └── test_help_screen.py
     └── test_widgets/
         ├── test_message_list.py
@@ -113,9 +113,9 @@ python/tui/
 │  ├─ InputArea (输入区)              │
 │  └─ StatusBar (状态栏)              │
 │                                     │
-│  ApprovalScreen (全屏审批)           │
-│  ├─ 请求详情                        │
-│  └─ Yes/No 按钮                     │
+│  ApprovalPopup (输入框上方审批弹窗)   │
+│  ├─ 简洁审批信息                     │
+│  └─ approve/deny/cancel 选项         │
 │                                     │
 │  HelpScreen (快捷键帮助)             │
 │  └─ 快捷键列表                      │
@@ -193,30 +193,26 @@ class OpenJaxCommandProvider(CommandProvider):
                 yield CommandSource(cmd.name, cmd.description, cmd.callback)
 ```
 
-#### 3.3.4 审批界面 (ApprovalScreen)
+#### 3.3.4 审批弹窗 (ApprovalPopup)
 
 ```python
-class ApprovalScreen(Screen):
-    """全屏审批界面"""
-    
+class ApprovalPopup(Static):
+    """输入框上方审批弹窗"""
+
     def compose(self) -> ComposeResult:
-        yield Static("Permission Request", classes="title")
-        yield Static(id="action")
-        yield Static(id="reason")
-        with Horizontal():
-            yield Button("✓ Allow", variant="success", id="approve")
-            yield Button("✗ Deny", variant="error", id="deny")
-    
+        yield Static(id="approval-summary")
+        yield Static("approve / deny / cancel", classes="hint")
+
     def on_key(self, event: events.Key) -> None:
         """键盘快捷键"""
         if event.key == "up":
-            self.app.move_approval_selection(-1)
+            self.move_selection(-1)
         elif event.key == "down":
-            self.app.move_approval_selection(1)
+            self.move_selection(1)
         elif event.key == "enter":
-            self.app.confirm_approval_selection()
+            self.confirm_selection()
         elif event.key == "escape":
-            self.app.pop_screen()
+            self.dismiss_with("cancel")
 ```
 
 ### 3.4 样式系统 (styles.tcss)
@@ -249,14 +245,16 @@ InputArea Input {
     width: 1fr;
 }
 
-/* 审批界面 */
-ApprovalScreen {
-    align: center middle;
+/* 审批弹窗 */
+ApprovalPopup {
+    dock: bottom;
+    margin: 0 1 1 1;
+    border: round $warning;
+    background: $surface;
 }
 
-ApprovalScreen .title {
-    text-align: center;
-    text-style: bold;
+ApprovalPopup .hint {
+    color: $text-muted;
 }
 
 /* 状态栏 */
@@ -286,7 +284,7 @@ CommandPalette {
 
 | 特性 | 优先级 | 触发方式 | 说明 |
 |------|--------|----------|------|
-| **Screen 路由** | P0 | 自动 | 审批时全屏切换 |
+| **审批弹窗** | P0 | 自动 | 审批时输入框上方弹出并接管焦点 |
 | **命令面板** | P0 | `/` | 模糊搜索命令 |
 | **Markdown 渲染** | P1 | 自动 | 助手消息自动渲染 |
 | **代码语法高亮** | P1 | 自动 | Markdown 代码块内 |
@@ -351,7 +349,7 @@ CommandPalette {
 |------|------|----------|----------|
 | 3A SDK 运行时接入 | `openjax_sdk` 会话/提交/事件流/停止封装 | 3h | 单元测试：runtime 生命周期 |
 | 3A 流式处理 | `assistant_delta` 增量渲染 + `assistant_message` 权威覆盖 | 3h | 单元测试：delta/final 去重 |
-| 3B 审批闭环 | `approval_requested/resolved`、审批面板选择确认、`/pending` 同步 | 3h | 单元测试：审批交互与事件 |
+| 3B 审批闭环 | `approval_requested/resolved`、审批弹窗选择确认、`/pending` 同步 | 3h | 单元测试：审批交互与事件 |
 | 3C 鲁棒性优化 | 高频 delta 节流、错误恢复、优雅关闭 | 2h | 单元测试+人工测试 |
 
 **交付物**:
@@ -368,26 +366,27 @@ CommandPalette {
 
 ---
 
-### 阶段 4: 审批体验增强 (Day 9-10)
+### 阶段 4: 审批弹窗体验增强 (Day 9-10)
 
-**目标**: 在阶段 3 已有审批闭环基础上增强 UI 体验（可选）
+**目标**: 在阶段 3 已有审批闭环基础上增强审批弹窗体验（可选）
 
 | 任务 | 说明 | 预计工时 | 测试要求 |
 |------|------|----------|----------|
-| 4.1 审批界面 | 实现 `ApprovalScreen` 全屏审批 | 3h | 单元测试：界面渲染 |
-| 4.2 审批面板交互 | 上下切换审批选项，Enter 确认 | 2h | 单元测试：交互行为 |
-| 4.3 焦点与回退 | Esc 取消/返回、焦点同步 | 1h | 人工测试：快捷键 |
-| 4.4 状态同步 | 审批状态与界面同步 | 2h | 单元测试：状态变化 |
+| 4.1 审批弹窗 | 实现输入框上方 `ApprovalPopup`，显示简洁审批信息 | 3h | 单元测试：弹窗渲染 |
+| 4.2 选项交互 | 支持 `approve/deny/cancel` 选项，上下切换 + Enter 确认 | 2h | 单元测试：交互行为 |
+| 4.3 焦点管理 | 审批弹窗打开时接管焦点并暂停输入框输入，关闭后恢复 | 2h | 单元测试+人工测试：焦点行为 |
+| 4.4 状态同步 | 审批状态与弹窗显隐、`/pending` 和回传行为同步 | 1h | 单元测试：状态变化 |
 
 **交付物**:
-- 全屏审批界面
-- 审批面板支持上下切换与 Enter 确认
-- 审批完成后状态与消息区同步
+- 输入框上方审批弹窗（非全屏）
+- 审批弹窗支持 `approve/deny/cancel`、上下切换与 Enter 确认
+- 审批触发时输入框暂停输入，审批结束后恢复
 
 **人工测试点**:
-- [ ] 触发审批，确认界面切换到全屏
-- [ ] 上下切换审批选项，Enter 确认正常
-- [ ] 审批完成后正确返回聊天界面
+- [ ] 触发审批后，输入框上方出现审批弹窗（非全屏）
+- [ ] 弹窗打开时输入框无法输入，关闭后恢复
+- [ ] 上下切换 `approve/deny/cancel`，Enter 确认行为正确
+- [ ] `cancel` 仅关闭弹窗不回传 approve/deny
 
 ---
 
@@ -616,6 +615,9 @@ async def test_chat_screen_message_display():
 | exit | 退出程序 | Ctrl+C |
 | help | 显示帮助 | F1 |
 | pending | 查看待处理请求 | - |
+| approve | 批准当前审批 | - |
+| deny | 拒绝当前审批 | - |
+| cancel | 取消当前审批弹窗 | Esc |
 
 ### 11.4 快捷键列表
 
@@ -626,7 +628,7 @@ async def test_chat_screen_message_display():
 | `Shift+Enter` | 输入框换行 |
 | `Ctrl+F` | 搜索历史 |
 | `F1` | 显示帮助 |
-| `Up/Down` | 切换审批选项（审批界面） |
-| `Enter` | 确认审批选项（审批界面） |
+| `Up/Down` | 切换审批选项（审批弹窗聚焦时） |
+| `Enter` | 确认审批选项（审批弹窗聚焦时） |
 | `Esc` | 关闭弹窗/返回 |
 | `Ctrl+C` | 退出程序 |

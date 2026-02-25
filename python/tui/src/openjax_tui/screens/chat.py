@@ -13,10 +13,11 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog
 
 from ..commands import create_commands
+from ..widgets.approval_popup import ApprovalPopup
 from ..widgets.command_palette import CommandPalette
 
 if TYPE_CHECKING:
-    from ..state import AppState, Message
+    from ..state import AppState, ApprovalRequest, Message
 
 logger = logging.getLogger("openjax_tui")
 
@@ -56,6 +57,9 @@ class ChatScreen(Screen):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle input changes to detect '/' for command palette."""
+        if self.has_approval_popup():
+            return
+
         value = event.value
         if value.startswith("/"):
             logger.info("input_changed slash query=%s", value)
@@ -66,6 +70,9 @@ class ChatScreen(Screen):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
+        if self.has_approval_popup():
+            return
+
         value = event.value.strip()
         if not value:
             return
@@ -95,7 +102,26 @@ class ChatScreen(Screen):
         self.query_one("#chat-input", Input).value = ""
 
     def on_key(self, event: Key) -> None:
-        """Handle up/down keys for command candidate navigation."""
+        """Handle approval popup and command candidate keyboard navigation."""
+        if self.has_approval_popup():
+            popup = self.query_one("#approval-popup", ApprovalPopup)
+            if event.key == "up":
+                popup.move_selection(-1)
+                event.stop()
+                return
+            if event.key == "down":
+                popup.move_selection(1)
+                event.stop()
+                return
+            if event.key == "enter":
+                popup.confirm_selection()
+                event.stop()
+                return
+            if event.key == "escape":
+                popup.dismiss()
+                event.stop()
+                return
+
         if event.key not in {"up", "down"}:
             return
 
@@ -114,6 +140,9 @@ class ChatScreen(Screen):
 
     def show_command_palette(self) -> CommandPalette:
         """Show the command palette overlay."""
+        if self.has_approval_popup():
+            raise RuntimeError("approval popup is active")
+
         try:
             existing = self.query_one("#command-palette", CommandPalette)
             return existing
@@ -137,10 +166,74 @@ class ChatScreen(Screen):
         palette.remove()
         logger.info("command_palette dismissed")
 
+    def has_approval_popup(self) -> bool:
+        """Return whether approval popup is currently mounted."""
+        try:
+            self.query_one("#approval-popup", ApprovalPopup)
+            return True
+        except Exception:
+            return False
+
+    def show_approval_popup(self, approval: "ApprovalRequest") -> ApprovalPopup:
+        """Show or update approval popup above the input widget."""
+        summary = ApprovalPopup.format_summary(
+            approval_id=approval.id,
+            action=approval.action,
+            turn_id=approval.turn_id,
+            reason=approval.reason,
+        )
+
+        self.dismiss_command_palette()
+        self.set_input_enabled(False)
+        try:
+            popup = self.query_one("#approval-popup", ApprovalPopup)
+            popup.set_summary(summary)
+            popup.focus()
+            return popup
+        except Exception:
+            pass
+
+        popup = ApprovalPopup(id="approval-popup")
+        popup.set_summary(summary)
+        container = self.query_one("#chat-container", Vertical)
+        input_widget = self.query_one("#chat-input", Input)
+        container.mount(popup, before=input_widget)
+        popup.focus()
+        logger.info("approval_popup shown approval_id=%s", approval.id)
+        return popup
+
+    def dismiss_approval_popup(self) -> None:
+        """Dismiss approval popup and restore input state."""
+        try:
+            popup = self.query_one("#approval-popup", ApprovalPopup)
+        except Exception:
+            self.set_input_enabled(True)
+            return
+        popup.remove()
+        self.set_input_enabled(True)
+        logger.info("approval_popup dismissed")
+
+    def set_input_enabled(self, enabled: bool) -> None:
+        """Enable or disable chat input and restore focus when enabled."""
+        chat_input = self.query_one("#chat-input", Input)
+        chat_input.disabled = not enabled
+        if enabled:
+            chat_input.focus()
+
     def on_command_palette_dismissed(self, event: CommandPalette.Dismissed) -> None:
         """Handle command palette dismissal."""
         self.dismiss_command_palette()
         self.query_one("#chat-input", Input).focus()
+
+    def on_approval_popup_selection_confirmed(
+        self, event: ApprovalPopup.SelectionConfirmed
+    ) -> None:
+        """Handle approval popup selection confirmation."""
+        self.app.handle_approval_popup_selection(event.option_name)
+
+    def on_approval_popup_dismissed(self, event: ApprovalPopup.Dismissed) -> None:
+        """Treat popup dismiss as cancel."""
+        self.app.handle_approval_popup_selection("cancel")
 
     def add_user_message(self, text: str) -> None:
         """Add a user message to the chat log.

@@ -23,8 +23,10 @@ python/tui/
 │       ├── screens/
 │       │   └── chat.py            # 主聊天界面
 │       └── widgets/
-│           └── command_palette.py # 内联命令候选组件
+│           ├── command_palette.py # 内联命令候选组件
+│           └── approval_popup.py  # 内联审批弹窗组件
 └── tests/
+    ├── test_approval_popup.py
     ├── test_app.py
     ├── test_command_palette.py
     ├── test_event_mapper.py
@@ -39,7 +41,7 @@ python/tui/
 1. **SDK 全链路接入**：`start_session` / `submit_turn` / `stream_events` / `shutdown_session`。
 2. **流式响应渲染**：`assistant_delta` 增量更新，`assistant_message` 权威覆盖，`turn_completed` 收尾。
 3. **命令面板**：输入 `/` 触发候选，支持模糊匹配和上下键切换。
-4. **审批状态同步**：处理 `approval_requested` / `approval_resolved`，通过 `/pending` 查看待处理项。
+4. **审批弹窗交互**：收到 `approval_requested` 自动弹窗并接管焦点，支持 `approve/deny/cancel`。
 5. **日志与异常可观测**：日志写入 `.openjax/logs/openjax_tui.log`，支持轮转与调试级别。
 
 ## 运行方式
@@ -87,7 +89,7 @@ PYTHONPATH=python/openjax_sdk/src:python/tui/src \
 - 用户消息前缀：`❯`
 - 助手消息前缀：`⏺`
 - 命令面板命令：`/help`、`/clear`、`/exit`、`/pending`、`/approve`、`/deny`
-- 审批交互：通过 `/pending` 查看，使用 `/approve` 或 `/deny` 回传审批结果
+- 审批交互：收到审批事件后自动在输入框上方弹出审批面板并抢焦点，输入框暂停输入；支持 `Up/Down + Enter` 选择 `approve/deny/cancel`，`Esc` 等价 `cancel`
 
 ## 已知说明
 

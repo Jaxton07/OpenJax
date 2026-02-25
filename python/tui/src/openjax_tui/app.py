@@ -124,6 +124,10 @@ class OpenJaxApp(App):
         """Deny the focused pending approval request."""
         self._resolve_focused_approval(False)
 
+    def handle_approval_popup_selection(self, option_name: str) -> None:
+        """Handle a confirmed selection from approval popup."""
+        self._handle_popup_selection(option_name)
+
     def action_command_palette(self) -> None:
         """Open the command palette."""
         logger.info("action_command_palette triggered")
@@ -218,6 +222,7 @@ class OpenJaxApp(App):
     def _apply_ui_operations(self, ops: list[UiOperation]) -> None:
         needs_render = False
         stream_updated = False
+        approval_changed = False
 
         for op in ops:
             if op.kind == "turn_completed" and op.turn_id:
@@ -233,6 +238,8 @@ class OpenJaxApp(App):
                 "tool_call_completed",
             }:
                 needs_render = True
+                if op.kind in {"approval_added", "approval_removed"}:
+                    approval_changed = True
 
         self.turn_phase = self.state.turn_phase
 
@@ -240,6 +247,9 @@ class OpenJaxApp(App):
             self._schedule_stream_render()
         elif needs_render:
             self._render_state()
+
+        if approval_changed:
+            self._sync_approval_popup()
 
     def _schedule_stream_render(self) -> None:
         if self._stream_render_scheduled:
@@ -257,6 +267,48 @@ class OpenJaxApp(App):
     def _add_system_message(self, text: str) -> None:
         self.state.add_message("system", text)
         self._render_state()
+
+    def _sync_approval_popup(self) -> None:
+        """Synchronize approval popup visibility with pending approvals."""
+        if self.state.get_pending_approval_count() == 0:
+            self._hide_approval_popup()
+            return
+        self._show_approval_popup_for_focus()
+
+    def _show_approval_popup_for_focus(self) -> None:
+        """Show popup for the currently focused approval request."""
+        screen = self._get_chat_screen()
+        if screen is None:
+            return
+
+        approval = self.state.latest_pending_approval()
+        if self.state.approval_focus_id:
+            approval = self.state.pending_approvals.get(self.state.approval_focus_id, approval)
+        if approval is None:
+            self._hide_approval_popup()
+            return
+        screen.show_approval_popup(approval)
+
+    def _hide_approval_popup(self) -> None:
+        """Hide approval popup and restore input."""
+        screen = self._get_chat_screen()
+        if screen is None:
+            return
+        screen.dismiss_approval_popup()
+
+    def _handle_popup_selection(self, option_name: str) -> None:
+        """Dispatch popup selection action."""
+        if option_name == "approve":
+            self.action_approve()
+            return
+        if option_name == "deny":
+            self.action_deny()
+            return
+        if option_name == "cancel":
+            self._hide_approval_popup()
+            self._add_system_message("[dim]审批已暂存，可稍后处理[/dim]")
+            return
+        logger.warning("unknown approval popup option=%s", option_name)
 
     def _resolve_focused_approval(self, approved: bool) -> None:
         approval = self.state.latest_pending_approval()
