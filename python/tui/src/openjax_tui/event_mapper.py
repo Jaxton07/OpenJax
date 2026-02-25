@@ -68,16 +68,24 @@ def map_event(evt: Any, state: AppState) -> list[UiOperation]:
             ops.append(UiOperation(kind="approval_removed", request_id=request_id))
         return ops
 
+    if event_type == "tool_call_started" and turn_id:
+        tool_name = str(evt.payload.get("tool_name", "")).strip()
+        target = evt.payload.get("target")
+        if tool_name and isinstance(target, str) and target.strip():
+            state.add_tool_target_hint(turn_id, tool_name, target.strip())
+        return ops
+
     if event_type == "tool_call_completed":
         tool_name = str(evt.payload.get("tool_name", ""))
         ok = bool(evt.payload.get("ok", False))
         output = str(evt.payload.get("output", ""))
+        turn_target = state.pop_tool_target_hint(turn_id or "", tool_name) if turn_id else None
         state.add_tool_call_result(
             tool_name=tool_name,
             ok=ok,
             output=output,
             output_preview=summarize_tool_output(output),
-            target=extract_tool_target(tool_name, output),
+            target=turn_target or extract_tool_target(tool_name, output),
             elapsed_ms=0,
         )
         ops.append(UiOperation(kind="tool_call_completed"))

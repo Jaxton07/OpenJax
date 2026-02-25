@@ -54,6 +54,7 @@ class TestAppState(unittest.TestCase):
         self.assertFalse(state.command_palette_open)
         self.assertIsNone(state.active_turn_id)
         self.assertEqual(state.stream_text_by_turn, {})
+        self.assertEqual(state.tool_target_hints, {})
         self.assertIsNone(state.last_error)
 
     def test_add_message(self) -> None:
@@ -175,6 +176,15 @@ class TestAppState(unittest.TestCase):
         self.assertEqual(msg.metadata["output_preview"], "READ test.txt")
         self.assertEqual(msg.metadata["target"], "test.txt")
         self.assertEqual(msg.metadata["elapsed_ms"], 0)
+
+    def test_tool_target_hint_queue(self) -> None:
+        state = AppState()
+        state.add_tool_target_hint("turn-1", "read_file", "a.txt")
+        state.add_tool_target_hint("turn-1", "read_file", "b.txt")
+
+        self.assertEqual(state.pop_tool_target_hint("turn-1", "read_file"), "a.txt")
+        self.assertEqual(state.pop_tool_target_hint("turn-1", "read_file"), "b.txt")
+        self.assertIsNone(state.pop_tool_target_hint("turn-1", "read_file"))
 
 
 if __name__ == "__main__":

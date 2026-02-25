@@ -254,6 +254,7 @@ impl Agent {
                         Event::ToolCallStarted {
                             turn_id,
                             tool_name: tool_name.clone(),
+                            target: extract_tool_target_hint(&tool_name, &args),
                         },
                     );
 
@@ -334,6 +335,7 @@ impl Agent {
                     Event::ToolCallStarted {
                         turn_id,
                         tool_name: tool_name.clone(),
+                        target: extract_tool_target_hint(&tool_name, &args),
                     },
                 );
 
@@ -589,6 +591,22 @@ impl Agent {
             );
         }
     }
+}
+
+fn extract_tool_target_hint(
+    tool_name: &str,
+    args: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let key = match tool_name {
+        "read_file" | "apply_patch" | "edit_file_range" | "write_file" => {
+            ["file_path", "path", "filepath"]
+                .iter()
+                .find(|k| args.contains_key(**k))
+                .copied()
+        }
+        _ => None,
+    }?;
+    args.get(key).cloned()
 }
 
 fn is_mutating_tool(tool_name: &str) -> bool {

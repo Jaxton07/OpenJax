@@ -23,6 +23,7 @@ class TestOpenJaxApp(unittest.TestCase):
         self.assertIsInstance(app, OpenJaxApp)
         self.assertEqual(app.TITLE, "OpenJax")
         self.assertEqual(app.SUB_TITLE, "AI Agent Framework")
+        self.assertFalse(app.ENABLE_COMMAND_PALETTE)
 
     def test_app_has_state(self) -> None:
         """Test that the app has a state instance."""
@@ -203,6 +204,7 @@ class TestChatScreen(unittest.TestCase):
         self.assertTrue(hasattr(screen, "add_assistant_message"))
         self.assertTrue(hasattr(screen, "add_system_message"))
         self.assertTrue(hasattr(screen, "clear_messages"))
+        self.assertTrue(hasattr(screen, "focus_chat_input"))
 
     def test_screen_has_command_palette_method(self) -> None:
         """Test that the screen has command palette method."""
@@ -280,6 +282,35 @@ class TestChatScreen(unittest.TestCase):
         ChatScreen._write_message(log, msg)
 
         log.write.assert_any_call("[bold green]⏺[/bold green] Update 1 file (test.txt)")
+
+    def test_focus_chat_input_focuses_input_widget(self) -> None:
+        screen = ChatScreen()
+        chat_input = MagicMock(spec=Input)
+        screen.has_approval_popup = MagicMock(return_value=False)
+        screen.query_one = MagicMock(return_value=chat_input)
+
+        screen.focus_chat_input()
+
+        chat_input.focus.assert_called_once()
+
+    def test_show_command_palette_requires_slash_mode(self) -> None:
+        screen = ChatScreen()
+        chat_input = MagicMock(spec=Input)
+        chat_input.value = "hello"
+        screen.has_approval_popup = MagicMock(return_value=False)
+        screen.dismiss_command_palette = MagicMock()
+
+        def query_one(selector, *_args, **_kwargs):
+            if selector == "#chat-input":
+                return chat_input
+            raise Exception("not found")
+
+        screen.query_one = MagicMock(side_effect=query_one)
+
+        with self.assertRaises(RuntimeError):
+            screen.show_command_palette()
+
+        screen.dismiss_command_palette.assert_called_once()
 
     def test_write_message_renders_assistant_markdown(self) -> None:
         log = MagicMock()

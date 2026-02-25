@@ -24,6 +24,7 @@ class OpenJaxApp(App):
     TITLE = "OpenJax"
     SUB_TITLE = "AI Agent Framework"
     CSS_PATH = "styles.tcss"
+    ENABLE_COMMAND_PALETTE = False
 
     # Reactive state (synced with AppState)
     session_id: reactive[str | None] = reactive(None)
@@ -127,13 +128,6 @@ class OpenJaxApp(App):
     def handle_approval_popup_selection(self, option_name: str) -> None:
         """Handle a confirmed selection from approval popup."""
         self._handle_popup_selection(option_name)
-
-    def action_command_palette(self) -> None:
-        """Open the command palette."""
-        logger.info("action_command_palette triggered")
-        screen = self._get_chat_screen()
-        if screen is not None:
-            screen.show_command_palette()
 
     def submit_message(self, text: str) -> None:
         """Submit a user message."""

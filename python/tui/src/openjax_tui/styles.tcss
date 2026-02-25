@@ -37,24 +37,7 @@ HeaderTitle {
 }
 
 HeaderIcon {
-    color: $primary;
-}
-
-/* Footer 样式 */
-Footer {
-    background: ansi_default;
-    color: $secondary;
-    height: 1;
-}
-
-FooterKey {
-    color: $primary;
-    background: ansi_default;
-}
-
-FooterKeyDescription {
-    color: $text;
-    background: ansi_default;
+    display: none;
 }
 
 /* 聊天容器 */
@@ -128,9 +111,5 @@ MarkdownMessage {
 }
 
 Header * {
-    background: ansi_default;
-}
-
-Footer * {
     background: ansi_default;
 }

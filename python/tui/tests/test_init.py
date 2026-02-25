@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -47,8 +48,28 @@ class TestPackageInit(unittest.TestCase):
             main()
 
             mock_app_class.assert_called_once()
-            mock_app.run.assert_called_once()
+            mock_app.run.assert_called_once_with(mouse=False)
             mock_setup_logging.assert_called_once()
+
+    def test_main_runs_app_with_mouse_enabled_by_env(self) -> None:
+        """Test that main enables mouse when env var is set."""
+        from openjax_tui import main
+
+        with (
+            patch("openjax_tui.app.OpenJaxApp") as mock_app_class,
+            patch("openjax_tui.logging_setup.setup_logging") as mock_setup_logging,
+            patch("openjax_tui.logging_setup.get_logger") as mock_get_logger,
+            patch.dict(os.environ, {"OPENJAX_TUI_ENABLE_MOUSE": "1"}, clear=False),
+        ):
+            mock_app = MagicMock()
+            mock_app_class.return_value = mock_app
+            mock_logger = MagicMock()
+            mock_setup_logging.return_value = mock_logger
+            mock_get_logger.return_value = mock_logger
+
+            main()
+
+            mock_app.run.assert_called_once_with(mouse=True)
 
 
 class TestModuleEntryPoint(unittest.TestCase):

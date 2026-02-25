@@ -10,7 +10,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.events import Key
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Input, RichLog
+from textual.widgets import Header, Input, RichLog
 
 from ..commands import create_commands
 from ..widgets.approval_popup import ApprovalPopup
@@ -45,7 +45,6 @@ class ChatScreen(Screen):
                 placeholder="输入消息按回车发送，/ 打开命令面板...",
                 id="chat-input",
             )
-        yield Footer()
 
     def on_mount(self) -> None:
         """Called when screen is mounted."""
@@ -55,6 +54,16 @@ class ChatScreen(Screen):
         # Show platform-specific quit key
         quit_key = "Ctrl+C" if sys.platform == "darwin" else "Ctrl+Q"
         log.write(f"输入消息按回车发送，输入 / 打开命令面板，{quit_key} 退出。\n")
+        self.call_after_refresh(self.focus_chat_input)
+
+    def focus_chat_input(self) -> None:
+        """Set focus to chat input when no approval popup is active."""
+        if self.has_approval_popup():
+            return
+        try:
+            self.query_one("#chat-input", Input).focus()
+        except Exception:
+            return
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle input changes to detect '/' for command palette."""
@@ -143,6 +152,9 @@ class ChatScreen(Screen):
         """Show the command palette overlay."""
         if self.has_approval_popup():
             raise RuntimeError("approval popup is active")
+        if not self._is_slash_mode():
+            self.dismiss_command_palette()
+            raise RuntimeError("command palette requires slash input mode")
 
         try:
             existing = self.query_one("#command-palette", CommandPalette)
@@ -166,6 +178,14 @@ class ChatScreen(Screen):
             return
         palette.remove()
         logger.info("command_palette dismissed")
+
+    def _is_slash_mode(self) -> bool:
+        """Return true when input starts with slash command trigger."""
+        try:
+            chat_input = self.query_one("#chat-input", Input)
+        except Exception:
+            return False
+        return chat_input.value.startswith("/")
 
     def has_approval_popup(self) -> bool:
         """Return whether approval popup is currently mounted."""
@@ -219,7 +239,7 @@ class ChatScreen(Screen):
         chat_input = self.query_one("#chat-input", Input)
         chat_input.disabled = not enabled
         if enabled:
-            chat_input.focus()
+            self.focus_chat_input()
 
     def on_command_palette_dismissed(self, event: CommandPalette.Dismissed) -> None:
         """Handle command palette dismissal."""

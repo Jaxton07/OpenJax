@@ -99,6 +99,28 @@ class TestEventMapper(unittest.TestCase):
         self.assertEqual(state.messages[-1].metadata["target"], "test.txt")
         self.assertEqual(state.messages[-1].metadata["output_preview"], "READ test.txt")
 
+    def test_tool_call_started_target_hint_used_by_completed(self) -> None:
+        state = AppState()
+
+        map_event(
+            DummyEvent(
+                event_type="tool_call_started",
+                turn_id="turn-1",
+                payload={"tool_name": "read_file", "target": "note.txt"},
+            ),
+            state,
+        )
+        map_event(
+            DummyEvent(
+                event_type="tool_call_completed",
+                turn_id="turn-1",
+                payload={"tool_name": "read_file", "ok": True, "output": "L1: hello"},
+            ),
+            state,
+        )
+
+        self.assertEqual(state.messages[-1].metadata["target"], "note.txt")
+
 
 if __name__ == "__main__":
     unittest.main()

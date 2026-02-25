@@ -69,6 +69,7 @@ class AppState:
     active_turn_id: str | None = None
     stream_text_by_turn: dict[str, str] = field(default_factory=dict)
     turn_render_kind_by_turn: dict[str, str] = field(default_factory=dict)
+    tool_target_hints: dict[tuple[str, str], list[str]] = field(default_factory=dict)
 
     # Error state
     last_error: str | None = None
@@ -225,6 +226,23 @@ class AppState:
             return None
         approval_id = self.approval_order[-1]
         return self.pending_approvals.get(approval_id)
+
+    def add_tool_target_hint(self, turn_id: str, tool_name: str, target: str) -> None:
+        """Store a target hint from tool_call_started for later completion rendering."""
+        key = (turn_id, tool_name.strip().lower())
+        queue = self.tool_target_hints.setdefault(key, [])
+        queue.append(target)
+
+    def pop_tool_target_hint(self, turn_id: str, tool_name: str) -> str | None:
+        """Consume earliest stored target hint for a tool in this turn."""
+        key = (turn_id, tool_name.strip().lower())
+        queue = self.tool_target_hints.get(key)
+        if not queue:
+            return None
+        target = queue.pop(0)
+        if not queue:
+            self.tool_target_hints.pop(key, None)
+        return target
 
 
 def _tool_result_label(tool_name: str, output: str) -> str:

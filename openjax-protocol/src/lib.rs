@@ -74,6 +74,7 @@ pub enum Event {
     ToolCallStarted {
         turn_id: u64,
         tool_name: String,
+        target: Option<String>,
     },
     ToolCallCompleted {
         turn_id: u64,

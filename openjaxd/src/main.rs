@@ -737,13 +737,17 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "turn_started".to_string(),
             payload: json!({}),
         }),
-        Event::ToolCallStarted { turn_id, tool_name } => Some(EventEnvelope {
+        Event::ToolCallStarted {
+            turn_id,
+            tool_name,
+            target,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_started".to_string(),
-            payload: json!({ "tool_name": tool_name }),
+            payload: json!({ "tool_name": tool_name, "target": target }),
         }),
         Event::ToolCallCompleted {
             turn_id,
@@ -964,6 +968,7 @@ mod tests {
             Event::ToolCallStarted {
                 turn_id: 1,
                 tool_name: "read_file".to_string(),
+                target: None,
             },
             Event::ToolCallCompleted {
                 turn_id: 1,
