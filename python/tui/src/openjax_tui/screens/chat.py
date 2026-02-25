@@ -149,7 +149,7 @@ class ChatScreen(Screen):
             text: The message text
         """
         log = self.query_one("#chat-log", RichLog)
-        log.write(f"[on #3a3a3a][bold blue]❯[/bold blue] {text}[/on #3a3a3a]")
+        self._write_spaced_line(log, f"[on #3a3a3a][bold blue]❯[/bold blue] {text}[/on #3a3a3a]")
 
     def add_assistant_message(self, text: str) -> None:
         """Add an assistant message to the chat log.
@@ -158,7 +158,7 @@ class ChatScreen(Screen):
             text: The message text
         """
         log = self.query_one("#chat-log", RichLog)
-        log.write(f"[bold green]⏺[/bold green] {text}")
+        self._write_spaced_line(log, f"[bold green]⏺[/bold green] {text}")
 
     def add_system_message(self, text: str) -> None:
         """Add a system message to the chat log.
@@ -167,7 +167,7 @@ class ChatScreen(Screen):
             text: The message text (can include Rich markup)
         """
         log = self.query_one("#chat-log", RichLog)
-        log.write(text)
+        self._write_spaced_line(log, text)
 
     def clear_messages(self) -> None:
         """Clear all messages from the chat log."""
@@ -195,13 +195,26 @@ class ChatScreen(Screen):
         if state.active_turn_id:
             stream_text = state.stream_text_by_turn.get(state.active_turn_id, "")
             if stream_text:
-                log.write(f"[bold green]⏺[/bold green] {stream_text}")
+                self._write_spaced_line(log, f"[bold green]⏺[/bold green] {stream_text}")
 
     @staticmethod
     def _write_message(log: RichLog, msg: "Message") -> None:
         if msg.role == "user":
-            log.write(f"[on #3a3a3a][bold blue]❯[/bold blue] {msg.content}[/on #3a3a3a]")
+            ChatScreen._write_spaced_line(
+                log,
+                f"[on #3a3a3a][bold blue]❯[/bold blue] {msg.content}[/on #3a3a3a]",
+            )
         elif msg.role == "assistant":
-            log.write(f"[bold green]⏺[/bold green] {msg.content}")
+            ChatScreen._write_spaced_line(log, f"[bold green]⏺[/bold green] {msg.content}")
+        elif msg.role == "tool":
+            ok = bool(msg.metadata.get("ok", False))
+            color = "green" if ok else "red"
+            ChatScreen._write_spaced_line(log, f"[bold {color}]⏺[/bold {color}] {msg.content}")
         else:
-            log.write(msg.content)
+            ChatScreen._write_spaced_line(log, msg.content)
+
+    @staticmethod
+    def _write_spaced_line(log: RichLog, text: str) -> None:
+        """Write one line and add a blank line after it for readability."""
+        log.write(text)
+        log.write("")

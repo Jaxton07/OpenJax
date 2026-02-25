@@ -67,6 +67,14 @@ def map_event(evt: Any, state: AppState) -> list[UiOperation]:
             ops.append(UiOperation(kind="approval_removed", request_id=request_id))
         return ops
 
+    if event_type == "tool_call_completed":
+        tool_name = str(evt.payload.get("tool_name", ""))
+        ok = bool(evt.payload.get("ok", False))
+        output = str(evt.payload.get("output", ""))
+        state.add_tool_call_result(tool_name=tool_name, ok=ok, output=output)
+        ops.append(UiOperation(kind="tool_call_completed"))
+        return ops
+
     if event_type == "turn_completed" and turn_id:
         final_text = state.finalize_turn(turn_id)
         ops.append(UiOperation(kind="turn_completed", turn_id=turn_id, text=final_text))

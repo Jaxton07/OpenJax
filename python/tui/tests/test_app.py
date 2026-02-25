@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from openjax_tui.app import OpenJaxApp
+from openjax_tui.event_mapper import UiOperation
 from openjax_tui.screens.chat import ChatScreen
-from openjax_tui.state import TurnPhase
+from openjax_tui.state import Message, TurnPhase
 from textual.widgets import Input
 
 
@@ -82,6 +83,57 @@ class TestOpenJaxApp(unittest.TestCase):
         self.assertIn("app-1", text)
         self.assertIn("turn-1", text)
 
+    def test_action_approve_no_approvals(self) -> None:
+        """Test approve action when no pending approvals."""
+        app = OpenJaxApp()
+        app._render_state = MagicMock()
+
+        app.action_approve()
+
+        self.assertIn("没有", app.state.messages[-1].content)
+
+    def test_action_approve_submits_resolution(self) -> None:
+        """Approve action should submit focused approval to runtime."""
+        app = OpenJaxApp()
+        app._render_state = MagicMock()
+        app.state.add_approval("app-1", "write_file", turn_id="turn-1")
+        runtime = MagicMock()
+        runtime.resolve_approval = AsyncMock(return_value=True)
+        app._runtime = runtime
+
+        app.action_approve()
+
+        runtime.resolve_approval.assert_awaited_once_with(
+            turn_id="turn-1",
+            request_id="app-1",
+            approved=True,
+        )
+
+    def test_action_deny_submits_resolution(self) -> None:
+        """Deny action should submit focused approval to runtime."""
+        app = OpenJaxApp()
+        app._render_state = MagicMock()
+        app.state.add_approval("app-1", "write_file", turn_id="turn-1")
+        runtime = MagicMock()
+        runtime.resolve_approval = AsyncMock(return_value=True)
+        app._runtime = runtime
+
+        app.action_deny()
+
+        runtime.resolve_approval.assert_awaited_once_with(
+            turn_id="turn-1",
+            request_id="app-1",
+            approved=False,
+        )
+
+    def test_apply_ui_operations_rerenders_on_tool_call_completed(self) -> None:
+        app = OpenJaxApp()
+        app._render_state = MagicMock()
+
+        app._apply_ui_operations([UiOperation(kind="tool_call_completed")])
+
+        app._render_state.assert_called_once()
+
 
 class TestChatScreen(unittest.TestCase):
     """Test the chat screen."""
@@ -134,6 +186,14 @@ class TestChatScreen(unittest.TestCase):
         palette.move_selection.assert_called_once_with(1)
         event.stop.assert_called_once()
 
+    def test_write_message_renders_failed_tool_status_in_red(self) -> None:
+        log = MagicMock()
+        msg = Message(role="tool", content="Run shell command", metadata={"ok": False})
+
+        ChatScreen._write_message(log, msg)
+
+        log.write.assert_any_call("[bold red]⏺[/bold red] Run shell command")
+
 
 class TestCommands(unittest.TestCase):
     """Test the commands module."""
@@ -150,6 +210,8 @@ class TestCommands(unittest.TestCase):
         self.assertIn("clear", command_names)
         self.assertIn("exit", command_names)
         self.assertIn("pending", command_names)
+        self.assertIn("approve", command_names)
+        self.assertIn("deny", command_names)
 
     def test_command_handlers(self) -> None:
         """Test that command handlers work."""

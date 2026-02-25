@@ -78,6 +78,23 @@ class TestEventMapper(unittest.TestCase):
         )
         self.assertEqual(state.get_pending_approval_count(), 0)
 
+    def test_tool_call_completed_adds_tool_line(self) -> None:
+        state = AppState()
+
+        ops = map_event(
+            DummyEvent(
+                event_type="tool_call_completed",
+                turn_id="turn-1",
+                payload={"tool_name": "read_file", "ok": True, "output": "READ test.txt"},
+            ),
+            state,
+        )
+
+        self.assertEqual(ops[0].kind, "tool_call_completed")
+        self.assertEqual(state.messages[-1].role, "tool")
+        self.assertEqual(state.messages[-1].content, "Read 1 file")
+        self.assertTrue(state.messages[-1].metadata["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

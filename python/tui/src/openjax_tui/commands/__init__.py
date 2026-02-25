@@ -40,4 +40,14 @@ def create_commands(app: "OpenJaxApp") -> list[Command]:
             description="查看待处理审批",
             handler=lambda: app.action_pending(),
         ),
+        Command(
+            name="approve",
+            description="批准当前审批请求",
+            handler=lambda: app.action_approve(),
+        ),
+        Command(
+            name="deny",
+            description="拒绝当前审批请求",
+            handler=lambda: app.action_deny(),
+        ),
     ]

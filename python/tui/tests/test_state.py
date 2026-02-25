@@ -154,6 +154,16 @@ class TestAppState(unittest.TestCase):
         assert latest is not None
         self.assertEqual(latest.id, "app-2")
 
+    def test_add_tool_call_result(self) -> None:
+        state = AppState()
+
+        msg = state.add_tool_call_result("read_file", True, "ok")
+
+        self.assertEqual(msg.role, "tool")
+        self.assertEqual(msg.content, "Read 1 file")
+        self.assertTrue(msg.metadata["ok"])
+        self.assertEqual(msg.metadata["tool_name"], "read_file")
+
 
 if __name__ == "__main__":
     unittest.main()

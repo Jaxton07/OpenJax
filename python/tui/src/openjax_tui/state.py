@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -92,6 +93,11 @@ class AppState:
         )
         self.messages.append(msg)
         return msg
+
+    def add_tool_call_result(self, tool_name: str, ok: bool, output: str) -> Message:
+        """Add a summarized tool-call result line."""
+        label = _tool_result_label(tool_name, output)
+        return self.add_message("tool", label, ok=ok, tool_name=tool_name)
 
     def clear_messages(self) -> None:
         """Clear all messages."""
@@ -197,3 +203,30 @@ class AppState:
             return None
         approval_id = self.approval_order[-1]
         return self.pending_approvals.get(approval_id)
+
+
+def _tool_result_label(tool_name: str, output: str) -> str:
+    name = tool_name.strip().lower()
+    if name == "read_file":
+        return "Read 1 file"
+    if name in {"apply_patch", "edit_file_range", "write_file"}:
+        target = _extract_updated_target(output)
+        if target:
+            return f"Update({target})"
+        return "Update file"
+    if name == "list_dir":
+        return "Read directory"
+    if name == "grep_files":
+        return "Search files"
+    if name == "shell":
+        return "Run shell command"
+    if not name:
+        return "Tool call"
+    return name.replace("_", " ").title()
+
+
+def _extract_updated_target(output: str) -> str | None:
+    match = re.search(r"\bUPDATE\s+([^\s:]+)", output)
+    if not match:
+        return None
+    return match.group(1).strip()

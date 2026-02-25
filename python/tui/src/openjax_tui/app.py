@@ -76,6 +76,8 @@ class OpenJaxApp(App):
   /help    - 显示此帮助信息
   /clear   - 清空对话历史
   /exit    - 退出程序
+  /approve - 批准当前审批请求
+  /deny    - 拒绝当前审批请求
   /pending - 查看待处理审批
 
 [bold]使用说明:[/bold]
@@ -114,6 +116,14 @@ class OpenJaxApp(App):
             )
         self._add_system_message("\n".join(lines))
 
+    def action_approve(self) -> None:
+        """Approve the focused pending approval request."""
+        self._resolve_focused_approval(True)
+
+    def action_deny(self) -> None:
+        """Deny the focused pending approval request."""
+        self._resolve_focused_approval(False)
+
     def action_command_palette(self) -> None:
         """Open the command palette."""
         logger.info("action_command_palette triggered")
@@ -138,6 +148,31 @@ class OpenJaxApp(App):
                 raise RuntimeError("SDK runtime unavailable")
             turn_id = await self._runtime.submit_turn(text)
             logger.info("submit_turn success turn_id=%s", turn_id)
+        except Exception as err:
+            await self._handle_runtime_error(err)
+
+    async def _resolve_approval_async(
+        self,
+        *,
+        turn_id: str,
+        request_id: str,
+        approved: bool,
+    ) -> None:
+        try:
+            await self._ensure_runtime_started()
+            if self._runtime is None:
+                raise RuntimeError("SDK runtime unavailable")
+            await self._runtime.resolve_approval(
+                turn_id=turn_id,
+                request_id=request_id,
+                approved=approved,
+            )
+            logger.info(
+                "resolve_approval submitted request_id=%s turn_id=%s approved=%s",
+                request_id,
+                turn_id,
+                approved,
+            )
         except Exception as err:
             await self._handle_runtime_error(err)
 
@@ -191,7 +226,12 @@ class OpenJaxApp(App):
                 needs_render = True
             elif op.kind == "stream_updated":
                 stream_updated = True
-            elif op.kind in {"phase_changed", "approval_added", "approval_removed"}:
+            elif op.kind in {
+                "phase_changed",
+                "approval_added",
+                "approval_removed",
+                "tool_call_completed",
+            }:
                 needs_render = True
 
         self.turn_phase = self.state.turn_phase
@@ -217,6 +257,29 @@ class OpenJaxApp(App):
     def _add_system_message(self, text: str) -> None:
         self.state.add_message("system", text)
         self._render_state()
+
+    def _resolve_focused_approval(self, approved: bool) -> None:
+        approval = self.state.latest_pending_approval()
+        if self.state.approval_focus_id:
+            approval = self.state.pending_approvals.get(self.state.approval_focus_id, approval)
+
+        if approval is None:
+            self._add_system_message("[dim]没有待处理的审批请求[/dim]")
+            return
+
+        if not approval.turn_id:
+            self._add_system_message(f"[red]审批缺少 turn_id: {approval.id}[/red]")
+            return
+
+        action_text = "批准" if approved else "拒绝"
+        self._add_system_message(f"[dim]已提交{action_text}请求: {approval.id}[/dim]")
+        self._spawn_task(
+            self._resolve_approval_async(
+                turn_id=approval.turn_id,
+                request_id=approval.id,
+                approved=approved,
+            )
+        )
 
     def _render_state(self) -> None:
         screen = self._get_chat_screen()

@@ -86,8 +86,8 @@ PYTHONPATH=python/openjax_sdk/src:python/tui/src \
 
 - 用户消息前缀：`❯`
 - 助手消息前缀：`⏺`
-- 命令面板命令：`/help`、`/clear`、`/exit`、`/pending`
-- 审批交互：以审批面板交互为主（上下切换、Enter 确认）
+- 命令面板命令：`/help`、`/clear`、`/exit`、`/pending`、`/approve`、`/deny`
+- 审批交互：通过 `/pending` 查看，使用 `/approve` 或 `/deny` 回传审批结果
 
 ## 已知说明
 
