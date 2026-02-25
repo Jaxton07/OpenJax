@@ -227,7 +227,15 @@ class OpenJaxApp(App):
         for op in ops:
             if op.kind == "turn_completed" and op.turn_id:
                 if op.text:
-                    self.state.add_message("assistant", op.text, turn_id=op.turn_id)
+                    render_kind = self.state.turn_render_kind_by_turn.pop(
+                        op.turn_id, "markdown"
+                    )
+                    self.state.add_message(
+                        "assistant",
+                        op.text,
+                        turn_id=op.turn_id,
+                        render_kind=render_kind,
+                    )
                 needs_render = True
             elif op.kind == "stream_updated":
                 stream_updated = True

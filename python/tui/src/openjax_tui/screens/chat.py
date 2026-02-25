@@ -15,6 +15,7 @@ from textual.widgets import Footer, Header, Input, RichLog
 from ..commands import create_commands
 from ..widgets.approval_popup import ApprovalPopup
 from ..widgets.command_palette import CommandPalette
+from ..widgets.markdown_message import MarkdownMessage
 
 if TYPE_CHECKING:
     from ..state import AppState, ApprovalRequest, Message
@@ -251,7 +252,7 @@ class ChatScreen(Screen):
             text: The message text
         """
         log = self.query_one("#chat-log", RichLog)
-        self._write_spaced_line(log, f"[bold green]⏺[/bold green] {text}")
+        self._write_spaced_line(log, MarkdownMessage(text).to_renderable())
 
     def add_system_message(self, text: str) -> None:
         """Add a system message to the chat log.
@@ -298,16 +299,25 @@ class ChatScreen(Screen):
                 f"[on #3a3a3a][bold blue]❯[/bold blue] {msg.content}[/on #3a3a3a]",
             )
         elif msg.role == "assistant":
-            ChatScreen._write_spaced_line(log, f"[bold green]⏺[/bold green] {msg.content}")
+            render_kind = str(msg.metadata.get("render_kind", "plain"))
+            if render_kind == "markdown":
+                ChatScreen._write_spaced_line(log, MarkdownMessage(msg.content).to_renderable())
+            else:
+                ChatScreen._write_spaced_line(log, f"[bold green]⏺[/bold green] {msg.content}")
         elif msg.role == "tool":
             ok = bool(msg.metadata.get("ok", False))
             color = "green" if ok else "red"
-            ChatScreen._write_spaced_line(log, f"[bold {color}]⏺[/bold {color}] {msg.content}")
+            target = msg.metadata.get("target")
+            suffix = f" ({target})" if target else ""
+            ChatScreen._write_spaced_line(
+                log,
+                f"[bold {color}]⏺[/bold {color}] {msg.content}{suffix}",
+            )
         else:
             ChatScreen._write_spaced_line(log, msg.content)
 
     @staticmethod
-    def _write_spaced_line(log: RichLog, text: str) -> None:
+    def _write_spaced_line(log: RichLog, value) -> None:
         """Write one line and add a blank line after it for readability."""
-        log.write(text)
+        log.write(value)
         log.write("")

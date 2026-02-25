@@ -10,6 +10,7 @@ from openjax_tui.event_mapper import UiOperation
 from openjax_tui.screens.chat import ChatScreen
 from openjax_tui.state import Message, TurnPhase
 from openjax_tui.widgets.approval_popup import ApprovalPopup
+from rich.markdown import Markdown
 from textual.widgets import Input
 
 
@@ -144,6 +145,16 @@ class TestOpenJaxApp(unittest.TestCase):
 
         app._sync_approval_popup.assert_called_once()
 
+    def test_turn_completed_message_defaults_to_markdown_render_kind(self) -> None:
+        app = OpenJaxApp()
+        app._render_state = MagicMock()
+        app.state.turn_render_kind_by_turn["t1"] = "markdown"
+
+        app._apply_ui_operations([UiOperation(kind="turn_completed", turn_id="t1", text="# title")])
+
+        self.assertEqual(app.state.messages[-1].role, "assistant")
+        self.assertEqual(app.state.messages[-1].metadata["render_kind"], "markdown")
+
     def test_handle_popup_selection_cancel_does_not_call_runtime(self) -> None:
         app = OpenJaxApp()
         app._render_state = MagicMock()
@@ -243,11 +254,40 @@ class TestChatScreen(unittest.TestCase):
 
     def test_write_message_renders_failed_tool_status_in_red(self) -> None:
         log = MagicMock()
-        msg = Message(role="tool", content="Run shell command", metadata={"ok": False})
+        msg = Message(
+            role="tool",
+            content="Run shell command",
+            metadata={
+                "ok": False,
+                "tool_name": "shell",
+                "output_preview": "permission denied",
+                "render_kind": "plain",
+            },
+        )
 
         ChatScreen._write_message(log, msg)
 
         log.write.assert_any_call("[bold red]⏺[/bold red] Run shell command")
+
+    def test_write_message_renders_tool_target_suffix(self) -> None:
+        log = MagicMock()
+        msg = Message(
+            role="tool",
+            content="Update 1 file",
+            metadata={"ok": True, "target": "test.txt", "render_kind": "plain"},
+        )
+
+        ChatScreen._write_message(log, msg)
+
+        log.write.assert_any_call("[bold green]⏺[/bold green] Update 1 file (test.txt)")
+
+    def test_write_message_renders_assistant_markdown(self) -> None:
+        log = MagicMock()
+        msg = Message(role="assistant", content="# Heading", metadata={"render_kind": "markdown"})
+
+        ChatScreen._write_message(log, msg)
+
+        self.assertIsInstance(log.write.call_args_list[0].args[0], Markdown)
 
 
 class TestCommands(unittest.TestCase):

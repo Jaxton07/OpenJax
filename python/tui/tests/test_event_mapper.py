@@ -42,6 +42,7 @@ class TestEventMapper(unittest.TestCase):
         )
 
         self.assertEqual(state.stream_text_by_turn["t1"], "final")
+        self.assertEqual(state.turn_render_kind_by_turn["t1"], "markdown")
         self.assertEqual(ops[0].text, "final")
 
     def test_turn_completed_clears_stream(self) -> None:
@@ -94,6 +95,9 @@ class TestEventMapper(unittest.TestCase):
         self.assertEqual(state.messages[-1].role, "tool")
         self.assertEqual(state.messages[-1].content, "Read 1 file")
         self.assertTrue(state.messages[-1].metadata["ok"])
+        self.assertEqual(state.messages[-1].metadata["render_kind"], "plain")
+        self.assertEqual(state.messages[-1].metadata["target"], "test.txt")
+        self.assertEqual(state.messages[-1].metadata["output_preview"], "READ test.txt")
 
 
 if __name__ == "__main__":

@@ -64,6 +64,7 @@ class TestAppState(unittest.TestCase):
         self.assertEqual(msg.role, "user")
         self.assertEqual(msg.content, "Hello")
         self.assertIsNotNone(msg.timestamp)
+        self.assertEqual(msg.metadata["render_kind"], "plain")
 
     def test_clear_messages(self) -> None:
         state = AppState()
@@ -157,12 +158,23 @@ class TestAppState(unittest.TestCase):
     def test_add_tool_call_result(self) -> None:
         state = AppState()
 
-        msg = state.add_tool_call_result("read_file", True, "ok")
+        msg = state.add_tool_call_result(
+            "read_file",
+            True,
+            "READ test.txt",
+            output_preview="READ test.txt",
+            target="test.txt",
+            elapsed_ms=0,
+        )
 
         self.assertEqual(msg.role, "tool")
         self.assertEqual(msg.content, "Read 1 file")
         self.assertTrue(msg.metadata["ok"])
         self.assertEqual(msg.metadata["tool_name"], "read_file")
+        self.assertEqual(msg.metadata["render_kind"], "plain")
+        self.assertEqual(msg.metadata["output_preview"], "READ test.txt")
+        self.assertEqual(msg.metadata["target"], "test.txt")
+        self.assertEqual(msg.metadata["elapsed_ms"], 0)
 
 
 if __name__ == "__main__":

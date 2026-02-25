@@ -69,10 +69,11 @@ FooterKeyDescription {
 #chat-log {
     width: 100%;
     height: 1fr;
-    padding: 1;
+    padding: 1 1 0 1;
     color: $text;
     overflow-x: hidden;
     background: ansi_default;
+    border: solid $border;
 }
 
 /* 输入框 */
@@ -117,6 +118,13 @@ ScrollbarCorner {
     border: round $secondary;
     padding: 0 1;
     margin-bottom: 1;
+}
+
+/* 阶段 5: Markdown 可读性收敛 */
+MarkdownMessage {
+    width: 100%;
+    height: auto;
+    margin: 0 0 1 0;
 }
 
 Header * {

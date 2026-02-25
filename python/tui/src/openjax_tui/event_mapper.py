@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .state import AppState, TurnPhase
+from .state import AppState, TurnPhase, extract_tool_target, summarize_tool_output
 
 
 @dataclass
@@ -41,6 +41,7 @@ def map_event(evt: Any, state: AppState) -> list[UiOperation]:
         content = str(evt.payload.get("content", ""))
         state.stream_text_by_turn[turn_id] = content
         state.active_turn_id = turn_id
+        state.turn_render_kind_by_turn[turn_id] = "markdown"
         state.set_turn_phase(TurnPhase.STREAMING)
         ops.append(UiOperation(kind="stream_updated", turn_id=turn_id, text=content))
         ops.append(UiOperation(kind="phase_changed"))
@@ -71,7 +72,14 @@ def map_event(evt: Any, state: AppState) -> list[UiOperation]:
         tool_name = str(evt.payload.get("tool_name", ""))
         ok = bool(evt.payload.get("ok", False))
         output = str(evt.payload.get("output", ""))
-        state.add_tool_call_result(tool_name=tool_name, ok=ok, output=output)
+        state.add_tool_call_result(
+            tool_name=tool_name,
+            ok=ok,
+            output=output,
+            output_preview=summarize_tool_output(output),
+            target=extract_tool_target(tool_name, output),
+            elapsed_ms=0,
+        )
         ops.append(UiOperation(kind="tool_call_completed"))
         return ops
 

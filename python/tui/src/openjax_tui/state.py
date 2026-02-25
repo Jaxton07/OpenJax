@@ -68,6 +68,7 @@ class AppState:
     # Streaming state
     active_turn_id: str | None = None
     stream_text_by_turn: dict[str, str] = field(default_factory=dict)
+    turn_render_kind_by_turn: dict[str, str] = field(default_factory=dict)
 
     # Error state
     last_error: str | None = None
@@ -85,19 +86,39 @@ class AppState:
         """
         from datetime import datetime
 
+        metadata_with_default = dict(metadata)
+        metadata_with_default.setdefault("render_kind", "plain")
         msg = Message(
             role=role,
             content=content,
             timestamp=datetime.now().isoformat(),
-            metadata=metadata,
+            metadata=metadata_with_default,
         )
         self.messages.append(msg)
         return msg
 
-    def add_tool_call_result(self, tool_name: str, ok: bool, output: str) -> Message:
+    def add_tool_call_result(
+        self,
+        tool_name: str,
+        ok: bool,
+        output: str,
+        *,
+        output_preview: str,
+        target: str | None = None,
+        elapsed_ms: int = 0,
+    ) -> Message:
         """Add a summarized tool-call result line."""
         label = _tool_result_label(tool_name, output)
-        return self.add_message("tool", label, ok=ok, tool_name=tool_name)
+        return self.add_message(
+            "tool",
+            label,
+            render_kind="plain",
+            ok=ok,
+            tool_name=tool_name,
+            output_preview=output_preview,
+            target=target,
+            elapsed_ms=elapsed_ms,
+        )
 
     def clear_messages(self) -> None:
         """Clear all messages."""
@@ -167,6 +188,7 @@ class AppState:
         """Mark a turn as active and initialize stream buffer."""
         self.active_turn_id = turn_id
         self.stream_text_by_turn.setdefault(turn_id, "")
+        self.turn_render_kind_by_turn.setdefault(turn_id, "plain")
         self.set_turn_phase(TurnPhase.THINKING)
 
     def append_delta(self, turn_id: str, delta: str) -> str:
@@ -210,10 +232,8 @@ def _tool_result_label(tool_name: str, output: str) -> str:
     if name == "read_file":
         return "Read 1 file"
     if name in {"apply_patch", "edit_file_range", "write_file"}:
-        target = _extract_updated_target(output)
-        if target:
-            return f"Update({target})"
-        return "Update file"
+        _ = output
+        return "Update 1 file"
     if name == "list_dir":
         return "Read directory"
     if name == "grep_files":
@@ -230,3 +250,34 @@ def _extract_updated_target(output: str) -> str | None:
     if not match:
         return None
     return match.group(1).strip()
+
+
+def summarize_tool_output(output: str, *, max_len: int = 120) -> str:
+    """Summarize tool output into a single line for card previews."""
+    normalized = " ".join(output.split())
+    if not normalized:
+        return ""
+    if len(normalized) <= max_len:
+        return normalized
+    return f"{normalized[: max_len - 3]}..."
+
+
+def extract_tool_target(tool_name: str, output: str) -> str | None:
+    """Best-effort target extraction for tool card metadata."""
+    name = tool_name.strip().lower()
+    normalized = " ".join(output.split())
+    if not normalized:
+        return None
+    if name == "read_file":
+        patterns = (
+            r"\b(?:READ|Read)\s+([^\s:]+)",
+            r"\bpath(?:=|:)\s*([^\s,]+)",
+            r"\bfile(?:=|:)\s*([^\s,]+)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                return match.group(1).strip("()[]{}\"'")
+    if name in {"apply_patch", "edit_file_range", "write_file"}:
+        return _extract_updated_target(output)
+    return None
