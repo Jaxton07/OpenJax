@@ -24,6 +24,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "openjax-sdk>=0.1.0",
     "textual>=0.52.0",
     "rich>=13.0.0",
 ]

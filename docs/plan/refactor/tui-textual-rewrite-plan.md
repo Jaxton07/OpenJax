@@ -182,8 +182,6 @@ class OpenJaxCommandProvider(CommandProvider):
     async def search(self, query: str) -> AsyncIterator[CommandSource]:
         """模糊搜索命令"""
         commands = [
-            Command("approve", "批准当前请求", self.action_approve),
-            Command("approve-all", "批准所有请求", self.action_approve_all),
             Command("clear", "清空对话", self.action_clear),
             Command("exit", "退出程序", self.action_exit),
             Command("help", "显示帮助", self.action_help),
@@ -206,15 +204,17 @@ class ApprovalScreen(Screen):
         yield Static(id="action")
         yield Static(id="reason")
         with Horizontal():
-            yield Button("✓ Yes (y)", variant="success", id="approve")
-            yield Button("✗ No (n)", variant="error", id="deny")
+            yield Button("✓ Allow", variant="success", id="approve")
+            yield Button("✗ Deny", variant="error", id="deny")
     
     def on_key(self, event: events.Key) -> None:
         """键盘快捷键"""
-        if event.key == "y":
-            self.app.resolve_approval(True)
-        elif event.key == "n":
-            self.app.resolve_approval(False)
+        if event.key == "up":
+            self.app.move_approval_selection(-1)
+        elif event.key == "down":
+            self.app.move_approval_selection(1)
+        elif event.key == "enter":
+            self.app.confirm_approval_selection()
         elif event.key == "escape":
             self.app.pop_screen()
 ```
@@ -322,71 +322,71 @@ CommandPalette {
 
 ---
 
-### 阶段 2: SDK 集成 + 命令面板 (Day 3-5)
+### 阶段 2: 命令面板 + 基础交互 (Day 3-5)
 
 **目标**: 能发送消息，能收到响应，`/` 触发命令面板
 
 | 任务 | 说明 | 预计工时 | 测试要求 |
 |------|------|----------|----------|
-| 2.1 SDK 集成 | 集成 `openjax_sdk`，实现消息发送 | 3h | 单元测试：mock SDK 调用 |
-| 2.2 命令面板 | 实现 `CommandPalette`，`/` 触发 | 3h | 单元测试：命令搜索 |
-| 2.3 基础命令 | 实现 /help, /exit, /clear | 2h | 单元测试：命令执行 |
-| 2.4 消息显示 | 用户消息和助手响应显示 | 2h | 人工测试：端到端流程 |
+| 2.1 命令面板 | 实现 `CommandPalette`，`/` 触发 | 3h | 单元测试：命令搜索 |
+| 2.2 基础命令 | 实现 /help, /exit, /clear, /pending | 2h | 单元测试：命令执行 |
+| 2.3 交互优化 | 候选排序、上下键切换、稳定刷新 | 2h | 单元测试：交互行为 |
+| 2.4 日志补齐 | 启动/退出/异常日志和轮转 | 1h | 人工测试：故障可排查 |
 
 **交付物**:
-- 能发送消息到后端
-- 能显示助手响应（非流式）
+- 命令面板可用且稳定
 - `/` 触发命令面板，支持模糊搜索
 
 **人工测试点**:
-- [ ] 输入消息，确认能发送到后端
-- [ ] 查看响应是否正确显示
 - [ ] `/` 触发命令面板，模糊搜索正常
 - [ ] /help, /exit 命令正常工作
 
 ---
 
-### 阶段 3: 流式响应 (Day 6-7)
+### 阶段 3: 流式响应（含 SDK 全链路） (Day 6-8)
 
-**目标**: 打字机效果流式显示
+**目标**: 以流式响应为主线，完成 `submit -> stream -> turn complete -> approval(optional) -> shutdown`
 
 | 任务 | 说明 | 预计工时 | 测试要求 |
 |------|------|----------|----------|
-| 3.1 流式处理 | 实现 `assistant_delta` 事件处理 | 3h | 单元测试：模拟流式数据 |
-| 3.2 打字机效果 | 实现逐字显示动画 | 2h | 人工测试：视觉效果 |
-| 3.3 性能优化 | 确保长文本不卡顿 | 1h | 人工测试：1000 字以上 |
+| 3A SDK 运行时接入 | `openjax_sdk` 会话/提交/事件流/停止封装 | 3h | 单元测试：runtime 生命周期 |
+| 3A 流式处理 | `assistant_delta` 增量渲染 + `assistant_message` 权威覆盖 | 3h | 单元测试：delta/final 去重 |
+| 3B 审批闭环 | `approval_requested/resolved`、审批面板选择确认、`/pending` 同步 | 3h | 单元测试：审批交互与事件 |
+| 3C 鲁棒性优化 | 高频 delta 节流、错误恢复、优雅关闭 | 2h | 单元测试+人工测试 |
 
 **交付物**:
-- 流式响应打字机效果
-- 长文本不卡顿
+- 流式响应稳定显示，无重复无串 turn
+- SDK 全链路打通（含审批可选链路）
+- 异常路径可见且可恢复
 
 **人工测试点**:
 - [ ] 长回复是否有打字机效果
 - [ ] 快速输入是否有卡顿
 - [ ] 1000 字以上文本流畅显示
+- [ ] 审批触发后 `/pending` 与回传行为一致
+- [ ] daemon 断流时 UI 不崩溃，可退出
 
 ---
 
-### 阶段 4: 审批系统 (Day 8-9)
+### 阶段 4: 审批体验增强 (Day 9-10)
 
-**目标**: 权限申请和响应，全屏审批界面
+**目标**: 在阶段 3 已有审批闭环基础上增强 UI 体验（可选）
 
 | 任务 | 说明 | 预计工时 | 测试要求 |
 |------|------|----------|----------|
 | 4.1 审批界面 | 实现 `ApprovalScreen` 全屏审批 | 3h | 单元测试：界面渲染 |
-| 4.2 审批命令 | 命令面板添加 approve 命令 | 2h | 单元测试：命令执行 |
-| 4.3 快捷键 | y/n 快捷键响应 | 1h | 人工测试：快捷键 |
+| 4.2 审批面板交互 | 上下切换审批选项，Enter 确认 | 2h | 单元测试：交互行为 |
+| 4.3 焦点与回退 | Esc 取消/返回、焦点同步 | 1h | 人工测试：快捷键 |
 | 4.4 状态同步 | 审批状态与界面同步 | 2h | 单元测试：状态变化 |
 
 **交付物**:
 - 全屏审批界面
-- y/n 快捷键响应
-- 命令面板支持 approve 相关命令
+- 审批面板支持上下切换与 Enter 确认
+- 审批完成后状态与消息区同步
 
 **人工测试点**:
 - [ ] 触发审批，确认界面切换到全屏
-- [ ] y/n 快捷键正常工作
-- [ ] approve 命令在命令面板中可用
+- [ ] 上下切换审批选项，Enter 确认正常
 - [ ] 审批完成后正确返回聊天界面
 
 ---
@@ -612,8 +612,6 @@ async def test_chat_screen_message_display():
 
 | 命令 | 描述 | 快捷键 |
 |------|------|--------|
-| approve | 批准当前请求 | y |
-| approve-all | 批准所有请求 | - |
 | clear | 清空对话 | - |
 | exit | 退出程序 | Ctrl+C |
 | help | 显示帮助 | F1 |
@@ -628,7 +626,7 @@ async def test_chat_screen_message_display():
 | `Shift+Enter` | 输入框换行 |
 | `Ctrl+F` | 搜索历史 |
 | `F1` | 显示帮助 |
-| `y` | 批准（审批界面） |
-| `n` | 拒绝（审批界面） |
+| `Up/Down` | 切换审批选项（审批界面） |
+| `Enter` | 确认审批选项（审批界面） |
 | `Esc` | 关闭弹窗/返回 |
 | `Ctrl+C` | 退出程序 |

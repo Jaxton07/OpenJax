@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Callable, Coroutine
 
 from textual.app import App
 from textual.reactive import reactive
 
+from .event_mapper import UiOperation, map_event
 from .logging_setup import get_logger
 from .screens.chat import ChatScreen
+from .sdk_runtime import SdkRuntime
 from .state import AppState, TurnPhase
 
 logger = logging.getLogger("openjax_tui")
@@ -26,17 +30,32 @@ class OpenJaxApp(App):
     turn_phase: reactive[TurnPhase] = reactive(TurnPhase.IDLE)
     current_input: reactive[str] = reactive("")
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        runtime_factory: Callable[..., SdkRuntime] | None = None,
+        **kwargs,
+    ) -> None:
         """Initialize the application."""
         super().__init__(**kwargs)
         self.state = AppState()
+        self._runtime_factory = runtime_factory or SdkRuntime
+        self._runtime: SdkRuntime | None = None
+        self._background_tasks: set[asyncio.Task[None]] = set()
+        self._stream_render_scheduled = False
         get_logger()
         logger.info("app initialized")
 
-    def on_mount(self) -> None:
-        """Push the chat screen when app mounts."""
+    async def on_mount(self) -> None:
+        """Push chat screen and initialize SDK runtime."""
         logger.info("mounting chat screen")
         self.push_screen(ChatScreen())
+        # Defer first render until child widgets are mounted.
+        self.call_after_refresh(self._render_state)
+        await self._ensure_runtime_started()
+
+    async def on_unmount(self) -> None:
+        """Shutdown runtime when app is unmounted."""
+        await self._stop_runtime(graceful=True)
 
     def action_help_quit(self) -> None:
         """Override to quit immediately without confirmation."""
@@ -63,17 +82,13 @@ class OpenJaxApp(App):
   直接输入消息按回车发送
   输入 / 触发命令面板，支持模糊搜索
         """
-        # Get the current screen and add help message
-        if isinstance(self.screen, ChatScreen):
-            self.screen.add_system_message(help_text)
+        self._add_system_message(help_text)
 
     def action_clear(self) -> None:
         """Clear conversation history."""
         logger.info("action_clear triggered")
         self.state.clear_messages()
-        if isinstance(self.screen, ChatScreen):
-            self.screen.clear_messages()
-            self.screen.add_system_message("[dim]对话历史已清空[/dim]")
+        self._add_system_message("[dim]对话历史已清空[/dim]")
 
     def action_exit(self) -> None:
         """Exit the application."""
@@ -85,59 +100,145 @@ class OpenJaxApp(App):
         count = self.state.get_pending_approval_count()
         logger.info("action_pending triggered count=%s", count)
         if count == 0:
-            msg = "[dim]没有待处理的审批请求[/dim]"
-        else:
-            msg = f"[yellow]有 {count} 个待处理的审批请求[/yellow]"
+            self._add_system_message("[dim]没有待处理的审批请求[/dim]")
+            return
 
-        if isinstance(self.screen, ChatScreen):
-            self.screen.add_system_message(msg)
+        lines = [f"[yellow]待处理审批 {count} 个:[/yellow]"]
+        for approval_id in self.state.approval_order:
+            approval = self.state.pending_approvals.get(approval_id)
+            if approval is None:
+                continue
+            marker = "*" if approval_id == self.state.approval_focus_id else " "
+            lines.append(
+                f"{marker} {approval.id}  action={approval.action} turn={approval.turn_id or '-'}"
+            )
+        self._add_system_message("\n".join(lines))
 
     def action_command_palette(self) -> None:
         """Open the command palette."""
         logger.info("action_command_palette triggered")
-        if isinstance(self.screen, ChatScreen):
-            self.screen.show_command_palette()
+        screen = self._get_chat_screen()
+        if screen is not None:
+            screen.show_command_palette()
 
     def submit_message(self, text: str) -> None:
-        """Submit a user message.
-
-        Args:
-            text: The message text to submit
-        """
+        """Submit a user message."""
         logger.info("submit_message text_len=%s", len(text))
+        self.state.add_message("user", text)
+        self._render_state()
+
+        self.state.set_turn_phase(TurnPhase.THINKING)
+        self.turn_phase = TurnPhase.THINKING
+        self._spawn_task(self._submit_turn_async(text))
+
+    async def _submit_turn_async(self, text: str) -> None:
         try:
-            self.state.add_message("user", text)
+            await self._ensure_runtime_started()
+            if self._runtime is None:
+                raise RuntimeError("SDK runtime unavailable")
+            turn_id = await self._runtime.submit_turn(text)
+            logger.info("submit_turn success turn_id=%s", turn_id)
+        except Exception as err:
+            await self._handle_runtime_error(err)
 
-            if isinstance(self.screen, ChatScreen):
-                self.screen.add_user_message(text)
-
-            # TODO: In Phase 3, integrate with SDK to send to backend
-            # For now, just echo a mock response
-            self._mock_response(text)
-        except Exception:
-            logger.exception("submit_message failed")
-            raise
-
-    def _mock_response(self, user_text: str) -> None:
-        """Generate a mock response (for testing without SDK).
-
-        Args:
-            user_text: The user's input text
-        """
-        logger.info("mock_response start")
+    async def _ensure_runtime_started(self) -> None:
+        if self._runtime is not None:
+            return
+        self._runtime = self._runtime_factory(
+            on_event=self._handle_runtime_event,
+            on_error=self._handle_runtime_error,
+        )
         try:
-            self.state.set_turn_phase(TurnPhase.THINKING)
-            self.turn_phase = TurnPhase.THINKING
+            session_id = await self._runtime.start()
+        except Exception as err:
+            logger.exception("runtime start failed")
+            self._runtime = None
+            await self._handle_runtime_error(err)
+            return
 
-            response = f"收到消息: {user_text}\n\n(这是模拟响应，Phase 3 将集成真实 SDK)"
-            self.state.add_message("assistant", response)
+        self.state.session_id = session_id
+        self.session_id = session_id
+        logger.info("runtime started session_id=%s", session_id)
 
-            if isinstance(self.screen, ChatScreen):
-                self.screen.add_assistant_message(response)
+    async def _stop_runtime(self, graceful: bool) -> None:
+        runtime = self._runtime
+        self._runtime = None
+        if runtime is None:
+            return
+        await runtime.stop(graceful=graceful)
+
+    async def _handle_runtime_event(self, evt) -> None:
+        logger.info("event received type=%s turn_id=%s", evt.event_type, evt.turn_id)
+        ops = map_event(evt, self.state)
+        self._apply_ui_operations(ops)
+
+    async def _handle_runtime_error(self, err: Exception) -> None:
+        logger.exception("runtime error: %s", err)
+        self.state.set_error(str(err))
+        self.turn_phase = TurnPhase.ERROR
+        self._add_system_message(f"[red]错误: {err}[/red]")
+        self.state.set_turn_phase(TurnPhase.IDLE)
+        self.turn_phase = TurnPhase.IDLE
+
+    def _apply_ui_operations(self, ops: list[UiOperation]) -> None:
+        needs_render = False
+        stream_updated = False
+
+        for op in ops:
+            if op.kind == "turn_completed" and op.turn_id:
+                if op.text:
+                    self.state.add_message("assistant", op.text, turn_id=op.turn_id)
+                needs_render = True
+            elif op.kind == "stream_updated":
+                stream_updated = True
+            elif op.kind in {"phase_changed", "approval_added", "approval_removed"}:
+                needs_render = True
+
+        self.turn_phase = self.state.turn_phase
+
+        if stream_updated:
+            self._schedule_stream_render()
+        elif needs_render:
+            self._render_state()
+
+    def _schedule_stream_render(self) -> None:
+        if self._stream_render_scheduled:
+            return
+        self._stream_render_scheduled = True
+        try:
+            self.set_timer(0.04, self._flush_stream_render)
         except Exception:
-            logger.exception("mock_response failed")
-            raise
-        finally:
-            self.state.set_turn_phase(TurnPhase.IDLE)
-            self.turn_phase = TurnPhase.IDLE
-            logger.info("mock_response end")
+            self._flush_stream_render()
+
+    def _flush_stream_render(self) -> None:
+        self._stream_render_scheduled = False
+        self._render_state()
+
+    def _add_system_message(self, text: str) -> None:
+        self.state.add_message("system", text)
+        self._render_state()
+
+    def _render_state(self) -> None:
+        screen = self._get_chat_screen()
+        if screen is not None:
+            screen.render_state(self.state)
+
+    def _get_chat_screen(self) -> ChatScreen | None:
+        if isinstance(self.screen, ChatScreen):
+            return self.screen
+        return None
+
+    def _spawn_task(self, coroutine: Coroutine[object, object, None]) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(coroutine)
+            return
+
+        task = loop.create_task(coroutine)
+        self._background_tasks.add(task)
+
+        def _done(completed: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(completed)
+
+        task.add_done_callback(_done)

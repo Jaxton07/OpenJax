@@ -18,6 +18,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - Python 包：
   - `python/openjax_sdk`
   - `python/openjax_tui`
+  - `python/tui`
 - 架构索引：`docs/project-structure-index.md`
 
 ## 2) 关键路径
@@ -28,6 +29,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `openjax-tui/`：Rust TUI。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
 - `python/openjax_tui/`：Python TUI MVP。
+- `python/tui/`：Textual 重构版 Python TUI。
 - `smoke_test/`：冒烟测试脚本。
 
 ### 子模块 README 导航
@@ -39,6 +41,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - [openjax-tui/README.md](openjax-tui/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
 - [python/openjax_tui/README.md](python/openjax_tui/README.md)
+- [python/tui/README.md](python/tui/README.md)
 - [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
 
 

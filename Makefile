@@ -52,10 +52,12 @@ setup-new:
 	@echo "Done! Run 'make dev-new' to start."
 
 dev-new:
-	.venv/bin/python -m openjax_tui
+	PYTHONPATH=python/openjax_sdk/src:python/tui/src \
+		.venv/bin/python -m openjax_tui
 
 test-new:
-	.venv/bin/python -m pytest python/tui/tests -v
+	PYTHONPATH=python/openjax_sdk/src:python/tui/src \
+		.venv/bin/python -m pytest python/tui/tests -v
 
 # ============ 通用命令 ============
 

@@ -34,6 +34,7 @@ class ApprovalRequest:
     """Pending approval request."""
 
     id: str
+    turn_id: str | None
     action: str
     reason: str | None = None
     timestamp: str | None = None
@@ -56,10 +57,19 @@ class AppState:
 
     # Approvals
     pending_approvals: dict[str, ApprovalRequest] = field(default_factory=dict)
+    approval_order: list[str] = field(default_factory=list)
+    approval_focus_id: str | None = None
 
     # UI state
     current_input: str = ""
     command_palette_open: bool = False
+
+    # Streaming state
+    active_turn_id: str | None = None
+    stream_text_by_turn: dict[str, str] = field(default_factory=dict)
+
+    # Error state
+    last_error: str | None = None
 
     def add_message(self, role: str, content: str, **metadata) -> Message:
         """Add a new message to the history.
@@ -87,7 +97,13 @@ class AppState:
         """Clear all messages."""
         self.messages.clear()
 
-    def add_approval(self, approval_id: str, action: str, reason: str | None = None) -> ApprovalRequest:
+    def add_approval(
+        self,
+        approval_id: str,
+        action: str,
+        reason: str | None = None,
+        turn_id: str | None = None,
+    ) -> ApprovalRequest:
         """Add a pending approval request.
 
         Args:
@@ -102,11 +118,15 @@ class AppState:
 
         approval = ApprovalRequest(
             id=approval_id,
+            turn_id=turn_id,
             action=action,
             reason=reason,
             timestamp=datetime.now().isoformat(),
         )
         self.pending_approvals[approval_id] = approval
+        if approval_id not in self.approval_order:
+            self.approval_order.append(approval_id)
+        self.approval_focus_id = approval_id
         return approval
 
     def resolve_approval(self, approval_id: str) -> ApprovalRequest | None:
@@ -118,7 +138,12 @@ class AppState:
         Returns:
             The resolved ApprovalRequest or None if not found
         """
-        return self.pending_approvals.pop(approval_id, None)
+        resolved = self.pending_approvals.pop(approval_id, None)
+        if approval_id in self.approval_order:
+            self.approval_order.remove(approval_id)
+        if self.approval_focus_id == approval_id:
+            self.approval_focus_id = self.approval_order[-1] if self.approval_order else None
+        return resolved
 
     def get_pending_approval_count(self) -> int:
         """Get count of pending approvals."""
@@ -131,3 +156,44 @@ class AppState:
     def is_processing(self) -> bool:
         """Check if currently processing a turn."""
         return self.turn_phase in (TurnPhase.THINKING, TurnPhase.STREAMING)
+
+    def start_turn(self, turn_id: str) -> None:
+        """Mark a turn as active and initialize stream buffer."""
+        self.active_turn_id = turn_id
+        self.stream_text_by_turn.setdefault(turn_id, "")
+        self.set_turn_phase(TurnPhase.THINKING)
+
+    def append_delta(self, turn_id: str, delta: str) -> str:
+        """Append assistant delta for a turn and return aggregated text."""
+        current = self.stream_text_by_turn.get(turn_id, "")
+        updated = current + delta
+        self.stream_text_by_turn[turn_id] = updated
+        self.active_turn_id = turn_id
+        self.set_turn_phase(TurnPhase.STREAMING)
+        return updated
+
+    def finalize_turn(self, turn_id: str, final_content: str | None = None) -> str:
+        """Finalize turn stream content and return final text."""
+        if final_content is None:
+            final_text = self.stream_text_by_turn.get(turn_id, "")
+        else:
+            final_text = final_content
+            self.stream_text_by_turn[turn_id] = final_text
+
+        if self.active_turn_id == turn_id:
+            self.active_turn_id = None
+        self.stream_text_by_turn.pop(turn_id, None)
+        self.set_turn_phase(TurnPhase.IDLE)
+        return final_text
+
+    def set_error(self, message: str) -> None:
+        """Set last error and move phase into error."""
+        self.last_error = message
+        self.set_turn_phase(TurnPhase.ERROR)
+
+    def latest_pending_approval(self) -> ApprovalRequest | None:
+        """Get the latest pending approval request."""
+        if not self.approval_order:
+            return None
+        approval_id = self.approval_order[-1]
+        return self.pending_approvals.get(approval_id)

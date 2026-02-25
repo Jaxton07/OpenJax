@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -13,6 +14,9 @@ from textual.widgets import Footer, Header, Input, RichLog
 
 from ..commands import create_commands
 from ..widgets.command_palette import CommandPalette
+
+if TYPE_CHECKING:
+    from ..state import AppState, Message
 
 logger = logging.getLogger("openjax_tui")
 
@@ -34,7 +38,7 @@ class ChatScreen(Screen):
         """Compose the chat screen layout."""
         yield Header()
         with Vertical(id="chat-container"):
-            yield RichLog(id="chat-log", markup=True)
+            yield RichLog(id="chat-log", markup=True, wrap=True)
             yield Input(
                 placeholder="输入消息按回车发送，/ 打开命令面板...",
                 id="chat-input",
@@ -145,7 +149,7 @@ class ChatScreen(Screen):
             text: The message text
         """
         log = self.query_one("#chat-log", RichLog)
-        log.write(f"[bold blue]你:[/bold blue] {text}")
+        log.write(f"[on #3a3a3a][bold blue]❯[/bold blue] {text}[/on #3a3a3a]")
 
     def add_assistant_message(self, text: str) -> None:
         """Add an assistant message to the chat log.
@@ -154,7 +158,7 @@ class ChatScreen(Screen):
             text: The message text
         """
         log = self.query_one("#chat-log", RichLog)
-        log.write(f"[bold green]助手:[/bold green] {text}")
+        log.write(f"[bold green]⏺[/bold green] {text}")
 
     def add_system_message(self, text: str) -> None:
         """Add a system message to the chat log.
@@ -169,3 +173,35 @@ class ChatScreen(Screen):
         """Clear all messages from the chat log."""
         log = self.query_one("#chat-log", RichLog)
         log.clear()
+
+    def render_state(self, state: "AppState") -> None:
+        """Render full chat view from application state."""
+        try:
+            log = self.query_one("#chat-log", RichLog)
+        except Exception:
+            # During early mount/unmount cycles the log widget may not exist yet.
+            return
+        log.clear()
+
+        if not state.messages:
+            log.write("[bold green]欢迎使用 OpenJax TUI![/bold green]")
+            quit_key = "Ctrl+C" if sys.platform == "darwin" else "Ctrl+Q"
+            log.write(f"输入消息按回车发送，输入 / 打开命令面板，{quit_key} 退出。\n")
+            return
+
+        for msg in state.messages:
+            self._write_message(log, msg)
+
+        if state.active_turn_id:
+            stream_text = state.stream_text_by_turn.get(state.active_turn_id, "")
+            if stream_text:
+                log.write(f"[bold green]⏺[/bold green] {stream_text}")
+
+    @staticmethod
+    def _write_message(log: RichLog, msg: "Message") -> None:
+        if msg.role == "user":
+            log.write(f"[on #3a3a3a][bold blue]❯[/bold blue] {msg.content}[/on #3a3a3a]")
+        elif msg.role == "assistant":
+            log.write(f"[bold green]⏺[/bold green] {msg.content}")
+        else:
+            log.write(msg.content)

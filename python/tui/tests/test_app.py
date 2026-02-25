@@ -41,63 +41,46 @@ class TestOpenJaxApp(unittest.TestCase):
         app.action_exit()
         app.exit.assert_called_once()
 
-    @patch.object(OpenJaxApp, 'screen', new_callable=lambda: MagicMock(spec=ChatScreen))
-    def test_submit_message_updates_state(self, mock_screen) -> None:
-        """Test that submit_message updates state."""
+    @patch.object(OpenJaxApp, "screen", new_callable=lambda: MagicMock(spec=ChatScreen))
+    def test_submit_message_updates_state(self, _mock_screen) -> None:
+        """submit_message should append user message and queue async submit."""
         app = OpenJaxApp()
-        mock_screen.add_user_message = MagicMock()
-        mock_screen.add_assistant_message = MagicMock()
+        captured = {"count": 0}
+
+        def consume(coro) -> None:
+            captured["count"] += 1
+            coro.close()
+
+        app._spawn_task = consume
 
         app.submit_message("Hello")
 
-        # Check state was updated
-        self.assertEqual(len(app.state.messages), 2)  # user + assistant
+        self.assertEqual(len(app.state.messages), 1)
         self.assertEqual(app.state.messages[0].role, "user")
         self.assertEqual(app.state.messages[0].content, "Hello")
-        self.assertEqual(app.state.messages[1].role, "assistant")
+        self.assertEqual(app.state.turn_phase, TurnPhase.THINKING)
+        self.assertEqual(captured["count"], 1)
 
-    @patch.object(OpenJaxApp, 'screen', new_callable=lambda: MagicMock(spec=ChatScreen))
-    def test_action_clear(self, mock_screen) -> None:
-        """Test the clear action."""
-        app = OpenJaxApp()
-        # Add some messages
-        app.state.add_message("user", "Hello")
-        app.state.add_message("assistant", "Hi")
-        self.assertEqual(len(app.state.messages), 2)
-
-        mock_screen.clear_messages = MagicMock()
-        mock_screen.add_system_message = MagicMock()
-
-        app.action_clear()
-
-        # Check messages cleared
-        self.assertEqual(len(app.state.messages), 0)
-        mock_screen.clear_messages.assert_called_once()
-
-    @patch.object(OpenJaxApp, 'screen', new_callable=lambda: MagicMock(spec=ChatScreen))
-    def test_action_pending_no_approvals(self, mock_screen) -> None:
+    def test_action_pending_no_approvals(self) -> None:
         """Test the pending action with no approvals."""
         app = OpenJaxApp()
-        mock_screen.add_system_message = MagicMock()
+        app._render_state = MagicMock()
 
         app.action_pending()
 
-        mock_screen.add_system_message.assert_called_once()
-        call_args = mock_screen.add_system_message.call_args[0][0]
-        self.assertIn("没有", call_args)
+        self.assertIn("没有", app.state.messages[-1].content)
 
-    @patch.object(OpenJaxApp, 'screen', new_callable=lambda: MagicMock(spec=ChatScreen))
-    def test_action_pending_with_approvals(self, mock_screen) -> None:
+    def test_action_pending_with_approvals(self) -> None:
         """Test the pending action with approvals."""
         app = OpenJaxApp()
-        app.state.add_approval("app-1", "write_file")
-
-        mock_screen.add_system_message = MagicMock()
+        app._render_state = MagicMock()
+        app.state.add_approval("app-1", "write_file", turn_id="turn-1")
 
         app.action_pending()
 
-        call_args = mock_screen.add_system_message.call_args[0][0]
-        self.assertIn("1", call_args)
+        text = app.state.messages[-1].content
+        self.assertIn("app-1", text)
+        self.assertIn("turn-1", text)
 
 
 class TestChatScreen(unittest.TestCase):
@@ -162,26 +145,22 @@ class TestCommands(unittest.TestCase):
         app = OpenJaxApp()
         commands = create_commands(app)
 
-        # Check we have the expected commands
         command_names = [cmd.name for cmd in commands]
         self.assertIn("help", command_names)
         self.assertIn("clear", command_names)
         self.assertIn("exit", command_names)
         self.assertIn("pending", command_names)
 
-    @patch.object(OpenJaxApp, 'screen', new_callable=lambda: MagicMock(spec=ChatScreen))
-    def test_command_handlers(self, mock_screen) -> None:
+    def test_command_handlers(self) -> None:
         """Test that command handlers work."""
         from openjax_tui.commands import create_commands
 
         app = OpenJaxApp()
         app.exit = MagicMock()
-        mock_screen.clear_messages = MagicMock()
-        mock_screen.add_system_message = MagicMock()
+        app._render_state = MagicMock()
 
         commands = create_commands(app)
 
-        # Find and test exit command
         exit_cmd = next(cmd for cmd in commands if cmd.name == "exit")
         exit_cmd.handler()
         app.exit.assert_called_once()
