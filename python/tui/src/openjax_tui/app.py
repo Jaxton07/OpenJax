@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from textual.app import App
 
 from .screens.chat import ChatScreen
@@ -17,3 +19,7 @@ class OpenJaxApp(App):
     def on_mount(self) -> None:
         """Push the chat screen when app mounts."""
         self.push_screen(ChatScreen())
+
+    def action_help_quit(self) -> None:
+        """Override to quit immediately without confirmation."""
+        self.exit()

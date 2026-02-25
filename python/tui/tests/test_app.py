@@ -33,7 +33,7 @@ class TestChatScreen(unittest.TestCase):
         """Test that the screen has key bindings."""
         screen = ChatScreen()
         self.assertTrue(hasattr(screen, "BINDINGS"))
-        self.assertEqual(len(screen.BINDINGS), 2)
+        self.assertEqual(len(screen.BINDINGS), 1)
 
 
 if __name__ == "__main__":

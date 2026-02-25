@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+import sys
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog
 
 
+def get_quit_key() -> str:
+    """Get platform-specific quit key."""
+    return "ctrl+c" if sys.platform == "darwin" else "ctrl+q"
+
+
 class ChatScreen(Screen):
     """Main chat interface screen."""
 
+    # Platform-specific bindings
     BINDINGS = [
-        ("ctrl+q", "quit", "退出"),
-        ("ctrl+c", "quit", "退出"),
+        (get_quit_key(), "quit", "退出"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -31,7 +38,9 @@ class ChatScreen(Screen):
         """Called when screen is mounted."""
         log = self.query_one("#chat-log", RichLog)
         log.write("[bold green]欢迎使用 OpenJax TUI![/bold green]")
-        log.write("输入消息按回车发送，Ctrl+Q 退出。\n")
+        # Show platform-specific quit key
+        quit_key = "Ctrl+C" if sys.platform == "darwin" else "Ctrl+Q"
+        log.write(f"输入消息按回车发送，{quit_key} 退出。\n")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
