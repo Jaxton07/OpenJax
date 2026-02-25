@@ -62,7 +62,7 @@ HeaderIcon {
 /* 输入框 */
 #chat-input {
     width: 100%;
-    margin-top: 1;
+    margin-top: 0;
     background: ansi_default;
     color: $text;
     border: solid $border;
@@ -101,6 +101,16 @@ ScrollbarCorner {
     border: round $secondary;
     padding: 0 1;
     margin-bottom: 1;
+}
+
+#thinking-status {
+    width: 100%;
+    height: auto;
+    background: ansi_default;
+    color: $primary;
+    padding: 0 1 0 1;
+    margin-top: 1;
+    margin-bottom: 0;
 }
 
 /* 阶段 5: Markdown 可读性收敛 */

@@ -14,7 +14,7 @@ class ApprovalOption:
     """Approval option row displayed in popup."""
 
     name: str
-    description: str
+    label: str
     handler: Callable[[], None]
 
 
@@ -27,9 +27,9 @@ class ApprovalPopup(Static):
         super().__init__(**kwargs)
         self.summary = ""
         self.options = [
-            ApprovalOption(name="approve", description="批准请求", handler=lambda: None),
-            ApprovalOption(name="deny", description="拒绝请求", handler=lambda: None),
-            ApprovalOption(name="cancel", description="稍后处理", handler=lambda: None),
+            ApprovalOption(name="approve", label="Approve", handler=lambda: None),
+            ApprovalOption(name="deny", label="Deny", handler=lambda: None),
+            ApprovalOption(name="cancel", label="Cancel or decide later", handler=lambda: None),
         ]
         self.selected_index = 0
 
@@ -43,7 +43,7 @@ class ApprovalPopup(Static):
         lines = [f"[bold yellow]{self.summary}[/bold yellow]"]
         for index, option in enumerate(self.options):
             prefix = "› " if index == self.selected_index else "  "
-            lines.append(f"{prefix}[bold]{option.name}[/bold] [dim]{option.description}[/dim]")
+            lines.append(f"{prefix}[bold]{option.label}[/bold]")
         self.update("\n".join(lines))
 
     def move_selection(self, direction: int) -> None:
@@ -92,11 +92,22 @@ class ApprovalPopup(Static):
         reason: str | None,
     ) -> str:
         """Build one-line approval summary."""
-        normalized_reason = reason.strip() if reason else "-"
+        action_text = cls._normalize_action(action)
+        turn_text = turn_id or "unknown turn"
+        request_tag = approval_id[:8] if approval_id else "unknown"
+        reason_text = reason.strip() if reason and reason.strip() else "No reason provided."
         summary = (
-            f"[{approval_id}] action={action or '-'} turn={turn_id or '-'} reason={normalized_reason}"
+            f"Approval required ({request_tag}): allow {action_text} for {turn_text}? "
+            f"Reason: {reason_text}"
         )
         return cls._truncate(summary)
+
+    @staticmethod
+    def _normalize_action(action: str) -> str:
+        normalized = action.strip()
+        if not normalized:
+            return "this action"
+        return normalized.replace("_", " ")
 
     @classmethod
     def _truncate(cls, value: str) -> str:

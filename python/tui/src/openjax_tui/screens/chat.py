@@ -13,9 +13,11 @@ from textual.screen import Screen
 from textual.widgets import Header, Input, RichLog
 
 from ..commands import create_commands
+from ..state import TurnPhase
 from ..widgets.approval_popup import ApprovalPopup
 from ..widgets.command_palette import CommandPalette
 from ..widgets.markdown_message import MarkdownMessage
+from ..widgets.thinking_status import ThinkingStatus
 
 if TYPE_CHECKING:
     from ..state import AppState, ApprovalRequest, Message
@@ -158,6 +160,7 @@ class ChatScreen(Screen):
 
         try:
             existing = self.query_one("#command-palette", CommandPalette)
+            self.dismiss_thinking_status()
             return existing
         except Exception:
             pass
@@ -167,6 +170,7 @@ class ChatScreen(Screen):
         container = self.query_one("#chat-container", Vertical)
         input_widget = self.query_one("#chat-input", Input)
         container.mount(palette, before=input_widget)
+        self.dismiss_thinking_status()
         logger.info("command_palette shown")
         return palette
 
@@ -177,6 +181,9 @@ class ChatScreen(Screen):
         except Exception:
             return
         palette.remove()
+        phase = self._current_turn_phase()
+        if phase is not None:
+            self.sync_thinking_status(phase)
         logger.info("command_palette dismissed")
 
     def _is_slash_mode(self) -> bool:
@@ -195,6 +202,14 @@ class ChatScreen(Screen):
         except Exception:
             return False
 
+    def has_command_palette(self) -> bool:
+        """Return whether command palette is currently mounted."""
+        try:
+            self.query_one("#command-palette", CommandPalette)
+            return True
+        except Exception:
+            return False
+
     def show_approval_popup(self, approval: "ApprovalRequest") -> ApprovalPopup:
         """Show or update approval popup above the input widget."""
         summary = ApprovalPopup.format_summary(
@@ -204,6 +219,7 @@ class ChatScreen(Screen):
             reason=approval.reason,
         )
 
+        self.dismiss_thinking_status()
         self.dismiss_command_palette()
         self.set_input_enabled(False)
         try:
@@ -229,9 +245,12 @@ class ChatScreen(Screen):
             popup = self.query_one("#approval-popup", ApprovalPopup)
         except Exception:
             self.set_input_enabled(True)
-            return
-        popup.remove()
-        self.set_input_enabled(True)
+        else:
+            popup.remove()
+            self.set_input_enabled(True)
+        phase = self._current_turn_phase()
+        if phase is not None:
+            self.sync_thinking_status(phase)
         logger.info("approval_popup dismissed")
 
     def set_input_enabled(self, enabled: bool) -> None:
@@ -244,6 +263,9 @@ class ChatScreen(Screen):
     def on_command_palette_dismissed(self, event: CommandPalette.Dismissed) -> None:
         """Handle command palette dismissal."""
         self.dismiss_command_palette()
+        phase = self._current_turn_phase()
+        if phase is not None:
+            self.sync_thinking_status(phase)
         self.query_one("#chat-input", Input).focus()
 
     def on_approval_popup_selection_confirmed(
@@ -288,6 +310,46 @@ class ChatScreen(Screen):
         log = self.query_one("#chat-log", RichLog)
         log.clear()
 
+    def show_thinking_status(self) -> ThinkingStatus:
+        """Show or return thinking indicator above chat input."""
+        try:
+            existing = self.query_one("#thinking-status", ThinkingStatus)
+            return existing
+        except Exception:
+            pass
+
+        status = ThinkingStatus(id="thinking-status")
+        container = self.query_one("#chat-container", Vertical)
+        input_widget = self.query_one("#chat-input", Input)
+        container.mount(status, before=input_widget)
+        return status
+
+    def dismiss_thinking_status(self) -> None:
+        """Dismiss thinking indicator if visible."""
+        try:
+            status = self.query_one("#thinking-status", ThinkingStatus)
+        except Exception:
+            return
+        status.remove()
+
+    def sync_thinking_status(self, phase: TurnPhase) -> None:
+        """Sync thinking indicator visibility with current UI state."""
+        if phase != TurnPhase.THINKING:
+            self.dismiss_thinking_status()
+            return
+        if self.has_approval_popup() or self.has_command_palette():
+            self.dismiss_thinking_status()
+            return
+        self.show_thinking_status()
+
+    def _current_turn_phase(self) -> TurnPhase | None:
+        """Best-effort turn phase lookup from app context."""
+        try:
+            phase = getattr(self.app, "turn_phase", None)
+        except Exception:
+            return None
+        return phase
+
     def render_state(self, state: "AppState") -> None:
         """Render full chat view from application state."""
         try:
@@ -301,6 +363,7 @@ class ChatScreen(Screen):
             log.write("[bold green]欢迎使用 OpenJax TUI![/bold green]")
             quit_key = "Ctrl+C" if sys.platform == "darwin" else "Ctrl+Q"
             log.write(f"输入消息按回车发送，输入 / 打开命令面板，{quit_key} 退出。\n")
+            self.sync_thinking_status(state.turn_phase)
             return
 
         for msg in state.messages:
@@ -310,6 +373,8 @@ class ChatScreen(Screen):
             stream_text = state.stream_text_by_turn.get(state.active_turn_id, "")
             if stream_text:
                 self._write_spaced_line(log, f"[bold green]⏺[/bold green] {stream_text}")
+
+        self.sync_thinking_status(state.turn_phase)
 
     @staticmethod
     def _write_message(log: RichLog, msg: "Message") -> None:

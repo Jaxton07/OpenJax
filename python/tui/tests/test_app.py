@@ -320,6 +320,66 @@ class TestChatScreen(unittest.TestCase):
 
         self.assertIsInstance(log.write.call_args_list[0].args[0], Markdown)
 
+    def test_sync_thinking_status_shows_when_thinking_without_overlays(self) -> None:
+        screen = ChatScreen()
+        screen.has_approval_popup = MagicMock(return_value=False)
+        screen.has_command_palette = MagicMock(return_value=False)
+        screen.show_thinking_status = MagicMock()
+        screen.dismiss_thinking_status = MagicMock()
+
+        screen.sync_thinking_status(TurnPhase.THINKING)
+
+        screen.show_thinking_status.assert_called_once()
+        screen.dismiss_thinking_status.assert_not_called()
+
+    def test_sync_thinking_status_hides_when_not_thinking(self) -> None:
+        screen = ChatScreen()
+        screen.show_thinking_status = MagicMock()
+        screen.dismiss_thinking_status = MagicMock()
+
+        screen.sync_thinking_status(TurnPhase.STREAMING)
+
+        screen.dismiss_thinking_status.assert_called_once()
+        screen.show_thinking_status.assert_not_called()
+
+    def test_sync_thinking_status_hides_when_approval_visible(self) -> None:
+        screen = ChatScreen()
+        screen.has_approval_popup = MagicMock(return_value=True)
+        screen.has_command_palette = MagicMock(return_value=False)
+        screen.show_thinking_status = MagicMock()
+        screen.dismiss_thinking_status = MagicMock()
+
+        screen.sync_thinking_status(TurnPhase.THINKING)
+
+        screen.dismiss_thinking_status.assert_called_once()
+        screen.show_thinking_status.assert_not_called()
+
+    def test_sync_thinking_status_hides_when_command_palette_visible(self) -> None:
+        screen = ChatScreen()
+        screen.has_approval_popup = MagicMock(return_value=False)
+        screen.has_command_palette = MagicMock(return_value=True)
+        screen.show_thinking_status = MagicMock()
+        screen.dismiss_thinking_status = MagicMock()
+
+        screen.sync_thinking_status(TurnPhase.THINKING)
+
+        screen.dismiss_thinking_status.assert_called_once()
+        screen.show_thinking_status.assert_not_called()
+
+    def test_dismiss_approval_popup_restores_thinking_status(self) -> None:
+        screen = ChatScreen()
+        popup = MagicMock(spec=ApprovalPopup)
+        screen.query_one = MagicMock(return_value=popup)
+        screen.set_input_enabled = MagicMock()
+        screen._current_turn_phase = MagicMock(return_value=TurnPhase.THINKING)
+        screen.sync_thinking_status = MagicMock()
+
+        screen.dismiss_approval_popup()
+
+        popup.remove.assert_called_once()
+        screen.set_input_enabled.assert_called_once_with(True)
+        screen.sync_thinking_status.assert_called_once_with(TurnPhase.THINKING)
+
 
 class TestCommands(unittest.TestCase):
     """Test the commands module."""

@@ -34,7 +34,21 @@ class TestMarkdownMessage(unittest.TestCase):
 
         self.assertIsInstance(renderable, Markdown)
 
+    def test_single_newline_is_preserved_as_hard_break(self) -> None:
+        msg = MarkdownMessage("line1\nline2")
+
+        renderable = msg.to_renderable()
+
+        self.assertIn("line1  \nline2", renderable.markup)
+
+    def test_fenced_code_newline_not_forced_hard_break(self) -> None:
+        msg = MarkdownMessage("```python\nprint('hi')\nprint('bye')\n```")
+
+        renderable = msg.to_renderable()
+
+        self.assertIn("print('hi')\nprint('bye')", renderable.markup)
+        self.assertNotIn("print('hi')  \nprint('bye')", renderable.markup)
+
 
 if __name__ == "__main__":
     unittest.main()
-

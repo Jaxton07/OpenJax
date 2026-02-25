@@ -14,6 +14,9 @@ class TestApprovalPopup(unittest.TestCase):
         popup = ApprovalPopup()
         self.assertEqual(popup.selected_index, 0)
         self.assertEqual(popup.options[0].name, "approve")
+        self.assertEqual(popup.options[0].label, "Approve")
+        self.assertEqual(popup.options[1].label, "Deny")
+        self.assertEqual(popup.options[2].label, "Cancel or decide later")
 
     def test_move_selection_bounds(self) -> None:
         popup = ApprovalPopup()
@@ -47,6 +50,19 @@ class TestApprovalPopup(unittest.TestCase):
 
         self.assertEqual(len(posted), 1)
         self.assertIsInstance(posted[0], ApprovalPopup.Dismissed)
+
+    def test_format_summary_is_natural_language(self) -> None:
+        summary = ApprovalPopup.format_summary(
+            approval_id="14136c07-eeda-4a1d-a36a-f6ef64b305cf",
+            action="apply_patch",
+            turn_id="turn-3",
+            reason="tool call requires approval by policy",
+        )
+
+        self.assertIn("Approval required (14136c07)", summary)
+        self.assertIn("allow apply patch", summary)
+        self.assertIn("for turn-3?", summary)
+        self.assertIn("Reason: tool call requires approval by policy", summary)
 
 
 if __name__ == "__main__":
