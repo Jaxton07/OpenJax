@@ -51,6 +51,7 @@ fn cursor_edit_and_history_navigation_work() {
 #[test]
 fn chat_scroll_controls_work() {
     let mut app = App::default();
+    assert!(app.state.transcript.follow_output);
     app.state.transcript.chat_scroll = 30;
     app.state.transcript.follow_output = false;
 
@@ -64,4 +65,5 @@ fn chat_scroll_controls_work() {
 
     app.handle_event(AppEvent::ScrollBottom);
     assert!(app.state.transcript.follow_output);
+    assert_eq!(app.state.transcript.chat_scroll, usize::MAX);
 }

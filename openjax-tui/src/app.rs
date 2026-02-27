@@ -1,4 +1,5 @@
 use ratatui::Frame;
+use ratatui::layout::Rect;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
@@ -7,7 +8,7 @@ use crate::app_event::AppEvent;
 use crate::bottom_pane::approval_overlay;
 use crate::bottom_pane::chat_composer;
 use crate::bottom_pane::footer;
-use crate::chatwidget::ChatWidget;
+use crate::chatwidget::{ChatWidget, visual_line_count};
 use crate::state::{AppState, ApprovalSelection, apply_core_event};
 use crate::ui::{composer, logo};
 
@@ -27,12 +28,37 @@ impl Default for App {
 }
 
 impl App {
+    const LOGO_HEIGHT: u16 = 2;
+    const FOOTER_HEIGHT: u16 = 1;
+    const COMPOSER_HEIGHT: u16 = 3;
+    const COMPOSER_OVERLAY_HEIGHT: u16 = 8;
+
     pub fn should_quit(&self) -> bool {
         self.should_quit
     }
 
     pub fn take_pending_approval_decision(&mut self) -> Option<(String, bool)> {
         self.state.take_pending_decision()
+    }
+
+    pub fn desired_height(&self, width: u16) -> u16 {
+        let composer_height = self.composer_height();
+        let chat_height = ChatWidget::desired_height(&self.state, width);
+        Self::LOGO_HEIGHT
+            .saturating_add(chat_height.max(1))
+            .saturating_add(composer_height)
+            .saturating_add(Self::FOOTER_HEIGHT)
+    }
+
+    pub fn chat_scroll_for_viewport(&self, chat_width: u16, chat_height: u16) -> usize {
+        let chat_lines = ChatWidget::render_lines(&self.state);
+        let chat_visual_lines = visual_line_count(&chat_lines, chat_width);
+        let max_scroll = chat_visual_lines.saturating_sub(chat_height as usize);
+        if self.state.transcript.follow_output {
+            max_scroll
+        } else {
+            self.state.transcript.chat_scroll.min(max_scroll)
+        }
     }
 
     pub fn handle_event(&mut self, event: AppEvent) {
@@ -110,33 +136,26 @@ impl App {
     }
 
     pub fn render(&self, frame: &mut Frame<'_>) {
-        let composer_height =
-            if self.state.approval.overlay_visible || self.state.input_state.slash_popup.open {
-                8
-            } else {
-                3
-            };
+        self.render_in_area(frame, frame.area());
+    }
+
+    pub fn render_in_area(&self, frame: &mut Frame<'_>, area: Rect) {
+        let composer_height = self.composer_height();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(2),
+                Constraint::Length(Self::LOGO_HEIGHT),
                 Constraint::Min(1),
                 Constraint::Length(composer_height),
-                Constraint::Length(1),
+                Constraint::Length(Self::FOOTER_HEIGHT),
             ])
-            .split(frame.area());
+            .split(area);
 
         let logo = Paragraph::new(logo::render_lines());
         frame.render_widget(logo, chunks[0]);
 
         let chat_lines = ChatWidget::render_lines(&self.state);
-        let chat_inner_height = chunks[1].height as usize;
-        let max_scroll = chat_lines.len().saturating_sub(chat_inner_height);
-        let scroll = if self.state.transcript.follow_output {
-            max_scroll
-        } else {
-            self.state.transcript.chat_scroll.min(max_scroll)
-        };
+        let scroll = self.chat_scroll_for_viewport(chunks[1].width, chunks[1].height);
         let chat = Paragraph::new(chat_lines)
             .wrap(Wrap { trim: false })
             .scroll((scroll as u16, 0));
@@ -207,7 +226,7 @@ impl App {
         frame.render_widget(Paragraph::new(footer::render_line(&self.state)), chunks[3]);
 
         if self.state.show_help {
-            let popup = centered_rect(70, 35, frame.area());
+            let popup = centered_rect(70, 35, area);
             frame.render_widget(Clear, popup);
             frame.render_widget(
                 Paragraph::new(
@@ -225,6 +244,14 @@ Ctrl-C: quit",
                 .wrap(Wrap { trim: false }),
                 popup,
             );
+        }
+    }
+
+    fn composer_height(&self) -> u16 {
+        if self.state.approval.overlay_visible || self.state.input_state.slash_popup.open {
+            Self::COMPOSER_OVERLAY_HEIGHT
+        } else {
+            Self::COMPOSER_HEIGHT
         }
     }
 

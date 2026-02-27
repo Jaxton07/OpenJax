@@ -14,11 +14,22 @@ pub struct UiMessage {
     pub target: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptState {
     pub messages: Vec<UiMessage>,
+    /// Visual-row offset in the wrapped chat viewport.
     pub chat_scroll: usize,
     pub follow_output: bool,
+}
+
+impl Default for TranscriptState {
+    fn default() -> Self {
+        Self {
+            messages: Vec::new(),
+            chat_scroll: 0,
+            follow_output: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

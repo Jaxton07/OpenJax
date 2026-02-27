@@ -4,6 +4,10 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
+use ratatui::{Frame, Terminal};
+use std::io::Stdout;
 use std::io::{self, Write};
 
 use crate::app_event::AppEvent;
@@ -148,4 +152,23 @@ pub fn next_app_event() -> anyhow::Result<Option<AppEvent>> {
     }
     let event = read()?;
     Ok(map_crossterm_event(event))
+}
+
+pub fn draw_with_height(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    height: u16,
+    draw_fn: impl FnOnce(&mut Frame<'_>, Rect),
+) -> anyhow::Result<()> {
+    terminal.draw(|frame| {
+        let area = frame.area();
+        let view_h = height.clamp(1, area.height.max(1));
+        let view = Rect::new(
+            area.x,
+            area.y + area.height.saturating_sub(view_h),
+            area.width,
+            view_h,
+        );
+        draw_fn(frame, view);
+    })?;
+    Ok(())
 }

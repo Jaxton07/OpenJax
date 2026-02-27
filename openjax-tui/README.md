@@ -52,7 +52,8 @@ openjax-tui/
     ├── m7_keymap.rs
     ├── m8_terminal_restore.rs
     ├── m9_tui_approval_handler.rs
-    └── m10_chat_view_layout.rs
+    ├── m10_chat_view_layout.rs
+    └── m11_chat_scroll_visual.rs
 ```
 
 ## 各模块功能介绍
@@ -101,6 +102,8 @@ zsh -lc "cargo run -q -p openjax-tui"
 | `?` | 显示/隐藏帮助面板 |
 | `y` / `n` | 对当前审批弹层快速通过/拒绝 |
 | `Ctrl-C` | 退出应用 |
+
+> 说明：在 alt-screen 模式下，终端原生滚动历史通常不可用，请使用 `PageUp / PageDown / Home / End` 浏览聊天区内容。
 
 ## 环境变量配置
 

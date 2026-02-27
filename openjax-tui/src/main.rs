@@ -3,7 +3,9 @@ use openjax_protocol::Op;
 use openjax_tui::app::App;
 use openjax_tui::app_event::AppEvent;
 use openjax_tui::approval::TuiApprovalHandler;
-use openjax_tui::tui::{AltScreenMode, enter_terminal_mode, next_app_event, restore_terminal_mode};
+use openjax_tui::tui::{
+    AltScreenMode, draw_with_height, enter_terminal_mode, next_app_event, restore_terminal_mode,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::io::{self, Stdout};
@@ -122,7 +124,11 @@ async fn main() -> anyhow::Result<()> {
                 .push_system_message("turn task completed".to_string());
         }
 
-        terminal.draw(|frame| app.render(frame))?;
+        let term_width = terminal.size()?.width;
+        let desired_height = app.desired_height(term_width);
+        draw_with_height(&mut terminal, desired_height, |frame, area| {
+            app.render_in_area(frame, area);
+        })?;
         if app.should_quit() {
             break;
         }

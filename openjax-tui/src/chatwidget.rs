@@ -77,4 +77,22 @@ impl ChatWidget {
 
         out
     }
+
+    pub fn desired_height(state: &AppState, width: u16) -> u16 {
+        visual_line_count(&Self::render_lines(state), width) as u16
+    }
+}
+
+pub fn visual_line_count(lines: &[Line<'_>], width: u16) -> usize {
+    let wrap_width = usize::from(width.max(1));
+    let mut total = 0usize;
+    for line in lines {
+        let text = line.to_string();
+        if text.is_empty() {
+            total += 1;
+            continue;
+        }
+        total += textwrap::wrap(&text, wrap_width).len().max(1);
+    }
+    total.max(1)
 }
