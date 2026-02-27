@@ -14,7 +14,7 @@ pub fn cursor_offset(state: &AppState, inner_width: u16) -> u16 {
 }
 
 fn composer_view(state: &AppState, inner_width: usize) -> (String, u16) {
-    let prompt = "> ";
+    let prompt = "❯ ";
     let prompt_width = prompt.width();
     if inner_width <= prompt_width {
         return (prompt.to_string(), 0);

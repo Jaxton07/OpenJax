@@ -9,7 +9,7 @@ use crate::bottom_pane::chat_composer;
 use crate::bottom_pane::footer;
 use crate::chatwidget::ChatWidget;
 use crate::state::{AppState, ApprovalSelection, apply_core_event};
-use crate::ui::logo;
+use crate::ui::{composer, logo};
 
 #[derive(Debug)]
 pub struct App {
@@ -142,13 +142,13 @@ impl App {
             .scroll((scroll as u16, 0));
         frame.render_widget(chat, chunks[1]);
 
-        let input = format!("> {}", self.state.input_state.buffer);
-        let composer = Paragraph::new(input).block(Block::default().borders(Borders::TOP));
-        frame.render_widget(composer, chunks[2]);
+        let composer_line = composer::render_line(&self.state);
+        let composer_widget =
+            Paragraph::new(composer_line).block(Block::default().borders(Borders::TOP));
+        frame.render_widget(composer_widget, chunks[2]);
         let cursor_x = chunks[2]
             .x
-            .saturating_add(2)
-            .saturating_add(self.state.input_state.cursor as u16)
+            .saturating_add(composer::cursor_offset(&self.state, chunks[2].width))
             .min(chunks[2].x + chunks[2].width.saturating_sub(1));
         frame.set_cursor_position((cursor_x, chunks[2].y + 1));
 
