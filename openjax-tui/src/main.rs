@@ -4,7 +4,8 @@ use openjax_tui::app::App;
 use openjax_tui::app_event::AppEvent;
 use openjax_tui::approval::TuiApprovalHandler;
 use openjax_tui::tui::{
-    AltScreenMode, draw_with_height, enter_terminal_mode, next_app_event, restore_terminal_mode,
+    AltScreenMode, draw_with_height, enter_terminal_mode, insert_history_lines, next_app_event,
+    restore_terminal_mode,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -62,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
     let mut turn_started_at: Option<Instant> = None;
     let mut last_core_event_at: Option<Instant> = None;
     let mut last_stall_log_at: Option<Instant> = None;
+    let mut emitted_scrollback_visual_lines: usize = 0;
 
     loop {
         while let Some(request) = approval_handler.pop_request().await {
@@ -124,9 +126,31 @@ async fn main() -> anyhow::Result<()> {
                 .push_system_message("turn task completed".to_string());
         }
 
-        let term_width = terminal.size()?.width;
-        let desired_height = app.desired_height(term_width);
-        draw_with_height(&mut terminal, desired_height, |frame, area| {
+        let term_size = terminal.size()?;
+        let desired_height = app.desired_height(term_size.width);
+        let draw_height = if alt_enabled {
+            desired_height.min(term_size.height)
+        } else {
+            // Keep one-row headroom for inline scrollback insertion, similar to codex viewport behavior.
+            desired_height.min(term_size.height.saturating_sub(1).max(1))
+        };
+        if !alt_enabled {
+            let overflow_lines =
+                app.scrollback_overflow_render_lines(term_size.width, term_size.height);
+            if overflow_lines.len() < emitted_scrollback_visual_lines {
+                emitted_scrollback_visual_lines = overflow_lines.len();
+            }
+            if overflow_lines.len() > emitted_scrollback_visual_lines {
+                let viewport_top = term_size.height.saturating_sub(draw_height);
+                insert_history_lines(
+                    &overflow_lines[emitted_scrollback_visual_lines..],
+                    viewport_top,
+                    term_size.height,
+                )?;
+                emitted_scrollback_visual_lines = overflow_lines.len();
+            }
+        }
+        draw_with_height(&mut terminal, draw_height, |frame, area| {
             app.render_in_area(frame, area);
         })?;
         if app.should_quit() {

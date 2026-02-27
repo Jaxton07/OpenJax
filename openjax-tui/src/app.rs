@@ -2,6 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::app_event::AppEvent;
@@ -59,6 +60,30 @@ impl App {
         } else {
             self.state.transcript.chat_scroll.min(max_scroll)
         }
+    }
+
+    pub fn scrollback_overflow_lines(&self, width: u16, screen_height: u16) -> Vec<String> {
+        let lines = self.scrollback_overflow_render_lines(width, screen_height);
+        lines.into_iter().map(|line| line.to_string()).collect()
+    }
+
+    pub fn scrollback_overflow_render_lines(
+        &self,
+        width: u16,
+        screen_height: u16,
+    ) -> Vec<Line<'static>> {
+        if width == 0 || screen_height == 0 {
+            return Vec::new();
+        }
+        let overflow = self.desired_height(width).saturating_sub(screen_height) as usize;
+        if overflow == 0 {
+            return Vec::new();
+        }
+
+        let mut logical_lines = logo::render_lines();
+        logical_lines.extend(ChatWidget::render_lines(&self.state));
+        let visual_lines = wrap_styled_lines(&logical_lines, width);
+        visual_lines.into_iter().take(overflow).collect()
     }
 
     pub fn handle_event(&mut self, event: AppEvent) {
@@ -300,6 +325,68 @@ Ctrl-C: quit",
                 .push_system_message(format!("unknown command: /{command_name}")),
         }
     }
+}
+
+fn wrap_styled_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
+    let wrap_width = usize::from(width.max(1));
+    let mut out = Vec::new();
+    for line in lines {
+        out.extend(wrap_styled_line(line, wrap_width));
+    }
+    out
+}
+
+fn wrap_styled_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
+
+    if line.spans.is_empty() {
+        return vec![Line::from("").style(line.style)];
+    }
+
+    let mut wrapped = Vec::new();
+    let mut current_spans = Vec::new();
+    let mut current_width = 0usize;
+
+    for span in &line.spans {
+        let style = span.style;
+        let content = span.content.as_ref();
+        if content.is_empty() {
+            continue;
+        }
+        for grapheme in UnicodeSegmentation::graphemes(content, true) {
+            let g_width = UnicodeWidthStr::width(grapheme);
+            if current_width > 0 && current_width + g_width > width {
+                wrapped.push(Line::from(std::mem::take(&mut current_spans)).style(line.style));
+                current_width = 0;
+            }
+            if g_width > width && current_spans.is_empty() {
+                push_styled_piece(&mut current_spans, style, grapheme);
+                wrapped.push(Line::from(std::mem::take(&mut current_spans)).style(line.style));
+                current_width = 0;
+                continue;
+            }
+            push_styled_piece(&mut current_spans, style, grapheme);
+            current_width += g_width;
+        }
+    }
+
+    if current_spans.is_empty() {
+        wrapped.push(Line::from("").style(line.style));
+    } else {
+        wrapped.push(Line::from(current_spans).style(line.style));
+    }
+    wrapped
+}
+
+fn push_styled_piece(spans: &mut Vec<ratatui::text::Span<'static>>, style: Style, piece: &str) {
+    if let Some(last) = spans.last_mut()
+        && last.style == style
+    {
+        last.content.to_mut().push_str(piece);
+        return;
+    }
+    spans.push(ratatui::text::Span::styled(piece.to_string(), style));
 }
 
 fn centered_rect(
