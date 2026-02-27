@@ -6,7 +6,7 @@ use crate::state::AppState;
 pub fn render_lines(state: &AppState) -> Vec<Line<'static>> {
     let mut out = Vec::new();
 
-    for message in &state.messages {
+    for message in &state.transcript.messages {
         let prefix = format!("[{}] ", message.role);
         let mut content_lines = message.content.lines();
         let first = content_lines.next().unwrap_or_default();

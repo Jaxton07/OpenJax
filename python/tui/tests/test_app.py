@@ -283,6 +283,14 @@ class TestChatScreen(unittest.TestCase):
 
         log.write.assert_any_call("[bold green]⏺[/bold green] Update 1 file (test.txt)")
 
+    def test_write_message_renders_user_with_background_highlight(self) -> None:
+        log = MagicMock()
+        msg = Message(role="user", content="hello", metadata={"render_kind": "plain"})
+
+        ChatScreen._write_message(log, msg)
+
+        log.write.assert_any_call("[on #3a3a3a][bold blue]❯[/bold blue] hello[/on #3a3a3a]")
+
     def test_focus_chat_input_focuses_input_widget(self) -> None:
         screen = ChatScreen()
         chat_input = MagicMock(spec=Input)

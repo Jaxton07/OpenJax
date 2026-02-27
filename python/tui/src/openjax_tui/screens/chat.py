@@ -10,11 +10,12 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.events import Key
 from textual.screen import Screen
-from textual.widgets import Header, Input, RichLog
+from textual.widgets import Input, RichLog
 
 from ..commands import create_commands
 from ..state import TurnPhase
 from ..widgets.approval_popup import ApprovalPopup
+from ..widgets.chat_input import ChatInput
 from ..widgets.command_palette import CommandPalette
 from ..widgets.markdown_message import MarkdownMessage
 from ..widgets.thinking_status import ThinkingStatus
@@ -40,10 +41,9 @@ class ChatScreen(Screen):
 
     def compose(self) -> ComposeResult:
         """Compose the chat screen layout."""
-        yield Header()
         with Vertical(id="chat-container"):
             yield RichLog(id="chat-log", markup=True, wrap=True)
-            yield Input(
+            yield ChatInput(
                 placeholder="输入消息按回车发送，/ 打开命令面板...",
                 id="chat-input",
             )

@@ -12,13 +12,28 @@ openjax-tui/
 │   ├── lib.rs                       # 模块导出入口
 │   ├── main.rs                      # 程序入口（终端模式、agent 循环、事件汇总）
 │   ├── app.rs                       # 应用层事件处理与整体渲染编排
-│   ├── state.rs                     # UI 状态管理（消息、输入、滚动、审批弹层）
+│   ├── chatwidget.rs                # Transcript 渲染与流式尾部显示
 │   ├── app_event.rs                 # 应用事件定义（键盘、核心事件、退出）
 │   ├── approval.rs                  # TUI 审批处理器（请求队列与回传）
 │   ├── tui.rs                       # 终端模式控制与键盘事件映射
+│   ├── bottom_pane/                 # 输入框与弹层（slash/approval/footer）
+│   │   ├── mod.rs
+│   │   ├── chat_composer.rs
+│   │   ├── slash_commands.rs
+│   │   ├── command_popup.rs
+│   │   ├── approval_overlay.rs
+│   │   └── footer.rs
+│   ├── state/                       # 状态分层与协议事件映射
+│   │   ├── mod.rs
+│   │   ├── app_state.rs
+│   │   ├── turn_state.rs
+│   │   ├── input_state.rs
+│   │   ├── approval_state.rs
+│   │   └── event_mapper.rs
 │   ├── render/
 │   │   ├── mod.rs                   # render 子模块导出
 │   │   ├── markdown.rs              # Markdown 到纯文本渲染
+│   │   ├── renderable.rs            # 可渲染接口
 │   │   └── theme.rs                 # 主题样式
 │   └── ui/
 │       ├── mod.rs                   # UI 子模块导出
@@ -47,16 +62,18 @@ openjax-tui/
 | 模块 | 功能描述 |
 |------|----------|
 | `main.rs` | 初始化终端 raw/alt 模式、构造 `Agent` 和 `TuiApprovalHandler`、驱动输入事件与核心事件循环 |
-| `app.rs` | 将 `AppEvent` 映射到状态变更，负责页面布局与弹层渲染 |
-| `state.rs` | 统一维护消息历史、输入编辑状态、聊天滚动、审批弹层与运行上下文 |
+| `app.rs` | 统一路由输入事件/Core 事件，处理 slash/审批优先级与页面渲染 |
+| `chatwidget.rs` | 管理 transcript 视图（用户/助手/tool/system）与流式显示 |
+| `state/*` | 拆分状态层：turn/input/approval/transcript，并通过 `event_mapper` 映射协议事件 |
 | `approval.rs` | 实现 `ApprovalHandler`，在异步通道中管理待审批请求与用户决策 |
-| `tui.rs` | crossterm 事件映射（Enter/方向键/PageUp/PageDown/Ctrl-C），并处理终端模式切换与恢复 |
+| `tui.rs` | crossterm 事件映射（含 `Esc`）、终端模式切换与恢复 |
+| `bottom_pane/*` | 输入框状态机、slash 候选、审批弹层和 footer 状态提示 |
 
 ### 渲染与 UI 模块
 
 | 模块 | 功能描述 |
 |------|----------|
-| `render/markdown.rs` | 将 Markdown 内容转换为 TUI 可读纯文本（标题、列表、代码块） |
+| `render/markdown.rs` | 使用 `pulldown-cmark` 将 Markdown 转换为 TUI 可读文本 |
 | `render/theme.rs` | 定义角色颜色与标题样式 |
 | `ui/chat_view.rs` | 渲染消息行（按 role 着色） |
 | `ui/composer.rs` | 输入行与光标偏移计算，支持宽字符宽度 |

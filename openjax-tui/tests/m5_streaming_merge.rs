@@ -15,7 +15,7 @@ fn assistant_delta_merges_into_single_message() {
         content_delta: "lo".to_string(),
     }));
 
-    assert_eq!(app.state.messages.len(), 1);
-    assert_eq!(app.state.messages[0].role, "assistant");
-    assert_eq!(app.state.messages[0].content, "Hello");
+    assert_eq!(app.state.transcript.messages.len(), 1);
+    assert_eq!(app.state.transcript.messages[0].role, "assistant");
+    assert_eq!(app.state.transcript.messages[0].content, "Hello");
 }

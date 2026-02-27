@@ -1,6 +1,8 @@
 pub mod app;
 pub mod app_event;
 pub mod approval;
+pub mod bottom_pane;
+pub mod chatwidget;
 pub mod render;
 pub mod state;
 pub mod tui;

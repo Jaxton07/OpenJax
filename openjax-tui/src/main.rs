@@ -4,7 +4,6 @@ use openjax_tui::app::App;
 use openjax_tui::app_event::AppEvent;
 use openjax_tui::approval::TuiApprovalHandler;
 use openjax_tui::tui::{AltScreenMode, enter_terminal_mode, next_app_event, restore_terminal_mode};
-use openjax_tui::ui::overlay_approval::ApprovalOverlay;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::io::{self, Stdout};
@@ -70,10 +69,12 @@ async fn main() -> anyhow::Result<()> {
                 reason = %request.reason,
                 "approval request surfaced to tui"
             );
-            app.state.approval_overlay = Some(ApprovalOverlay::new(
+            app.state.enqueue_approval_request(
                 request.request_id,
-                format!("approve `{}` ? {}", request.target, request.reason),
-            ));
+                0,
+                request.target,
+                request.reason,
+            );
         }
 
         if let Some(rx) = core_event_rx.as_mut() {
@@ -128,13 +129,17 @@ async fn main() -> anyhow::Result<()> {
         if let Some(event) = next_app_event()? {
             match event {
                 AppEvent::SubmitInput => {
+                    if app.state.approval.overlay_visible {
+                        app.handle_event(AppEvent::SubmitInput);
+                        continue;
+                    }
                     if turn_task.is_some() {
                         warn!("submit ignored: previous turn still running");
                         app.state
                             .push_system_message("busy: previous turn still running".to_string());
                         continue;
                     }
-                    let input = app.state.input.trim().to_string();
+                    let input = app.state.input_state.buffer.trim().to_string();
                     let preview = summarize_input(&input, 120);
                     info!(
                         input_len = input.chars().count(),
@@ -170,27 +175,21 @@ async fn main() -> anyhow::Result<()> {
                         info!("turn task spawned");
                     }
                 }
-                AppEvent::InputChar(ch) if ch == 'y' || ch == 'n' => {
-                    if let Some(overlay) = &app.state.approval_overlay {
-                        let approved = ch == 'y';
-                        let request_id = overlay.request_id.clone();
-                        if approval_handler.resolve(&request_id, approved).await {
-                            app.state.approval_overlay = None;
-                            app.state.push_system_message(format!(
-                                "approval decision sent: {}",
-                                if approved { "approved" } else { "rejected" }
-                            ));
-                            info!(
-                                request_id = %request_id,
-                                approved = approved,
-                                "approval decision resolved from tui"
-                            );
-                            continue;
-                        }
-                    }
-                    app.handle_event(AppEvent::InputChar(ch));
-                }
                 other => app.handle_event(other),
+            }
+        }
+
+        while let Some((request_id, approved)) = app.take_pending_approval_decision() {
+            if approval_handler.resolve(&request_id, approved).await {
+                app.state.push_system_message(format!(
+                    "approval decision sent: {}",
+                    if approved { "approved" } else { "rejected" }
+                ));
+                info!(
+                    request_id = %request_id,
+                    approved = approved,
+                    "approval decision resolved from tui"
+                );
             }
         }
     }

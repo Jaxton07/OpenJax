@@ -20,8 +20,8 @@ fn composer_view(state: &AppState, inner_width: usize) -> (String, u16) {
         return (prompt.to_string(), 0);
     }
 
-    let chars: Vec<char> = state.input.chars().collect();
-    let cursor = state.input_cursor.min(chars.len());
+    let chars: Vec<char> = state.input_state.buffer.chars().collect();
+    let cursor = state.input_state.cursor.min(chars.len());
     let content_width = inner_width - prompt_width;
 
     let mut start = 0usize;
@@ -78,9 +78,9 @@ mod tests {
 
     #[test]
     fn cursor_offset_respects_wide_chars() {
-        let mut state = AppState::default();
-        state.input = "你好".to_string();
-        state.input_cursor = state.input.chars().count();
+        let mut state = AppState::with_defaults();
+        state.input_state.buffer = "你好".to_string();
+        state.input_state.cursor = state.input_state.buffer.chars().count();
         let offset = cursor_offset(&state, 20);
         assert_eq!(offset, 6);
     }

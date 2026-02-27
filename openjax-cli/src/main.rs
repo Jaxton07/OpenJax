@@ -209,9 +209,7 @@ fn print_event(event: &Event) {
     match event {
         Event::TurnStarted { turn_id } => println!("[turn:{turn_id}] started"),
         Event::ToolCallStarted {
-            turn_id,
-            tool_name,
-            ..
+            turn_id, tool_name, ..
         } => {
             println!("[turn:{turn_id}] tool start: {tool_name}")
         }

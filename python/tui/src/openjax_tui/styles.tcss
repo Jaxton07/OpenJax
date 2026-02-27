@@ -4,82 +4,131 @@
 $primary: #00BFFF;
 $secondary: #808080;
 $success: #00FF00;
-$background: #1a1a1a;
-$surface: #2d2d2d;
+$background: transparent;
+$surface: transparent;
 $text: #ffffff;
 $border: #3d3d3d;
 
 App {
-    background: ansi_default;
+    background: transparent;
+}
+
+App:ansi {
+    background: transparent;
+    color: ansi_default;
+}
+
+App:ansi .-ansi-scrollbar {
+    scrollbar-background: transparent;
+    scrollbar-background-hover: transparent;
+    scrollbar-background-active: transparent;
+    scrollbar-corner-color: transparent;
 }
 
 /* 屏幕样式 */
 Screen {
-    align: center middle;
-    background: ansi_default;
+    layout: vertical;
+    overflow-y: hidden;
+    align: left top;
+    background: transparent;
 }
 
-/* Header 样式 */
-Header {
-    background: ansi_default;
-    color: $primary;
-    height: 3;
-    text-style: bold;
+Screen:ansi {
+    background: transparent;
+    color: ansi_default;
 }
 
-Header.-tall {
-    height: 3;
-}
-
-HeaderTitle {
-    color: $primary;
-    text-style: bold;
-}
-
-HeaderIcon {
-    display: none;
+ChatScreen {
+    background: transparent;
 }
 
 /* 聊天容器 */
 #chat-container {
     width: 100%;
-    height: 100%;
-    padding: 1 2;
-    background: ansi_default;
+    height: 1fr;
+    padding: 0;
+    background: transparent;
 }
 
 /* 聊天日志区域 */
 #chat-log {
     width: 100%;
     height: 1fr;
-    padding: 1 1 0 1;
+    padding: 0 0 0 0;
     color: $text;
     overflow-x: hidden;
-    background: ansi_default;
-    border: solid $border;
+    background: transparent;
+    border: none;
+    scrollbar-background: transparent;
+    scrollbar-background-hover: transparent;
+    scrollbar-background-active: transparent;
+    scrollbar-corner-color: transparent;
 }
 
 /* 输入框 */
 #chat-input {
     width: 100%;
     margin-top: 0;
-    background: ansi_default;
+    background: transparent;
     color: $text;
-    border: solid $border;
+    border: tall $border;
+    background-tint: 0%;
 }
 
 #chat-input:focus {
-    border: solid $primary;
+    background: transparent;
+    background-tint: 0%;
+    border: tall $primary;
 }
 
 /* 滚动条样式 */
-Scrollbar {
-    background: ansi_default;
+ScrollBar {
+    background: transparent;
     color: $primary;
 }
 
-ScrollbarCorner {
-    background: ansi_default;
+ScrollBarCorner {
+    background: transparent;
+}
+
+RichLog {
+    background: transparent;
+    background-tint: 0%;
+}
+
+RichLog:focus {
+    background: transparent;
+    background-tint: 0%;
+}
+
+RichLog:ansi {
+    background: transparent;
+    color: ansi_default;
+}
+
+Input {
+    background: transparent;
+    background-tint: 0%;
+}
+
+Input:focus {
+    background: transparent;
+    background-tint: 0%;
+}
+
+Input:ansi {
+    background: transparent;
+    color: ansi_default;
+}
+
+ChatInput {
+    background: transparent;
+    background-tint: 0%;
+}
+
+ChatInput:focus {
+    background: transparent;
+    background-tint: 0%;
 }
 
 /* 命令面板样式 */
@@ -87,7 +136,7 @@ ScrollbarCorner {
     width: 100%;
     height: auto;
     max-height: 7;
-    background: ansi_default;
+    background: transparent;
     border: round $primary;
     padding: 0 1;
     margin-bottom: 1;
@@ -97,7 +146,7 @@ ScrollbarCorner {
     width: 100%;
     height: auto;
     max-height: 8;
-    background: ansi_default;
+    background: transparent;
     border: round $secondary;
     padding: 0 1;
     margin-bottom: 1;
@@ -106,7 +155,7 @@ ScrollbarCorner {
 #thinking-status {
     width: 100%;
     height: auto;
-    background: ansi_default;
+    background: transparent;
     color: $primary;
     padding: 0 1 0 1;
     margin-top: 1;
@@ -118,8 +167,4 @@ MarkdownMessage {
     width: 100%;
     height: auto;
     margin: 0 0 1 0;
-}
-
-Header * {
-    background: ansi_default;
 }

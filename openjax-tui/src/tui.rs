@@ -76,10 +76,22 @@ pub fn restore_plan(raw_enabled: bool, alt_enabled: bool) -> Vec<&'static str> {
 pub fn map_crossterm_event(event: Event) -> Option<AppEvent> {
     match event {
         Event::Key(KeyEvent {
+            code: KeyCode::Char('\u{3}'),
+            ..
+        }) => Some(AppEvent::Quit),
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('C'),
+            modifiers,
+            ..
+        }) if modifiers.contains(KeyModifiers::CONTROL) => Some(AppEvent::Quit),
+        Event::Key(KeyEvent {
             code: KeyCode::Char('c'),
             modifiers,
             ..
         }) if modifiers.contains(KeyModifiers::CONTROL) => Some(AppEvent::Quit),
+        Event::Key(KeyEvent {
+            code: KeyCode::Esc, ..
+        }) => Some(AppEvent::Escape),
         Event::Key(KeyEvent {
             code: KeyCode::Char('?'),
             ..

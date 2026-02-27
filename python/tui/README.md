@@ -93,6 +93,7 @@ PYTHONPATH=python/openjax_sdk/src:python/tui/src \
 - 启动后默认焦点在输入框，可直接输入消息。
 - 用户消息前缀：`❯`
 - 工具消息前缀：`⏺`（成功绿色 / 失败红色）
+- UI 背景默认透明，继承终端主题背景（含终端透明度/模糊效果）。
 - 命令候选命令：`/help`、`/clear`、`/exit`、`/pending`、`/approve`、`/deny`
 - 候选层仅 `/` 输入态可创建；非 `/` 输入态禁止打开候选层。
 - 审批交互：收到审批事件后自动在输入框上方弹出审批面板并抢焦点，输入框暂停输入；支持 `Up/Down + Enter` 选择 `approve/deny/cancel`，`Esc` 等价 `cancel`。

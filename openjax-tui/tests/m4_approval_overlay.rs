@@ -12,12 +12,13 @@ fn approval_overlay_opens_and_closes_with_events() {
         target: "shell".to_string(),
         reason: "needs approval".to_string(),
     }));
-    assert!(app.state.approval_overlay.is_some());
+    assert!(app.state.approval.overlay.is_some());
 
     app.handle_event(AppEvent::CoreEvent(Event::ApprovalResolved {
         turn_id: 1,
         request_id: "req-1".to_string(),
         approved: true,
     }));
-    assert!(app.state.approval_overlay.is_none());
+    assert_eq!(app.state.approval.pending_count(), 0);
+    assert!(!app.state.approval.overlay_visible);
 }

@@ -25,9 +25,17 @@ fn keymap_maps_primary_shortcuts() {
         ))),
         Some(AppEvent::Quit)
     ));
-    assert!(
-        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).is_none()
-    );
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('\u{3}'),
+            KeyModifiers::NONE
+        ))),
+        Some(AppEvent::Quit)
+    ));
+    assert!(matches!(
+        map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))),
+        Some(AppEvent::Escape)
+    ));
     assert!(matches!(
         map_crossterm_event(Event::Key(KeyEvent::new(
             KeyCode::Char('q'),

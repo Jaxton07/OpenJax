@@ -12,9 +12,15 @@ ratatui.workspace = true
 crossterm.workspace = true
 unicode-width.workspace = true
 tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 openjax-core = { path = "../openjax-core" }
 openjax-protocol = { path = "../openjax-protocol" }
 scopeguard = "1"
+pulldown-cmark = "0.13"
+textwrap = "0.16"
+unicode-segmentation = "1"
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+insta = "1"
