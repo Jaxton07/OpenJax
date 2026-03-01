@@ -1,0 +1,21 @@
+[package]
+name = "tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+tokio.workspace = true
+unicode-width.workspace = true
+openjax-core = { path = "../../openjax-core" }
+openjax-protocol = { path = "../../openjax-protocol" }
+textwrap = "0.16"
+scopeguard = "1"
+tui_next = { path = "../tui_next" }
+
+[dev-dependencies]
+pretty_assertions.workspace = true

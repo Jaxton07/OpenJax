@@ -1,0 +1,15 @@
+pub mod app;
+pub mod approval;
+pub mod custom_terminal;
+pub mod history_cell;
+pub mod input;
+pub mod insert_history;
+pub mod state;
+pub mod tui;
+pub mod wrapping;
+
+pub async fn run() -> anyhow::Result<()> {
+    crate::runtime::run().await
+}
+
+mod runtime;
