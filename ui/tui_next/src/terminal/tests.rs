@@ -50,3 +50,20 @@ fn diff_buffers_clear_to_end_starts_after_wide_char() {
         "expected clear-to-end to start after the remaining wide char; commands: {commands:?}"
     );
 }
+
+#[test]
+fn diff_buffers_clears_from_column_zero_when_row_becomes_empty() {
+    let area = Rect::new(0, 0, 6, 1);
+    let mut previous = Buffer::empty(area);
+    let next = Buffer::empty(area);
+
+    previous.set_string(0, 0, "› test", Style::default());
+
+    let commands = diff_buffers(&previous, &next);
+    assert!(
+        commands
+            .iter()
+            .any(|command| matches!(command, DrawCommand::ClearToEnd { x: 0, y: 0, .. })),
+        "expected clear-to-end from x=0 for blank row; commands: {commands:?}"
+    );
+}

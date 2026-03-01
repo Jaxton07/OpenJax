@@ -20,6 +20,10 @@ impl Tui {
             .map(|h| h.clamp(8, 60))
             .unwrap_or(16);
         let mut terminal = terminal::init_crossterm_terminal(viewport)?;
+        // Start each run from a clean terminal surface to avoid stale inline artifacts
+        // from previous TUI sessions leaking into the next launch.
+        terminal.clear_scrollback()?;
+        terminal.clear()?;
         terminal.hide_cursor()?;
         Ok(Self {
             terminal,
@@ -110,6 +114,11 @@ impl Tui {
             footer.render(chunks[footer_idx], frame.buffer_mut());
         })?;
 
+        Ok(())
+    }
+
+    pub fn teardown(&mut self) -> anyhow::Result<()> {
+        self.terminal.clear()?;
         Ok(())
     }
 }

@@ -20,4 +20,8 @@ fn approval_panel_supports_up_down_and_submit() {
 
     let action = app.submit_input();
     assert!(action.is_some());
+    assert!(
+        app.state.live_messages.is_empty(),
+        "approval submit should clear transient approval live message",
+    );
 }

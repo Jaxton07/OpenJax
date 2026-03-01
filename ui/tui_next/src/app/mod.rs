@@ -81,6 +81,7 @@ impl App {
                     let approved = matches!(selected, Some(ApprovalSelection::Approve));
                     self.state.pending_approval = None;
                     self.state.approval_selection = ApprovalSelection::Approve;
+                    self.state.live_messages.clear();
                     let cell = self.system_cell(format!(
                         "approval {} ({})",
                         if approved { "approved" } else { "rejected" },

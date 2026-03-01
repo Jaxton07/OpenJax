@@ -22,18 +22,25 @@ pub(crate) fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
         let bg = row.last().map(|cell| cell.bg).unwrap_or(Color::Reset);
 
         let mut last_nonblank_column = 0usize;
+        let mut has_nonblank = false;
         let mut column = 0usize;
         while column < row.len() {
             let cell = &row[column];
             let width = cell.symbol().width();
             if cell.symbol() != " " || cell.bg != bg || cell.modifier != Modifier::empty() {
+                has_nonblank = true;
                 last_nonblank_column = column + (width.saturating_sub(1));
             }
             column += width.max(1);
         }
 
-        if last_nonblank_column + 1 < row.len() {
-            let (x, y) = a.pos_of(row_start + last_nonblank_column + 1);
+        let clear_from = if has_nonblank {
+            (last_nonblank_column + 1 < row.len()).then_some(last_nonblank_column + 1)
+        } else {
+            Some(0)
+        };
+        if let Some(clear_column) = clear_from {
+            let (x, y) = a.pos_of(row_start + clear_column);
             updates.push(DrawCommand::ClearToEnd { x, y, bg });
         }
 

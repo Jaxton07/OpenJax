@@ -94,5 +94,6 @@ pub async fn run() -> anyhow::Result<()> {
     for event in events {
         app.apply_core_event(event);
     }
+    tui.teardown()?;
     Ok(())
 }

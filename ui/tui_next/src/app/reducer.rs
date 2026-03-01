@@ -83,6 +83,7 @@ impl App {
                 ..
             } => {
                 self.state.pending_approval = None;
+                self.state.live_messages.clear();
                 let cell = self.system_cell(format!(
                     "approval resolved {} ({})",
                     if approved { "approved" } else { "rejected" },
