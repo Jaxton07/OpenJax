@@ -3,9 +3,9 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
-use crate::custom_terminal::{self, CrosstermTerminal};
 use crate::history_cell::HistoryCell;
 use crate::insert_history::insert_history_lines;
+use crate::terminal::{self, CrosstermTerminal};
 
 pub struct Tui {
     terminal: CrosstermTerminal,
@@ -19,7 +19,7 @@ impl Tui {
             .and_then(|v| v.parse::<u16>().ok())
             .map(|h| h.clamp(8, 60))
             .unwrap_or(16);
-        let mut terminal = custom_terminal::init_crossterm_terminal(viewport)?;
+        let mut terminal = terminal::init_crossterm_terminal(viewport)?;
         terminal.hide_cursor()?;
         Ok(Self {
             terminal,

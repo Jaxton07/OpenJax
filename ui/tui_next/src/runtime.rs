@@ -10,9 +10,13 @@ use openjax_protocol::Op;
 use scopeguard::guard;
 use tokio::sync::Mutex;
 
-use crate::app::{App, SubmitAction};
+use crate::app::App;
 use crate::approval::TuiApprovalHandler;
 use crate::input::{InputAction, map_event};
+use crate::runtime_loop::{
+    drain_approval_requests, drain_core_events, drain_finished_turn_task, handle_submit_action,
+    render_once,
+};
 use crate::tui::Tui;
 
 pub async fn run() -> anyhow::Result<()> {
@@ -40,55 +44,22 @@ pub async fn run() -> anyhow::Result<()> {
             guard.sandbox_mode_name().to_string(),
         );
     }
-    let mut tui = Tui::new()?;
 
+    let mut tui = Tui::new()?;
     let mut turn_task: Option<tokio::task::JoinHandle<()>> = None;
     let mut core_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>> =
         None;
+
     loop {
-        while let Some(request) = approval_handler.pop_request().await {
-            app.apply_core_event(openjax_protocol::Event::ApprovalRequested {
-                turn_id: 0,
-                request_id: request.request_id,
-                target: request.target,
-                reason: request.reason,
-            });
-        }
-
-        if let Some(rx) = core_event_rx.as_mut() {
-            while let Ok(event) = rx.try_recv() {
-                app.apply_core_event(event);
-            }
-        }
-
-        if turn_task.as_ref().is_some_and(|task| task.is_finished()) {
-            if let Some(task) = turn_task.take() {
-                let _ = task.await;
-            }
-            if let Some(mut rx) = core_event_rx.take() {
-                while let Ok(event) = rx.try_recv() {
-                    app.apply_core_event(event);
-                }
-            }
-        }
-
-        let viewport = tui.viewport_size();
-        let term_width = viewport.width.max(8);
-        let desired = app.desired_height(term_width);
-        let cells = app.drain_history_cells();
-        tui.queue_history_cells(cells);
-        tui.draw(
-            desired,
-            app.input_line(),
-            app.input_cursor_offset(term_width),
-            app.approval_panel_lines(),
-            app.footer_text(),
-            |area, buf| app.render_live(area, buf),
-        )?;
+        drain_approval_requests(&mut app, &approval_handler).await;
+        drain_core_events(&mut app, &mut core_event_rx);
+        drain_finished_turn_task(&mut app, &mut turn_task, &mut core_event_rx).await;
+        render_once(&mut app, &mut tui)?;
 
         if !event::poll(Duration::from_millis(40))? {
             continue;
         }
+
         let evt = event::read()?;
         match map_event(evt) {
             InputAction::Quit => break,
@@ -98,23 +69,15 @@ pub async fn run() -> anyhow::Result<()> {
                     continue;
                 }
                 if let Some(action) = app.submit_input() {
-                    match action {
-                        SubmitAction::UserTurn { input } => {
-                            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                            let agent = Arc::clone(&agent);
-                            turn_task = Some(tokio::spawn(async move {
-                                let mut guard = agent.lock().await;
-                                let _ = guard.submit_with_sink(Op::UserTurn { input }, tx).await;
-                            }));
-                            core_event_rx = Some(rx);
-                        }
-                        SubmitAction::ApprovalDecision {
-                            request_id,
-                            approved,
-                        } => {
-                            let _ = approval_handler.resolve(&request_id, approved).await;
-                        }
-                    }
+                    handle_submit_action(
+                        &mut app,
+                        action,
+                        Arc::clone(&agent),
+                        Arc::clone(&approval_handler),
+                        &mut turn_task,
+                        &mut core_event_rx,
+                    )
+                    .await;
                 }
             }
             InputAction::Backspace => app.backspace(),
