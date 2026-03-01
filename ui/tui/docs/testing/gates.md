@@ -4,11 +4,11 @@
 Define mandatory validation gates before switching default runtime to `next`.
 
 ## Scope
-Automated and manual checks for `ui/tui_next`.
+Automated and manual checks for `ui/tui`.
 
 ## Decisions (Locked)
 - Switch requires passing build/test and manual scenario gates.
-- `tui_next` is the active runtime; gates prevent regressions during ongoing refactors.
+- `ui/tui` is the active runtime; gates prevent regressions during ongoing refactors.
 
 ## Open Questions
 - Final threshold for long-session stress runs.

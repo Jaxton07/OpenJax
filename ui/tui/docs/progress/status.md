@@ -1,13 +1,13 @@
 # Status
 
 ## Purpose
-Capture current migration status for `tui_next`.
+Capture current migration status for `ui/tui`.
 
 ## Scope
 Runtime readiness and remaining work items.
 
 ## Decisions (Locked)
-- `tui_next` is the only maintained runtime in `ui/`.
+- `ui/tui` is the only maintained runtime in `ui/`.
 - Promote quality gates before additional feature customization.
 
 ## Open Questions
@@ -24,4 +24,4 @@ Runtime readiness and remaining work items.
 ## Snapshot
 - Implemented: Codex-core terminal/history/orchestrator migration.
 - Implemented: tool output compact summary UI and approval panel options.
-- Remaining: final manual stress validation and package naming cleanup decision.
+- Remaining: final manual stress validation.

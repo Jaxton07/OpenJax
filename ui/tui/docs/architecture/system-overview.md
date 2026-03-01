@@ -1,7 +1,7 @@
 # System Overview
 
 ## Purpose
-Describe the runtime architecture boundaries in `tui_next`.
+Describe the runtime architecture boundaries in `ui/tui`.
 
 ## Scope
 `terminal/*`, `insert_history`, `tui` orchestrator, and app/state adapter.

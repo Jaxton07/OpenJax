@@ -1,7 +1,7 @@
-# tui_next
+# tui
 
 ## Purpose
-`tui_next` is the active Codex-core-aligned OpenJax TUI runtime.
+`ui/tui` is the active Codex-core-aligned OpenJax TUI runtime.
 
 ## Scope
 This crate is now the only maintained Rust UI runtime under `ui/`.
@@ -10,9 +10,7 @@ This crate is now the only maintained Rust UI runtime under `ui/`.
 - Core terminal stack is based on migrated `terminal/* + insert_history + draw orchestrator`.
 - History insertion uses a single queue and a single ANSI insertion path.
 - Runtime entry is `cargo run -q -p tui_next`.
-
-## Open Questions
-- Whether to rename package `tui_next` to `tui` in a follow-up cleanup.
+- Inline mode keeps shell history visible; viewport anchors to current cursor row and only clamps to bottom when needed.
 
 ## Validation
 - Build: `zsh -lc "cargo build -p tui_next"`
@@ -22,15 +20,20 @@ This crate is now the only maintained Rust UI runtime under `ui/`.
 ## Last Updated
 2026-03-01
 
+## Architecture Notes
+- [Inline Runtime Notes](docs/architecture/inline-runtime-notes.md)
+- [System Overview](docs/architecture/system-overview.md)
+
 ## File Tree
 ```text
-ui/tui_next                              # crate root
+ui/tui                                   # crate root
 ├── Cargo.toml                           # crate manifest / deps
 ├── README.md                            # module overview and run/test guide
 ├── docs                                 # architecture/progress/test gate docs
 │   ├── README.md                        # docs index
 │   ├── architecture
-│   │   └── system-overview.md           # runtime boundary and layering
+│   │   ├── system-overview.md           # runtime boundary and layering
+│   │   └── inline-runtime-notes.md      # implementation details, pitfalls, and fixes
 │   ├── progress
 │   │   └── status.md                    # current migration status snapshot
 │   └── testing
