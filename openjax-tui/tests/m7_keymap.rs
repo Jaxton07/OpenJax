@@ -84,4 +84,8 @@ fn keymap_maps_primary_shortcuts() {
         map_crossterm_event(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE))),
         Some(AppEvent::ScrollBottom)
     ));
+    assert!(matches!(
+        map_crossterm_event(Event::Paste("你好\nworld".to_string())),
+        Some(AppEvent::InputPaste(text)) if text == "你好\nworld"
+    ));
 }

@@ -32,9 +32,17 @@ impl Default for TranscriptState {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HistoryEmissionState {
+    pub emitted_message_count: usize,
+    pub emitted_stream_turn_id: Option<u64>,
+    pub has_emitted_any: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub transcript: TranscriptState,
+    pub history_emission: HistoryEmissionState,
     pub input_state: ComposerState,
     pub approval: ApprovalState,
     pub turn: TurnState,
@@ -52,6 +60,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             transcript: TranscriptState::default(),
+            history_emission: HistoryEmissionState::default(),
             input_state: ComposerState::default(),
             approval: ApprovalState::default(),
             turn: TurnState::default(),
@@ -117,6 +126,12 @@ impl AppState {
 
     pub fn clear_messages(&mut self) {
         self.transcript.messages.clear();
+        self.history_emission = HistoryEmissionState::default();
+        self.turn.active_turn_id = None;
+        self.turn.stream_text_by_turn.clear();
+        self.turn.render_kind_by_turn.clear();
+        self.turn.tool_target_hints.clear();
+        self.turn.phase = TurnPhase::Idle;
     }
 
     pub fn sync_slash_popup(&mut self) {

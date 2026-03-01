@@ -67,3 +67,11 @@ fn chat_scroll_controls_work() {
     assert!(app.state.transcript.follow_output);
     assert_eq!(app.state.transcript.chat_scroll, usize::MAX);
 }
+
+#[test]
+fn paste_input_inserts_text_in_single_event() {
+    let mut app = App::default();
+    app.handle_event(AppEvent::InputPaste("你好\nworld".to_string()));
+    assert_eq!(app.state.input_state.buffer, "你好\nworld");
+    assert_eq!(app.state.input_state.cursor, "你好\nworld".chars().count());
+}

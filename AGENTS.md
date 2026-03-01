@@ -82,17 +82,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 ### Rust 调试输出
 - `zsh -lc "cargo test -p openjax-core -- --nocapture"`
 
-### Python 测试（`openjax_tui`）
-设置 `PYTHONPATH` 以便解析本地模块：
-- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest discover -s python/openjax_tui/tests -v"`
-单文件：
-- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest python/openjax_tui/tests/test_input_backend.py -v"`
-单方法：
-- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest openjax_tui.tests.test_input_backend.InputBackendTest.test_force_basic_by_env -v"`
 
-### 冒烟测试
-- `zsh -lc "zsh smoke_test/python_tui_smoke.sh"`
-- `zsh -lc "zsh smoke_test/python_tui_mux_check.sh"`
 
 ## 7) Rust 代码风格
 - 工作区版本（edition）是 `2024`。

@@ -11,7 +11,7 @@ use crate::bottom_pane::chat_composer;
 use crate::bottom_pane::footer;
 use crate::chatwidget::{ChatWidget, visual_line_count};
 use crate::state::{AppState, ApprovalSelection, apply_core_event};
-use crate::ui::{composer, logo};
+use crate::ui::composer;
 
 #[derive(Debug)]
 pub struct App {
@@ -29,10 +29,10 @@ impl Default for App {
 }
 
 impl App {
-    const LOGO_HEIGHT: u16 = 2;
     const FOOTER_HEIGHT: u16 = 1;
     const COMPOSER_HEIGHT: u16 = 3;
     const COMPOSER_OVERLAY_HEIGHT: u16 = 8;
+    const LIVE_TAIL_MESSAGES: usize = 2;
 
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -44,15 +44,15 @@ impl App {
 
     pub fn desired_height(&self, width: u16) -> u16 {
         let composer_height = self.composer_height();
-        let chat_height = ChatWidget::desired_height(&self.state, width);
-        Self::LOGO_HEIGHT
-            .saturating_add(chat_height.max(1))
+        let chat_height = visual_line_count(&self.live_chat_lines(), width) as u16;
+        chat_height
+            .max(1)
             .saturating_add(composer_height)
             .saturating_add(Self::FOOTER_HEIGHT)
     }
 
     pub fn chat_scroll_for_viewport(&self, chat_width: u16, chat_height: u16) -> usize {
-        let chat_lines = ChatWidget::render_lines(&self.state);
+        let chat_lines = self.live_chat_lines();
         let chat_visual_lines = visual_line_count(&chat_lines, chat_width);
         let max_scroll = chat_visual_lines.saturating_sub(chat_height as usize);
         if self.state.transcript.follow_output {
@@ -62,28 +62,41 @@ impl App {
         }
     }
 
-    pub fn scrollback_overflow_lines(&self, width: u16, screen_height: u16) -> Vec<String> {
-        let lines = self.scrollback_overflow_render_lines(width, screen_height);
-        lines.into_iter().map(|line| line.to_string()).collect()
+    pub fn live_chat_lines(&self) -> Vec<Line<'static>> {
+        ChatWidget::render_live_lines(&self.state)
     }
 
-    pub fn scrollback_overflow_render_lines(
-        &self,
-        width: u16,
-        screen_height: u16,
-    ) -> Vec<Line<'static>> {
-        if width == 0 || screen_height == 0 {
-            return Vec::new();
+    pub fn collect_new_history_lines_for_inline(&mut self) -> Vec<Line<'static>> {
+        let total = self.state.transcript.messages.len();
+        let emitted = self.state.history_emission.emitted_message_count.min(total);
+        self.state.history_emission.emitted_message_count = emitted;
+
+        let mut stable_end = emitted;
+        let mut blocked_stream_turn = None;
+        for message in &self.state.transcript.messages[emitted..] {
+            let is_unstable_assistant = message.role == "assistant"
+                && message.render_kind == crate::state::RenderKind::Plain
+                && self.state.turn.active_turn_id.is_some();
+            if is_unstable_assistant {
+                blocked_stream_turn = self.state.turn.active_turn_id;
+                break;
+            }
+            stable_end += 1;
         }
-        let overflow = self.desired_height(width).saturating_sub(screen_height) as usize;
-        if overflow == 0 {
+        self.state.history_emission.emitted_stream_turn_id = blocked_stream_turn;
+
+        let emit_end = stable_end.saturating_sub(Self::LIVE_TAIL_MESSAGES);
+        if emit_end <= emitted {
             return Vec::new();
         }
 
-        let mut logical_lines = logo::render_lines();
-        logical_lines.extend(ChatWidget::render_lines(&self.state));
-        let visual_lines = wrap_styled_lines(&logical_lines, width);
-        visual_lines.into_iter().take(overflow).collect()
+        let lines =
+            ChatWidget::render_message_lines(&self.state.transcript.messages[emitted..emit_end]);
+        self.state.history_emission.emitted_message_count = emit_end;
+        if emit_end > 0 {
+            self.state.history_emission.has_emitted_any = true;
+        }
+        lines
     }
 
     pub fn handle_event(&mut self, event: AppEvent) {
@@ -117,7 +130,7 @@ impl App {
 
         chat_composer::handle_input_event(&mut self.state, &event);
         match event {
-            AppEvent::InputChar(_) | AppEvent::Backspace => {}
+            AppEvent::InputChar(_) | AppEvent::InputPaste(_) | AppEvent::Backspace => {}
             AppEvent::MoveCursorLeft | AppEvent::MoveCursorRight => {}
             AppEvent::HistoryPrev => {
                 if self.state.input_state.slash_popup.open {
@@ -169,32 +182,29 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(Self::LOGO_HEIGHT),
                 Constraint::Min(1),
                 Constraint::Length(composer_height),
                 Constraint::Length(Self::FOOTER_HEIGHT),
             ])
             .split(area);
 
-        let logo = Paragraph::new(logo::render_lines());
-        frame.render_widget(logo, chunks[0]);
-
-        let chat_lines = ChatWidget::render_lines(&self.state);
-        let scroll = self.chat_scroll_for_viewport(chunks[1].width, chunks[1].height);
+        let chat_lines = self.live_chat_lines();
+        let scroll = self.chat_scroll_for_viewport(chunks[0].width, chunks[0].height);
+        let scroll_y = scroll.min(u16::MAX as usize) as u16;
         let chat = Paragraph::new(chat_lines)
             .wrap(Wrap { trim: false })
-            .scroll((scroll as u16, 0));
-        frame.render_widget(chat, chunks[1]);
+            .scroll((scroll_y, 0));
+        frame.render_widget(chat, chunks[0]);
 
         let composer_line = composer::render_line(&self.state);
         let composer_widget =
             Paragraph::new(composer_line).block(Block::default().borders(Borders::TOP));
-        frame.render_widget(composer_widget, chunks[2]);
-        let cursor_x = chunks[2]
+        frame.render_widget(composer_widget, chunks[1]);
+        let cursor_x = chunks[1]
             .x
-            .saturating_add(composer::cursor_offset(&self.state, chunks[2].width))
-            .min(chunks[2].x + chunks[2].width.saturating_sub(1));
-        frame.set_cursor_position((cursor_x, chunks[2].y + 1));
+            .saturating_add(composer::cursor_offset(&self.state, chunks[1].width))
+            .min(chunks[1].x + chunks[1].width.saturating_sub(1));
+        frame.set_cursor_position((cursor_x, chunks[1].y + 1));
 
         if self.state.input_state.slash_popup.open {
             let lines = self
@@ -214,11 +224,11 @@ impl App {
                 })
                 .collect::<Vec<ratatui::text::Line<'static>>>();
 
-            let popup_h = (lines.len().max(1) as u16 + 2).min(chunks[2].height.saturating_sub(2));
+            let popup_h = (lines.len().max(1) as u16 + 2).min(chunks[1].height.saturating_sub(2));
             let rect = ratatui::layout::Rect {
-                x: chunks[2].x,
-                y: chunks[2].y + 2,
-                width: chunks[2].width,
+                x: chunks[1].x,
+                y: chunks[1].y + 2,
+                width: chunks[1].width,
                 height: popup_h,
             };
             frame.render_widget(Clear, rect);
@@ -232,11 +242,11 @@ impl App {
 
         if self.state.approval.overlay_visible {
             let lines = approval_overlay::render_lines(&self.state);
-            let popup_h = (lines.len().max(1) as u16 + 2).min(chunks[2].height.saturating_sub(2));
+            let popup_h = (lines.len().max(1) as u16 + 2).min(chunks[1].height.saturating_sub(2));
             let rect = ratatui::layout::Rect {
-                x: chunks[2].x,
-                y: chunks[2].y + 2,
-                width: chunks[2].width,
+                x: chunks[1].x,
+                y: chunks[1].y + 2,
+                width: chunks[1].width,
                 height: popup_h,
             };
             frame.render_widget(Clear, rect);
@@ -248,7 +258,7 @@ impl App {
             );
         }
 
-        frame.render_widget(Paragraph::new(footer::render_line(&self.state)), chunks[3]);
+        frame.render_widget(Paragraph::new(footer::render_line(&self.state)), chunks[2]);
 
         if self.state.show_help {
             let popup = centered_rect(70, 35, area);
@@ -325,68 +335,6 @@ Ctrl-C: quit",
                 .push_system_message(format!("unknown command: /{command_name}")),
         }
     }
-}
-
-fn wrap_styled_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
-    let wrap_width = usize::from(width.max(1));
-    let mut out = Vec::new();
-    for line in lines {
-        out.extend(wrap_styled_line(line, wrap_width));
-    }
-    out
-}
-
-fn wrap_styled_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
-    use unicode_segmentation::UnicodeSegmentation;
-    use unicode_width::UnicodeWidthStr;
-
-    if line.spans.is_empty() {
-        return vec![Line::from("").style(line.style)];
-    }
-
-    let mut wrapped = Vec::new();
-    let mut current_spans = Vec::new();
-    let mut current_width = 0usize;
-
-    for span in &line.spans {
-        let style = span.style;
-        let content = span.content.as_ref();
-        if content.is_empty() {
-            continue;
-        }
-        for grapheme in UnicodeSegmentation::graphemes(content, true) {
-            let g_width = UnicodeWidthStr::width(grapheme);
-            if current_width > 0 && current_width + g_width > width {
-                wrapped.push(Line::from(std::mem::take(&mut current_spans)).style(line.style));
-                current_width = 0;
-            }
-            if g_width > width && current_spans.is_empty() {
-                push_styled_piece(&mut current_spans, style, grapheme);
-                wrapped.push(Line::from(std::mem::take(&mut current_spans)).style(line.style));
-                current_width = 0;
-                continue;
-            }
-            push_styled_piece(&mut current_spans, style, grapheme);
-            current_width += g_width;
-        }
-    }
-
-    if current_spans.is_empty() {
-        wrapped.push(Line::from("").style(line.style));
-    } else {
-        wrapped.push(Line::from(current_spans).style(line.style));
-    }
-    wrapped
-}
-
-fn push_styled_piece(spans: &mut Vec<ratatui::text::Span<'static>>, style: Style, piece: &str) {
-    if let Some(last) = spans.last_mut()
-        && last.style == style
-    {
-        last.content.to_mut().push_str(piece);
-        return;
-    }
-    spans.push(ratatui::text::Span::styled(piece.to_string(), style));
 }
 
 fn centered_rect(

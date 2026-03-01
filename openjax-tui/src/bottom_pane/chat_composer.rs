@@ -9,6 +9,10 @@ pub fn handle_input_event(state: &mut AppState, event: &AppEvent) {
             state.input_state.insert_char(*ch);
             state.sync_slash_popup();
         }
+        AppEvent::InputPaste(text) if state.input_state.input_enabled => {
+            state.input_state.insert_text(text);
+            state.sync_slash_popup();
+        }
         AppEvent::Backspace if state.input_state.input_enabled => {
             state.input_state.backspace();
             state.sync_slash_popup();

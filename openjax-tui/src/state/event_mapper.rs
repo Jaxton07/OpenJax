@@ -11,14 +11,7 @@ pub fn apply_core_event(state: &mut AppState, event: &Event) {
             turn_id,
             content_delta,
         } => {
-            let merged = state.turn.append_delta(*turn_id, content_delta);
-            if let Some(last) = state.transcript.messages.last_mut() {
-                if last.role == "assistant" && state.turn.active_turn_id == Some(*turn_id) {
-                    last.content = merged;
-                    return;
-                }
-            }
-            state.push_assistant_message(merged, RenderKind::Plain);
+            let _ = state.turn.append_delta(*turn_id, content_delta);
         }
         Event::AssistantMessage { turn_id, content } => {
             state

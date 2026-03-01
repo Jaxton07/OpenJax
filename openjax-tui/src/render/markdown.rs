@@ -1,5 +1,4 @@
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
-use textwrap::fill;
 
 pub fn render_markdown_as_plain_text(input: &str) -> String {
     let mut out = String::new();
@@ -70,7 +69,7 @@ pub fn render_markdown_as_plain_text(input: &str) -> String {
         } else if line.trim().is_empty() {
             normalized.push('\n');
         } else {
-            normalized.push_str(&fill(line, 120));
+            normalized.push_str(line);
             normalized.push('\n');
         }
     }

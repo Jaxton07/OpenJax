@@ -5,6 +5,7 @@ use openjax_protocol::Event;
 pub enum AppEvent {
     TuiKey(KeyCode),
     InputChar(char),
+    InputPaste(String),
     Backspace,
     MoveCursorLeft,
     MoveCursorRight,

@@ -13,6 +13,8 @@ openjax-tui/
 │   ├── main.rs                      # 程序入口（终端模式、agent 循环、事件汇总）
 │   ├── app.rs                       # 应用层事件处理与整体渲染编排
 │   ├── chatwidget.rs                # Transcript 渲染与流式尾部显示
+│   ├── custom_terminal.rs           # 终端视口状态模型（cursor/viewport）
+│   ├── insert_history.rs            # inline 模式历史插入（scroll region）
 │   ├── app_event.rs                 # 应用事件定义（键盘、核心事件、退出）
 │   ├── approval.rs                  # TUI 审批处理器（请求队列与回传）
 │   ├── tui.rs                       # 终端模式控制与键盘事件映射
@@ -53,7 +55,13 @@ openjax-tui/
     ├── m8_terminal_restore.rs
     ├── m9_tui_approval_handler.rs
     ├── m10_chat_view_layout.rs
-    └── m11_chat_scroll_visual.rs
+    ├── m11_chat_scroll_visual.rs
+    ├── m12_inline_history_scrollback.rs
+    ├── m13_viewport_resize.rs
+    ├── m14_alt_screen_behavior.rs
+    ├── m15_inline_no_duplicate_history.rs
+    ├── m16_cursor_restore_after_history_insert.rs
+    └── m17_streaming_history_commit_boundary.rs
 ```
 
 ## 各模块功能介绍

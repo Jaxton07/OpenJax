@@ -1,16 +1,20 @@
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
-use crate::state::{AppState, RenderKind};
+use crate::state::{AppState, RenderKind, UiMessage};
 
 #[derive(Debug, Default)]
 pub struct ChatWidget;
 
 impl ChatWidget {
     pub fn render_lines(state: &AppState) -> Vec<Line<'static>> {
+        Self::render_message_lines(&state.transcript.messages)
+    }
+
+    pub fn render_message_lines(messages: &[UiMessage]) -> Vec<Line<'static>> {
         let mut out = Vec::new();
 
-        for message in &state.transcript.messages {
+        for message in messages {
             match message.role.as_str() {
                 "user" => {
                     out.push(Line::from(vec![
@@ -64,22 +68,19 @@ impl ChatWidget {
             out.push(Line::from(""));
         }
 
-        if let Some(turn_id) = state.turn.active_turn_id {
-            if let Some(stream) = state.turn.stream_text_by_turn.get(&turn_id) {
-                if !stream.is_empty() {
-                    out.push(Line::from(vec![
-                        Span::styled("⏺ ", Style::default().fg(Color::Green)),
-                        Span::raw(stream.clone()),
-                    ]));
-                }
-            }
-        }
-
         out
     }
 
+    pub fn render_live_lines(state: &AppState) -> Vec<Line<'static>> {
+        let start = state
+            .history_emission
+            .emitted_message_count
+            .min(state.transcript.messages.len());
+        Self::render_message_lines(&state.transcript.messages[start..])
+    }
+
     pub fn desired_height(state: &AppState, width: u16) -> u16 {
-        visual_line_count(&Self::render_lines(state), width) as u16
+        visual_line_count(&Self::render_live_lines(state), width) as u16
     }
 }
 

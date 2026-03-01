@@ -4,22 +4,41 @@ use openjax_tui::app::App;
 use openjax_tui::app_event::AppEvent;
 use openjax_tui::approval::TuiApprovalHandler;
 use openjax_tui::tui::{
-    AltScreenMode, draw_with_height, enter_terminal_mode, insert_history_lines, next_app_event,
-    restore_terminal_mode,
+    AltScreenMode, Tui, enter_terminal_mode, next_app_event, restore_terminal_mode,
 };
+use openjax_tui::ui::logo;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::{TerminalOptions, Viewport};
 use std::io::{self, Stdout};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 const STALL_WARN_INTERVAL: Duration = Duration::from_secs(15);
+const DEFAULT_INLINE_VIEWPORT_HEIGHT: u16 = 12;
 
-fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<Stdout>>> {
+fn inline_viewport_height() -> u16 {
+    std::env::var("OPENJAX_TUI_INLINE_HEIGHT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .map(|h| h.clamp(6, 60))
+        .unwrap_or(DEFAULT_INLINE_VIEWPORT_HEIGHT)
+}
+
+fn setup_terminal(alt_enabled: bool) -> anyhow::Result<Terminal<CrosstermBackend<Stdout>>> {
     let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
-    Ok(Terminal::new(backend)?)
+    if alt_enabled {
+        Ok(Terminal::new(backend)?)
+    } else {
+        Ok(Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(inline_viewport_height()),
+            },
+        )?)
+    }
 }
 
 #[tokio::main]
@@ -39,8 +58,12 @@ async fn main() -> anyhow::Result<()> {
     agent.set_approval_handler(approval_handler.clone());
     let agent = Arc::new(tokio::sync::Mutex::new(agent));
 
-    let mut terminal = setup_terminal()?;
+    let terminal = setup_terminal(alt_enabled)?;
+    let mut tui = Tui::new(terminal)?;
     let mut app = App::default();
+    if !alt_enabled {
+        tui.insert_history_lines(logo::render_lines());
+    }
     app.state.show_system_messages = std::env::var("OPENJAX_TUI_SHOW_SYSTEM_EVENTS")
         .ok()
         .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes"));
@@ -63,7 +86,6 @@ async fn main() -> anyhow::Result<()> {
     let mut turn_started_at: Option<Instant> = None;
     let mut last_core_event_at: Option<Instant> = None;
     let mut last_stall_log_at: Option<Instant> = None;
-    let mut emitted_scrollback_visual_lines: usize = 0;
 
     loop {
         while let Some(request) = approval_handler.pop_request().await {
@@ -126,31 +148,15 @@ async fn main() -> anyhow::Result<()> {
                 .push_system_message("turn task completed".to_string());
         }
 
-        let term_size = terminal.size()?;
-        let desired_height = app.desired_height(term_size.width);
-        let draw_height = if alt_enabled {
-            desired_height.min(term_size.height)
-        } else {
-            // Keep one-row headroom for inline scrollback insertion, similar to codex viewport behavior.
-            desired_height.min(term_size.height.saturating_sub(1).max(1))
-        };
         if !alt_enabled {
-            let overflow_lines =
-                app.scrollback_overflow_render_lines(term_size.width, term_size.height);
-            if overflow_lines.len() < emitted_scrollback_visual_lines {
-                emitted_scrollback_visual_lines = overflow_lines.len();
-            }
-            if overflow_lines.len() > emitted_scrollback_visual_lines {
-                let viewport_top = term_size.height.saturating_sub(draw_height);
-                insert_history_lines(
-                    &overflow_lines[emitted_scrollback_visual_lines..],
-                    viewport_top,
-                    term_size.height,
-                )?;
-                emitted_scrollback_visual_lines = overflow_lines.len();
+            let new_history_lines = app.collect_new_history_lines_for_inline();
+            if !new_history_lines.is_empty() {
+                tui.insert_history_lines(new_history_lines);
             }
         }
-        draw_with_height(&mut terminal, draw_height, |frame, area| {
+        let term_width = tui.terminal.size()?.width;
+        let desired_height = app.desired_height(term_width);
+        tui.draw(desired_height, |frame, area| {
             app.render_in_area(frame, area);
         })?;
         if app.should_quit() {

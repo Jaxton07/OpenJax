@@ -26,6 +26,20 @@ impl Default for ComposerState {
 }
 
 impl ComposerState {
+    pub fn insert_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let mut chars: Vec<char> = self.buffer.chars().collect();
+        let cursor = self.cursor.min(chars.len());
+        let pasted: Vec<char> = text.chars().collect();
+        chars.splice(cursor..cursor, pasted.iter().copied());
+        self.buffer = chars.into_iter().collect();
+        self.cursor = cursor + pasted.len();
+        self.history_index = None;
+        self.draft.clear();
+    }
+
     pub fn insert_char(&mut self, ch: char) {
         let mut chars: Vec<char> = self.buffer.chars().collect();
         let cursor = self.cursor.min(chars.len());
