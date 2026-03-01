@@ -270,8 +270,43 @@ pub fn init_crossterm_terminal(inline_height: u16) -> io::Result<CrosstermTermin
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::with_options(backend)?;
     let size = terminal.size()?;
-    let height = inline_height.clamp(8, size.height.max(8));
-    let y = size.height.saturating_sub(height);
-    terminal.set_viewport_area(Rect::new(0, y, size.width, height));
+    let viewport = initial_viewport_rect(
+        size.width,
+        size.height,
+        terminal.last_known_cursor_pos.y,
+        inline_height,
+    );
+    terminal.set_viewport_area(viewport);
     Ok(terminal)
+}
+
+fn initial_viewport_rect(
+    screen_width: u16,
+    screen_height: u16,
+    cursor_y: u16,
+    inline_height: u16,
+) -> Rect {
+    let height = inline_height.clamp(8, screen_height.max(8));
+    let max_y = screen_height.saturating_sub(height);
+    let y = cursor_y.min(max_y);
+    Rect::new(0, y, screen_width, height)
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::layout::Rect;
+
+    use super::initial_viewport_rect;
+
+    #[test]
+    fn initial_viewport_anchors_to_cursor_row() {
+        let viewport = initial_viewport_rect(100, 40, 12, 16);
+        assert_eq!(viewport, Rect::new(0, 12, 100, 16));
+    }
+
+    #[test]
+    fn initial_viewport_clamps_when_cursor_near_bottom() {
+        let viewport = initial_viewport_rect(100, 30, 29, 16);
+        assert_eq!(viewport, Rect::new(0, 14, 100, 16));
+    }
 }

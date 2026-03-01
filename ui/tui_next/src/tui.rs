@@ -20,11 +20,6 @@ impl Tui {
             .map(|h| h.clamp(8, 60))
             .unwrap_or(16);
         let mut terminal = terminal::init_crossterm_terminal(viewport)?;
-        // Start each run from a clean terminal surface to avoid shell prompt remnants
-        // leaking into the inline viewport/history area.
-        terminal.clear_all()?;
-        terminal.clear_scrollback()?;
-        terminal.clear()?;
         terminal.hide_cursor()?;
         Ok(Self {
             terminal,
@@ -59,14 +54,11 @@ impl Tui {
     {
         let screen = self.terminal.size()?;
         let current_area = self.terminal.area();
-        let bounded_height = desired_height.clamp(8, screen.height.max(8));
-        let viewport = Rect::new(
-            current_area.x,
-            screen.height.saturating_sub(bounded_height),
-            screen.width,
-            bounded_height,
-        );
-        self.terminal.set_viewport_area(viewport);
+        let viewport = compute_viewport_area(current_area, screen.width, screen.height, desired_height);
+        if viewport != current_area {
+            self.terminal.set_viewport_area(viewport);
+            self.terminal.clear()?;
+        }
 
         if !self.pending_history_lines.is_empty() {
             let lines = std::mem::take(&mut self.pending_history_lines);
@@ -117,9 +109,38 @@ impl Tui {
 
         Ok(())
     }
+}
 
-    pub fn teardown(&mut self) -> anyhow::Result<()> {
-        self.terminal.clear()?;
-        Ok(())
+fn compute_viewport_area(current_area: Rect, screen_width: u16, screen_height: u16, desired_height: u16) -> Rect {
+    let bounded_height = desired_height.clamp(8, screen_height.max(8));
+    let mut viewport = Rect::new(current_area.x, current_area.y, screen_width, bounded_height);
+    if viewport.bottom() > screen_height {
+        viewport.y = screen_height.saturating_sub(viewport.height);
+    }
+    viewport
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::layout::Rect;
+
+    use super::compute_viewport_area;
+
+    #[test]
+    fn viewport_stays_near_current_cursor_when_space_is_available() {
+        let current = Rect::new(0, 10, 80, 8);
+        let next = compute_viewport_area(current, 100, 40, 12);
+        assert_eq!(next.y, 10);
+        assert_eq!(next.height, 12);
+        assert_eq!(next.width, 100);
+    }
+
+    #[test]
+    fn viewport_clamps_to_bottom_when_desired_height_overflows() {
+        let current = Rect::new(0, 25, 80, 8);
+        let next = compute_viewport_area(current, 100, 30, 12);
+        assert_eq!(next.y, 18);
+        assert_eq!(next.height, 12);
+        assert_eq!(next.bottom(), 30);
     }
 }
