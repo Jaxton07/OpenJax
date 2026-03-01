@@ -163,12 +163,7 @@ impl App {
                 output,
                 ..
             } => {
-                let msg = if ok {
-                    format!("{} completed: {}", tool_name, truncate(&output, 120))
-                } else {
-                    format!("{} failed: {}", tool_name, truncate(&output, 120))
-                };
-                let cell = self.tool_cell(msg);
+                let cell = self.tool_completed_cell(&tool_name, ok, &output);
                 self.queue_history_cell(cell);
             }
             Event::ApprovalRequested {
@@ -382,6 +377,39 @@ impl App {
         }
     }
 
+    fn tool_completed_cell(&mut self, tool_name: &str, ok: bool, output: &str) -> HistoryCell {
+        let mut lines = Vec::new();
+        let status = if ok {
+            format!("{} completed", tool_name)
+        } else {
+            format!("{} failed", tool_name)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                "• ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(status),
+        ]));
+
+        for (idx, preview) in summarize_tool_output(output).into_iter().enumerate() {
+            let prefix = if idx == 0 { "  └ " } else { "    " };
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+                Span::styled(preview, Style::default().fg(Color::Gray)),
+            ]));
+        }
+
+        HistoryCell {
+            id: self.alloc_id(),
+            role: CellRole::Tool,
+            committed: true,
+            lines,
+        }
+    }
+
     fn system_cell(&mut self, content: String) -> HistoryCell {
         HistoryCell {
             id: self.alloc_id(),
@@ -407,7 +435,88 @@ pub enum SubmitAction {
     ApprovalDecision { request_id: String, approved: bool },
 }
 
-fn truncate(text: &str, max_chars: usize) -> String {
+fn summarize_tool_output(output: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    for raw_line in output.lines() {
+        for segment in split_embedded_line_markers(raw_line) {
+            let cleaned = strip_leading_line_marker(segment.trim()).trim();
+            if cleaned.is_empty() {
+                continue;
+            }
+            lines.push(truncate_chars(cleaned, 96));
+        }
+    }
+
+    if lines.is_empty() {
+        return vec!["(no output)".to_string()];
+    }
+    if lines.len() <= 4 {
+        return lines;
+    }
+
+    vec![
+        lines[0].clone(),
+        format!("… +{} lines", lines.len().saturating_sub(2)),
+        lines.last().cloned().unwrap_or_default(),
+    ]
+}
+
+fn split_embedded_line_markers(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut starts = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'L' && (i == 0 || bytes[i - 1].is_ascii_whitespace()) {
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > i + 1 && j < bytes.len() && bytes[j] == b':' {
+                starts.push(i);
+                i = j + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    if starts.len() <= 1 {
+        return vec![text];
+    }
+
+    let mut out = Vec::new();
+    for idx in 0..starts.len() {
+        let start = starts[idx];
+        let end = if idx + 1 < starts.len() {
+            starts[idx + 1]
+        } else {
+            bytes.len()
+        };
+        out.push(text[start..end].trim());
+    }
+    out
+}
+
+fn strip_leading_line_marker(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    if bytes.first() != Some(&b'L') {
+        return text;
+    }
+    let mut idx = 1usize;
+    while idx < bytes.len() && bytes[idx].is_ascii_digit() {
+        idx += 1;
+    }
+    if idx == 1 || idx >= bytes.len() || bytes[idx] != b':' {
+        return text;
+    }
+    idx += 1;
+    while idx < bytes.len() && bytes[idx].is_ascii_whitespace() {
+        idx += 1;
+    }
+    &text[idx..]
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
     }
