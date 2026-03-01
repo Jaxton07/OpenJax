@@ -2,14 +2,20 @@ use std::io;
 use std::io::Stdout;
 use std::io::Write;
 
+use std::ops::Range;
+
+use crossterm::cursor::MoveTo;
 use crossterm::queue;
 use crossterm::terminal::Clear;
+use crossterm::terminal::ScrollUp;
 use ratatui::backend::Backend;
 use ratatui::backend::ClearType;
 use ratatui::backend::CrosstermBackend;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect, Size};
 use ratatui::widgets::Widget;
+
+use crate::insert_history::{ResetScrollRegion, SetScrollRegion};
 
 use super::diff::diff_buffers;
 use super::draw::draw;
@@ -143,6 +149,25 @@ where
         self.viewport_area = area;
     }
 
+    pub fn scroll_region_up(&mut self, region: Range<u16>, scroll_by: u16) -> io::Result<()> {
+        if scroll_by == 0 || region.start >= region.end {
+            return Ok(());
+        }
+        let last_cursor_pos = self.last_known_cursor_pos;
+        // DECSTBM uses 1-based inclusive bounds; `region` end here is already screen-row upper bound.
+        queue!(
+            self.backend,
+            SetScrollRegion(region.start + 1..region.end),
+            MoveTo(0, region.end.saturating_sub(1)),
+            ScrollUp(scroll_by),
+            ResetScrollRegion,
+            MoveTo(last_cursor_pos.x, last_cursor_pos.y)
+        )?;
+        std::io::Write::flush(&mut self.backend)?;
+        self.previous_buffer_mut().reset();
+        Ok(())
+    }
+
     pub fn autoresize(&mut self) -> io::Result<()> {
         let screen_size = self.size()?;
         if screen_size != self.last_known_screen_size {
@@ -266,30 +291,19 @@ where
 
 pub type CrosstermTerminal = Terminal<CrosstermBackend<Stdout>>;
 
-pub fn init_crossterm_terminal(inline_height: u16) -> io::Result<CrosstermTerminal> {
+pub fn init_crossterm_terminal(_inline_height: u16) -> io::Result<CrosstermTerminal> {
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::with_options(backend)?;
     let size = terminal.size()?;
-    let viewport = initial_viewport_rect(
-        size.width,
-        size.height,
-        terminal.last_known_cursor_pos.y,
-        inline_height,
-    );
+    let viewport = initial_viewport_rect(size.height, terminal.last_known_cursor_pos.y);
     terminal.set_viewport_area(viewport);
     Ok(terminal)
 }
 
-fn initial_viewport_rect(
-    screen_width: u16,
-    screen_height: u16,
-    cursor_y: u16,
-    inline_height: u16,
-) -> Rect {
-    let height = inline_height.clamp(8, screen_height.max(8));
-    let max_y = screen_height.saturating_sub(height);
+fn initial_viewport_rect(screen_height: u16, cursor_y: u16) -> Rect {
+    let max_y = screen_height.saturating_sub(1);
     let y = cursor_y.min(max_y);
-    Rect::new(0, y, screen_width, height)
+    Rect::new(0, y, 0, 0)
 }
 
 #[cfg(test)]
@@ -300,13 +314,13 @@ mod tests {
 
     #[test]
     fn initial_viewport_anchors_to_cursor_row() {
-        let viewport = initial_viewport_rect(100, 40, 12, 16);
-        assert_eq!(viewport, Rect::new(0, 12, 100, 16));
+        let viewport = initial_viewport_rect(40, 12);
+        assert_eq!(viewport, Rect::new(0, 12, 0, 0));
     }
 
     #[test]
     fn initial_viewport_clamps_when_cursor_near_bottom() {
-        let viewport = initial_viewport_rect(100, 30, 29, 16);
-        assert_eq!(viewport, Rect::new(0, 14, 100, 16));
+        let viewport = initial_viewport_rect(30, 42);
+        assert_eq!(viewport, Rect::new(0, 29, 0, 0));
     }
 }

@@ -54,10 +54,14 @@ impl Tui {
     {
         let screen = self.terminal.size()?;
         let current_area = self.terminal.area();
-        let viewport = compute_viewport_area(current_area, screen.width, screen.height, desired_height);
-        if viewport != current_area {
-            self.terminal.set_viewport_area(viewport);
+        let plan = compute_viewport_plan(current_area, screen.width, screen.height, desired_height);
+        if plan.scroll_up > 0 && current_area.top() > 0 {
+            self.terminal
+                .scroll_region_up(0..current_area.top(), plan.scroll_up)?;
+        }
+        if plan.area != current_area {
             self.terminal.clear()?;
+            self.terminal.set_viewport_area(plan.area);
         }
 
         if !self.pending_history_lines.is_empty() {
@@ -111,36 +115,61 @@ impl Tui {
     }
 }
 
-fn compute_viewport_area(current_area: Rect, screen_width: u16, screen_height: u16, desired_height: u16) -> Rect {
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct ViewportPlan {
+    area: Rect,
+    scroll_up: u16,
+}
+
+fn compute_viewport_plan(
+    current_area: Rect,
+    screen_width: u16,
+    screen_height: u16,
+    desired_height: u16,
+) -> ViewportPlan {
     let bounded_height = desired_height.clamp(8, screen_height.max(8));
-    let mut viewport = Rect::new(current_area.x, current_area.y, screen_width, bounded_height);
-    if viewport.bottom() > screen_height {
-        viewport.y = screen_height.saturating_sub(viewport.height);
+    let mut area = current_area;
+    area.width = screen_width;
+    area.height = bounded_height.min(screen_height);
+
+    let mut scroll_up = 0;
+    if area.bottom() > screen_height {
+        scroll_up = area.bottom().saturating_sub(screen_height);
+        area.y = screen_height.saturating_sub(area.height);
     }
-    viewport
+
+    ViewportPlan { area, scroll_up }
 }
 
 #[cfg(test)]
 mod tests {
     use ratatui::layout::Rect;
 
-    use super::compute_viewport_area;
+    use super::{ViewportPlan, compute_viewport_plan};
 
     #[test]
     fn viewport_stays_near_current_cursor_when_space_is_available() {
-        let current = Rect::new(0, 10, 80, 8);
-        let next = compute_viewport_area(current, 100, 40, 12);
-        assert_eq!(next.y, 10);
-        assert_eq!(next.height, 12);
-        assert_eq!(next.width, 100);
+        let current = Rect::new(0, 10, 0, 0);
+        let next = compute_viewport_plan(current, 100, 40, 12);
+        assert_eq!(
+            next,
+            ViewportPlan {
+                area: Rect::new(0, 10, 100, 12),
+                scroll_up: 0,
+            }
+        );
     }
 
     #[test]
-    fn viewport_clamps_to_bottom_when_desired_height_overflows() {
-        let current = Rect::new(0, 25, 80, 8);
-        let next = compute_viewport_area(current, 100, 30, 12);
-        assert_eq!(next.y, 18);
-        assert_eq!(next.height, 12);
-        assert_eq!(next.bottom(), 30);
+    fn viewport_overflow_requests_scroll_and_clamps_to_bottom() {
+        let current = Rect::new(0, 25, 0, 0);
+        let next = compute_viewport_plan(current, 100, 30, 12);
+        assert_eq!(
+            next,
+            ViewportPlan {
+                area: Rect::new(0, 18, 100, 12),
+                scroll_up: 7,
+            }
+        );
     }
 }
