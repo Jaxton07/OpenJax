@@ -5,7 +5,6 @@ members = [
   "openjaxd",
   "openjax-cli",
   "openjax-tui",
-  "ui/tui",
   "ui/tui_next",
 ]
 resolver = "2"

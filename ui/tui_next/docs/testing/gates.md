@@ -8,7 +8,7 @@ Automated and manual checks for `ui/tui_next`.
 
 ## Decisions (Locked)
 - Switch requires passing build/test and manual scenario gates.
-- Runtime switch remains dual-track until all gates pass.
+- `tui_next` is the active runtime; gates prevent regressions during ongoing refactors.
 
 ## Open Questions
 - Final threshold for long-session stress runs.

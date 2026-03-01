@@ -8,12 +8,11 @@ This index covers documents under `ui/tui_next/docs` only.
 
 ## Decisions (Locked)
 - `tui_next` is the Codex-core migration runtime.
-- Dual-track rollout is controlled by `OPENJAX_TUI_RUNTIME`.
+- `ui/tui` has been removed; `tui_next` is the single maintained runtime.
 - Terminal/history behavior must be validated before default switch.
 
 ## Open Questions
-- Default switch date for `OPENJAX_TUI_RUNTIME=next`.
-- Legacy removal window after switch.
+- Whether to rename package `tui_next` to `tui` in a follow-up.
 
 ## Validation
 - `zsh -lc "cargo build -p tui_next"`

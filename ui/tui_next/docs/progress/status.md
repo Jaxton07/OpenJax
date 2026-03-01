@@ -7,8 +7,8 @@ Capture current migration status for `tui_next`.
 Runtime readiness and remaining work items.
 
 ## Decisions (Locked)
-- Keep `ui/tui` as fallback during dual-track validation.
-- Promote `tui_next` to default only after gates pass.
+- `tui_next` is the only maintained runtime in `ui/`.
+- Promote quality gates before additional feature customization.
 
 ## Open Questions
 - Scroll key feature completeness timeline (`PageUp/PageDown/Home/End`).
@@ -23,5 +23,5 @@ Runtime readiness and remaining work items.
 
 ## Snapshot
 - Implemented: Codex-core terminal/history/orchestrator migration.
-- Implemented: runtime switch `OPENJAX_TUI_RUNTIME=legacy|next`.
-- Remaining: final manual stress validation and default switch decision.
+- Implemented: tool output compact summary UI and approval panel options.
+- Remaining: final manual stress validation and package naming cleanup decision.
