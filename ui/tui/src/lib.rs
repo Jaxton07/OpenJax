@@ -6,3 +6,4 @@ pub mod input;
 pub mod insert_history;
 pub mod state;
 pub mod tui;
+pub mod wrapping;

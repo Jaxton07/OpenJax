@@ -45,6 +45,7 @@ impl Tui {
         desired_height: u16,
         input_line: Line<'static>,
         input_cursor: u16,
+        approval_lines: Option<Vec<Line<'static>>>,
         footer_text: String,
         mut render_live: F,
     ) -> anyhow::Result<()>
@@ -71,12 +72,13 @@ impl Tui {
         self.terminal.draw(|frame| {
             let draw_area = frame.area();
             frame.render_widget(Clear, draw_area);
-            let chunks = Layout::vertical([
-                Constraint::Min(2),
-                Constraint::Length(2),
-                Constraint::Length(1),
-            ])
-            .split(draw_area);
+            let approval_height = approval_lines.as_ref().map_or(0, |l| l.len() as u16);
+            let mut constraints = vec![Constraint::Min(2), Constraint::Length(2)];
+            if approval_height > 0 {
+                constraints.push(Constraint::Length(approval_height));
+            }
+            constraints.push(Constraint::Length(1));
+            let chunks = Layout::vertical(constraints).split(draw_area);
 
             render_live(chunks[0], frame.buffer_mut());
 
@@ -90,14 +92,22 @@ impl Tui {
                 .min(chunks[1].x + chunks[1].width.saturating_sub(1));
             frame.set_cursor_position((cursor_x, chunks[1].y + 1));
 
-            frame.render_widget(Clear, chunks[2]);
+            let footer_idx = if approval_height > 0 { 3 } else { 2 };
+            if approval_height > 0 {
+                let approval_area = chunks[2];
+                frame.render_widget(Clear, approval_area);
+                let approval_widget = Paragraph::new(approval_lines.unwrap_or_default());
+                approval_widget.render(approval_area, frame.buffer_mut());
+            }
+
+            frame.render_widget(Clear, chunks[footer_idx]);
             let footer = Paragraph::new(Line::from(vec![Span::styled(
                 footer_text,
                 Style::default()
                     .fg(Color::Gray)
                     .add_modifier(Modifier::BOLD),
             )]));
-            footer.render(chunks[2], frame.buffer_mut());
+            footer.render(chunks[footer_idx], frame.buffer_mut());
         })?;
 
         Ok(())

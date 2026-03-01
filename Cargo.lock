@@ -2150,6 +2150,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "crossterm",
+ "derive_more",
  "openjax-core",
  "openjax-protocol",
  "pretty_assertions",
@@ -2157,6 +2158,7 @@ dependencies = [
  "scopeguard",
  "textwrap",
  "tokio",
+ "tracing",
  "tui_next",
  "unicode-width 0.2.0",
 ]

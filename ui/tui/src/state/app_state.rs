@@ -13,6 +13,23 @@ pub struct PendingApproval {
     pub reason: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApprovalSelection {
+    Approve,
+    Deny,
+    Later,
+}
+
+impl ApprovalSelection {
+    pub fn from_index(index: usize) -> Self {
+        match index % 3 {
+            0 => Self::Approve,
+            1 => Self::Deny,
+            _ => Self::Later,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AppState {
     pub banner_printed: bool,
@@ -21,6 +38,7 @@ pub struct AppState {
     pub pending_history_cells: Vec<HistoryCell>,
     pub live_messages: Vec<LiveMessage>,
     pub pending_approval: Option<PendingApproval>,
+    pub approval_selection: ApprovalSelection,
     pub active_turn_id: Option<u64>,
     pub stream_turn_id: Option<u64>,
     pub stream_text: String,
@@ -40,6 +58,7 @@ impl Default for AppState {
             pending_history_cells: Vec::new(),
             live_messages: Vec::new(),
             pending_approval: None,
+            approval_selection: ApprovalSelection::Approve,
             active_turn_id: None,
             stream_turn_id: None,
             stream_text: String::new(),

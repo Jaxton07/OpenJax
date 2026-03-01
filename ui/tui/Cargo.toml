@@ -16,6 +16,8 @@ openjax-protocol = { path = "../../openjax-protocol" }
 textwrap = "0.16"
 scopeguard = "1"
 tui_next = { path = "../tui_next" }
+derive_more = { version = "2", features = ["is_variant"] }
+tracing.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

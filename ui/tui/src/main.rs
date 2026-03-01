@@ -91,6 +91,7 @@ async fn run_legacy() -> anyhow::Result<()> {
             desired,
             app.input_line(),
             app.input_cursor_offset(term_width),
+            app.approval_panel_lines(),
             app.footer_text(),
             |area, buf| app.render_live(area, buf),
         )?;
@@ -126,6 +127,8 @@ async fn run_legacy() -> anyhow::Result<()> {
                 }
             }
             InputAction::Backspace => app.backspace(),
+            InputAction::MoveUp => app.move_approval_selection(-1),
+            InputAction::MoveDown => app.move_approval_selection(1),
             InputAction::Append(text) => app.append_input(&text),
             InputAction::Clear => app.clear(),
             InputAction::None => {}

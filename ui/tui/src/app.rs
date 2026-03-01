@@ -6,7 +6,7 @@ use ratatui::widgets::{Paragraph, Widget, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::history_cell::{CellRole, HistoryCell};
-use crate::state::{AppState, LiveMessage, PendingApproval};
+use crate::state::{AppState, ApprovalSelection, LiveMessage, PendingApproval};
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -55,8 +55,14 @@ impl App {
     pub fn desired_height(&self, width: u16) -> u16 {
         let footer_h = 1u16;
         let input_h = 2u16;
+        let approval_h = if self.state.pending_approval.is_some() {
+            self.approval_panel_height()
+        } else {
+            0
+        };
         self.live_visual_height(width)
             .saturating_add(input_h)
+            .saturating_add(approval_h)
             .saturating_add(footer_h)
             .max(8)
     }
@@ -67,24 +73,51 @@ impl App {
 
     pub fn submit_input(&mut self) -> Option<SubmitAction> {
         let input = self.state.input.trim().to_string();
-        if input.is_empty() {
-            return None;
-        }
 
         if let Some(pending) = self.state.pending_approval.clone() {
-            let approved = matches!(input.to_ascii_lowercase().as_str(), "y" | "yes");
+            let lower = input.to_ascii_lowercase();
+            let selected = if input.is_empty() {
+                Some(self.state.approval_selection)
+            } else if matches!(lower.as_str(), "y" | "yes") {
+                Some(ApprovalSelection::Approve)
+            } else if matches!(lower.as_str(), "n" | "no") {
+                Some(ApprovalSelection::Deny)
+            } else if matches!(lower.as_str(), "l" | "later" | "cancel") {
+                Some(ApprovalSelection::Later)
+            } else {
+                None
+            };
+
             self.state.input.clear();
-            self.state.pending_approval = None;
-            let cell = self.system_cell(format!(
-                "approval {} ({})",
-                if approved { "approved" } else { "rejected" },
-                pending.request_id
-            ));
-            self.queue_history_cell(cell);
-            return Some(SubmitAction::ApprovalDecision {
-                request_id: pending.request_id,
-                approved,
-            });
+            match selected {
+                Some(ApprovalSelection::Approve) | Some(ApprovalSelection::Deny) => {
+                    let approved = matches!(selected, Some(ApprovalSelection::Approve));
+                    self.state.pending_approval = None;
+                    self.state.approval_selection = ApprovalSelection::Approve;
+                    let cell = self.system_cell(format!(
+                        "approval {} ({})",
+                        if approved { "approved" } else { "rejected" },
+                        pending.request_id
+                    ));
+                    self.queue_history_cell(cell);
+                    return Some(SubmitAction::ApprovalDecision {
+                        request_id: pending.request_id,
+                        approved,
+                    });
+                }
+                Some(ApprovalSelection::Later) => {
+                    self.set_live_status("Approval pending: choose Approve or Deny when ready");
+                    return None;
+                }
+                None => {
+                    self.set_live_status("Invalid approval input. Use y/n/l or arrow keys + Enter");
+                    return None;
+                }
+            }
+        }
+
+        if input.is_empty() {
+            return None;
         }
 
         let user_cell = self.user_cell(&input);
@@ -108,6 +141,7 @@ impl App {
         self.state.live_messages.clear();
         self.state.input.clear();
         self.state.pending_approval = None;
+        self.state.approval_selection = ApprovalSelection::Approve;
         self.state.active_turn_id = None;
         self.state.stream_turn_id = None;
         self.state.stream_text.clear();
@@ -177,6 +211,7 @@ impl App {
                     target,
                     reason,
                 });
+                self.state.approval_selection = ApprovalSelection::Approve;
                 if let Some(pending) = &self.state.pending_approval {
                     self.state.live_messages = vec![LiveMessage {
                         role: "approval",
@@ -286,6 +321,55 @@ impl App {
         )
     }
 
+    pub fn move_approval_selection(&mut self, delta: i8) {
+        if self.state.pending_approval.is_none() {
+            return;
+        }
+        let current = match self.state.approval_selection {
+            ApprovalSelection::Approve => 0i8,
+            ApprovalSelection::Deny => 1i8,
+            ApprovalSelection::Later => 2i8,
+        };
+        let next = (current + delta).rem_euclid(3);
+        self.state.approval_selection = ApprovalSelection::from_index(next as usize);
+    }
+
+    pub fn approval_panel_lines(&self) -> Option<Vec<Line<'static>>> {
+        let pending = self.state.pending_approval.as_ref()?;
+        let mut lines = Vec::new();
+        lines.push(Line::from(Span::styled(
+            format!("是否允许执行操作: {}", pending.target),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            pending.reason.clone(),
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(self.approval_option_line(
+            "Approve",
+            self.state.approval_selection == ApprovalSelection::Approve,
+        ));
+        lines.push(self.approval_option_line(
+            "Deny",
+            self.state.approval_selection == ApprovalSelection::Deny,
+        ));
+        lines.push(self.approval_option_line(
+            "Cancel or decide later",
+            self.state.approval_selection == ApprovalSelection::Later,
+        ));
+        Some(lines)
+    }
+
+    pub fn approval_panel_height(&self) -> u16 {
+        if self.state.pending_approval.is_some() {
+            5
+        } else {
+            0
+        }
+    }
+
     pub fn set_live_status(&mut self, text: impl Into<String>) {
         self.state.live_messages = vec![LiveMessage {
             role: "status",
@@ -308,6 +392,21 @@ impl App {
     fn queue_history_cell(&mut self, cell: HistoryCell) {
         self.state.history_cells.push(cell.clone());
         self.state.pending_history_cells.push(cell);
+    }
+
+    fn approval_option_line(&self, label: &str, selected: bool) -> Line<'static> {
+        let marker = if selected { "› " } else { "  " };
+        let style = if selected {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        Line::from(vec![
+            Span::styled(marker, style),
+            Span::styled(label.to_string(), style),
+        ])
     }
 
     fn user_cell(&mut self, input: &str) -> HistoryCell {
