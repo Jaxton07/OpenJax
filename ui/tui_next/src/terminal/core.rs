@@ -223,6 +223,15 @@ where
         Ok(())
     }
 
+    pub fn clear_all(&mut self) -> io::Result<()> {
+        self.backend.set_cursor_position(Position { x: 0, y: 0 })?;
+        self.backend.clear_region(ClearType::All)?;
+        self.previous_buffer_mut().reset();
+        self.current_buffer_mut().reset();
+        self.last_known_cursor_pos = Position { x: 0, y: 0 };
+        Ok(())
+    }
+
     pub fn clear_scrollback(&mut self) -> io::Result<()> {
         if self.viewport_area.is_empty() {
             return Ok(());

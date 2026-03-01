@@ -20,8 +20,9 @@ impl Tui {
             .map(|h| h.clamp(8, 60))
             .unwrap_or(16);
         let mut terminal = terminal::init_crossterm_terminal(viewport)?;
-        // Start each run from a clean terminal surface to avoid stale inline artifacts
-        // from previous TUI sessions leaking into the next launch.
+        // Start each run from a clean terminal surface to avoid shell prompt remnants
+        // leaking into the inline viewport/history area.
+        terminal.clear_all()?;
         terminal.clear_scrollback()?;
         terminal.clear()?;
         terminal.hide_cursor()?;
