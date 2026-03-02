@@ -14,7 +14,7 @@ impl App {
             committed: true,
             lines: vec![Line::from(vec![
                 Span::styled(
-                    "› ",
+                    "❯ ",
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -30,9 +30,9 @@ impl App {
             if idx == 0 {
                 lines.push(Line::from(vec![
                     Span::styled(
-                        "● ",
+                        "⏺ ",
                         Style::default()
-                            .fg(Color::Green)
+                            .fg(Color::White)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(line.to_string()),
@@ -43,9 +43,9 @@ impl App {
         }
         if lines.is_empty() {
             lines.push(Line::from(Span::styled(
-                "●",
+                "⏺",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             )));
         }
@@ -90,7 +90,7 @@ impl App {
             Span::styled(
                 "• ",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(if ok { Color::Green } else { Color::Red })
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(status),

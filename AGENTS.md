@@ -17,19 +17,18 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
   - `openjax-tui`
 - Python 包：
   - `python/openjax_sdk`
-  - `python/openjax_tui`
   - `python/tui`
-- 架构索引：`docs/project-structure-index.md`
+- 架构索引：
 
 ## 2) 关键路径
 - `openjax-core/`：代理循环、工具、沙箱、审批。
 - `openjax-protocol/`：协议/事件/数据类型。
 - `openjaxd/`：守护进程。
 - `openjax-cli/`：CLI 体验。
-- `openjax-tui/`：Rust TUI。
+- `openjax-tui/`：Rust TUI (旧版，待废弃)。
+- `ui/tui/`：Rust TUI（最新版）。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
-- `python/openjax_tui/`：Python TUI MVP。
-- `python/tui/`：Textual 重构版 Python TUI。
+- `python/tui/`：Textual 重构版 Python TUI (python 版本仅作备用)。
 - `smoke_test/`：冒烟测试脚本。
 
 ### 子模块 README 导航
@@ -37,12 +36,13 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 优先阅读以下文档以快速进入对应模块上下文：
 - [openjax-protocol/README.md](openjax-protocol/README.md)
 - [openjax-core/README.md](openjax-core/README.md)
+- [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
+- [ui/tui/README.md](ui/tui/README.md)
 - [openjaxd/README.md](openjaxd/README.md)
 - [openjax-tui/README.md](openjax-tui/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
-- [python/openjax_tui/README.md](python/openjax_tui/README.md)
 - [python/tui/README.md](python/tui/README.md)
-- [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
+
 
 
 ## 3) 命令执行策略
@@ -141,12 +141,6 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
   - 方法名应描述单一行为
 - 覆盖 happy path 和失败/边界场景。
 
-## 13) Python TUI 护栏
-- 主模块：`python/openjax_tui/src/openjax_tui/app.py`。
-- 保持输入后端行为稳定（TTY 下用 `prompt_toolkit`，否则用 `basic`）。
-- 保持审批命令稳定（`/approve`、`y|n`、`/pending`）。
-- 保持 assistant-delta/final-message 去重行为稳定。
-- 在对 `app.py` 做大改前，先提取辅助函数并增加聚焦测试。
 
 ## 14) Commit/PR 说明
 - 历史记录通常使用 emoji + Conventional Commit 风格。

@@ -10,6 +10,7 @@ use crate::terminal::{self, CrosstermTerminal};
 pub struct Tui {
     terminal: CrosstermTerminal,
     pending_history_lines: Vec<Line<'static>>,
+    has_rendered_history: bool,
 }
 
 impl Tui {
@@ -24,6 +25,7 @@ impl Tui {
         Ok(Self {
             terminal,
             pending_history_lines: Vec::new(),
+            has_rendered_history: false,
         })
     }
 
@@ -32,7 +34,14 @@ impl Tui {
             return;
         }
         for cell in cells {
+            if matches!(cell.role, crate::history_cell::CellRole::Banner) {
+                self.has_rendered_history = false;
+            }
+            if self.has_rendered_history {
+                self.pending_history_lines.push(Line::default());
+            }
             self.pending_history_lines.extend(cell.lines);
+            self.has_rendered_history = true;
         }
     }
 

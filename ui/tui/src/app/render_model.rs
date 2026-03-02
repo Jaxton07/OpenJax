@@ -47,7 +47,7 @@ impl App {
 
     pub fn input_line(&self) -> Line<'static> {
         let mut spans = vec![Span::styled(
-            "› ",
+            "❯ ",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
