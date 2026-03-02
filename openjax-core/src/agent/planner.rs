@@ -86,6 +86,8 @@ impl Agent {
             info!(
                 turn_id = turn_id,
                 output_len = model_output.len(),
+                output_preview = %summarize_log_preview_json(&model_output, 400),
+                output_truncated = model_output.chars().count() > 400,
                 "model_request completed"
             );
 
@@ -129,7 +131,13 @@ impl Agent {
                     }
                 };
 
-                info!(turn_id = turn_id, "model_repair_request completed");
+                info!(
+                    turn_id = turn_id,
+                    output_len = repaired_output.len(),
+                    output_preview = %summarize_log_preview_json(&repaired_output, 400),
+                    output_truncated = repaired_output.chars().count() > 400,
+                    "model_repair_request completed"
+                );
 
                 debug!(
                     turn_id = turn_id,
@@ -626,4 +634,13 @@ fn summarize_log_preview(text: &str, limit: usize) -> (String, bool) {
     let mut preview = normalized.chars().take(limit).collect::<String>();
     preview.push_str("...");
     (preview, true)
+}
+
+fn summarize_log_preview_json(text: &str, limit: usize) -> String {
+    let (preview, truncated) = summarize_log_preview(text, limit);
+    serde_json::json!({
+        "model_output": preview,
+        "truncated": truncated,
+    })
+    .to_string()
 }

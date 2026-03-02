@@ -1,3 +1,4 @@
+mod anthropic_messages;
 mod chat_completions;
 mod client;
 mod echo;

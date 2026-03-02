@@ -23,7 +23,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModelConfig {
-    /// Model backend: minimax | openai | echo
+    /// Model backend: anthropic | glm | minimax | openai | echo
     #[serde(default)]
     pub backend: Option<String>,
 
