@@ -14,7 +14,7 @@ use super::{
         runtime_policy::{parse_approval_policy, parse_sandbox_mode},
         tool_policy::should_abort_on_consecutive_duplicate_skips,
     },
-    model::ModelClient,
+    model::{ModelClient, ModelRequest, ModelResponse},
 };
 
 #[derive(Clone)]
@@ -42,24 +42,30 @@ impl ScriptedStreamingModel {
 
 #[async_trait]
 impl ModelClient for ScriptedStreamingModel {
-    async fn complete(&self, _user_input: &str) -> Result<String> {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
         let mut calls = self.complete_calls.lock().expect("complete_calls lock");
         *calls += 1;
-        Ok(r#"{"action":"final","message":"seed"}"#.to_string())
+        Ok(ModelResponse {
+            text: r#"{"action":"final","message":"seed"}"#.to_string(),
+            ..ModelResponse::default()
+        })
     }
 
     async fn complete_stream(
         &self,
-        _user_input: &str,
+        _request: &ModelRequest,
         delta_sender: Option<UnboundedSender<String>>,
-    ) -> Result<String> {
+    ) -> Result<ModelResponse> {
         let mut stream_calls = self.stream_calls.lock().expect("stream_calls lock");
         *stream_calls += 1;
         if let Some(sender) = delta_sender {
             let _ = sender.send("你".to_string());
             let _ = sender.send("好".to_string());
         }
-        Ok("你好".to_string())
+        Ok(ModelResponse {
+            text: "你好".to_string(),
+            ..ModelResponse::default()
+        })
     }
 
     fn name(&self) -> &'static str {

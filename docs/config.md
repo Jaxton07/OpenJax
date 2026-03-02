@@ -1,26 +1,95 @@
+# OpenJax 配置说明
 
-export OPENJAX_MINIMAX_API_KEY="sk-cp-QQkdVRLS6yKxlYj8jSUH_-XxtulUiM1OocxENTWuiStI6-N6OwIK6KhbIoRacapyaUw5nn9J52Jlwts1CxP6AnOOCPGAG8p6RkifjfCGNtt56BclvlokVfo"
-export OPENJAX_MINIMAX_BASE_URL="https://api.minimaxi.com/v1"
-export OPENJAX_MINIMAX_MODEL="codex-MiniMax-M2.1"
+本文档描述 OpenJax 模型配置的两种格式：
 
-export OPENJAX_MINIMAX_BASE_URL="https://api.minimaxi.com/anthropic/v1"
-export OPENJAX_MINIMAX_MODEL="MiniMax-M2.5"
+1. legacy 单模型配置（兼容保留）。
+2. 新版多模型注册表 + 阶段路由配置（推荐）。
 
+## 配置文件位置
 
+1. 项目级：`.openjax/config/config.toml`
+2. 用户级：`~/.openjax/config.toml`
 
-export OPENJAX_APPROVAL_POLICY=always_ask   # or on_request / never
-export OPENJAX_SANDBOX_MODE=workspace_write # or danger_full_access
+## 1) Legacy 配置（兼容）
 
+```toml
+[model]
+backend = "glm" # anthropic | glm | minimax | openai | echo
+model = "GLM-4.7"
+base_url = "https://open.bigmodel.cn/api/anthropic"
+api_key = "your_api_key"
+```
 
-# 方式1: 项目级配置 (推荐开发时使用)
-cp openjax-cli/config.toml.example .openjax.toml
-# 编辑 .openjax.toml 填入 api_key
+行为：
 
-# 方式2: 全局配置
-mkdir -p ~/.openjax && cp openjax-cli/config.toml.example ~/.openjax/config.toml
+1. 运行时自动桥接成 `model.models.default`。
+2. `planner/final_writer/tool_reasoning` 默认都使用 `default`。
 
-# 方式3: 指定配置文件
-openjax-cli --config /path/to/config.toml
+## 2) 新版配置（推荐）
 
-# 临时覆盖: 环境变量优先
-OPENAI_API_KEY="temp-key" openjax-cli
+```toml
+[model.routing]
+planner = "glm_fast"
+final_writer = "glm_quality"
+tool_reasoning = "glm_fast"
+
+[model.routing.fallbacks]
+glm_fast = ["glm_quality", "openai_backup"]
+
+[model.models.glm_fast]
+provider = "glm"
+protocol = "anthropic_messages" # anthropic_messages | chat_completions
+model = "GLM-4.7"
+base_url = "https://open.bigmodel.cn/api/anthropic"
+api_key_env = "OPENJAX_GLM_API_KEY"
+thinking_budget_tokens = 2000
+supports_stream = true
+supports_reasoning = true
+
+[model.models.glm_quality]
+provider = "glm"
+protocol = "anthropic_messages"
+model = "GLM-4.7"
+base_url = "https://open.bigmodel.cn/api/anthropic"
+api_key_env = "OPENJAX_GLM_API_KEY"
+supports_stream = true
+supports_reasoning = true
+
+[model.models.openai_backup]
+provider = "openai"
+protocol = "chat_completions"
+model = "gpt-4.1-mini"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+supports_stream = true
+supports_reasoning = false
+```
+
+## 路由与回退
+
+1. `planner`：用于规划决策轮次。
+2. `final_writer`：用于最终回复流式生成。
+3. `tool_reasoning`：预留阶段，默认建议与 planner 一致。
+4. `fallbacks`：按模型 ID 声明回退链，最多执行 2 级 fallback。
+
+## 环境变量
+
+常用：
+
+1. `OPENJAX_APPROVAL_POLICY=always_ask|on_request|never`
+2. `OPENJAX_SANDBOX_MODE=workspace_write|danger_full_access`
+3. `OPENJAX_LOG_LEVEL=trace|debug|info|warn|error`
+
+Provider 相关：
+
+1. `OPENAI_API_KEY`
+2. `OPENJAX_GLM_API_KEY`
+3. `OPENJAX_MINIMAX_API_KEY`
+4. `OPENJAX_ANTHROPIC_API_KEY`
+5. `OPENJAX_THINKING_BUDGET_TOKENS`（Anthropic 协议请求中可覆盖 thinking budget）
+
+## 兼容策略
+
+1. 若只配置 legacy `[model]`，系统自动桥接并继续运行。
+2. 若同时配置 legacy 与新版 `model.models`，新版优先并记录 warning。
+3. 推荐尽快迁移到新版配置结构以获得多模型路由能力。

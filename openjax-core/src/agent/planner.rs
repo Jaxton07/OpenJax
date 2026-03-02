@@ -12,6 +12,7 @@ use crate::agent::tool_policy::{
     approval_rejected_stop_message, duplicate_skip_abort_message, duplicate_tool_call_warning,
     is_approval_rejected_error, should_abort_on_consecutive_duplicate_skips,
 };
+use crate::model::{ModelRequest, ModelStage};
 use crate::{
     Agent, FinalResponseMode, MAX_CONSECUTIVE_DUPLICATE_SKIPS, MAX_PLANNER_ROUNDS_PER_TURN,
     MAX_TOOL_CALLS_PER_TURN, SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS, tools,
@@ -61,8 +62,9 @@ impl Agent {
             );
             planner_rounds += 1;
 
-            let model_output = match self.model_client.complete(&planner_input).await {
-                Ok(output) => output,
+            let planner_request = ModelRequest::for_stage(ModelStage::Planner, planner_input);
+            let model_output = match self.model_client.complete(&planner_request).await {
+                Ok(output) => output.text,
                 Err(err) => {
                     warn!(
                         turn_id = turn_id,
@@ -110,8 +112,9 @@ impl Agent {
 
                 info!(turn_id = turn_id, "model_repair_request started");
 
-                let repaired_output = match self.model_client.complete(&repair_prompt).await {
-                    Ok(output) => output,
+                let repair_request = ModelRequest::for_stage(ModelStage::Planner, repair_prompt);
+                let repaired_output = match self.model_client.complete(&repair_request).await {
+                    Ok(output) => output.text,
                     Err(err) => {
                         warn!(
                             turn_id = turn_id,
@@ -499,7 +502,10 @@ impl Agent {
         self.apply_rate_limit().await;
 
         let (delta_tx, mut delta_rx) = tokio::sync::mpsc::unbounded_channel();
-        let stream_future = self.model_client.complete_stream(&prompt, Some(delta_tx));
+        let stream_request = ModelRequest::for_stage(ModelStage::FinalWriter, prompt);
+        let stream_future = self
+            .model_client
+            .complete_stream(&stream_request, Some(delta_tx));
         tokio::pin!(stream_future);
 
         let mut streamed = String::new();
@@ -535,7 +541,8 @@ impl Agent {
         }
 
         match result {
-            Ok(full_text) => {
+            Ok(response) => {
+                let full_text = response.text;
                 info!(
                     turn_id = turn_id,
                     output_len = full_text.len(),

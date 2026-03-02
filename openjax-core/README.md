@@ -28,10 +28,14 @@ openjax-core/
 │   │   └── runtime_policy.rs              # approval/sandbox 解析与优先级
 │   ├── model/                             # 模型客户端抽象与多后端实现
 │   │   ├── mod.rs                         # model 子模块导出
-│   │   ├── client.rs                      # ModelClient trait
+│   │   ├── types.rs                       # 统一模型请求/响应与能力类型
+│   │   ├── client.rs                      # ModelClient / ProviderAdapter trait
 │   │   ├── echo.rs                        # Echo fallback
-│   │   ├── factory.rs                     # backend 选择与 fallback 顺序
-│   │   └── chat_completions.rs            # OpenAI 兼容 ChatCompletions 实现（含流式解析）
+│   │   ├── registry.rs                    # 配置解析与模型注册表（含 legacy 桥接）
+│   │   ├── router.rs                      # 分阶段路由与 fallback 执行
+│   │   ├── factory.rs                     # 入口组装（registry + adapters + router）
+│   │   ├── chat_completions.rs            # OpenAI 兼容 ChatCompletions adapter
+│   │   └── anthropic_messages.rs          # Anthropic Messages adapter（含 thinking）
 │   └── tools/                             # 工具系统
 │       ├── mod.rs                         # tools 模块导出
 │       ├── router.rs                      # tool: 指令解析与运行时配置
@@ -77,7 +81,7 @@ openjax-core/
 |------|----------|
 | `lib.rs` | 对外 API 薄入口：导出 `Agent`、配置/审批/模型构建器与协议类型 |
 | `agent/*` | Agent 内核实现拆分：构造、回合分发、工具执行、规划循环、状态管理与事件推送 |
-| `model/*` | 统一 `ModelClient` 抽象，支持 OpenAI Chat Completions、GLM、MiniMax 与 Echo fallback |
+| `model/*` | 三层模型体系：`registry`（配置）+ `router`（阶段路由/fallback）+ `adapter`（协议实现） |
 | `config.rs` | 读取 `.openjax/config/config.toml` 或 `~/.openjax/config.toml`，解析 model/sandbox/agent/tools 配置 |
 | `approval.rs` | 审批抽象 `ApprovalHandler`，默认实现 `StdinApprovalHandler`（`y` 同意） |
 | `logger.rs` | tracing 日志初始化，支持单文件按行数轮转与归档清理 |
@@ -159,6 +163,11 @@ let events = agent
 | `OPENJAX_GLM_API_KEY` | GLM API Key | 未设置 |
 | `OPENJAX_GLM_MODEL` | GLM 模型名 | `GLM-4.7` |
 | `OPENJAX_GLM_BASE_URL` | GLM 接口地址 | `https://open.bigmodel.cn/api/coding/paas/v4` |
+| `OPENJAX_GLM_ANTHROPIC_BASE_URL` | GLM Anthropic 兼容地址 | `https://open.bigmodel.cn/api/anthropic` |
+| `OPENJAX_ANTHROPIC_BASE_URL` | Anthropic API 地址 | `https://api.anthropic.com/v1` |
+| `OPENJAX_ANTHROPIC_VERSION` | Anthropic version header | `2023-06-01` |
+| `OPENJAX_THINKING_BUDGET_TOKENS` | Anthropic 请求 thinking 预算 | 未设置 |
+| `OPENJAX_LOG_THINKING` | thinking 日志开关（默认开，`0/false` 关闭） | `on` |
 | `OPENJAX_MINIMAX_API_KEY` | MiniMax API Key | 未设置 |
 | `OPENJAX_MINIMAX_MODEL` | MiniMax 模型名 | `codex-MiniMax-M2.1` |
 | `OPENJAX_MINIMAX_BASE_URL` | MiniMax 接口地址 | `https://api.minimaxi.com/v1` |
@@ -206,6 +215,7 @@ zsh -lc "bash openjax-core/tests/tool/test_apply_patch_e2e.sh"
 - **事件驱动**：所有关键阶段都可观察（开始、审批、完成、失败）。
 - **补丁优先编辑**：`apply_patch` 提供可审计、可回滚的结构化文件修改路径。
 - **兼容性设计**：保留 `exec_command` 别名和 `submit` 行为，降低上层迁移成本。
+- **模型可扩展架构**：支持 `model.models` 多模型定义、`model.routing` 分阶段路由和可观测 fallback。
 
 ## 最近重构说明
 

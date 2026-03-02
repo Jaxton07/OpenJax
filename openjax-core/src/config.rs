@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// OpenJax configuration
@@ -23,21 +24,69 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModelConfig {
-    /// Model backend: anthropic | glm | minimax | openai | echo
+    /// Legacy model backend: anthropic | glm | minimax | openai | echo
     #[serde(default)]
     pub backend: Option<String>,
 
-    /// API key (optional, can also use env vars)
+    /// Legacy API key (optional, can also use env vars)
     #[serde(default)]
     pub api_key: Option<String>,
 
-    /// Base URL override
+    /// Legacy base URL override
     #[serde(default)]
     pub base_url: Option<String>,
 
-    /// Model name
+    /// Legacy model name
     #[serde(default)]
     pub model: Option<String>,
+
+    /// New named model registry
+    #[serde(default)]
+    pub models: HashMap<String, ProviderModelConfig>,
+
+    /// New static stage routing config
+    #[serde(default)]
+    pub routing: Option<ModelRoutingConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct ProviderModelConfig {
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+    #[serde(default)]
+    pub anthropic_version: Option<String>,
+    #[serde(default)]
+    pub thinking_budget_tokens: Option<u32>,
+    #[serde(default)]
+    pub supports_stream: Option<bool>,
+    #[serde(default)]
+    pub supports_reasoning: Option<bool>,
+    #[serde(default)]
+    pub supports_tool_call: Option<bool>,
+    #[serde(default)]
+    pub supports_json_mode: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct ModelRoutingConfig {
+    #[serde(default)]
+    pub planner: Option<String>,
+    #[serde(default)]
+    pub final_writer: Option<String>,
+    #[serde(default)]
+    pub tool_reasoning: Option<String>,
+    #[serde(default)]
+    pub fallbacks: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

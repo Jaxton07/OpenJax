@@ -5,7 +5,9 @@ use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::ModelConfig;
-use crate::model::client::ModelClient;
+use crate::model::client::{ModelClient, ProviderAdapter};
+use crate::model::registry::RegisteredModel;
+use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage};
 
 const SYSTEM_PROMPT_PERSONA: &str = "You are OpenJax, an all-purpose personal AI assistant in a terminal environment, similar in spirit to a reliable AI butler.";
 const SYSTEM_PROMPT_BEHAVIOR: &str = "Your job is to help the user get outcomes across many domains: system and environment checks, document and knowledge tasks, coding and debugging, shell workflows, planning, and everyday productivity. \
@@ -24,10 +26,14 @@ fn default_system_prompt() -> String {
 #[derive(Debug, Clone)]
 pub(crate) struct ChatCompletionsClient {
     client: Client,
+    model_id: String,
+    provider: String,
+    protocol: String,
     api_key: String,
     model: String,
     endpoint: String,
     backend_name: &'static str,
+    capabilities: CapabilityFlags,
 }
 
 #[derive(Debug, Serialize)]
@@ -46,6 +52,31 @@ struct ChatMessage {
 }
 
 impl ChatCompletionsClient {
+    pub(crate) fn from_registered_model(entry: &RegisteredModel) -> Option<Self> {
+        if entry.protocol != "chat_completions" {
+            return None;
+        }
+        let api_key = entry
+            .api_key
+            .clone()
+            .or_else(|| default_api_key_for_provider(&entry.provider))?;
+        let base_url = entry
+            .base_url
+            .clone()
+            .unwrap_or_else(|| default_base_url_for_provider(&entry.provider).to_string());
+        Some(Self {
+            client: Client::new(),
+            model_id: entry.id.clone(),
+            provider: entry.provider.clone(),
+            protocol: entry.protocol.clone(),
+            api_key,
+            model: entry.model.clone(),
+            endpoint: format!("{}/chat/completions", base_url.trim_end_matches('/')),
+            backend_name: "chat-completions",
+            capabilities: entry.capabilities,
+        })
+    }
+
     pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
         Self::from_provider_config(
             config,
@@ -113,11 +144,41 @@ impl ChatCompletionsClient {
 
         Some(Self {
             client: Client::new(),
+            model_id: backend_name.to_string(),
+            provider: backend_name
+                .split('-')
+                .next()
+                .unwrap_or("openai")
+                .to_string(),
+            protocol: "chat_completions".to_string(),
             api_key,
             model,
             endpoint,
             backend_name,
+            capabilities: CapabilityFlags {
+                stream: true,
+                reasoning: false,
+                tool_call: false,
+                json_mode: false,
+            },
         })
+    }
+}
+
+fn default_api_key_for_provider(provider: &str) -> Option<String> {
+    let key = match provider {
+        "minimax" => "OPENJAX_MINIMAX_API_KEY",
+        "glm" => "OPENJAX_GLM_API_KEY",
+        _ => "OPENAI_API_KEY",
+    };
+    std::env::var(key).ok().filter(|v| !v.trim().is_empty())
+}
+
+fn default_base_url_for_provider(provider: &str) -> &'static str {
+    match provider {
+        "minimax" => "https://api.minimaxi.com/v1",
+        "glm" => "https://open.bigmodel.cn/api/coding/paas/v4",
+        _ => "https://api.openai.com/v1",
     }
 }
 
@@ -204,17 +265,20 @@ fn parse_sse_data_line(line: &str) -> Option<&str> {
 
 #[async_trait]
 impl ModelClient for ChatCompletionsClient {
-    async fn complete(&self, user_input: &str) -> Result<String> {
+    async fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
         let req = ChatCompletionRequest {
             model: self.model.clone(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content: default_system_prompt(),
+                    content: request
+                        .system_prompt
+                        .clone()
+                        .unwrap_or_else(default_system_prompt),
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: user_input.to_string(),
+                    content: request.user_input.to_string(),
                 },
             ],
             temperature: 0.2,
@@ -258,24 +322,53 @@ impl ModelClient for ChatCompletionsClient {
             )
         })?;
 
-        Ok(content)
+        let usage = body_json.get("usage").map(|usage| ModelUsage {
+            input_tokens: usage
+                .get("prompt_tokens")
+                .and_then(|v| v.as_u64())
+                .or_else(|| usage.get("input_tokens").and_then(|v| v.as_u64())),
+            output_tokens: usage
+                .get("completion_tokens")
+                .and_then(|v| v.as_u64())
+                .or_else(|| usage.get("output_tokens").and_then(|v| v.as_u64())),
+            total_tokens: usage.get("total_tokens").and_then(|v| v.as_u64()),
+        });
+
+        let finish_reason = body_json
+            .get("choices")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.get("finish_reason"))
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+
+        Ok(ModelResponse {
+            text: content,
+            reasoning: None,
+            usage,
+            finish_reason,
+            raw: Some(body_json),
+        })
     }
 
     async fn complete_stream(
         &self,
-        user_input: &str,
+        request: &ModelRequest,
         delta_sender: Option<UnboundedSender<String>>,
-    ) -> Result<String> {
+    ) -> Result<ModelResponse> {
         let req = ChatCompletionRequest {
             model: self.model.clone(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content: default_system_prompt(),
+                    content: request
+                        .system_prompt
+                        .clone()
+                        .unwrap_or_else(default_system_prompt),
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: user_input.to_string(),
+                    content: request.user_input.to_string(),
                 },
             ],
             temperature: 0.2,
@@ -375,11 +468,52 @@ impl ModelClient for ChatCompletionsClient {
             ));
         }
 
-        Ok(assembled)
+        Ok(ModelResponse {
+            text: assembled,
+            reasoning: None,
+            usage: None,
+            finish_reason: None,
+            raw: None,
+        })
     }
 
     fn name(&self) -> &'static str {
         self.backend_name
+    }
+}
+
+#[async_trait]
+impl ProviderAdapter for ChatCompletionsClient {
+    async fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
+        <Self as ModelClient>::complete(self, request).await
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<ModelResponse> {
+        <Self as ModelClient>::complete_stream(self, request, delta_sender).await
+    }
+
+    fn backend_name(&self) -> &'static str {
+        self.backend_name
+    }
+
+    fn model_id(&self) -> &str {
+        &self.model_id
+    }
+
+    fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    fn protocol(&self) -> &str {
+        &self.protocol
+    }
+
+    fn capabilities(&self) -> CapabilityFlags {
+        self.capabilities
     }
 }
 
