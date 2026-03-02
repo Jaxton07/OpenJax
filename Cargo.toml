@@ -4,14 +4,13 @@ members = [
   "openjax-core",
   "openjaxd",
   "openjax-cli",
-  "openjax-tui",
   "ui/tui",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
-version = "0.2.3"
+version = "0.2.4"
 license = "MIT"
 
 [workspace.dependencies]

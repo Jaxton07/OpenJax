@@ -14,7 +14,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
   - `openjax-core`
   - `openjaxd`
   - `openjax-cli`
-  - `openjax-tui`
+  - `tui_next`
 - Python 包：
   - `python/openjax_sdk`
   - `python/openjax_tui`
@@ -25,7 +25,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `openjax-protocol/`：协议/事件/数据类型。
 - `openjaxd/`：守护进程。
 - `openjax-cli/`：CLI 体验。
-- `openjax-tui/`：Rust TUI。
+- `ui/tui/`：Rust TUI。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
 - `python/openjax_tui/`：Python TUI MVP。
 - `smoke_test/`：冒烟测试脚本。
@@ -36,7 +36,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - [openjax-protocol/README.md](openjax-protocol/README.md)
 - [openjax-core/README.md](openjax-core/README.md)
 - [openjaxd/README.md](openjaxd/README.md)
-- [openjax-tui/README.md](openjax-tui/README.md)
+- [ui/tui/README.md](ui/tui/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
 - [python/openjax_tui/README.md](python/openjax_tui/README.md)
 - [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
@@ -50,7 +50,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `zsh -lc "cargo build"`
 - `zsh -lc "cargo build -p openjax-core"`
 - `zsh -lc "cargo build -p openjax-cli"`
-- `zsh -lc "cargo build -p openjax-tui"`
+- `zsh -lc "cargo build -p tui_next"`
 - `zsh -lc "cargo build -p openjaxd"`
 
 ## 5) Lint 与格式化
@@ -63,7 +63,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `zsh -lc "cargo test --workspace"`
 - `zsh -lc "cargo test -p openjax-core"`
 - `zsh -lc "cargo test -p openjax-cli"`
-- `zsh -lc "cargo test -p openjax-tui"`
+- `zsh -lc "cargo test -p tui_next"`
 
 ### 单个 Rust 集成测试（重要）
 对于 `tests/` 中的文件，使用 `--test <file_stem>`。
@@ -73,8 +73,8 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `zsh -lc "cargo test -p openjax-core --test m5_approval_handler"`
 - `zsh -lc "cargo test -p openjax-core --test m6_submit_stream"`
 - `zsh -lc "cargo test -p openjax-core --test m7_backward_compat_submit"`
-- `zsh -lc "cargo test -p openjax-tui --test m1_app_state"`
-- `zsh -lc "cargo test -p openjax-tui --test m4_approval_overlay"`
+- `zsh -lc "cargo test -p tui_next --test m1_app_state"`
+- `zsh -lc "cargo test -p tui_next --test m4_approval_overlay"`
 
 ### Rust 调试输出
 - `zsh -lc "cargo test -p openjax-core -- --nocapture"`

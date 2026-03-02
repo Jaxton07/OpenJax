@@ -14,7 +14,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
   - `openjax-core`
   - `openjaxd`
   - `openjax-cli`
-  - `openjax-tui`
+  - `ui/tui`
 - Python 包：
   - `python/openjax_sdk`
   - `python/openjax_tui`
@@ -25,9 +25,9 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `openjax-protocol/`：协议/事件/数据类型。
 - `openjaxd/`：守护进程。
 - `openjax-cli/`：CLI 体验。
-- `openjax-tui/`：Rust TUI。
+- `ui/tui/`：Rust TUI。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
-- `python/openjax_tui/`：Python TUI MVP。
+- `python/tui/`：Python TUI MVP。
 - `smoke_test/`：冒烟测试脚本。
 
 
@@ -37,9 +37,9 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - [openjax-protocol/README.md](openjax-protocol/README.md)
 - [openjax-core/README.md](openjax-core/README.md)
 - [openjaxd/README.md](openjaxd/README.md)
-- [openjax-tui/README.md](openjax-tui/README.md)
+- [ui/tui/README.md](ui/tui/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
-- [python/openjax_tui/README.md](python/openjax_tui/README.md)
+- [python/tui/README.md](python/tui/README.md)
 - [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
 
 
@@ -51,7 +51,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `zsh -lc "cargo build"`
 - `zsh -lc "cargo build -p openjax-core"`
 - `zsh -lc "cargo build -p openjax-cli"`
-- `zsh -lc "cargo build -p openjax-tui"`
+- `zsh -lc "cargo build -p tui_next"`
 - `zsh -lc "cargo build -p openjaxd"`
 
 ## 5) Lint 与格式化
@@ -64,7 +64,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `zsh -lc "cargo test --workspace"`
 - `zsh -lc "cargo test -p openjax-core"`
 - `zsh -lc "cargo test -p openjax-cli"`
-- `zsh -lc "cargo test -p openjax-tui"`
+- `zsh -lc "cargo test -p tui_next"`
 
 ### 单个 Rust 集成测试（重要）
 对于 `tests/` 中的文件，使用 `--test <file_stem>`。
@@ -74,19 +74,19 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `zsh -lc "cargo test -p openjax-core --test m5_approval_handler"`
 - `zsh -lc "cargo test -p openjax-core --test m6_submit_stream"`
 - `zsh -lc "cargo test -p openjax-core --test m7_backward_compat_submit"`
-- `zsh -lc "cargo test -p openjax-tui --test m1_app_state"`
-- `zsh -lc "cargo test -p openjax-tui --test m4_approval_overlay"`
+- `zsh -lc "cargo test -p tui_next --test m1_no_duplicate_history"`
+- `zsh -lc "cargo test -p tui_next --test m10_approval_panel_navigation"`
 
 ### Rust 调试输出
 - `zsh -lc "cargo test -p openjax-core -- --nocapture"`
 
-### Python 测试（`openjax_tui`）
+### Python 测试（`python/tui`）
 设置 `PYTHONPATH` 以便解析本地模块：
-- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest discover -s python/openjax_tui/tests -v"`
+- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/tui/src python3 -m unittest discover -s python/tui/tests -v"`
 单文件：
-- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest python/openjax_tui/tests/test_input_backend.py -v"`
+- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/tui/src python3 -m unittest python/tui/tests/test_input_backend.py -v"`
 单方法：
-- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest openjax_tui.tests.test_input_backend.InputBackendTest.test_force_basic_by_env -v"`
+- `zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/tui/src python3 -m unittest openjax_tui.tests.test_input_backend.InputBackendTest.test_force_basic_by_env -v"`
 
 ### 冒烟测试
 - `zsh -lc "zsh smoke_test/python_tui_smoke.sh"`
@@ -107,7 +107,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - 使用 4 空格缩进和 PEP 8 命名。
 - 为公共与内部函数保留类型注解（测试中也包含 `-> None`）。
 - 使用 `str | None` 联合类型语法。
-- 将 `python/openjax_tui` 保持为 UI/编排层；不要复制 `openjax-core` 的业务逻辑。
+- 将 `python/tui` 保持为 UI/编排层；不要复制 `openjax-core` 的业务逻辑。
 
 ## 9) 导入顺序
 ### Rust
@@ -150,7 +150,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - 覆盖 happy path 和失败/边界场景。
 
 ## 13) Python TUI 护栏
-- 主模块：`python/openjax_tui/src/openjax_tui/app.py`。
+- 主模块：`python/tui/src/openjax_tui/app.py`。
 - 保持输入后端行为稳定（TTY 下用 `prompt_toolkit`，否则用 `basic`）。
 - 保持审批命令稳定（`/approve`、`y|n`、`/pending`）。
 - 保持 assistant-delta/final-message 去重行为稳定。

@@ -95,11 +95,11 @@
 ### 阶段 4：Python TUI 迁移与对齐
 
 1. 基于 SDK 构建 Python TUI（先实现单会话）。
-2. 对齐当前 `openjax-tui` 的关键能力：
+2. 对齐当前 `tui_next` 的关键能力：
 3. 输入提交与增量输出合并。
 4. 审批弹层（y/n 或快捷键）。
 5. 终端恢复保障（异常退出恢复 raw mode）。
-6. 保留 `openjax-tui`（Rust）作为回退实现，直到 Python 版本稳定。
+6. 保留 `tui_next`（Rust）作为回退实现，直到 Python 版本稳定。
 
 测试：
 1. 关键交互路径 E2E（输入、审批、取消、退出）。

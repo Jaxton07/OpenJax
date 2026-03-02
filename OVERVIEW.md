@@ -21,7 +21,7 @@ Rust workspace（`Cargo.toml`）成员：
 | `openjax-core` | Agent 主循环、工具系统、模型客户端、沙箱与审批 | 暂无独立 README（可先看 [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)） |
 | `openjaxd` | Rust daemon（JSONL 协议入口） | [openjaxd/README.md](openjaxd/README.md) |
 | `openjax-cli` | CLI 入口与 REPL 交互 | 暂无独立 README |
-| `openjax-tui` | Rust TUI 交互层（事件渲染、审批弹层） | [openjax-tui/README.md](openjax-tui/README.md) |
+| `tui_next` | Rust TUI 交互层（事件渲染、审批弹层） | [ui/tui/README.md](ui/tui/README.md) |
 
 仓库内 Python 模块：
 
@@ -37,7 +37,7 @@ openjax-protocol/
 openjax-core/
 openjaxd/
 openjax-cli/
-openjax-tui/
+ui/tui/
 python/
   openjax_sdk/
   openjax_tui/
@@ -50,7 +50,7 @@ docs/
 ```text
 User
  ├─ openjax-cli (Rust)
- ├─ openjax-tui (Rust)
+ ├─ tui_next (Rust)
  └─ python/openjax_tui (Python MVP)
           │
           ▼
@@ -70,7 +70,7 @@ User
 - [openjax-protocol/README.md](openjax-protocol/README.md)
 - [openjax-core/README.md](openjax-core/README.md)
 - [openjaxd/README.md](openjaxd/README.md)
-- [openjax-tui/README.md](openjax-tui/README.md)
+- [ui/tui/README.md](ui/tui/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
 - [python/openjax_tui/README.md](python/openjax_tui/README.md)
 - [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
@@ -91,6 +91,6 @@ zsh -lc "cargo build"
 zsh -lc "cargo test --workspace"
 zsh -lc "cargo test -p openjax-core"
 zsh -lc "cargo test -p openjaxd"
-zsh -lc "cargo test -p openjax-tui"
+zsh -lc "cargo test -p tui_next"
 zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -m unittest discover -s python/openjax_tui/tests -v"
 ```

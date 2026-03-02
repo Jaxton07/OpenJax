@@ -62,7 +62,7 @@ let evt = Event::TurnStarted { turn_id: 1 };
 
 ## 测试
 
-当前 crate 未单独提供 `tests/` 目录；通常通过依赖它的 crate（如 `openjax-core`、`openjaxd`、`openjax-tui`）进行集成验证。
+当前 crate 未单独提供 `tests/` 目录；通常通过依赖它的 crate（如 `openjax-core`、`openjaxd`、`tui_next`）进行集成验证。
 
 可运行：
 
