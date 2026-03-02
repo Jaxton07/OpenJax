@@ -1,9 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
+use std::{io, io::Write};
 
 use anyhow::Context;
+use crossterm::cursor::MoveTo;
 use crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
+use crossterm::terminal::{Clear, ClearType};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use openjax_core::{Agent, Config, init_logger};
 use openjax_protocol::Op;
@@ -94,5 +97,12 @@ pub async fn run() -> anyhow::Result<()> {
     for event in events {
         app.apply_core_event(event);
     }
+    // Move cursor off the input/footer area so shell prompt lands on a clean line.
+    let area = tui.viewport_size();
+    let footer_y = area.bottom().saturating_sub(1);
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, MoveTo(0, footer_y), Clear(ClearType::CurrentLine));
+    let _ = write!(stdout, "\r\n");
+    let _ = stdout.flush();
     Ok(())
 }

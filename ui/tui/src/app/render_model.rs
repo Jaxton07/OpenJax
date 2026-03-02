@@ -18,31 +18,39 @@ impl App {
     }
 
     pub fn live_chat_lines(&self) -> Vec<Line<'static>> {
-        self.state
-            .live_messages
-            .iter()
-            .flat_map(|message| {
-                let mut local = Vec::new();
-                for (idx, raw_line) in message.content.lines().enumerate() {
-                    let prefix = if idx == 0 {
-                        format!("{} ", message.role)
-                    } else {
-                        "  ".to_string()
-                    };
-                    local.push(Line::from(vec![
-                        Span::styled(prefix, Style::default().fg(Color::DarkGray)),
-                        Span::raw(raw_line.to_string()),
-                    ]));
-                }
-                if local.is_empty() {
-                    local.push(Line::from(Span::styled(
-                        format!("{} ...", message.role),
-                        Style::default().fg(Color::DarkGray),
-                    )));
-                }
-                local
-            })
-            .collect()
+        let mut lines = Vec::new();
+        if !self.state.history_cells.is_empty() && !self.state.live_messages.is_empty() {
+            lines.push(Line::default());
+        }
+
+        for (message_idx, message) in self.state.live_messages.iter().enumerate() {
+            if message_idx > 0 {
+                lines.push(Line::default());
+            }
+
+            let mut pushed = false;
+            for (idx, raw_line) in message.content.lines().enumerate() {
+                let prefix = if idx == 0 {
+                    format!("{} ", message.role)
+                } else {
+                    "  ".to_string()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+                    Span::raw(raw_line.to_string()),
+                ]));
+                pushed = true;
+            }
+
+            if !pushed {
+                lines.push(Line::from(Span::styled(
+                    format!("{} ...", message.role),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+
+        lines
     }
 
     pub fn input_line(&self) -> Line<'static> {
