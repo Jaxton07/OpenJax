@@ -3,6 +3,7 @@ pub mod approval;
 mod config;
 mod logger;
 mod model;
+pub mod sandbox;
 pub mod tools;
 
 use agent::state::{RateLimitConfig, ToolCallRecord};

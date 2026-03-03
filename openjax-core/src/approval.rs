@@ -1,6 +1,16 @@
 use async_trait::async_trait;
 use std::io;
 
+pub const DEFAULT_APPROVAL_TIMEOUT_MS: u64 = 300_000;
+
+pub fn approval_timeout_ms_from_env() -> u64 {
+    std::env::var("OPENJAX_APPROVAL_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_APPROVAL_TIMEOUT_MS)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalRequest {
     pub request_id: String,

@@ -39,6 +39,10 @@ impl ApprovalSelection {
 pub struct AppState {
     pub banner_printed: bool,
     pub input: String,
+    pub input_cursor: usize,
+    pub input_history: Vec<String>,
+    pub history_nav_index: Option<usize>,
+    pub history_nav_draft: String,
     pub history_cells: Vec<HistoryCell>,
     pub pending_history_cells: Vec<HistoryCell>,
     pub live_messages: Vec<LiveMessage>,
@@ -59,6 +63,10 @@ impl Default for AppState {
         Self {
             banner_printed: false,
             input: String::new(),
+            input_cursor: 0,
+            input_history: Vec::new(),
+            history_nav_index: None,
+            history_nav_draft: String::new(),
             history_cells: Vec::new(),
             pending_history_cells: Vec::new(),
             live_messages: Vec::new(),

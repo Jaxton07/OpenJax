@@ -1,4 +1,4 @@
-use crate::approval::ApprovalRequest;
+use crate::approval::{ApprovalRequest, approval_timeout_ms_from_env};
 use crate::tools::ToolsConfig;
 use crate::tools::context::{ApprovalPolicy, ToolInvocation, ToolOutput};
 use crate::tools::events::{AfterToolUse, BeforeToolUse, HookEvent};
@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
+use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 /// 工具编排器
@@ -68,84 +69,108 @@ impl ToolOrchestrator {
                 tool_input: format!("{:?}", invocation.payload),
             }));
 
-        // 2. 检查是否需要批准
+        // 2. 检查是否需要批准（shell 工具在 sandbox façade 内统一处理）
         let is_mutating = self
             .sandbox_manager
             .is_mutating_operation(&invocation.tool_name);
-        let policy_outcome = evaluate_tool_invocation_policy(&invocation, is_mutating);
-        if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
-            return Err(crate::tools::error::FunctionCallError::Internal(
-                policy_outcome.trace.reason,
-            ));
-        }
-        let has_reusable_approval = self.should_reuse_mutating_approval(&invocation, is_mutating);
-        let requires_approval = matches!(
-            policy_outcome.trace.decision,
-            PolicyDecision::AskApproval | PolicyDecision::AskEscalation
-        ) && !has_reusable_approval;
+        if !is_shell_like_tool(&invocation.tool_name) {
+            let policy_outcome = evaluate_tool_invocation_policy(&invocation, is_mutating);
+            if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
+                return Err(crate::tools::error::FunctionCallError::Internal(
+                    policy_outcome.trace.reason,
+                ));
+            }
+            let has_reusable_approval =
+                self.should_reuse_mutating_approval(&invocation, is_mutating);
+            let requires_approval = matches!(
+                policy_outcome.trace.decision,
+                PolicyDecision::AskApproval | PolicyDecision::AskEscalation
+            ) && !has_reusable_approval;
 
-        if has_reusable_approval {
-            tracing::info!(
-                turn_id = invocation.turn.turn_id,
-                tool_name = %invocation.tool_name,
-                "approval reused for mutating tool"
-            );
-        }
-
-        if requires_approval {
-            let request_id = Uuid::new_v4().to_string();
-            let context = policy_outcome.approval_context.as_ref();
-            let target = approval_target(&invocation, context);
-            let reason = approval_reason(&policy_outcome, invocation.turn.approval_policy);
-            if let Some(sink) = &invocation.turn.event_sink {
-                let _ = sink.send(Event::ApprovalRequested {
-                    turn_id: invocation.turn.turn_id,
-                    request_id: request_id.clone(),
-                    target: target.clone(),
-                    reason: reason.clone(),
-                    tool_name: Some(invocation.tool_name.clone()),
-                    command_preview: context.and_then(|ctx| ctx.command_preview.clone()),
-                    risk_tags: if context
-                        .map(|ctx| !ctx.risk_tags.is_empty())
-                        .unwrap_or(false)
-                    {
-                        context.map(|ctx| ctx.risk_tags.clone()).unwrap_or_default()
-                    } else {
-                        policy_outcome.trace.risk_tags.clone()
-                    },
-                    sandbox_backend: context
-                        .and_then(|ctx| ctx.sandbox_backend)
-                        .map(|backend| backend.as_str().to_string()),
-                    degrade_reason: context.and_then(|ctx| ctx.degrade_reason.clone()),
-                });
+            if has_reusable_approval {
+                tracing::info!(
+                    turn_id = invocation.turn.turn_id,
+                    tool_name = %invocation.tool_name,
+                    "approval reused for mutating tool"
+                );
             }
 
-            let approved = invocation
-                .turn
-                .approval_handler
-                .request_approval(ApprovalRequest {
+            if requires_approval {
+                let request_id = Uuid::new_v4().to_string();
+                let context = policy_outcome.approval_context.as_ref();
+                let target = approval_target(&invocation, context);
+                let reason = approval_reason(&policy_outcome, invocation.turn.approval_policy);
+                if let Some(sink) = &invocation.turn.event_sink {
+                    let _ = sink.send(Event::ApprovalRequested {
+                        turn_id: invocation.turn.turn_id,
+                        request_id: request_id.clone(),
+                        target: target.clone(),
+                        reason: reason.clone(),
+                        tool_name: Some(invocation.tool_name.clone()),
+                        command_preview: context.and_then(|ctx| ctx.command_preview.clone()),
+                        risk_tags: if context
+                            .map(|ctx| !ctx.risk_tags.is_empty())
+                            .unwrap_or(false)
+                        {
+                            context.map(|ctx| ctx.risk_tags.clone()).unwrap_or_default()
+                        } else {
+                            policy_outcome.trace.risk_tags.clone()
+                        },
+                        sandbox_backend: context
+                            .and_then(|ctx| ctx.sandbox_backend)
+                            .map(|backend| backend.as_str().to_string()),
+                        degrade_reason: context.and_then(|ctx| ctx.degrade_reason.clone()),
+                    });
+                }
+
+                let timeout_ms = approval_timeout_ms_from_env();
+                let request = ApprovalRequest {
                     request_id: request_id.clone(),
                     target,
                     reason,
-                })
+                };
+                let approved = match timeout(
+                    Duration::from_millis(timeout_ms),
+                    invocation.turn.approval_handler.request_approval(request),
+                )
                 .await
-                .map_err(crate::tools::error::FunctionCallError::Internal)?;
+                {
+                    Ok(result) => {
+                        result.map_err(crate::tools::error::FunctionCallError::Internal)?
+                    }
+                    Err(_) => {
+                        if let Some(sink) = &invocation.turn.event_sink {
+                            let _ = sink.send(Event::ApprovalResolved {
+                                turn_id: invocation.turn.turn_id,
+                                request_id: request_id.clone(),
+                                approved: false,
+                            });
+                        }
+                        return Err(crate::tools::error::FunctionCallError::ApprovalTimedOut(
+                            format!(
+                                "approval request timed out after {}ms ({request_id})",
+                                timeout_ms
+                            ),
+                        ));
+                    }
+                };
 
-            if let Some(sink) = &invocation.turn.event_sink {
-                let _ = sink.send(Event::ApprovalResolved {
-                    turn_id: invocation.turn.turn_id,
-                    request_id,
-                    approved,
-                });
+                if let Some(sink) = &invocation.turn.event_sink {
+                    let _ = sink.send(Event::ApprovalResolved {
+                        turn_id: invocation.turn.turn_id,
+                        request_id,
+                        approved,
+                    });
+                }
+
+                if !approved {
+                    return Err(crate::tools::error::FunctionCallError::ApprovalRejected(
+                        "command rejected by user".to_string(),
+                    ));
+                }
+
+                self.record_mutating_approval(&invocation, is_mutating);
             }
-
-            if !approved {
-                return Err(crate::tools::error::FunctionCallError::ApprovalRejected(
-                    "command rejected by user".to_string(),
-                ));
-            }
-
-            self.record_mutating_approval(&invocation, is_mutating);
         }
 
         // 3. 选择合适的沙箱
@@ -164,10 +189,8 @@ impl ToolOrchestrator {
             Ok(ToolOutput::Function {
                 success: Some(true),
                 ..
-            }) | Ok(ToolOutput::Function {
-                success: None,
-                ..
-            }) | Ok(ToolOutput::Mcp { result: Ok(_), .. })
+            }) | Ok(ToolOutput::Function { success: None, .. })
+                | Ok(ToolOutput::Mcp { result: Ok(_), .. })
         );
         let output_preview = result.as_ref().ok().map(|o| format!("{:?}", o));
 

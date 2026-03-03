@@ -68,7 +68,9 @@ impl App {
     }
 
     pub fn input_cursor_offset(&self, area_width: u16) -> u16 {
-        let width = UnicodeWidthStr::width(self.state.input.as_str()) as u16;
+        let cursor = self.state.input_cursor.min(self.state.input.len());
+        let prefix = &self.state.input[..cursor];
+        let width = UnicodeWidthStr::width(prefix) as u16;
         let raw = 2u16.saturating_add(width);
         raw.min(area_width.saturating_sub(1))
     }

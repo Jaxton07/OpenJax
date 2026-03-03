@@ -339,10 +339,7 @@ mod tests {
 
         let registry = ModelRegistry::from_config(Some(&config));
         assert_eq!(
-            registry
-                .models
-                .get("m1")
-                .and_then(|m| m.api_key.as_deref()),
+            registry.models.get("m1").and_then(|m| m.api_key.as_deref()),
             Some("env-key")
         );
         unsafe {
@@ -387,10 +384,7 @@ mod tests {
 
         let registry = ModelRegistry::from_config(Some(&config));
         assert_eq!(
-            registry
-                .models
-                .get("m1")
-                .and_then(|m| m.api_key.as_deref()),
+            registry.models.get("m1").and_then(|m| m.api_key.as_deref()),
             Some("env-key-priority")
         );
         unsafe {

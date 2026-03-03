@@ -21,10 +21,15 @@ pub(crate) fn duplicate_skip_abort_message(max_skips: usize) -> String {
     )
 }
 
-pub(crate) fn is_approval_rejected_error(err_text: &str) -> bool {
-    err_text.to_ascii_lowercase().contains("approval rejected")
+pub(crate) fn is_approval_blocking_error(err_text: &str) -> bool {
+    let lower = err_text.to_ascii_lowercase();
+    lower.contains("approval rejected") || lower.contains("approval timed out")
 }
 
 pub(crate) fn approval_rejected_stop_message() -> String {
     "操作已取消：用户拒绝了工具调用，本回合已停止。".to_string()
+}
+
+pub(crate) fn approval_timed_out_stop_message() -> String {
+    "审批超时：本次工具调用未在限定时间内确认，本回合已停止。请继续给出下一步指令。".to_string()
 }

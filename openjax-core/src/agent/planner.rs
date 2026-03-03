@@ -9,8 +9,9 @@ use crate::agent::prompt::{
 };
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::tool_policy::{
-    approval_rejected_stop_message, duplicate_skip_abort_message, duplicate_tool_call_warning,
-    is_approval_rejected_error, should_abort_on_consecutive_duplicate_skips,
+    approval_rejected_stop_message, approval_timed_out_stop_message, duplicate_skip_abort_message,
+    duplicate_tool_call_warning, is_approval_blocking_error,
+    should_abort_on_consecutive_duplicate_skips,
 };
 use crate::model::{ModelRequest, ModelStage};
 use crate::{
@@ -425,8 +426,13 @@ impl Agent {
                         );
                         executed_count += 1;
                         consecutive_duplicate_skips = 0;
-                        if is_approval_rejected_error(&err_text) {
-                            let stop_message = approval_rejected_stop_message();
+                        if is_approval_blocking_error(&err_text) {
+                            let stop_message =
+                                if err_text.to_ascii_lowercase().contains("approval timed out") {
+                                    approval_timed_out_stop_message()
+                                } else {
+                                    approval_rejected_stop_message()
+                                };
                             self.push_event(
                                 events,
                                 Event::AssistantMessage {

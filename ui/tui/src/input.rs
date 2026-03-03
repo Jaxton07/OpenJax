@@ -6,6 +6,8 @@ pub enum InputAction {
     Quit,
     Submit,
     Backspace,
+    MoveLeft,
+    MoveRight,
     MoveUp,
     MoveDown,
     Append(String),
@@ -27,6 +29,8 @@ fn map_key(key: KeyEvent) -> InputAction {
     match key.code {
         KeyCode::Enter => InputAction::Submit,
         KeyCode::Backspace => InputAction::Backspace,
+        KeyCode::Left => InputAction::MoveLeft,
+        KeyCode::Right => InputAction::MoveRight,
         KeyCode::Up => InputAction::MoveUp,
         KeyCode::Down => InputAction::MoveDown,
         KeyCode::Esc => InputAction::Clear,

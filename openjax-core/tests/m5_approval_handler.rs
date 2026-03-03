@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::time::{Duration, sleep};
 
 fn temp_workspace_path() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -43,6 +44,17 @@ fn tool_completion<'a>(events: &'a [Event], tool_name: &str) -> &'a Event {
 struct MockApprovalHandler {
     calls: AtomicUsize,
     decisions: Mutex<Vec<bool>>,
+}
+
+#[derive(Debug)]
+struct BlockingApprovalHandler;
+
+#[async_trait]
+impl ApprovalHandler for BlockingApprovalHandler {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        sleep(Duration::from_secs(60)).await;
+        Ok(true)
+    }
 }
 
 impl MockApprovalHandler {
@@ -189,6 +201,47 @@ async fn never_does_not_prompt_even_for_mutating_tool() {
 
     let todo = fs::read_to_string(workspace.join("todo.txt")).expect("todo should exist");
     assert_eq!(todo, "x\nb\n");
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn approval_timeout_is_reported_as_timeout() {
+    let workspace = create_workspace();
+    fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
+
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::OnRequest,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+    agent.set_approval_handler(Arc::new(BlockingApprovalHandler));
+
+    unsafe {
+        std::env::set_var("OPENJAX_APPROVAL_TIMEOUT_MS", "20");
+    }
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "tool:edit_file_range file_path=todo.txt start_line=1 end_line=1 new_text='x'"
+                .to_string(),
+        })
+        .await;
+
+    unsafe {
+        std::env::remove_var("OPENJAX_APPROVAL_TIMEOUT_MS");
+    }
+
+    match tool_completion(&events, "edit_file_range") {
+        Event::ToolCallCompleted { ok, output, .. } => {
+            assert!(!ok);
+            assert!(output.contains("Approval timed out"));
+        }
+        _ => unreachable!(),
+    }
+
+    let todo = fs::read_to_string(workspace.join("todo.txt")).expect("todo should exist");
+    assert_eq!(todo, "a\nb\n");
 
     let _ = fs::remove_dir_all(workspace);
 }

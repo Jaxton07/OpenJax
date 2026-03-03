@@ -76,6 +76,7 @@ impl App {
             };
 
             self.state.input.clear();
+            self.state.input_cursor = 0;
             match selected {
                 Some(ApprovalSelection::Approve) | Some(ApprovalSelection::Deny) => {
                     let approved = matches!(selected, Some(ApprovalSelection::Approve));
@@ -110,17 +111,73 @@ impl App {
 
         let user_cell = self.user_cell(&input);
         self.queue_history_cell(user_cell);
+        self.push_input_history(input.clone());
         self.state.input.clear();
+        self.state.input_cursor = 0;
         self.set_live_status("Thinking...");
         Some(SubmitAction::UserTurn { input })
     }
 
     pub fn append_input(&mut self, text: &str) {
-        self.state.input.push_str(text);
+        let cursor = self
+            .clamp_cursor_to_char_boundary(self.state.input_cursor)
+            .min(self.state.input.len());
+        self.state.input.insert_str(cursor, text);
+        self.state.input_cursor = cursor
+            .saturating_add(text.len())
+            .min(self.state.input.len());
     }
 
     pub fn backspace(&mut self) {
-        self.state.input.pop();
+        if self.state.input.is_empty() || self.state.input_cursor == 0 {
+            return;
+        }
+        let cursor = self.clamp_cursor_to_char_boundary(self.state.input_cursor);
+        let prev = self.prev_char_boundary(cursor);
+        self.state.input.replace_range(prev..cursor, "");
+        self.state.input_cursor = prev;
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        let cursor = self.clamp_cursor_to_char_boundary(self.state.input_cursor);
+        self.state.input_cursor = self.prev_char_boundary(cursor);
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        let cursor = self.clamp_cursor_to_char_boundary(self.state.input_cursor);
+        self.state.input_cursor = self.next_char_boundary(cursor);
+    }
+
+    pub fn history_prev(&mut self) {
+        if self.state.input_history.is_empty() {
+            return;
+        }
+        let next_index = match self.state.history_nav_index {
+            Some(0) => 0,
+            Some(idx) => idx.saturating_sub(1),
+            None => {
+                self.state.history_nav_draft = self.state.input.clone();
+                self.state.input_history.len().saturating_sub(1)
+            }
+        };
+        self.state.history_nav_index = Some(next_index);
+        self.state.input = self.state.input_history[next_index].clone();
+        self.state.input_cursor = self.state.input.len();
+    }
+
+    pub fn history_next(&mut self) {
+        let Some(current) = self.state.history_nav_index else {
+            return;
+        };
+        if current + 1 >= self.state.input_history.len() {
+            self.state.history_nav_index = None;
+            self.state.input = self.state.history_nav_draft.clone();
+        } else {
+            let next = current + 1;
+            self.state.history_nav_index = Some(next);
+            self.state.input = self.state.input_history[next].clone();
+        }
+        self.state.input_cursor = self.state.input.len();
     }
 
     pub fn clear(&mut self) {
@@ -128,6 +185,9 @@ impl App {
         self.state.pending_history_cells.clear();
         self.state.live_messages.clear();
         self.state.input.clear();
+        self.state.input_cursor = 0;
+        self.state.history_nav_index = None;
+        self.state.history_nav_draft.clear();
         self.state.pending_approval = None;
         self.state.approval_selection = ApprovalSelection::Approve;
         self.state.active_turn_id = None;
@@ -154,6 +214,53 @@ impl App {
         let id = self.state.next_cell_id;
         self.state.next_cell_id = self.state.next_cell_id.saturating_add(1);
         id
+    }
+
+    fn push_input_history(&mut self, input: String) {
+        if input.is_empty() {
+            return;
+        }
+        if self.state.input_history.last() == Some(&input) {
+            self.state.history_nav_index = None;
+            self.state.history_nav_draft.clear();
+            return;
+        }
+        self.state.input_history.push(input);
+        self.state.history_nav_index = None;
+        self.state.history_nav_draft.clear();
+    }
+
+    fn clamp_cursor_to_char_boundary(&self, cursor: usize) -> usize {
+        if cursor >= self.state.input.len() {
+            return self.state.input.len();
+        }
+        let mut c = cursor;
+        while c > 0 && !self.state.input.is_char_boundary(c) {
+            c -= 1;
+        }
+        c
+    }
+
+    fn prev_char_boundary(&self, cursor: usize) -> usize {
+        if cursor == 0 {
+            return 0;
+        }
+        let mut idx = cursor.saturating_sub(1);
+        while idx > 0 && !self.state.input.is_char_boundary(idx) {
+            idx = idx.saturating_sub(1);
+        }
+        idx
+    }
+
+    fn next_char_boundary(&self, cursor: usize) -> usize {
+        if cursor >= self.state.input.len() {
+            return self.state.input.len();
+        }
+        let mut idx = cursor + 1;
+        while idx < self.state.input.len() && !self.state.input.is_char_boundary(idx) {
+            idx += 1;
+        }
+        idx.min(self.state.input.len())
     }
 }
 

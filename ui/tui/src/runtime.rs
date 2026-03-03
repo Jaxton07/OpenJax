@@ -84,8 +84,22 @@ pub async fn run() -> anyhow::Result<()> {
                 }
             }
             InputAction::Backspace => app.backspace(),
-            InputAction::MoveUp => app.move_approval_selection(-1),
-            InputAction::MoveDown => app.move_approval_selection(1),
+            InputAction::MoveLeft => app.move_cursor_left(),
+            InputAction::MoveRight => app.move_cursor_right(),
+            InputAction::MoveUp => {
+                if app.state.pending_approval.is_some() {
+                    app.move_approval_selection(-1);
+                } else {
+                    app.history_prev();
+                }
+            }
+            InputAction::MoveDown => {
+                if app.state.pending_approval.is_some() {
+                    app.move_approval_selection(1);
+                } else {
+                    app.history_next();
+                }
+            }
             InputAction::Append(text) => app.append_input(&text),
             InputAction::Clear => app.clear(),
             InputAction::None => {}

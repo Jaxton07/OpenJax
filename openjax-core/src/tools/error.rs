@@ -10,6 +10,8 @@ pub enum FunctionCallError {
     InvalidPayload(String),
     #[error("Approval rejected: {0}")]
     ApprovalRejected(String),
+    #[error("Approval timed out: {0}")]
+    ApprovalTimedOut(String),
     #[error("Internal error: {0}")]
     Internal(String),
 }
