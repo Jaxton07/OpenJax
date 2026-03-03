@@ -6,54 +6,6 @@ use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use std::path::PathBuf;
 
-const DEFAULT_CONFIG: &str = r#"# OpenJax Configuration
-# Edit this file to configure your API keys
-
-[model]
-# Backend: minimax | openai | echo
-backend = "echo"
-# API key (env vars take priority if set)
-# For OpenAI: OPENAI_API_KEY
-# For MiniMax: OPENJAX_MINIMAX_API_KEY
-# api_key = "your-api-key"
-# base_url = "https://api.example.com"
-# model = "gpt-4.1-mini"
-
-[sandbox]
-mode = "workspace_write"
-approval_policy = "on_request"
-
-[agent]
-max_agents = 4
-max_depth = 1
-"#;
-
-fn ensure_local_config() -> Option<PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    let config_dir = cwd.join(".openjax").join("config");
-    let config_path = config_dir.join("config.toml");
-
-    if config_path.exists() {
-        return Some(config_path);
-    }
-
-    if let Err(e) = std::fs::create_dir_all(&config_dir) {
-        eprintln!("[config] failed to create config dir: {}", e);
-        return None;
-    }
-
-    match std::fs::write(&config_path, DEFAULT_CONFIG) {
-        Ok(()) => {
-            println!("[config] created default config: {}", config_path.display());
-            Some(config_path)
-        }
-        Err(e) => {
-            eprintln!("[config] failed to create default config: {}", e);
-            None
-        }
-    }
-}
-
 #[derive(Parser, Debug)]
 #[command(name = "openjax")]
 #[command(version = "0.1.0")]
@@ -94,25 +46,12 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     } else {
-        if let Some(path) = ensure_local_config() {
-            match Config::from_file(&path) {
-                Ok(c) => {
-                    println!("[config] loaded from: {}", path.display());
-                    c
-                }
-                Err(e) => {
-                    eprintln!("[config] failed to load {}: {}", path.display(), e);
-                    Config::load()
-                }
-            }
+        if let Some(path) = Config::find_or_create_config_file() {
+            println!("[config] loaded from: {}", path.display());
+            Config::load()
         } else {
-            let config = Config::load();
-            if let Some(path) = Config::find_config_file() {
-                println!("[config] loaded from: {}", path.display());
-            } else {
-                println!("[config] no config file found, using defaults");
-            }
-            config
+            eprintln!("[config] failed to discover or create default config file");
+            Config::load()
         }
     };
 

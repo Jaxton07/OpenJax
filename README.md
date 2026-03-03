@@ -1,101 +1,117 @@
 # OpenJax
 
-A CLI agent framework based on Rust, enabling AI models to interact with codebases. Built as a simplified reference implementation inspired by [Codex](https://github.com/anthropics/codex).
+A Rust-first CLI/TUI agent framework for AI-assisted coding workflows, inspired by Codex-style tool calling, sandboxing, and approval control.
 
 ## Features
 
-- **Agent Loop**: Model-driven tool calling loop (up to 5 tool calls per turn)
-- **Tool System**: Read files, list directories, grep search, execute commands, apply patches
-- **Sandbox**: Two modes - `workspace_write` (restricted) and `danger_full_access`
-- **Approval Policy**: Three levels - `always_ask`, `on_request`, `never`
-- **Multi-Agent**: Protocol reserved for future sub-agent support
+- Agent loop with tool-calling orchestration
+- Tooling for file read/search, shell execution, and patch application
+- Sandbox modes and approval policies
+- Rust TUI runtime (`tui_next`) as the primary interactive interface
 
-## Quick Start
+## Install
+
+### 1) Prebuilt install (macOS ARM only)
+
+`install.sh` is included in the prebuilt package. Follow these steps.
+
+#### Step A: Get the prebuilt package
+
+Option 1 (build package locally):
 
 ```bash
-# Build
-cargo build
+make doctor
+make build-release-mac
+make package-mac
+```
 
-# Run CLI (uses environment variables or defaults)
-cargo run -p openjax-cli
+After packaging, the artifact is at `dist/openjax-v<version>-macos-aarch64.tar.gz`.
 
-# Or with specific settings
-cargo run -p openjax-cli -- --model echo --approval never
+Option 2 (download from release page):
+- Download `openjax-v<version>-macos-aarch64.tar.gz` to a local directory.
+
+#### Step B: Extract and enter package directory
+
+```bash
+cd dist
+TAR_FILE=$(ls openjax-v*-macos-aarch64.tar.gz | head -n1)
+tar -xzf "$TAR_FILE"
+DIR_NAME=$(basename "$TAR_FILE" .tar.gz)
+cd "$DIR_NAME"
+```
+
+#### Step C: Run installer script
+
+```bash
+./install.sh
+```
+
+Optional: custom install prefix
+
+```bash
+./install.sh --prefix "$HOME/.local/openjax"
+```
+
+#### Step D: Add PATH and launch
+
+```bash
+export PATH="$HOME/.local/openjax/bin:$PATH"
+tui_next
+```
+
+For persistent PATH, add the same `export PATH=...` line to your shell profile (for example `~/.zshrc`).
+
+### 2) Source install (macOS / Linux / Windows)
+
+```bash
+make install-source
+```
+
+For platform-specific source-install commands, see [Deployment Guide](docs/deployment.md).
+For Chinese instructions, see [Chinese Deployment Guide](docs/deployment.zh-CN.md).
+
+## Quick Run
+
+```bash
+make run-tui
+```
+
+Or run directly:
+
+```bash
+cargo run -q -p tui_next
+```
+
+## Uninstall
+
+```bash
+# Run inside the extracted prebuilt package directory
+./uninstall.sh
+
+# Or run from the repository root
+make uninstall-local
 ```
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENJAX_MODEL` | Model backend | `gpt-4.1-mini` or `codex-MiniMax-M2.1` |
-| `OPENJAX_MINIMAX_API_KEY` | MiniMax API key | - |
+| `OPENJAX_MODEL` | Model backend | `gpt-4.1-mini` |
 | `OPENAI_API_KEY` | OpenAI API key | - |
+| `OPENJAX_KIMI_API_KEY` | Kimi API key | - |
+| `OPENJAX_GLM_API_KEY` | GLM API key | - |
+| `OPENJAX_ANTHROPIC_API_KEY` | Claude API key | - |
 | `OPENJAX_APPROVAL_POLICY` | Approval level | `on_request` |
 | `OPENJAX_SANDBOX_MODE` | Sandbox mode | `workspace_write` |
 
-## CLI Options
+If no config file exists, OpenJax auto-generates a default template on startup at `./.openjax/config/config.toml` (fallback: `~/.openjax/config.toml`).
 
-```
-OpenJax - A CLI agent framework
+## Deployment and Security
 
-Usage: openjax-cli [OPTIONS]
-
-Options:
-      --model <MODEL>        模型后端: minimax | openai | echo
-      --approval <APPROVAL>  审批策略: always_ask | on_request | never
-      --sandbox <SANDBOX>   沙箱模式: workspace_write | danger_full_access
-      --config <CONFIG>     配置文件路径
-  -h, --help                Print help
-  -V, --version            Print version
-```
-
-## Tool Syntax
-
-```bash
-# Read file
-tool:read_file path=src/lib.rs
-
-# List directory
-tool:list_dir path=.
-
-# Search files
-tool:grep_files pattern=fn main path=.
-
-# Execute command
-tool:exec_command cmd='ls -la' require_escalated=true timeout_ms=60000
-
-# Apply patch
-tool:apply_patch patch='*** Begin Patch
-*** Add File: hello.txt
-+hello
-*** End Patch'
-```
-
-## Patch Format
-
-```
-*** Begin Patch
-*** Add File: <path>
-+<line>
-+<line>
-*** Update File: <path>
-@@
- <context line>
--<old line>
-+<new line>
-*** Delete File: <path>
-*** Move File: <from> -> <to>
-*** Rename File: <old> -> <new>
-*** End Patch
-```
-
-## Security
-
-See [docs/security.md](docs/security.md) for security model details.
-
-## Architecture
-
-See [docs/openjax-vs-codex-comparison.md](docs/openjax-vs-codex-comparison.md) for architecture comparison with Codex.
+- Deployment details: [docs/deployment.md](docs/deployment.md)
+- Chinese deployment guide: [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)
+- Security model: [docs/security.md](docs/security.md)
+- Architecture comparison: [docs/openjax-vs-codex-comparison.md](docs/openjax-vs-codex-comparison.md)
 
 ## License
 

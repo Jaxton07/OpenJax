@@ -17,6 +17,10 @@ This crate is now the only maintained Rust UI runtime under `ui/`.
 - Test: `zsh -lc "cargo test -p tui_next"`
 - Manual run: `zsh -lc "cargo run -q -p tui_next"`
 
+## Deployment
+- Production entrypoint: `tui_next`
+- Deployment guide: [../../docs/deployment.md](../../docs/deployment.md)
+
 ## Last Updated
 2026-03-01
 

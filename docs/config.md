@@ -10,6 +10,23 @@
 1. 项目级：`.openjax/config/config.toml`
 2. 用户级：`~/.openjax/config.toml`
 
+## 启动自动生成
+
+当以上两个路径都不存在时，`tui_next/openjaxd/openjax-cli` 启动会自动生成默认模板（优先写入项目级路径）。
+默认模板已预置以下 provider：
+
+1. `kimi`（默认路由，模型 `K2.5`）
+2. `glm`
+3. `openai`
+4. `claude`（anthropic）
+
+你只需要设置对应的 API Key 环境变量即可：
+
+1. `OPENJAX_KIMI_API_KEY`
+2. `OPENJAX_GLM_API_KEY`
+3. `OPENAI_API_KEY`
+4. `OPENJAX_ANTHROPIC_API_KEY`
+
 ## 1) Legacy 配置（兼容）
 
 ```toml

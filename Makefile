@@ -1,79 +1,125 @@
-# OpenJax Makefile
-# 简化开发工作流程
+SHELL := /bin/zsh
+.DEFAULT_GOAL := help
 
-.PHONY: help setup setup-new dev dev-new test test-new clean lint format
+CARGO ?= cargo
+PYTHON ?= python3
+PREFIX ?= $(HOME)/.local/openjax
+KEEP_USER_DATA ?= 0
 
-# 默认显示帮助
+export CARGO_NET_RETRY ?= 5
+export CARGO_HTTP_MULTIPLEXING ?= false
+
+.PHONY: \
+	help doctor prefetch \
+	run-tui build-release-mac package-mac install-local uninstall-local install-source \
+	build-all test-rust clean-dist \
+	python-setup python-dev python-test clean-python \
+	setup setup-new dev dev-new test test-new lint format clean
+
 help:
-	@echo "OpenJax 开发命令:"
+	@echo "OpenJax Deployment Commands:"
 	@echo ""
-	@echo "  当前 TUI (prompt_toolkit):"
-	@echo "    make setup      - 设置开发环境 (.venv + 安装依赖)"
-	@echo "    make dev        - 运行当前 TUI"
-	@echo "    make test       - 运行当前 TUI 测试"
+	@echo "  Rust 主线（推荐）:"
+	@echo "    make doctor            - 检查 cargo/rustup/zsh"
+	@echo "    make prefetch          - 预拉取 Rust 依赖 (Cargo.lock)"
+	@echo "    make run-tui           - 运行 Rust TUI (tui_next)"
+	@echo "    make build-release-mac - 构建 macOS ARM release 二进制"
+	@echo "    make package-mac       - 打包预编译安装包"
+	@echo "    make install-local     - 本机安装到 PREFIX (默认 ~/.local/openjax)"
+	@echo "    make uninstall-local   - 本机卸载 (默认全清理, KEEP_USER_DATA=1 可保留 userdata)"
+	@echo "    make install-source    - 源码在线安装 (构建 + 安装)"
 	@echo ""
-	@echo "  新 TUI (Textual - 开发中):"
-	@echo "    make setup-new  - 设置新 TUI 开发环境"
-	@echo "    make dev-new    - 运行新 TUI"
-	@echo "    make test-new   - 运行新 TUI 测试"
+	@echo "  校验与清理:"
+	@echo "    make build-all         - 构建整个 Rust workspace"
+	@echo "    make test-rust         - 运行 Rust workspace 测试"
+	@echo "    make clean-dist        - 清理 dist 目录"
 	@echo ""
-	@echo "  其他:"
-	@echo "    make clean      - 清理虚拟环境和构建产物"
-	@echo "    make lint       - 运行代码检查"
-	@echo "    make format     - 格式化代码"
+	@echo "  Python (Optional / Deprecated as primary path):"
+	@echo "    make python-setup      - 安装 Python SDK + TUI 开发依赖"
+	@echo "    make python-dev        - 运行 Python TUI"
+	@echo "    make python-test       - 运行 Python TUI 单元测试"
 	@echo ""
+	@echo "  Deprecated aliases: setup setup-new dev dev-new test test-new"
 
-# ============ 当前 TUI (prompt_toolkit) ============
 
-setup:
-	@echo "Setting up development environment..."
-	python3 -m venv .venv
-	.venv/bin/pip install -U pip
-	.venv/bin/pip install -e python/openjax_sdk
-	.venv/bin/pip install -e python/openjax_tui
-	@echo "Done! Run 'make dev' to start."
+doctor:
+	@command -v zsh >/dev/null || (echo "[doctor] missing zsh" && exit 1)
+	@command -v $(CARGO) >/dev/null || (echo "[doctor] missing cargo" && exit 1)
+	@command -v rustup >/dev/null || (echo "[doctor] missing rustup" && exit 1)
+	@echo "[doctor] OK: zsh cargo rustup"
 
-dev:
-	PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src \
-		.venv/bin/python -m openjax_tui
+prefetch:
+	$(CARGO) fetch --locked
 
-test:
-	PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src \
-		.venv/bin/python -m unittest discover -s python/openjax_tui/tests -v
+run-tui:
+	$(CARGO) run -q -p tui_next
 
-# ============ 新 TUI (Textual) ============
+build-release-mac:
+	$(CARGO) build --release --locked -p tui_next -p openjax-cli -p openjaxd
 
-setup-new:
-	@echo "Setting up new TUI development environment..."
+package-mac:
+	bash scripts/release/package_macos.sh
+
+install-local: package-mac
+	bash scripts/release/install.sh --prefix "$(PREFIX)" -y
+
+uninstall-local:
+	@if [ "$(KEEP_USER_DATA)" = "1" ]; then \
+		bash scripts/release/uninstall.sh --prefix "$(PREFIX)" --keep-user-data; \
+	else \
+		bash scripts/release/uninstall.sh --prefix "$(PREFIX)"; \
+	fi
+
+install-source:
+	$(CARGO) build --release --locked -p tui_next -p openjax-cli -p openjaxd
+	mkdir -p "$(PREFIX)/bin"
+	cp target/release/tui_next "$(PREFIX)/bin/tui_next"
+	cp target/release/openjax-cli "$(PREFIX)/bin/openjax-cli"
+	cp target/release/openjaxd "$(PREFIX)/bin/openjaxd"
+	chmod +x "$(PREFIX)/bin/tui_next" "$(PREFIX)/bin/openjax-cli" "$(PREFIX)/bin/openjaxd"
+	@echo "Installed to $(PREFIX)/bin"
+	@echo "If needed: export PATH=\"$(PREFIX)/bin:\$$PATH\""
+
+build-all:
+	$(CARGO) build --workspace --locked
+
+test-rust:
+	$(CARGO) test --workspace
+
+clean-dist:
+	rm -rf dist
+
+python-setup:
 	python3 -m venv .venv
 	.venv/bin/pip install -U pip
 	.venv/bin/pip install -e python/openjax_sdk
 	.venv/bin/pip install -e python/tui
-	@echo "Done! Run 'make dev-new' to start."
 
-dev-new:
+python-dev:
 	PYTHONPATH=python/openjax_sdk/src:python/tui/src \
 		.venv/bin/python -m openjax_tui
 
-test-new:
+python-test:
 	PYTHONPATH=python/openjax_sdk/src:python/tui/src \
-		.venv/bin/python -m pytest python/tui/tests -v
+		.venv/bin/python -m unittest discover -s python/tui/tests -v
 
-# ============ 通用命令 ============
-
-clean:
+clean-python:
 	rm -rf .venv
 	rm -rf python/*/build
 	rm -rf python/*/*.egg-info
-	rm -rf python/*/__pycache__
-	rm -rf python/*/*/__pycache__
+	find . -type d -name "__pycache__" -prune -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
 
+# Deprecated aliases (compat)
+setup: python-setup
+setup-new: python-setup
+dev: python-dev
+dev-new: python-dev
+test: python-test
+test-new: python-test
 lint:
-	.venv/bin/python -m pyright python/openjax_sdk/src
-	.venv/bin/python -m pyright python/openjax_tui/src
-
+	@echo "Deprecated: use cargo clippy --workspace --all-targets -- -D warnings"
 format:
-	.venv/bin/python -m black python/openjax_sdk/src --line-length 100
-	.venv/bin/python -m black python/openjax_tui/src --line-length 100
+	@echo "Deprecated: use cargo fmt -- --check"
+clean: clean-python clean-dist
