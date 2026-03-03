@@ -22,4 +22,4 @@
 
 ## 迁移说明
 
-历史目录 `docs/tools/` 仅保留 README 跳转页；工具文档以 `openjax-core/src/tools/docs/` 为准。
+工具文档统一维护在 `openjax-core/src/tools/docs/`。如与其他旧文档存在冲突，请以该目录内容为准。
