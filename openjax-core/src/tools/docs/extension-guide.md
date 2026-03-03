@@ -4,7 +4,10 @@
 
 ## 步骤 1：创建工具处理器
 
-在 `openjax-core/src/tools/handlers/` 目录下创建新文件。
+按工具类型选择目录：
+
+- 通用工作区工具：`openjax-core/src/tools/handlers/`
+- 系统观测类只读工具：`openjax-core/src/tools/system/`
 
 ```rust
 use async_trait::async_trait;

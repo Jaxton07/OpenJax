@@ -78,7 +78,7 @@ User
 ## 6. 相关文档入口
 
 - 协议文档： [docs/protocol/v1/README.md](docs/protocol/v1/README.md)
-- 工具系统： [docs/tools/README.md](docs/tools/README.md)
+- 工具系统： [openjax-core/src/tools/docs/README.md](openjax-core/src/tools/docs/README.md)
 - 重构计划索引： [docs/plan/refactor/README.md](docs/plan/refactor/README.md)
 
 

@@ -49,7 +49,7 @@ pub(crate) fn build_planner_input(
     format!(
         "You are OpenJax's planning layer.\n\
 Return ONLY valid JSON with one of two shapes:\n\
-1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
+1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
 2) Final answer: {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Rules:\n\
@@ -61,6 +61,7 @@ Rules:\n\
 - If required information is missing, use final.message to ask one concise clarification question.\n\
 - IMPORTANT: All values inside args MUST be JSON strings (not numbers/booleans). Example: \"start_line\":\"6\".\n\
 - For shell, put shell command in args.cmd.\n\
+- Prefer process_snapshot/system_load/disk_usage for process and host metrics instead of shell ps/top/df commands when possible.\n\
 - For apply_patch, use this EXACT format (note the space prefix for context lines):\n\
   *** Begin Patch\n\
   *** Update File: <filepath>\n\
@@ -123,7 +124,7 @@ pub(crate) fn build_json_repair_prompt(previous_output: &str) -> String {
         "Your previous response did not match the required JSON schema.\n\
 Return ONLY valid JSON. Do not include markdown, thoughts, or extra text.\n\
 Allowed outputs:\n\
-1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
+1) {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
 2) {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Previous response:\n{previous_output}\n"

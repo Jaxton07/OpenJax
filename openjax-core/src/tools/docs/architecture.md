@@ -42,6 +42,8 @@
 │  - ListDirHandler                                    │
 │  - ShellCommandHandler                                 │
 │  - ApplyPatchHandler                                  │
+│  - ProcessSnapshotHandler / SystemLoadHandler         │
+│  - DiskUsageHandler                                   │
 │  - DynamicToolHandler (自定义)                        │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -64,6 +66,14 @@ openjax-core/src/tools/
 ├── router.rs                # 工具调用解析和配置类型
 ├── router_impl.rs           # 工具路由器实现
 ├── common.rs                # 通用工具函数
+├── system/                  # 系统类只读工具
+│   ├── mod.rs
+│   ├── errors.rs
+│   ├── types.rs
+│   ├── provider.rs
+│   ├── process_snapshot.rs
+│   ├── system_load.rs
+│   └── disk_usage.rs
 ├── handlers/                # 工具处理器目录
 │   ├── mod.rs             # 处理器模块导出
 │   ├── grep_files.rs      # grep_files 工具处理器
@@ -180,7 +190,7 @@ ToolOrchestrator 执行后钩子
 
 系统支持多种扩展方式：
 
-1. **新增工具**：实现 `ToolHandler` trait 并注册
+1. **新增工具**：优先按领域分层（通用工具放 `handlers/`，系统观测工具放 `system/`），实现 `ToolHandler` trait 并注册
 2. **自定义 Hooks**：添加 BeforeToolUse 或 AfterToolUse 钩子
 3. **自定义沙箱**：扩展 `SandboxPolicy`
 4. **动态工具**：使用 `DynamicToolManager` 运行时注册

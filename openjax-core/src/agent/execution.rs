@@ -220,6 +220,7 @@ fn extract_tool_target_hint(
         "read_file" | "apply_patch" | "edit_file_range" | "write_file" => {
             &["file_path", "path", "filepath"]
         }
+        "disk_usage" => &["path"],
         "shell" | "exec_command" => &["cmd", "command"],
         _ => return None,
     };

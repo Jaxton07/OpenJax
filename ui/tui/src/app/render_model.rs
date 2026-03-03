@@ -2,6 +2,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
+use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
 use crate::state::ApprovalSelection;
@@ -99,6 +100,11 @@ impl App {
 
     pub fn approval_panel_lines(&self) -> Option<Vec<Line<'static>>> {
         let pending = self.state.pending_approval.as_ref()?;
+        let is_shell = matches!(pending.tool_name.as_deref(), Some("shell" | "exec_command"));
+        if is_shell {
+            return Some(self.shell_approval_panel_lines(pending));
+        }
+
         let mut lines = Vec::new();
         lines.push(Line::from(Span::styled(
             format!("是否允许执行操作: {}", pending.target),
@@ -167,4 +173,83 @@ impl App {
             Span::styled(label.to_string(), style),
         ])
     }
+
+    fn shell_approval_panel_lines(
+        &self,
+        pending: &crate::state::PendingApproval,
+    ) -> Vec<Line<'static>> {
+        let mut lines = Vec::new();
+        lines.push(Line::from(Span::styled(
+            format!(
+                "Approval Required ({} remaining)",
+                self.approval_remaining_text(pending)
+            ),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::default());
+
+        let command = pending
+            .command_preview
+            .clone()
+            .unwrap_or_else(|| pending.target.clone());
+        lines.push(Line::from(Span::styled(
+            format!("Command: {}", truncate_one_line(&command, 96)),
+            Style::default().fg(Color::Gray),
+        )));
+        lines.push(Line::from(Span::styled(
+            "Reason: Sandbox denied execution; fallback needs approval".to_string(),
+            Style::default().fg(Color::DarkGray),
+        )));
+        let detail = format!(
+            "{} ({})",
+            pending
+                .sandbox_backend
+                .clone()
+                .unwrap_or_else(|| "sandbox".to_string()),
+            pending
+                .degrade_reason
+                .clone()
+                .unwrap_or_else(|| pending.reason.clone())
+        );
+        lines.push(Line::from(Span::styled(
+            format!("Detail: {}", truncate_one_line(&detail, 96)),
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::default());
+
+        lines.push(self.approval_option_line(
+            "Approve and run without sandbox",
+            self.state.approval_selection == ApprovalSelection::Approve,
+        ));
+        lines.push(self.approval_option_line(
+            "Deny this request",
+            self.state.approval_selection == ApprovalSelection::Deny,
+        ));
+        lines.push(self.approval_option_line(
+            "Decide later",
+            self.state.approval_selection == ApprovalSelection::Later,
+        ));
+        lines
+    }
+
+    fn approval_remaining_text(&self, pending: &crate::state::PendingApproval) -> String {
+        let elapsed = pending.requested_at.elapsed();
+        let timeout = Duration::from_millis(pending.timeout_ms);
+        let remaining = timeout.saturating_sub(elapsed);
+        let secs = remaining.as_secs();
+        format!("{:02}:{:02}", secs / 60, secs % 60)
+    }
+}
+
+fn truncate_one_line(text: &str, max_chars: usize) -> String {
+    let single_line = text.replace('\n', " ").replace('\r', " ");
+    let total = single_line.chars().count();
+    if total <= max_chars {
+        return single_line;
+    }
+    let mut out = single_line.chars().take(max_chars).collect::<String>();
+    out.push_str("...");
+    out
 }

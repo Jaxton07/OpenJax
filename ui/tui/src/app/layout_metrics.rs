@@ -12,9 +12,11 @@ impl App {
         } else {
             0
         };
+        let approval_spacing = if approval_h > 0 { 2u16 } else { 0u16 };
         self.live_visual_height(width)
             .saturating_add(input_h)
             .saturating_add(approval_h)
+            .saturating_add(approval_spacing)
             .saturating_add(footer_h)
             .max(8)
     }

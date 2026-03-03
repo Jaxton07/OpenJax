@@ -84,7 +84,7 @@ zsh -lc "cargo test -p openjax-core"
 
 ## 7. 相关文档
 
-- `/docs/tools/architecture.md`
-- `/docs/tools/core-components.md`
+- `./architecture.md`
+- `./core-components.md`
 - `/docs/plan/refactor/phase-plan-and-todo.md`
 - `/docs/plan/rust-kernel-python-expansion-plan.md`

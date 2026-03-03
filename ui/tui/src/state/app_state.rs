@@ -1,4 +1,5 @@
 use crate::history_cell::HistoryCell;
+use std::time::Instant;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveMessage {
@@ -16,6 +17,8 @@ pub struct PendingApproval {
     pub risk_tags: Vec<String>,
     pub sandbox_backend: Option<String>,
     pub degrade_reason: Option<String>,
+    pub requested_at: Instant,
+    pub timeout_ms: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

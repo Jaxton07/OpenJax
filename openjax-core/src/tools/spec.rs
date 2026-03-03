@@ -329,12 +329,97 @@ pub fn create_edit_file_range_spec() -> ToolSpec {
     }
 }
 
+/// 创建 process_snapshot 工具规范
+pub fn create_process_snapshot_spec() -> ToolSpec {
+    ToolSpec {
+        name: "process_snapshot".to_string(),
+        description: "Collect a read-only process snapshot without shell execution. Supports sorting by cpu or memory with optional user filtering.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "sort_by": {
+                    "type": "string",
+                    "enum": ["cpu", "memory"],
+                    "default": "cpu"
+                },
+                "limit": {
+                    "type": "number",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 100
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Optional user name filter"
+                }
+            }
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "object"
+        })),
+    }
+}
+
+/// 创建 system_load 工具规范
+pub fn create_system_load_spec() -> ToolSpec {
+    ToolSpec {
+        name: "system_load".to_string(),
+        description: "Collect host CPU, memory, and load-average metrics in a structured response."
+            .to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "include_cpu": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "include_memory": {
+                    "type": "boolean",
+                    "default": true
+                }
+            }
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "object"
+        })),
+    }
+}
+
+/// 创建 disk_usage 工具规范
+pub fn create_disk_usage_spec() -> ToolSpec {
+    ToolSpec {
+        name: "disk_usage".to_string(),
+        description:
+            "Collect filesystem usage metrics for a selected path or all mounted filesystems."
+                .to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path used to resolve the target mount (defaults to cwd)"
+                },
+                "include_all_mounts": {
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "object"
+        })),
+    }
+}
+
 /// 构建所有工具规范
 pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
     vec![
         create_grep_files_spec(),
         create_read_file_spec(),
         create_list_dir_spec(),
+        create_process_snapshot_spec(),
+        create_system_load_spec(),
+        create_disk_usage_spec(),
         create_edit_file_range_spec(),
         create_shell_spec(),
         match config.apply_patch_tool_type {

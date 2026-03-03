@@ -6,6 +6,7 @@ use crate::tools::handlers::{
 };
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::spec::{ToolSpec, ToolsConfig, build_all_specs};
+use crate::tools::system::{DiskUsageHandler, ProcessSnapshotHandler, SystemLoadHandler};
 use std::sync::Arc;
 
 /// 工具注册构建器
@@ -74,6 +75,15 @@ pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
     let edit_range_handler = Arc::new(EditFileRangeHandler);
     builder.register_handler("edit_file_range", edit_range_handler);
 
+    let process_snapshot_handler = Arc::new(ProcessSnapshotHandler::default());
+    builder.register_handler("process_snapshot", process_snapshot_handler);
+
+    let system_load_handler = Arc::new(SystemLoadHandler::default());
+    builder.register_handler("system_load", system_load_handler);
+
+    let disk_usage_handler = Arc::new(DiskUsageHandler::default());
+    builder.register_handler("disk_usage", disk_usage_handler);
+
     builder.build()
 }
 
@@ -101,5 +111,23 @@ pub fn create_tool_invocation(
             event_sink,
             windows_sandbox_level: None,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_default_tool_registry;
+
+    #[test]
+    fn default_registry_includes_system_tools() {
+        let (registry, specs) = build_default_tool_registry();
+        assert!(registry.handler("process_snapshot").is_some());
+        assert!(registry.handler("system_load").is_some());
+        assert!(registry.handler("disk_usage").is_some());
+
+        let names: Vec<String> = specs.into_iter().map(|s| s.name).collect();
+        assert!(names.contains(&"process_snapshot".to_string()));
+        assert!(names.contains(&"system_load".to_string()));
+        assert!(names.contains(&"disk_usage".to_string()));
     }
 }

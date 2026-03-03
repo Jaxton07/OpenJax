@@ -132,11 +132,11 @@ tool:list_dir dir_path=src offset=1 limit=50
 ### 输出
 
 - 命令执行结果
-- 格式："exit_code=<code>\nstdout:\n<output>\nstderr:\n<error>"
+- 输出包含 `result_class/command/exit_code/backend/degrade_reason/policy_decision/runtime_allowed/runtime_deny_reason/stdout/stderr`
 
 ### 沙箱限制
 
-- **WorkspaceWrite**: 允许的程序：pwd, ls, cat, rg, grep, find, head, tail, wc, sed, awk, echo, stat, uname, which, env, printf
+- **WorkspaceWrite**: 由 `openjax-core/src/sandbox/` 中的策略、能力映射与 runtime 后端决定
 - **DangerFullAccess**: 无限制
 
 ### 示例
@@ -150,6 +150,79 @@ tool:shell cmd='ls -la'
 
 # 搜索文件
 tool:shell cmd='rg "pattern" src/'
+```
+
+## process_snapshot
+
+只读采集进程快照，避免直接使用 `ps/top` 的平台差异和沙箱拒绝风险。
+
+### 参数
+
+- `sort_by` (可选): 排序字段，`cpu` 或 `memory`（默认：`cpu`）
+- `limit` (可选): 最大返回条数（默认：10，范围：1..=100）
+- `user` (可选): 用户名过滤
+
+### 输出
+
+- JSON 对象：
+  - `timestamp`
+  - `host`
+  - `items[]`: `{ pid, name, cpu_pct, memory_bytes, memory_pct, user, status }`
+  - `meta`: `{ sort_by, limit, sampled_at_ms }`
+
+### 示例
+
+```bash
+tool:process_snapshot sort_by=cpu limit=10
+tool:process_snapshot sort_by=memory limit=5 user=ericw
+```
+
+## system_load
+
+只读采集主机负载指标。
+
+### 参数
+
+- `include_cpu` (可选): 是否包含 CPU 指标（默认：true）
+- `include_memory` (可选): 是否包含内存指标（默认：true）
+
+### 输出
+
+- JSON 对象：
+  - `timestamp`
+  - `cpu`: `{ logical_cores, usage_pct }`（可选）
+  - `memory`: `{ total_bytes, used_bytes, used_pct, swap_total_bytes, swap_used_bytes }`（可选）
+  - `load_avg`: `{ one, five, fifteen }`
+
+### 示例
+
+```bash
+tool:system_load include_cpu=true include_memory=true
+tool:system_load include_cpu=false include_memory=true
+```
+
+## disk_usage
+
+只读采集磁盘/挂载点空间指标。
+
+### 参数
+
+- `path` (可选): 目标路径（默认：当前工作目录）
+- `include_all_mounts` (可选): 是否返回全部挂载点（默认：false）
+
+### 输出
+
+- JSON 对象：
+  - `timestamp`
+  - `selected_path`
+  - `items[]`: `{ mount_point, fs_name, total_bytes, available_bytes, used_bytes, used_pct }`
+
+### 示例
+
+```bash
+tool:disk_usage
+tool:disk_usage path=. include_all_mounts=false
+tool:disk_usage include_all_mounts=true
 ```
 
 ## edit_file_range
@@ -315,7 +388,7 @@ openjax-core/src/tools/apply_patch/
 
 apply_patch 支持 Freeform 工具格式，使用 Lark 语法定义补丁语法。Freeform 工具允许 AI 模型直接输出补丁内容，无需 JSON 包装。
 
-**Lark 语法文件**：[grammar.lark](../../openjax-core/src/tools/apply_patch/grammar.lark)
+**Lark 语法文件**：[grammar.lark](../apply_patch/grammar.lark)
 
 **Freeform 工具类型**：
 - `type`: "grammar"

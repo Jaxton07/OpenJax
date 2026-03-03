@@ -131,13 +131,7 @@ pub async fn execute_shell(
         }
     };
 
-    let mut runtime_allowed =
-        !(output.exit_code == 0 && looks_like_fatal_stderr(output.stderr.trim()));
-    let mut runtime_deny_reason = if runtime_allowed {
-        None
-    } else {
-        Some(output.stderr.trim().to_string())
-    };
+    let (runtime_allowed, _) = evaluate_runtime_status(&output);
 
     if !runtime_allowed
         && matches!(command_class, CommandClass::ProcessObserve)
@@ -181,11 +175,10 @@ pub async fn execute_shell(
                     degrade_reason: Some(degrade_reason),
                     policy_trace: execution_request.policy_trace.clone(),
                 };
-                runtime_allowed = true;
-                runtime_deny_reason = None;
             }
         }
     }
+    let (runtime_allowed, runtime_deny_reason) = evaluate_runtime_status(&output);
     let result_class = classify_shell_result(output.exit_code, &output.stdout, &output.stderr);
     let is_shell_success = !matches!(result_class, types::SandboxResultClass::Failure);
 
@@ -223,4 +216,76 @@ pub async fn execute_shell(
         body: FunctionCallOutputBody::Text(model_output),
         success: Some(is_shell_success),
     })
+}
+
+fn evaluate_runtime_status(output: &runtime::SandboxExecutionResult) -> (bool, Option<String>) {
+    if output.exit_code != 0 {
+        let reason = output.stderr.trim();
+        let deny_reason = if reason.is_empty() {
+            format!("command exited with non-zero status: {}", output.exit_code)
+        } else {
+            reason.to_string()
+        };
+        return (false, Some(deny_reason));
+    }
+
+    if looks_like_fatal_stderr(output.stderr.trim()) {
+        return (false, Some(output.stderr.trim().to_string()));
+    }
+
+    (true, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::evaluate_runtime_status;
+    use crate::sandbox::policy::{PolicyDecision, PolicyTrace, SandboxBackend};
+    use crate::sandbox::runtime::SandboxExecutionResult;
+
+    fn allow_trace() -> PolicyTrace {
+        PolicyTrace {
+            decision: PolicyDecision::Allow,
+            reason: "test".to_string(),
+            risk_tags: Vec::new(),
+            capabilities: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn process_observe_fallback_failure_stays_runtime_denied() {
+        let output = SandboxExecutionResult {
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: "/bin/sh: /bin/ps: Operation not permitted".to_string(),
+            backend_used: SandboxBackend::NoneEscalated,
+            degrade_reason: Some("macos_seatbelt runtime denied".to_string()),
+            policy_trace: allow_trace(),
+        };
+
+        let (runtime_allowed, runtime_deny_reason) = evaluate_runtime_status(&output);
+        assert!(!runtime_allowed);
+        assert_eq!(
+            runtime_deny_reason,
+            Some("/bin/sh: /bin/ps: Operation not permitted".to_string())
+        );
+    }
+
+    #[test]
+    fn zero_exit_with_fatal_stderr_is_runtime_denied() {
+        let output = SandboxExecutionResult {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: "Operation not permitted".to_string(),
+            backend_used: SandboxBackend::MacosSeatbelt,
+            degrade_reason: None,
+            policy_trace: allow_trace(),
+        };
+
+        let (runtime_allowed, runtime_deny_reason) = evaluate_runtime_status(&output);
+        assert!(!runtime_allowed);
+        assert_eq!(
+            runtime_deny_reason,
+            Some("Operation not permitted".to_string())
+        );
+    }
 }

@@ -19,6 +19,7 @@ pub mod sandbox_runtime;
 pub mod sandboxing;
 pub mod shell;
 pub mod spec;
+pub mod system;
 pub mod tool_builder;
 pub use apply_patch::apply_patch_tool;
 pub use apply_patch::{
@@ -56,8 +57,9 @@ pub use sandboxing::SandboxManager;
 pub use shell::ShellType;
 pub use spec::{
     ApplyPatchToolType, FreeformFormat, ShellToolType, ToolSpec, ToolsConfig, build_all_specs,
-    create_apply_patch_freeform_spec, create_apply_patch_spec, create_edit_file_range_spec,
-    create_exec_command_spec, create_grep_files_spec, create_list_dir_spec, create_read_file_spec,
-    create_shell_spec,
+    create_apply_patch_freeform_spec, create_apply_patch_spec, create_disk_usage_spec,
+    create_edit_file_range_spec, create_exec_command_spec, create_grep_files_spec,
+    create_list_dir_spec, create_process_snapshot_spec, create_read_file_spec, create_shell_spec,
+    create_system_load_spec,
 };
 pub use tool_builder::{ToolRegistryBuilder, build_default_tool_registry, create_tool_invocation};

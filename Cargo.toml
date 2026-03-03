@@ -34,6 +34,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tempfile = "3"
 pretty_assertions = "1"
 which = "6"
+sysinfo = "0.33"
 ratatui = "0.29"
 crossterm = "0.28"
 unicode-width = "0.2"

@@ -8,6 +8,7 @@ pub mod tools;
 
 use agent::state::{RateLimitConfig, ToolCallRecord};
 pub use approval::{ApprovalHandler, ApprovalRequest, StdinApprovalHandler};
+pub use approval::{DEFAULT_APPROVAL_TIMEOUT_MS, approval_timeout_ms_from_env};
 pub use config::AgentConfig;
 pub use config::Config;
 pub use logger::init_logger;

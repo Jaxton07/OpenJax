@@ -55,7 +55,15 @@ pub(crate) fn parse_model_decision(raw: &str) -> Option<ModelDecision> {
 fn is_supported_tool_name(name: &str) -> bool {
     matches!(
         name,
-        "read_file" | "list_dir" | "grep_files" | "shell" | "apply_patch" | "edit_file_range"
+        "read_file"
+            | "list_dir"
+            | "grep_files"
+            | "process_snapshot"
+            | "system_load"
+            | "disk_usage"
+            | "shell"
+            | "apply_patch"
+            | "edit_file_range"
     )
 }
 

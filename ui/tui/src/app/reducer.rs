@@ -1,6 +1,8 @@
 use openjax_protocol::Event;
+use std::time::Instant;
 
 use crate::state::{ApprovalSelection, LiveMessage, PendingApproval};
+use openjax_core::approval_timeout_ms_from_env;
 
 use super::App;
 
@@ -75,6 +77,8 @@ impl App {
                     risk_tags,
                     sandbox_backend,
                     degrade_reason,
+                    requested_at: Instant::now(),
+                    timeout_ms: approval_timeout_ms_from_env(),
                 });
                 self.state.approval_selection = ApprovalSelection::Approve;
                 if let Some(pending) = &self.state.pending_approval {

@@ -6,34 +6,42 @@
 
 ### 核心模块
 
-- [context.rs](../../openjax-core/src/tools/context.rs) - 核心类型定义
-- [registry.rs](../../openjax-core/src/tools/registry.rs) - ToolHandler trait 和工具注册表
-- [spec.rs](../../openjax-core/src/tools/spec.rs) - 工具规范定义
-- [tool_builder.rs](../../openjax-core/src/tools/tool_builder.rs) - 工具注册构建器
-- [events.rs](../../openjax-core/src/tools/events.rs) - Hooks 事件类型
-- [hooks.rs](../../openjax-core/src/tools/hooks.rs) - Hooks 执行器
-- [sandboxing.rs](../../openjax-core/src/tools/sandboxing.rs) - 沙箱策略管理器
-- [orchestrator.rs](../../openjax-core/src/tools/orchestrator.rs) - 工具编排器
-- [dynamic.rs](../../openjax-core/src/tools/dynamic.rs) - 动态工具管理器
-- [router.rs](../../openjax-core/src/tools/router.rs) - 工具调用解析和配置类型
-- [router_impl.rs](../../openjax-core/src/tools/router_impl.rs) - 工具路由器实现
-- [common.rs](../../openjax-core/src/tools/common.rs) - 通用工具函数
+- [context.rs](../context.rs) - 核心类型定义
+- [registry.rs](../registry.rs) - ToolHandler trait 和工具注册表
+- [spec.rs](../spec.rs) - 工具规范定义
+- [tool_builder.rs](../tool_builder.rs) - 工具注册构建器
+- [events.rs](../events.rs) - Hooks 事件类型
+- [hooks.rs](../hooks.rs) - Hooks 执行器
+- [sandboxing.rs](../sandboxing.rs) - 沙箱策略管理器
+- [orchestrator.rs](../orchestrator.rs) - 工具编排器
+- [dynamic.rs](../dynamic.rs) - 动态工具管理器
+- [router.rs](../router.rs) - 工具调用解析和配置类型
+- [router_impl.rs](../router_impl.rs) - 工具路由器实现
+- [common.rs](../common.rs) - 通用工具函数
 
 ### 工具处理器
 
-- [grep_files.rs](../../openjax-core/src/tools/handlers/grep_files.rs) - grep_files 工具处理器
-- [read_file.rs](../../openjax-core/src/tools/handlers/read_file.rs) - read_file 工具处理器
-- [list_dir.rs](../../openjax-core/src/tools/handlers/list_dir.rs) - list_dir 工具处理器
-- [shell.rs](../../openjax-core/src/tools/handlers/shell.rs) - shell 命令处理器
-- [apply_patch.rs](../../openjax-core/src/tools/handlers/apply_patch.rs) - apply_patch 工具处理器
+- [grep_files.rs](../handlers/grep_files.rs) - grep_files 工具处理器
+- [read_file.rs](../handlers/read_file.rs) - read_file 工具处理器
+- [list_dir.rs](../handlers/list_dir.rs) - list_dir 工具处理器
+- [shell.rs](../handlers/shell.rs) - shell 命令处理器
+- [apply_patch.rs](../handlers/apply_patch.rs) - apply_patch 工具处理器
+
+## 系统类工具
+
+- [system/mod.rs](../system/mod.rs) - 系统工具模块导出
+- [system/process_snapshot.rs](../system/process_snapshot.rs) - 进程快照工具
+- [system/system_load.rs](../system/system_load.rs) - 系统负载工具
+- [system/disk_usage.rs](../system/disk_usage.rs) - 磁盘使用工具
+- [system/provider.rs](../system/provider.rs) - 指标采集 provider 抽象
 
 ## 外部参考
 
 ### Codex
 
 - [Codex 工具系统](https://github.com/codex-ai/codex) - 参考 Codex 的实现
-- [Codex 架构文档](../codex-architecture-reference.md) - Codex 架构详细说明
-- [Codex 快速参考](../codex-quick-reference.md) - Codex 快速参考指南
+- [Codex 架构文档](../../../../docs/codex-architecture-reference.md) - Codex 架构详细说明
+- [Codex 快速参考](../../../../docs/codex-quick-reference.md) - Codex 快速参考指南
 
 ### Rust 生态
 

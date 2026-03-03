@@ -1,3 +1,4 @@
+use std::time::Instant;
 use tui_next::app::App;
 use tui_next::state::{ApprovalSelection, PendingApproval};
 
@@ -48,6 +49,8 @@ fn up_down_keeps_approval_selection_behavior_when_pending() {
         risk_tags: vec![],
         sandbox_backend: None,
         degrade_reason: None,
+        requested_at: Instant::now(),
+        timeout_ms: 300_000,
     });
     assert_eq!(app.state.approval_selection, ApprovalSelection::Approve);
     app.move_approval_selection(1);

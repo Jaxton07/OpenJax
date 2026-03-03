@@ -104,5 +104,8 @@ impl Agent {
 }
 
 fn should_skip_duplicate_detection(tool_name: &str) -> bool {
-    matches!(tool_name, "read_file" | "list_dir" | "grep_files")
+    matches!(
+        tool_name,
+        "read_file" | "list_dir" | "grep_files" | "process_snapshot" | "system_load" | "disk_usage"
+    )
 }

@@ -173,7 +173,7 @@
 ## Phase D：文档与运维说明（0.5 天）
 更新文档：
 1. `docs/sandbox-mechanism-overview.md`
-2. `docs/tools/troubleshooting.md`
+2. `openjax-core/src/tools/docs/troubleshooting.md`
 
 补充内容：
 - `process_observe_profile` 设计原则
@@ -195,7 +195,7 @@
 
 文档文件：
 - `docs/sandbox-mechanism-overview.md`
-- `docs/tools/troubleshooting.md`
+- `openjax-core/src/tools/docs/troubleshooting.md`
 
 ---
 

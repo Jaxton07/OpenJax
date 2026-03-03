@@ -85,7 +85,9 @@ impl Tui {
             let approval_height = approval_lines.as_ref().map_or(0, |l| l.len() as u16);
             let mut constraints = vec![Constraint::Min(2), Constraint::Length(2)];
             if approval_height > 0 {
+                constraints.push(Constraint::Length(1));
                 constraints.push(Constraint::Length(approval_height));
+                constraints.push(Constraint::Length(1));
             }
             constraints.push(Constraint::Length(1));
             let chunks = Layout::vertical(constraints).split(draw_area);
@@ -102,12 +104,14 @@ impl Tui {
                 .min(chunks[1].x + chunks[1].width.saturating_sub(1));
             frame.set_cursor_position((cursor_x, chunks[1].y + 1));
 
-            let footer_idx = if approval_height > 0 { 3 } else { 2 };
+            let footer_idx = if approval_height > 0 { 5 } else { 2 };
             if approval_height > 0 {
-                let approval_area = chunks[2];
+                frame.render_widget(Clear, chunks[2]);
+                let approval_area = chunks[3];
                 frame.render_widget(Clear, approval_area);
                 let approval_widget = Paragraph::new(approval_lines.unwrap_or_default());
                 approval_widget.render(approval_area, frame.buffer_mut());
+                frame.render_widget(Clear, chunks[4]);
             }
 
             frame.render_widget(Clear, chunks[footer_idx]);
