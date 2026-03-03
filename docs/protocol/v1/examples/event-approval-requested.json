@@ -6,7 +6,14 @@
   "event_type": "approval_requested",
   "payload": {
     "request_id": "appr_001",
-    "target": "shell",
-    "reason": "command requires escalated privileges"
+    "target": "ps -eo pid,%cpu,cmd --sort=-%cpu | head -n 2",
+    "reason": "command requires approval",
+    "tool_name": "shell",
+    "command_preview": "ps -eo pid,%cpu,cmd --sort=-%cpu | head -n 2",
+    "risk_tags": [
+      "write"
+    ],
+    "sandbox_backend": "linux_native",
+    "degrade_reason": null
   }
 }

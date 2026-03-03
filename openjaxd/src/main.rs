@@ -786,6 +786,11 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             request_id,
             target,
             reason,
+            tool_name,
+            command_preview,
+            risk_tags,
+            sandbox_backend,
+            degrade_reason,
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -795,7 +800,12 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             payload: json!({
                 "request_id": request_id,
                 "target": target,
-                "reason": reason
+                "reason": reason,
+                "tool_name": tool_name,
+                "command_preview": command_preview,
+                "risk_tags": risk_tags,
+                "sandbox_backend": sandbox_backend,
+                "degrade_reason": degrade_reason
             }),
         }),
         Event::ApprovalResolved {
@@ -981,6 +991,11 @@ mod tests {
                 request_id: "r1".to_string(),
                 target: "command".to_string(),
                 reason: "confirm".to_string(),
+                tool_name: Some("shell".to_string()),
+                command_preview: Some("echo hi".to_string()),
+                risk_tags: vec!["write".to_string()],
+                sandbox_backend: Some("linux_native".to_string()),
+                degrade_reason: None,
             },
             Event::ApprovalResolved {
                 turn_id: 1,

@@ -10,10 +10,12 @@ pub mod handlers;
 pub mod hooks;
 pub mod list_dir;
 pub mod orchestrator;
+pub mod policy;
 pub mod read_file;
 pub mod registry;
 pub mod router;
 pub mod router_impl;
+pub mod sandbox_runtime;
 pub mod sandboxing;
 pub mod shell;
 pub mod spec;
@@ -37,10 +39,19 @@ pub use grep_files::grep_files;
 pub use hooks::HookExecutor;
 pub use list_dir::list_dir;
 pub use orchestrator::ToolOrchestrator;
+pub use policy::{
+    ApprovalContext, PolicyDecision, PolicyOutcome, PolicyTrace, SandboxBackend, SandboxCapability,
+    evaluate_tool_invocation_policy,
+};
 pub use read_file::read_file;
 pub use registry::{ToolHandler, ToolKind, ToolRegistry};
 pub use router::{MAX_AGENT_DEPTH, SandboxMode, ToolCall, ToolRuntimeConfig, parse_tool_call};
-pub use router_impl::ToolRouter;
+pub use router_impl::{ToolExecOutcome, ToolRouter};
+pub use sandbox_runtime::{
+    BackendUnavailable, SandboxBackendPreference, SandboxDegradePolicy, SandboxExecutionRequest,
+    SandboxExecutionResult, SandboxRuntimeSettings, execute_in_sandbox, fnv1a64,
+    run_without_sandbox,
+};
 pub use sandboxing::SandboxManager;
 pub use shell::ShellType;
 pub use spec::{

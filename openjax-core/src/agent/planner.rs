@@ -354,7 +354,9 @@ impl Agent {
                     .execute_tool_with_live_events(turn_id, &call, events)
                     .await
                 {
-                    Ok(output) => {
+                    Ok(outcome) => {
+                        let output = outcome.output;
+                        let ok = outcome.success;
                         apply_patch_read_guard.on_tool_success(&tool_name);
 
                         if is_mutating_tool(&tool_name) {
@@ -367,25 +369,25 @@ impl Agent {
                         info!(
                             turn_id = turn_id,
                             tool_name = %tool_name,
-                            ok = true,
+                            ok = ok,
                             duration_ms = duration_ms,
                             output_len = output.len(),
                             "tool_call completed"
                         );
                         let trace = format!(
-                            "tool={tool_name}; ok=true; output={}",
+                            "tool={tool_name}; ok={ok}; output={}",
                             truncate_for_prompt(&output)
                         );
                         tool_traces.push(trace);
 
-                        self.record_tool_call(&tool_name, &args, true, &output);
+                        self.record_tool_call(&tool_name, &args, ok, &output);
 
                         self.push_event(
                             events,
                             Event::ToolCallCompleted {
                                 turn_id,
                                 tool_name: tool_name.to_string(),
-                                ok: true,
+                                ok,
                                 output: output.to_string(),
                             },
                         );
@@ -612,16 +614,14 @@ fn extract_tool_target_hint(
     tool_name: &str,
     args: &std::collections::HashMap<String, String>,
 ) -> Option<String> {
-    let key = match tool_name {
+    let keys: &[&str] = match tool_name {
         "read_file" | "apply_patch" | "edit_file_range" | "write_file" => {
-            ["file_path", "path", "filepath"]
-                .iter()
-                .find(|k| args.contains_key(**k))
-                .copied()
+            &["file_path", "path", "filepath"]
         }
-        _ => None,
-    }?;
-    args.get(key).cloned()
+        "shell" | "exec_command" => &["cmd", "command"],
+        _ => return None,
+    };
+    keys.iter().find_map(|k| args.get(*k).cloned())
 }
 
 fn is_mutating_tool(tool_name: &str) -> bool {

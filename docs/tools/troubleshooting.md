@@ -152,6 +152,32 @@ tool:read_file file_path=src/lib.rs
 tool:shell cmd='sudo cargo install' require_escalated=true
 ```
 
+### 9. macOS seatbelt 后端不可用
+
+**错误特征**：
+- 日志中出现：`sandbox audit backend unavailable backend="macos_seatbelt"`
+- `reason` 包含：
+  - `macos_seatbelt_unavailable_cached`
+  - `macos_seatbelt_apply_denied`
+  - `macos_seatbelt_unknown_nonzero`
+
+**原因**：
+- 当前运行环境不允许 `sandbox-exec` 应用策略，或 profile 与运行器不兼容。
+
+**快速诊断**：
+```bash
+# 最小探针（应为 EXIT:0）
+sandbox-exec -p "(version 1) (deny default) (allow process*) (allow file-read*)" /bin/sh -c "true"; echo EXIT:$?
+
+# 模拟 agent 运行器路径
+sandbox-exec -p "(version 1) (deny default) (allow process*) (allow file-read*)" /bin/sh -c "echo hi"; echo EXIT:$?
+```
+
+**当前实现行为**：
+- seatbelt 后端优先使用 `/bin/sh -c` 执行。
+- 若探针失败会缓存不可用状态并直接降级（避免每条命令先失败一次）。
+- 降级策略由 `OPENJAX_SANDBOX_DEGRADE_POLICY` 控制（`ask_then_allow` / `deny`）。
+
 ## 调试技巧
 
 ### 1. 启用调试日志

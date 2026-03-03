@@ -15,6 +15,11 @@ pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &Tu
             request_id: request.request_id,
             target: request.target,
             reason: request.reason,
+            tool_name: None,
+            command_preview: None,
+            risk_tags: Vec::new(),
+            sandbox_backend: None,
+            degrade_reason: None,
         });
     }
 }

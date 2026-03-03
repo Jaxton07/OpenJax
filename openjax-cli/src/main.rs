@@ -236,9 +236,14 @@ fn print_event(event: &Event) {
             request_id,
             target,
             reason,
+            tool_name,
+            command_preview,
+            risk_tags,
+            sandbox_backend,
+            degrade_reason,
         } => {
             println!(
-                "[turn:{turn_id}] approval requested: id={request_id} target={target} reason={reason}"
+                "[turn:{turn_id}] approval requested: id={request_id} target={target} reason={reason} tool={tool_name:?} cmd={command_preview:?} risks={risk_tags:?} backend={sandbox_backend:?} degrade={degrade_reason:?}"
             );
         }
         Event::ApprovalResolved {

@@ -6,6 +6,7 @@ use which::which;
 pub enum ShellType {
     Bash,
     Zsh,
+    Sh,
     PowerShell,
 }
 
@@ -18,6 +19,8 @@ impl Default for ShellType {
                 Self::Bash
             } else if shell.contains("zsh") {
                 Self::Zsh
+            } else if shell.contains("sh") {
+                Self::Sh
             } else {
                 Self::Zsh
             }
@@ -32,6 +35,7 @@ impl ShellType {
         match self {
             Self::Bash => "bash",
             Self::Zsh => "zsh",
+            Self::Sh => "sh",
             Self::PowerShell => "pwsh",
         }
     }
@@ -40,6 +44,7 @@ impl ShellType {
         match self {
             Self::Bash => "--login",
             Self::Zsh => "-l",
+            Self::Sh => "-l",
             Self::PowerShell => "-Login",
         }
     }
@@ -53,26 +58,46 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(shell_type: ShellType) -> Result<Self> {
-        let executable = shell_type.executable_name();
-        let shell_path =
-            which(executable).map_err(|_| anyhow::anyhow!("{} not found", executable))?;
-
-        Ok(Self {
+        let candidates = fallback_candidates(shell_type);
+        let mut last_err = None;
+        for candidate in candidates {
+            let executable = candidate.executable_name();
+            match which(executable) {
+                Ok(shell_path) => {
+                    return Ok(Self {
+                        shell_type: candidate,
+                        shell_path,
+                    });
+                }
+                Err(err) => {
+                    last_err = Some(format!("{executable} not found: {err}"));
+                }
+            }
+        }
+        Err(anyhow::anyhow!(
+            "no usable shell found for {:?}: {}",
             shell_type,
-            shell_path,
-        })
+            last_err.unwrap_or_else(|| "unknown reason".to_string())
+        ))
     }
 
     pub fn derive_exec_args(&self, command: &str, use_login_shell: Option<bool>) -> Vec<String> {
         let login_flag = use_login_shell.unwrap_or(true);
         let flag = self.shell_type.login_flag();
-        let args = if login_flag {
+        if login_flag {
             vec![flag.to_string(), "-c".to_string(), command.to_string()]
         } else {
             vec!["-c".to_string(), command.to_string()]
-        };
+        }
+    }
+}
 
-        args
+fn fallback_candidates(shell_type: ShellType) -> Vec<ShellType> {
+    match shell_type {
+        ShellType::Zsh => vec![ShellType::Zsh, ShellType::Bash, ShellType::Sh],
+        ShellType::Bash => vec![ShellType::Bash, ShellType::Zsh, ShellType::Sh],
+        ShellType::Sh => vec![ShellType::Sh, ShellType::Bash, ShellType::Zsh],
+        ShellType::PowerShell => vec![ShellType::PowerShell],
     }
 }
 
@@ -84,6 +109,7 @@ mod tests {
     fn test_shell_type_executable_name() {
         assert_eq!(ShellType::Bash.executable_name(), "bash");
         assert_eq!(ShellType::Zsh.executable_name(), "zsh");
+        assert_eq!(ShellType::Sh.executable_name(), "sh");
         assert_eq!(ShellType::PowerShell.executable_name(), "pwsh");
     }
 
@@ -91,6 +117,7 @@ mod tests {
     fn test_shell_type_login_flag() {
         assert_eq!(ShellType::Bash.login_flag(), "--login");
         assert_eq!(ShellType::Zsh.login_flag(), "-l");
+        assert_eq!(ShellType::Sh.login_flag(), "-l");
         assert_eq!(ShellType::PowerShell.login_flag(), "-Login");
     }
 
@@ -106,5 +133,11 @@ mod tests {
         let shell = Shell::new(ShellType::Zsh).unwrap();
         let args = shell.derive_exec_args("echo hello", Some(false));
         assert_eq!(args, vec!["-c", "echo hello"]);
+    }
+
+    #[test]
+    fn test_fallback_candidates_for_zsh() {
+        let c = fallback_candidates(ShellType::Zsh);
+        assert_eq!(c, vec![ShellType::Zsh, ShellType::Bash, ShellType::Sh]);
     }
 }

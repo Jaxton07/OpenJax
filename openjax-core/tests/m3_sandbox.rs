@@ -104,7 +104,7 @@ async fn blocks_shell_redirect_write_in_workspace_write() {
     match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
-            assert!(output.contains("shell operators are not allowed"));
+            assert!(output.contains("approval is required but policy is set to never"));
         }
         _ => unreachable!(),
     }
@@ -130,7 +130,7 @@ async fn blocks_network_command_in_workspace_write() {
     match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
-            assert!(output.contains("network/escalation command detected"));
+            assert!(output.contains("approval is required but policy is set to never"));
         }
         _ => unreachable!(),
     }
@@ -154,9 +154,113 @@ async fn allows_safe_readonly_command_in_workspace_write() {
         .await;
 
     match tool_completion(&events, "shell") {
+        Event::ToolCallCompleted { output, .. } => {
+            assert!(output.contains("exit_code="));
+            assert!(!output.contains("approval is required but policy is set to never"));
+        }
+        _ => unreachable!(),
+    }
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn allows_shell_pipeline_in_workspace_write() {
+    let workspace = create_workspace();
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "tool:shell cmd='printf \"a\\nb\\n\" | head -n 1'".to_string(),
+        })
+        .await;
+
+    match tool_completion(&events, "shell") {
+        Event::ToolCallCompleted { output, .. } => {
+            assert!(output.contains("exit_code="));
+            assert!(!output.contains("approval is required but policy is set to never"));
+        }
+        _ => unreachable!(),
+    }
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn marks_shell_non_zero_exit_as_failed() {
+    let workspace = create_workspace();
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "tool:shell cmd='ls definitely_missing_file_12345'".to_string(),
+        })
+        .await;
+
+    match tool_completion(&events, "shell") {
+        Event::ToolCallCompleted { ok, output, .. } => {
+            assert!(!ok);
+            assert!(output.contains("exit_code="));
+        }
+        _ => unreachable!(),
+    }
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn marks_pipeline_with_failed_segment_as_failed() {
+    let workspace = create_workspace();
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "tool:shell cmd='false | true'".to_string(),
+        })
+        .await;
+
+    match tool_completion(&events, "shell") {
+        Event::ToolCallCompleted { ok, output, .. } => {
+            assert!(!ok);
+            assert!(output.contains("command=false | true"));
+        }
+        _ => unreachable!(),
+    }
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn marks_sigpipe_pipeline_as_partial_success() {
+    let workspace = create_workspace();
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "tool:shell cmd='yes | head -n 1'".to_string(),
+        })
+        .await;
+
+    match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(*ok);
-            assert!(output.contains("exit_code=0"));
+            assert!(output.contains("result_class=partial_success"));
         }
         _ => unreachable!(),
     }

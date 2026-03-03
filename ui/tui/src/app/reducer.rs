@@ -59,20 +59,32 @@ impl App {
                 request_id,
                 target,
                 reason,
+                tool_name,
+                command_preview,
+                risk_tags,
+                sandbox_backend,
+                degrade_reason,
                 ..
             } => {
                 self.state.pending_approval = Some(PendingApproval {
                     request_id,
                     target,
                     reason,
+                    tool_name,
+                    command_preview,
+                    risk_tags,
+                    sandbox_backend,
+                    degrade_reason,
                 });
                 self.state.approval_selection = ApprovalSelection::Approve;
                 if let Some(pending) = &self.state.pending_approval {
                     self.state.live_messages = vec![LiveMessage {
                         role: "approval",
                         content: format!(
-                            "{} - {} (input y/n + Enter)",
-                            pending.target, pending.reason
+                            "{} - {} | cmd={} (input y/n + Enter)",
+                            pending.target,
+                            pending.reason,
+                            pending.command_preview.clone().unwrap_or_default()
                         ),
                     }];
                 }

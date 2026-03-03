@@ -77,12 +77,14 @@ impl Agent {
                 .execute_tool_with_live_events(turn_id, &call, events)
                 .await
             {
-                Ok(output) => {
+                Ok(outcome) => {
+                    let output = outcome.output;
+                    let ok = outcome.success;
                     let duration_ms = start_time.elapsed().as_millis();
                     info!(
                         turn_id = turn_id,
                         tool_name = %call.name,
-                        ok = true,
+                        ok = ok,
                         duration_ms = duration_ms,
                         output_len = output.len(),
                         "tool_call completed"
@@ -101,11 +103,15 @@ impl Agent {
                         Event::ToolCallCompleted {
                             turn_id,
                             tool_name: call.name.clone(),
-                            ok: true,
+                            ok,
                             output,
                         },
                     );
-                    let message = format!("tool {} 执行成功", call.name);
+                    let message = if ok {
+                        format!("tool {} 执行成功", call.name)
+                    } else {
+                        format!("tool {} 执行完成但返回失败状态", call.name)
+                    };
                     self.push_event(
                         events,
                         Event::AssistantMessage {
@@ -178,7 +184,7 @@ impl Agent {
         turn_id: u64,
         call: &tools::ToolCall,
         events: &mut Vec<Event>,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<tools::ToolExecOutcome> {
         let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
         let execute_fut = self.tools.execute(
             turn_id,
@@ -210,14 +216,12 @@ fn extract_tool_target_hint(
     tool_name: &str,
     args: &std::collections::HashMap<String, String>,
 ) -> Option<String> {
-    let key = match tool_name {
+    let keys: &[&str] = match tool_name {
         "read_file" | "apply_patch" | "edit_file_range" | "write_file" => {
-            ["file_path", "path", "filepath"]
-                .iter()
-                .find(|k| args.contains_key(**k))
-                .copied()
+            &["file_path", "path", "filepath"]
         }
-        _ => None,
-    }?;
-    args.get(key).cloned()
+        "shell" | "exec_command" => &["cmd", "command"],
+        _ => return None,
+    };
+    keys.iter().find_map(|k| args.get(*k).cloned())
 }

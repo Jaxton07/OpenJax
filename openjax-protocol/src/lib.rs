@@ -95,6 +95,16 @@ pub enum Event {
         request_id: String,
         target: String,
         reason: String,
+        #[serde(default)]
+        tool_name: Option<String>,
+        #[serde(default)]
+        command_preview: Option<String>,
+        #[serde(default)]
+        risk_tags: Vec<String>,
+        #[serde(default)]
+        sandbox_backend: Option<String>,
+        #[serde(default)]
+        degrade_reason: Option<String>,
     },
     ApprovalResolved {
         turn_id: u64,

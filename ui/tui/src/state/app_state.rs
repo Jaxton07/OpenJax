@@ -11,6 +11,11 @@ pub struct PendingApproval {
     pub request_id: String,
     pub target: String,
     pub reason: String,
+    pub tool_name: Option<String>,
+    pub command_preview: Option<String>,
+    pub risk_tags: Vec<String>,
+    pub sandbox_backend: Option<String>,
+    pub degrade_reason: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

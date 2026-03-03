@@ -9,6 +9,11 @@ fn approval_panel_supports_up_down_and_submit() {
         request_id: "req-1".to_string(),
         target: "修改文件 test.txt".to_string(),
         reason: "需要写入文件".to_string(),
+        tool_name: Some("shell".to_string()),
+        command_preview: Some("echo hi > test.txt".to_string()),
+        risk_tags: vec!["write".to_string()],
+        sandbox_backend: Some("linux_native".to_string()),
+        degrade_reason: None,
     });
 
     let lines = app.approval_panel_lines().expect("panel should exist");

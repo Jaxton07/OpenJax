@@ -108,6 +108,28 @@ impl App {
             pending.reason.clone(),
             Style::default().fg(Color::DarkGray),
         )));
+        if let Some(command) = &pending.command_preview {
+            lines.push(Line::from(Span::styled(
+                format!("cmd: {command}"),
+                Style::default().fg(Color::Gray),
+            )));
+        }
+        if !pending.risk_tags.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("risks: {}", pending.risk_tags.join(",")),
+                Style::default().fg(Color::LightRed),
+            )));
+        }
+        if let Some(backend) = &pending.sandbox_backend {
+            let degrade = pending
+                .degrade_reason
+                .clone()
+                .unwrap_or_else(|| "none".to_string());
+            lines.push(Line::from(Span::styled(
+                format!("sandbox: {backend} degrade: {degrade}"),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
         lines.push(self.approval_option_line(
             "Approve",
             self.state.approval_selection == ApprovalSelection::Approve,
@@ -124,11 +146,9 @@ impl App {
     }
 
     pub fn approval_panel_height(&self) -> u16 {
-        if self.state.pending_approval.is_some() {
-            5
-        } else {
-            0
-        }
+        self.approval_panel_lines()
+            .map(|lines| lines.len() as u16)
+            .unwrap_or(0)
     }
 
     fn approval_option_line(&self, label: &str, selected: bool) -> Line<'static> {

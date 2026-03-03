@@ -24,6 +24,19 @@ pub(crate) fn summarize_tool_output(output: &str) -> Vec<String> {
     ]
 }
 
+pub(crate) fn extract_backend_summary(output: &str) -> Option<String> {
+    let backend = output
+        .lines()
+        .find_map(|line| line.strip_prefix("backend=").map(str::trim))?;
+    let label = match backend {
+        "macos_seatbelt" => "sandbox-exec (macos_seatbelt)".to_string(),
+        "linux_native" => "bwrap (linux_native)".to_string(),
+        "none_escalated" => "none (degraded)".to_string(),
+        other => other.to_string(),
+    };
+    Some(format!("sandbox: {label}"))
+}
+
 fn split_embedded_line_markers(text: &str) -> Vec<&str> {
     let bytes = text.as_bytes();
     let mut starts = Vec::new();
@@ -93,7 +106,7 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::summarize_tool_output;
+    use super::{extract_backend_summary, summarize_tool_output};
 
     #[test]
     fn extracts_and_strips_line_markers() {
@@ -108,5 +121,14 @@ mod tests {
         let lines = summarize_tool_output(&output);
         assert!(lines[0].ends_with("..."));
         assert!(lines[0].len() <= 99);
+    }
+
+    #[test]
+    fn extracts_backend_summary() {
+        let output = "result_class=success\nbackend=macos_seatbelt\nstdout:\nok";
+        assert_eq!(
+            extract_backend_summary(output).as_deref(),
+            Some("sandbox: sandbox-exec (macos_seatbelt)")
+        );
     }
 }

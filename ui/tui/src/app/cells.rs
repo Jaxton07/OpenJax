@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use crate::history_cell::{CellRole, HistoryCell};
 
 use super::App;
-use super::tool_output::summarize_tool_output;
+use super::tool_output::{extract_backend_summary, summarize_tool_output};
 
 impl App {
     pub(crate) fn user_cell(&mut self, input: &str) -> HistoryCell {
@@ -81,20 +81,27 @@ impl App {
         output: &str,
     ) -> HistoryCell {
         let mut lines = Vec::new();
-        let status = if ok {
-            format!("{} completed", tool_name)
+        let is_partial = output.contains("result_class=partial_success");
+        let (status, dot_color) = if is_partial {
+            (format!("{} partial", tool_name), Color::Yellow)
+        } else if ok {
+            (format!("{} completed", tool_name), Color::Green)
         } else {
-            format!("{} failed", tool_name)
+            (format!("{} failed", tool_name), Color::Red)
         };
         lines.push(Line::from(vec![
             Span::styled(
                 "• ",
-                Style::default()
-                    .fg(if ok { Color::Green } else { Color::Red })
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(dot_color).add_modifier(Modifier::BOLD),
             ),
             Span::raw(status),
         ]));
+        if let Some(backend) = extract_backend_summary(output) {
+            lines.push(Line::from(vec![
+                Span::styled("  ├ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(backend, Style::default().fg(Color::LightBlue)),
+            ]));
+        }
 
         for (idx, preview) in summarize_tool_output(output).into_iter().enumerate() {
             let prefix = if idx == 0 { "  └ " } else { "    " };

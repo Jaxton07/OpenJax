@@ -9,6 +9,12 @@ use super::router::{ToolCall, ToolRuntimeConfig};
 use super::tool_builder::{build_default_tool_registry, create_tool_invocation};
 use crate::approval::ApprovalHandler;
 
+#[derive(Debug, Clone)]
+pub struct ToolExecOutcome {
+    pub output: String,
+    pub success: bool,
+}
+
 pub struct ToolRouter {
     orchestrator: Arc<ToolOrchestrator>,
 }
@@ -51,7 +57,7 @@ impl ToolRouter {
         config: ToolRuntimeConfig,
         approval_handler: Arc<dyn ApprovalHandler>,
         event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
-    ) -> Result<String> {
+    ) -> Result<ToolExecOutcome> {
         debug!(
             tool_name = %call.name,
             args = ?call.args,
@@ -89,21 +95,55 @@ impl ToolRouter {
 
         match result {
             Ok(tool_output) => match tool_output {
-                super::context::ToolOutput::Function { body, .. } => match body {
+                super::context::ToolOutput::Function { body, success } => match body {
                     super::context::FunctionCallOutputBody::Text(text) => {
-                        info!(tool_name = %call.name, output_len = text.len(), "tool_execute completed");
-                        Ok(text.clone())
+                        let success = success.unwrap_or(true);
+                        let preview = summarize_preview(&text, 240);
+                        info!(
+                            tool_name = %call.name,
+                            success = success,
+                            output_len = text.len(),
+                            output_preview = %preview,
+                            "tool_execute completed"
+                        );
+                        Ok(ToolExecOutcome {
+                            output: text.clone(),
+                            success,
+                        })
                     }
                     super::context::FunctionCallOutputBody::Json(json) => {
-                        info!(tool_name = %call.name, output_len = json.to_string().len(), "tool_execute completed");
-                        Ok(json.to_string())
+                        let success = success.unwrap_or(true);
+                        let text = json.to_string();
+                        let preview = summarize_preview(&text, 240);
+                        info!(
+                            tool_name = %call.name,
+                            success = success,
+                            output_len = text.len(),
+                            output_preview = %preview,
+                            "tool_execute completed"
+                        );
+                        Ok(ToolExecOutcome {
+                            output: text,
+                            success,
+                        })
                     }
                 },
                 super::context::ToolOutput::Mcp { result, .. } => match result {
                     Ok(r) => {
-                        info!(tool_name = %call.name, "tool_execute completed");
-                        serde_json::to_string(&r)
-                            .map_err(|e| anyhow!("failed to serialize mcp result: {}", e))
+                        let text = serde_json::to_string(&r)
+                            .map_err(|e| anyhow!("failed to serialize mcp result: {}", e))?;
+                        let preview = summarize_preview(&text, 240);
+                        info!(
+                            tool_name = %call.name,
+                            success = true,
+                            output_len = text.len(),
+                            output_preview = %preview,
+                            "tool_execute completed"
+                        );
+                        Ok(ToolExecOutcome {
+                            output: text,
+                            success: true,
+                        })
                     }
                     Err(e) => {
                         warn!(tool_name = %call.name, error = %e, "tool_execute failed");
@@ -117,4 +157,15 @@ impl ToolRouter {
             }
         }
     }
+}
+
+fn summarize_preview(text: &str, limit: usize) -> String {
+    let normalized = text.replace('\n', "\\n").replace('\r', "\\r");
+    let total = normalized.chars().count();
+    if total <= limit {
+        return normalized;
+    }
+    let mut preview = normalized.chars().take(limit).collect::<String>();
+    preview.push_str("...");
+    preview
 }

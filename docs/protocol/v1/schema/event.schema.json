@@ -103,6 +103,27 @@
               "reason": {
                 "type": "string",
                 "minLength": 1
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "command_preview": {
+                "type": "string"
+              },
+              "risk_tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sandbox_backend": {
+                "type": "string"
+              },
+              "degrade_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "additionalProperties": true

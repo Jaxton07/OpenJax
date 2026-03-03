@@ -3,6 +3,7 @@ use crate::tools::ToolsConfig;
 use crate::tools::context::{ApprovalPolicy, ToolInvocation, ToolOutput};
 use crate::tools::events::{AfterToolUse, BeforeToolUse, HookEvent};
 use crate::tools::hooks::HookExecutor;
+use crate::tools::policy::{ApprovalContext, PolicyDecision, evaluate_tool_invocation_policy};
 use crate::tools::registry::ToolRegistry;
 use crate::tools::sandboxing::SandboxManager;
 use openjax_protocol::Event;
@@ -71,10 +72,17 @@ impl ToolOrchestrator {
         let is_mutating = self
             .sandbox_manager
             .is_mutating_operation(&invocation.tool_name);
+        let policy_outcome = evaluate_tool_invocation_policy(&invocation, is_mutating);
+        if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
+            return Err(crate::tools::error::FunctionCallError::Internal(
+                policy_outcome.trace.reason,
+            ));
+        }
         let has_reusable_approval = self.should_reuse_mutating_approval(&invocation, is_mutating);
-        let requires_approval = self
-            .should_prompt_approval(invocation.turn.approval_policy, is_mutating)
-            && !has_reusable_approval;
+        let requires_approval = matches!(
+            policy_outcome.trace.decision,
+            PolicyDecision::AskApproval | PolicyDecision::AskEscalation
+        ) && !has_reusable_approval;
 
         if has_reusable_approval {
             tracing::info!(
@@ -86,12 +94,29 @@ impl ToolOrchestrator {
 
         if requires_approval {
             let request_id = Uuid::new_v4().to_string();
+            let context = policy_outcome.approval_context.as_ref();
+            let target = approval_target(&invocation, context);
+            let reason = approval_reason(&policy_outcome, invocation.turn.approval_policy);
             if let Some(sink) = &invocation.turn.event_sink {
                 let _ = sink.send(Event::ApprovalRequested {
                     turn_id: invocation.turn.turn_id,
                     request_id: request_id.clone(),
-                    target: invocation.tool_name.clone(),
-                    reason: "tool call requires approval by policy".to_string(),
+                    target: target.clone(),
+                    reason: reason.clone(),
+                    tool_name: Some(invocation.tool_name.clone()),
+                    command_preview: context.and_then(|ctx| ctx.command_preview.clone()),
+                    risk_tags: if context
+                        .map(|ctx| !ctx.risk_tags.is_empty())
+                        .unwrap_or(false)
+                    {
+                        context.map(|ctx| ctx.risk_tags.clone()).unwrap_or_default()
+                    } else {
+                        policy_outcome.trace.risk_tags.clone()
+                    },
+                    sandbox_backend: context
+                        .and_then(|ctx| ctx.sandbox_backend)
+                        .map(|backend| backend.as_str().to_string()),
+                    degrade_reason: context.and_then(|ctx| ctx.degrade_reason.clone()),
                 });
             }
 
@@ -100,8 +125,8 @@ impl ToolOrchestrator {
                 .approval_handler
                 .request_approval(ApprovalRequest {
                     request_id: request_id.clone(),
-                    target: invocation.tool_name.clone(),
-                    reason: "tool call requires approval by policy".to_string(),
+                    target,
+                    reason,
                 })
                 .await
                 .map_err(crate::tools::error::FunctionCallError::Internal)?;
@@ -134,7 +159,16 @@ impl ToolOrchestrator {
         let duration = start.elapsed();
 
         // 5. 执行后钩子
-        let is_success = result.is_ok();
+        let is_success = matches!(
+            result.as_ref(),
+            Ok(ToolOutput::Function {
+                success: Some(true),
+                ..
+            }) | Ok(ToolOutput::Function {
+                success: None,
+                ..
+            }) | Ok(ToolOutput::Mcp { result: Ok(_), .. })
+        );
         let output_preview = result.as_ref().ok().map(|o| format!("{:?}", o));
 
         self.hook_executor
@@ -152,14 +186,6 @@ impl ToolOrchestrator {
             }));
 
         result
-    }
-
-    fn should_prompt_approval(&self, policy: ApprovalPolicy, is_mutating: bool) -> bool {
-        match policy {
-            ApprovalPolicy::AlwaysAsk => true,
-            ApprovalPolicy::OnRequest => is_mutating,
-            ApprovalPolicy::Never => false,
-        }
     }
 
     fn should_reuse_mutating_approval(
@@ -192,4 +218,26 @@ impl ToolOrchestrator {
 
 fn is_shell_like_tool(tool_name: &str) -> bool {
     matches!(tool_name, "shell" | "exec_command")
+}
+
+fn approval_target(invocation: &ToolInvocation, context: Option<&ApprovalContext>) -> String {
+    if let Some(ctx) = context
+        && let Some(command) = &ctx.raw_command
+    {
+        return command.clone();
+    }
+    invocation.tool_name.clone()
+}
+
+fn approval_reason(
+    outcome: &crate::tools::policy::PolicyOutcome,
+    approval_policy: ApprovalPolicy,
+) -> String {
+    if let Some(context) = &outcome.approval_context {
+        return context.reason.clone();
+    }
+    if matches!(approval_policy, ApprovalPolicy::AlwaysAsk) {
+        return "approval policy requires confirmation".to_string();
+    }
+    outcome.trace.reason.clone()
 }

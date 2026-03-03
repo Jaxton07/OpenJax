@@ -1,26 +1,27 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
-use shlex;
-use std::path::Path;
-use tokio::process::Command;
-use tokio::time::{Duration, timeout};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::approval::ApprovalRequest;
 use crate::tools::apply_patch_interceptor;
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
+use crate::tools::policy::{PolicyDecision, evaluate_tool_invocation_policy};
 use crate::tools::registry::{ToolHandler, ToolKind};
-use crate::tools::shell::Shell;
-use crate::tools::{ApprovalPolicy, SandboxMode, ShellType};
+use crate::tools::sandbox_runtime::{
+    SandboxDegradePolicy, SandboxExecutionRequest, SandboxRuntimeSettings, audit_log,
+    ensure_workspace_relative_paths, execute_in_sandbox, run_without_sandbox,
+};
+use crate::tools::shell::{Shell, ShellType};
+use crate::tools::{ApprovalPolicy, SandboxMode};
 use openjax_protocol::Event;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
 struct ShellCommandArgs {
     cmd: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_boolish")]
     require_escalated: bool,
     #[serde(default = "shell_default_timeout")]
     timeout_ms: u64,
@@ -28,6 +29,23 @@ struct ShellCommandArgs {
 
 fn shell_default_timeout() -> u64 {
     30_000
+}
+
+fn deserialize_boolish<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(v) = value.as_bool() {
+        return Ok(v);
+    }
+    if let Some(v) = value.as_str() {
+        return Ok(matches!(
+            v.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes"
+        ));
+    }
+    Ok(false)
 }
 
 pub struct ShellCommandHandler;
@@ -39,15 +57,8 @@ impl ToolHandler for ShellCommandHandler {
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError> {
-        let ToolInvocation {
-            payload,
-            turn,
-            call_id,
-            tool_name,
-        } = invocation;
-
-        let arguments = match payload {
-            ToolPayload::Function { arguments } => arguments,
+        let arguments = match &invocation.payload {
+            ToolPayload::Function { arguments } => arguments.clone(),
             _ => {
                 return Err(FunctionCallError::RespondToModel(
                     "shell handler received unsupported payload".to_string(),
@@ -60,69 +71,33 @@ impl ToolHandler for ShellCommandHandler {
         })?;
 
         let command = args.cmd;
-        let require_escalated = args.require_escalated;
         let timeout_ms = args.timeout_ms;
+        let _require_escalated = args.require_escalated;
 
-        let sandbox_policy = match turn.sandbox_policy {
+        let sandbox_policy = match invocation.turn.sandbox_policy {
             crate::tools::SandboxPolicy::None => SandboxMode::DangerFullAccess,
             crate::tools::SandboxPolicy::ReadOnly => SandboxMode::WorkspaceWrite,
             crate::tools::SandboxPolicy::Write => SandboxMode::WorkspaceWrite,
             crate::tools::SandboxPolicy::DangerFullAccess => SandboxMode::DangerFullAccess,
         };
 
-        let approval_policy = turn.approval_policy;
-
         info!(
             command = %command,
-            require_escalated = require_escalated,
             sandbox_mode = sandbox_policy.as_str(),
             "shell started"
         );
 
-        if should_prompt_approval(approval_policy, require_escalated) {
-            let request_id = Uuid::new_v4().to_string();
-            let reason = if require_escalated {
-                "shell command requested escalated permissions".to_string()
-            } else {
-                "shell command requires approval by policy".to_string()
-            };
-            if let Some(sink) = &turn.event_sink {
-                let _ = sink.send(Event::ApprovalRequested {
-                    turn_id: turn.turn_id,
-                    request_id: request_id.clone(),
-                    target: command.clone(),
-                    reason: reason.clone(),
-                });
-            }
-            let approved = turn
-                .approval_handler
-                .request_approval(ApprovalRequest {
-                    request_id: request_id.clone(),
-                    target: command.clone(),
-                    reason,
-                })
-                .await
-                .map_err(FunctionCallError::Internal)?;
-
-            if let Some(sink) = &turn.event_sink {
-                let _ = sink.send(Event::ApprovalResolved {
-                    turn_id: turn.turn_id,
-                    request_id,
-                    approved,
-                });
-            }
-
-            if !approved {
-                warn!(command = %command, "shell rejected by user");
-                return Err(FunctionCallError::ApprovalRejected(
-                    "command rejected by user".to_string(),
-                ));
-            }
+        let policy_outcome = evaluate_tool_invocation_policy(&invocation, true);
+        if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
+            return Err(FunctionCallError::Internal(policy_outcome.trace.reason));
         }
 
         if let SandboxMode::WorkspaceWrite = sandbox_policy {
-            deny_if_blocked_in_workspace_write(&command, &turn.cwd)
-                .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
+            ensure_workspace_relative_paths(&command, &invocation.turn.cwd).map_err(|e| {
+                FunctionCallError::Internal(format!(
+                    "command blocked by workspace_write sandbox policy: {e}"
+                ))
+            })?;
         }
 
         let command_tokens: Vec<String> =
@@ -130,11 +105,11 @@ impl ToolHandler for ShellCommandHandler {
 
         if let Some(output) = apply_patch_interceptor::intercept_apply_patch(
             &command_tokens,
-            &turn.cwd,
+            &invocation.turn.cwd,
             None,
-            &turn,
-            &call_id,
-            &tool_name,
+            &invocation.turn,
+            &invocation.call_id,
+            &invocation.tool_name,
         )
         .await?
         {
@@ -146,154 +121,237 @@ impl ToolHandler for ShellCommandHandler {
 
         let shell = Shell::new(ShellType::default())
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
-        let shell_args = shell.derive_exec_args(&command, None);
+        let runtime_settings = SandboxRuntimeSettings::from_env();
+        let execution_request = SandboxExecutionRequest {
+            command: command.clone(),
+            cwd: invocation.turn.cwd.clone(),
+            timeout_ms,
+            capabilities: policy_outcome.trace.capabilities.clone(),
+            shell,
+            policy_trace: policy_outcome.trace.clone(),
+            preferred_backend: policy_outcome
+                .approval_context
+                .as_ref()
+                .and_then(|ctx| ctx.sandbox_backend),
+        };
 
-        let output = timeout(
-            Duration::from_millis(timeout_ms),
-            Command::new(&shell.shell_path)
-                .args(&shell_args)
-                .current_dir(&turn.cwd)
-                .output(),
-        )
-        .await
-        .map_err(|_| {
-            FunctionCallError::Internal(format!("command timed out after {}ms", timeout_ms))
-        })?
-        .map_err(|e| FunctionCallError::Internal(format!("failed to execute command: {}", e)))?;
-
-        let exit_code = output.status.code().unwrap_or(-1);
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let execution = execute_in_sandbox(&execution_request, runtime_settings).await;
+        let output = match execution {
+            Ok(result) => {
+                audit_log(runtime_settings, &execution_request, Some(&result), None);
+                result
+            }
+            Err(backend_error) => {
+                audit_log(
+                    runtime_settings,
+                    &execution_request,
+                    None,
+                    Some(&backend_error),
+                );
+                match runtime_settings.degrade_policy {
+                    SandboxDegradePolicy::Deny => {
+                        return Err(FunctionCallError::Internal(format!(
+                            "sandbox backend `{}` unavailable: {}",
+                            backend_error.backend.as_str(),
+                            backend_error.reason
+                        )));
+                    }
+                    SandboxDegradePolicy::AskThenAllow => {
+                        let needs_extra_approval = !matches!(
+                            execution_request.policy_trace.decision,
+                            PolicyDecision::Allow
+                        );
+                        if needs_extra_approval
+                            && !request_degrade_approval(
+                                &invocation,
+                                &command,
+                                backend_error.backend.as_str(),
+                                &backend_error.reason,
+                            )
+                            .await?
+                        {
+                            return Err(FunctionCallError::ApprovalRejected(
+                                "command rejected by user after sandbox degradation warning"
+                                    .to_string(),
+                            ));
+                        }
+                        let (exit_code, stdout, stderr) = run_without_sandbox(&execution_request)
+                            .await
+                            .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
+                        crate::tools::SandboxExecutionResult {
+                            exit_code,
+                            stdout,
+                            stderr,
+                            backend_used: crate::tools::SandboxBackend::NoneEscalated,
+                            degrade_reason: Some(format!(
+                                "{}: {}",
+                                backend_error.backend.as_str(),
+                                backend_error.reason
+                            )),
+                            policy_trace: execution_request.policy_trace.clone(),
+                        }
+                    }
+                }
+            }
+        };
 
         info!(
             command = %command,
-            exit_code = exit_code,
-            stdout_len = stdout.len(),
-            stderr_len = stderr.len(),
+            exit_code = output.exit_code,
+            backend = output.backend_used.as_str(),
+            stdout_len = output.stdout.len(),
+            stderr_len = output.stderr.len(),
+            stdout_preview = %summarize_preview(&output.stdout, 240),
+            stderr_preview = %summarize_preview(&output.stderr, 240),
             "shell completed"
         );
 
+        let (is_shell_success, result_class) =
+            classify_shell_result(output.exit_code, &output.stdout, &output.stderr);
+
+        let model_output = format!(
+            "result_class={}\ncommand={}\nexit_code={}\nbackend={}\ndegrade_reason={}\npolicy_decision={:?}\nstdout:\n{}\nstderr:\n{}",
+            result_class,
+            command,
+            output.exit_code,
+            output.backend_used.as_str(),
+            output.degrade_reason.unwrap_or_else(|| "none".to_string()),
+            output.policy_trace.decision,
+            output.stdout,
+            output.stderr
+        );
+        info!(
+            command = %command,
+            result_class = %result_class,
+            output_len = model_output.len(),
+            output_preview = %summarize_preview(&model_output, 300),
+            "shell output prepared for model"
+        );
+
         Ok(ToolOutput::Function {
-            body: FunctionCallOutputBody::Text(format!(
-                "exit_code={exit_code}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-            )),
-            success: Some(exit_code == 0),
+            body: FunctionCallOutputBody::Text(model_output),
+            success: Some(is_shell_success),
         })
     }
 }
 
-fn should_prompt_approval(policy: ApprovalPolicy, require_escalated: bool) -> bool {
-    match policy {
-        ApprovalPolicy::AlwaysAsk => true,
-        ApprovalPolicy::OnRequest => require_escalated,
-        ApprovalPolicy::Never => false,
-    }
-}
-
-fn deny_if_blocked_in_workspace_write(command: &str, cwd: &Path) -> Result<()> {
-    let lower = command.to_ascii_lowercase();
-    let blocked_keywords = [
-        "curl ", "wget ", "ssh ", "scp ", "nc ", "nmap ", "ping ", "sudo ",
-    ];
-
-    if blocked_keywords.iter().any(|kw| lower.contains(kw)) {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: network/escalation command detected"
-        ));
-    }
-
-    if lower.contains("rm -rf /") {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: destructive root delete detected"
-        ));
-    }
-
-    let blocked_shell_operators = ["&&", "||", "|", ";", ">", "<", "`", "$("];
-    if blocked_shell_operators
-        .iter()
-        .any(|operator| command.contains(operator))
-    {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: shell operators are not allowed"
-        ));
-    }
-
-    let tokens = shlex::split(command).ok_or_else(|| {
-        anyhow!("command blocked by workspace_write sandbox policy: invalid shell command syntax")
-    })?;
-    if tokens.is_empty() {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: empty command"
-        ));
-    }
-
-    let allowed_programs = [
-        "pwd", "ls", "cat", "rg", "grep", "find", "head", "tail", "wc", "sed", "awk", "echo",
-        "stat", "uname", "which", "env", "printf",
-    ];
-    let program = tokens[0].to_ascii_lowercase();
-    if !allowed_programs.contains(&program.as_str()) {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: command `{}` is not in allowlist",
-            tokens[0]
-        ));
-    }
-
-    for arg in tokens.iter().skip(1) {
-        if arg.starts_with('-') || !looks_like_path_arg(arg) {
-            continue;
+fn classify_shell_result(exit_code: i32, stdout: &str, stderr: &str) -> (bool, &'static str) {
+    let stderr_trimmed = stderr.trim();
+    let stdout_trimmed = stdout.trim();
+    if exit_code == 0 {
+        if stdout_trimmed.is_empty() && looks_like_fatal_stderr(stderr_trimmed) {
+            return (false, "failure");
         }
-        validate_command_path_arg(arg, cwd)?;
+        return (true, "success");
     }
-
-    Ok(())
+    if exit_code == 141 && !stdout_trimmed.is_empty() && stderr_trimmed.is_empty() {
+        return (true, "partial_success");
+    }
+    (false, "failure")
 }
 
-fn looks_like_path_arg(arg: &str) -> bool {
-    arg == "."
-        || arg == ".."
-        || arg.starts_with("./")
-        || arg.starts_with("../")
-        || arg.starts_with('/')
-        || arg.starts_with("~/")
-        || arg.contains('/')
+fn looks_like_fatal_stderr(stderr: &str) -> bool {
+    if stderr.is_empty() {
+        return false;
+    }
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("operation not permitted")
+        || lower.contains("permission denied")
+        || lower.contains("command not found")
+        || lower.contains("illegal option")
+        || lower.contains("no such file or directory")
 }
 
-fn validate_command_path_arg(arg: &str, cwd: &Path) -> Result<()> {
-    if arg.starts_with("~/") {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: home directory paths are not allowed ({arg})"
-        ));
+#[cfg(test)]
+mod tests {
+    use super::classify_shell_result;
+
+    #[test]
+    fn classifies_zero_exit_with_fatal_stderr_as_failure() {
+        let (ok, class) = classify_shell_result(0, "", "/bin/sh: /bin/ps: Operation not permitted");
+        assert!(!ok);
+        assert_eq!(class, "failure");
     }
 
-    let path = Path::new(arg);
-    if path.is_absolute() {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: absolute paths are not allowed ({arg})"
-        ));
+    #[test]
+    fn classifies_sigpipe_with_output_as_partial_success() {
+        let (ok, class) = classify_shell_result(141, "some output", "");
+        assert!(ok);
+        assert_eq!(class, "partial_success");
+    }
+}
+
+async fn request_degrade_approval(
+    invocation: &ToolInvocation,
+    command: &str,
+    backend: &str,
+    reason: &str,
+) -> Result<bool, FunctionCallError> {
+    let approval_policy = invocation.turn.approval_policy;
+    if matches!(approval_policy, ApprovalPolicy::Never) {
+        return Err(FunctionCallError::Internal(format!(
+            "sandbox backend unavailable and approval policy is never: {backend} {reason}"
+        )));
     }
 
-    if crate::tools::contains_parent_dir(path) {
-        return Err(anyhow!(
-            "command blocked by workspace_write sandbox policy: parent traversal is not allowed ({arg})"
-        ));
+    let request_id = Uuid::new_v4().to_string();
+    let human_reason = format!(
+        "sandbox backend unavailable; fallback requires explicit approval ({backend}: {reason})"
+    );
+
+    if let Some(sink) = &invocation.turn.event_sink {
+        let _ = sink.send(Event::ApprovalRequested {
+            turn_id: invocation.turn.turn_id,
+            request_id: request_id.clone(),
+            target: command.to_string(),
+            reason: human_reason.clone(),
+            tool_name: Some(invocation.tool_name.clone()),
+            command_preview: Some(truncate_preview(command, 180)),
+            risk_tags: vec!["sandbox_degrade".to_string()],
+            sandbox_backend: Some(backend.to_string()),
+            degrade_reason: Some(reason.to_string()),
+        });
     }
 
-    let joined = cwd.join(path);
-    if joined.exists() {
-        let workspace_root = cwd
-            .canonicalize()
-            .with_context(|| format!("failed to canonicalize workspace root: {}", cwd.display()))?;
-        let resolved = joined.canonicalize().with_context(|| {
-            format!("failed to canonicalize command path: {}", joined.display())
-        })?;
+    let approved = invocation
+        .turn
+        .approval_handler
+        .request_approval(ApprovalRequest {
+            request_id: request_id.clone(),
+            target: command.to_string(),
+            reason: human_reason,
+        })
+        .await
+        .map_err(FunctionCallError::Internal)?;
 
-        if !resolved.starts_with(&workspace_root) {
-            return Err(anyhow!(
-                "command blocked by workspace_write sandbox policy: path escapes workspace ({arg})"
-            ));
-        }
+    if let Some(sink) = &invocation.turn.event_sink {
+        let _ = sink.send(Event::ApprovalResolved {
+            turn_id: invocation.turn.turn_id,
+            request_id,
+            approved,
+        });
     }
 
-    Ok(())
+    Ok(approved)
+}
+
+fn truncate_preview(command: &str, limit: usize) -> String {
+    let total = command.chars().count();
+    if total <= limit {
+        return command.to_string();
+    }
+    let mut preview = command.chars().take(limit).collect::<String>();
+    preview.push_str("...");
+    preview
+}
+
+fn summarize_preview(text: &str, limit: usize) -> String {
+    let normalized = text.replace('\n', "\\n").replace('\r', "\\r");
+    let total = normalized.chars().count();
+    if total <= limit {
+        return normalized;
+    }
+    let mut preview = normalized.chars().take(limit).collect::<String>();
+    preview.push_str("...");
+    preview
 }
