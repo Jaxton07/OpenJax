@@ -5,6 +5,7 @@ use crate::state::{ApprovalSelection, LiveMessage, PendingApproval};
 use openjax_core::approval_timeout_ms_from_env;
 
 use super::App;
+use super::tool_output::sanitize_target_for_title;
 
 impl App {
     pub fn apply_core_event(&mut self, event: Event) {
@@ -40,7 +41,10 @@ impl App {
             Event::ToolCallStarted {
                 tool_name, target, ..
             } => {
-                let suffix = target.unwrap_or_default();
+                let suffix = target
+                    .as_deref()
+                    .map(|raw| sanitize_target_for_title(raw, 120))
+                    .unwrap_or_default();
                 let cell = self.tool_cell(if suffix.is_empty() {
                     format!("Run {}", tool_name)
                 } else {
@@ -82,13 +86,17 @@ impl App {
                 });
                 self.state.approval_selection = ApprovalSelection::Approve;
                 if let Some(pending) = &self.state.pending_approval {
+                    let target_preview = sanitize_target_for_title(&pending.target, 120);
+                    let cmd_preview = pending
+                        .command_preview
+                        .as_deref()
+                        .map(|raw| sanitize_target_for_title(raw, 120))
+                        .unwrap_or_default();
                     self.state.live_messages = vec![LiveMessage {
                         role: "approval",
                         content: format!(
                             "{} - {} | cmd={} (input y/n + Enter)",
-                            pending.target,
-                            pending.reason,
-                            pending.command_preview.clone().unwrap_or_default()
+                            target_preview, pending.reason, cmd_preview
                         ),
                     }];
                 }

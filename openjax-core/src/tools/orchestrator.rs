@@ -100,6 +100,27 @@ impl ToolOrchestrator {
                 let context = policy_outcome.approval_context.as_ref();
                 let target = approval_target(&invocation, context);
                 let reason = approval_reason(&policy_outcome, invocation.turn.approval_policy);
+                let risk_tags = if context
+                    .map(|ctx| !ctx.risk_tags.is_empty())
+                    .unwrap_or(false)
+                {
+                    context.map(|ctx| ctx.risk_tags.clone()).unwrap_or_default()
+                } else {
+                    policy_outcome.trace.risk_tags.clone()
+                };
+                let sandbox_backend = context
+                    .and_then(|ctx| ctx.sandbox_backend)
+                    .map(|backend| backend.as_str().to_string());
+                tracing::info!(
+                    turn_id = invocation.turn.turn_id,
+                    request_id = %request_id,
+                    tool_name = %invocation.tool_name,
+                    target_preview = %truncate_preview(&target, 160),
+                    policy_decision = ?policy_outcome.trace.decision,
+                    risk_tags = ?risk_tags,
+                    sandbox_backend = ?sandbox_backend,
+                    "approval_request_logged"
+                );
                 if let Some(sink) = &invocation.turn.event_sink {
                     let _ = sink.send(Event::ApprovalRequested {
                         turn_id: invocation.turn.turn_id,
@@ -108,22 +129,14 @@ impl ToolOrchestrator {
                         reason: reason.clone(),
                         tool_name: Some(invocation.tool_name.clone()),
                         command_preview: context.and_then(|ctx| ctx.command_preview.clone()),
-                        risk_tags: if context
-                            .map(|ctx| !ctx.risk_tags.is_empty())
-                            .unwrap_or(false)
-                        {
-                            context.map(|ctx| ctx.risk_tags.clone()).unwrap_or_default()
-                        } else {
-                            policy_outcome.trace.risk_tags.clone()
-                        },
-                        sandbox_backend: context
-                            .and_then(|ctx| ctx.sandbox_backend)
-                            .map(|backend| backend.as_str().to_string()),
+                        risk_tags: risk_tags.clone(),
+                        sandbox_backend: sandbox_backend.clone(),
                         degrade_reason: context.and_then(|ctx| ctx.degrade_reason.clone()),
                     });
                 }
 
                 let timeout_ms = approval_timeout_ms_from_env();
+                let approval_start = Instant::now();
                 let request = ApprovalRequest {
                     request_id: request_id.clone(),
                     target,
@@ -146,6 +159,15 @@ impl ToolOrchestrator {
                                 approved: false,
                             });
                         }
+                        tracing::info!(
+                            turn_id = invocation.turn.turn_id,
+                            request_id = %request_id,
+                            tool_name = %invocation.tool_name,
+                            approved = false,
+                            timed_out = true,
+                            latency_ms = approval_start.elapsed().as_millis() as u64,
+                            "approval_result_logged"
+                        );
                         return Err(crate::tools::error::FunctionCallError::ApprovalTimedOut(
                             format!(
                                 "approval request timed out after {}ms ({request_id})",
@@ -158,10 +180,19 @@ impl ToolOrchestrator {
                 if let Some(sink) = &invocation.turn.event_sink {
                     let _ = sink.send(Event::ApprovalResolved {
                         turn_id: invocation.turn.turn_id,
-                        request_id,
+                        request_id: request_id.clone(),
                         approved,
                     });
                 }
+                tracing::info!(
+                    turn_id = invocation.turn.turn_id,
+                    request_id = %request_id,
+                    tool_name = %invocation.tool_name,
+                    approved = approved,
+                    timed_out = false,
+                    latency_ms = approval_start.elapsed().as_millis() as u64,
+                    "approval_result_logged"
+                );
 
                 if !approved {
                     return Err(crate::tools::error::FunctionCallError::ApprovalRejected(
@@ -263,4 +294,13 @@ fn approval_reason(
         return "approval policy requires confirmation".to_string();
     }
     outcome.trace.reason.clone()
+}
+
+fn truncate_preview(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+    let mut out = text.chars().take(limit).collect::<String>();
+    out.push_str("...");
+    out
 }

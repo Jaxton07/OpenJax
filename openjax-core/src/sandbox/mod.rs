@@ -93,16 +93,30 @@ pub async fn execute_shell(
                 }
                 SandboxDegradePolicy::AskThenAllow => {
                     let requires_degrade_approval =
-                        !matches!(execution_request.policy_trace.decision, PolicyDecision::Allow)
-                            || matches!(command_class, CommandClass::ProcessObserve)
-                            || execution_request.policy_trace.capabilities.iter().any(|cap| {
-                                matches!(
-                                    cap,
-                                    self::policy::SandboxCapability::FsWrite
-                                        | self::policy::SandboxCapability::EnvWrite
-                                        | self::policy::SandboxCapability::Network
-                                )
-                            });
+                        !matches!(
+                            execution_request.policy_trace.decision,
+                            PolicyDecision::Allow
+                        ) || matches!(command_class, CommandClass::ProcessObserve)
+                            || execution_request
+                                .policy_trace
+                                .capabilities
+                                .iter()
+                                .any(|cap| {
+                                    matches!(
+                                        cap,
+                                        self::policy::SandboxCapability::FsWrite
+                                            | self::policy::SandboxCapability::EnvWrite
+                                            | self::policy::SandboxCapability::Network
+                                    )
+                                });
+                    info!(
+                        turn_id = invocation.turn.turn_id,
+                        tool_name = %invocation.tool_name,
+                        backend = backend_error.backend.as_str(),
+                        requires_degrade_approval = requires_degrade_approval,
+                        policy_decision = ?execution_request.policy_trace.decision,
+                        "degrade_fallback_decision_logged"
+                    );
                     if requires_degrade_approval
                         && !request_degrade_approval(
                             invocation,

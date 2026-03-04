@@ -83,12 +83,6 @@ impl App {
                     self.state.pending_approval = None;
                     self.state.approval_selection = ApprovalSelection::Approve;
                     self.state.live_messages.clear();
-                    let cell = self.system_cell(format!(
-                        "approval {} ({})",
-                        if approved { "approved" } else { "rejected" },
-                        pending.request_id
-                    ));
-                    self.queue_history_cell(cell);
                     return Some(SubmitAction::ApprovalDecision {
                         request_id: pending.request_id,
                         approved,

@@ -37,6 +37,38 @@ pub(crate) fn extract_backend_summary(output: &str) -> Option<String> {
     Some(format!("sandbox: {label}"))
 }
 
+pub(crate) fn sanitize_target_for_title(target: &str, max_chars: usize) -> String {
+    let collapsed = collapse_whitespace(target);
+    truncate_chars(&collapsed, max_chars)
+}
+
+pub(crate) fn degraded_risk_summary(output: &str) -> Option<String> {
+    let backend = output
+        .lines()
+        .find_map(|line| line.strip_prefix("backend=").map(str::trim))?;
+    if backend != "none_escalated" {
+        return None;
+    }
+
+    let command = output
+        .lines()
+        .find_map(|line| line.strip_prefix("command=").map(str::trim))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let policy_decision = output
+        .lines()
+        .find_map(|line| line.strip_prefix("policy_decision=").map(str::trim))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let mutating = is_mutating_command(&command) || policy_decision.contains("askapproval");
+    if mutating {
+        Some("risk: mutating command ran unsandboxed".to_string())
+    } else {
+        Some("degraded: executed outside sandbox".to_string())
+    }
+}
+
 fn split_embedded_line_markers(text: &str) -> Vec<&str> {
     let bytes = text.as_bytes();
     let mut starts = Vec::new();
@@ -104,9 +136,55 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     out
 }
 
+fn collapse_whitespace(text: &str) -> String {
+    let mut out = String::new();
+    let mut prev_space = false;
+    for ch in text.replace('\r', " ").replace('\n', " ").chars() {
+        if ch.is_whitespace() {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+            continue;
+        }
+        out.push(ch);
+        prev_space = false;
+    }
+    out.trim().to_string()
+}
+
+fn is_mutating_command(command: &str) -> bool {
+    let tokens = [
+        "git add ",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git cherry-pick",
+        "git reset --hard",
+        "git clean -fd",
+        "rm ",
+        "mv ",
+        "cp ",
+        "chmod ",
+        "chown ",
+        "touch ",
+        "mkdir ",
+        "rmdir ",
+        "sed -i",
+        "perl -i",
+        "truncate ",
+        ">",
+        ">>",
+    ];
+    tokens.iter().any(|token| command.contains(token))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{extract_backend_summary, summarize_tool_output};
+    use super::{
+        degraded_risk_summary, extract_backend_summary, sanitize_target_for_title,
+        summarize_tool_output,
+    };
 
     #[test]
     fn extracts_and_strips_line_markers() {
@@ -129,6 +207,24 @@ mod tests {
         assert_eq!(
             extract_backend_summary(output).as_deref(),
             Some("sandbox: sandbox-exec (macos_seatbelt)")
+        );
+    }
+
+    #[test]
+    fn sanitize_target_makes_single_line_summary() {
+        let target = "git commit -m \"a\"\n\nnext line";
+        let sanitized = sanitize_target_for_title(target, 24);
+        assert!(!sanitized.contains('\n'));
+        assert!(sanitized.contains("git commit"));
+    }
+
+    #[test]
+    fn degraded_risk_marks_mutating_unsandboxed() {
+        let output =
+            "command=git add -A\nbackend=none_escalated\npolicy_decision=AskApproval\nstdout:\n";
+        assert_eq!(
+            degraded_risk_summary(output).as_deref(),
+            Some("risk: mutating command ran unsandboxed")
         );
     }
 }
