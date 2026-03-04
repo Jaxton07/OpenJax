@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::agent::runtime_policy::{resolve_approval_policy, resolve_sandbox_mode};
 use crate::agent::state::RateLimitConfig;
-use crate::{Agent, Config, FinalResponseMode, approval, model, tools};
+use crate::{Agent, Config, FinalResponseMode, approval, model, skills, tools};
 
 impl Agent {
     pub fn new() -> Self {
@@ -42,12 +42,22 @@ impl Agent {
         cwd: PathBuf,
     ) -> Self {
         let model_client = model::build_model_client_with_config(config.model.as_ref());
+        let skill_config = config.skills.as_ref();
+        let skill_runtime_config = skills::SkillRuntimeConfig::from_options(
+            skill_config.and_then(|cfg| cfg.enabled),
+            skill_config.and_then(|cfg| cfg.max_selected),
+            skill_config.and_then(|cfg| cfg.max_prompt_chars),
+        )
+        .apply_env();
+        let skill_registry = skills::SkillRegistry::load_from_default_locations(&cwd);
         let thread_id = crate::ThreadId::new();
         info!(
             thread_id = ?thread_id,
             model_backend = model_client.name(),
             approval_policy = approval_policy.as_str(),
             sandbox_mode = sandbox_mode.as_str(),
+            skills_enabled = skill_runtime_config.enabled,
+            skills_loaded = skill_registry.len(),
             cwd = %cwd.display(),
             "agent created"
         );
@@ -66,6 +76,8 @@ impl Agent {
                 shell_type: tools::ShellType::default(),
                 tools_config: tools::spec::ToolsConfig::default(),
             },
+            skill_registry,
+            skill_runtime_config,
             cwd,
             history: Vec::new(),
             thread_id,

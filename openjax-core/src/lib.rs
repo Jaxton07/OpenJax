@@ -4,6 +4,7 @@ mod config;
 mod logger;
 mod model;
 pub mod sandbox;
+pub mod skills;
 pub mod tools;
 
 use agent::state::{RateLimitConfig, ToolCallRecord};
@@ -11,6 +12,7 @@ pub use approval::{ApprovalHandler, ApprovalRequest, StdinApprovalHandler};
 pub use approval::{DEFAULT_APPROVAL_TIMEOUT_MS, approval_timeout_ms_from_env};
 pub use config::AgentConfig;
 pub use config::Config;
+pub use config::SkillsConfig;
 pub use logger::init_logger;
 use openjax_protocol::Event;
 use std::path::PathBuf;
@@ -69,6 +71,8 @@ pub struct Agent {
     model_client: Box<dyn model::ModelClient>,
     tools: tools::ToolRouter,
     tool_runtime_config: tools::ToolRuntimeConfig,
+    skill_registry: skills::SkillRegistry,
+    skill_runtime_config: skills::SkillRuntimeConfig,
     cwd: PathBuf,
     history: Vec<HistoryEntry>,
     thread_id: ThreadId,

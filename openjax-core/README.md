@@ -9,6 +9,7 @@ OpenJax 核心引擎总览页。
 - `model/`: 模型抽象、配置注册、多模型路由、协议适配器。
 - `tools/`: 工具注册与调用编排（含审批、沙箱联动、apply_patch）。
 - `sandbox/`: shell 工具的沙箱策略、后端执行、降级与审计。
+- `skills/`: Claude/OpenClaw 兼容技能加载、匹配与 prompt 注入。
 
 ## 一级文件树
 
@@ -25,7 +26,8 @@ openjax-core/
 │   ├── agent/
 │   ├── model/
 │   ├── tools/
-│   └── sandbox/
+│   ├── sandbox/
+│   └── skills/
 └── tests/
 ```
 
@@ -35,6 +37,7 @@ openjax-core/
 - [Model 模块文档](./src/model/README.md)
 - [Tools 模块文档](./src/tools/README.md)
 - [Sandbox 模块文档](./src/sandbox/README.md)
+- [Skills 模块文档](./src/skills/docs/README.md)
 
 ## 核心入口（代码）
 

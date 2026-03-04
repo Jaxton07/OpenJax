@@ -42,8 +42,34 @@ impl Agent {
             && planner_rounds < MAX_PLANNER_ROUNDS_PER_TURN
         {
             let remaining = MAX_TOOL_CALLS_PER_TURN - executed_count;
-            let planner_input =
-                build_planner_input(user_input, &self.history, &tool_traces, remaining);
+            let selected_skills = if self.skill_runtime_config.enabled {
+                self.skill_registry
+                    .select_for_input(user_input, self.skill_runtime_config.max_selected)
+            } else {
+                Vec::new()
+            };
+            let skills_context = if self.skill_runtime_config.enabled {
+                crate::skills::build_skills_context(
+                    &selected_skills,
+                    self.skill_runtime_config.max_prompt_chars,
+                )
+            } else {
+                "(skills disabled)".to_string()
+            };
+            let planner_input = build_planner_input(
+                user_input,
+                &self.history,
+                &tool_traces,
+                remaining,
+                &skills_context,
+            );
+
+            info!(
+                turn_id = turn_id,
+                skills_selected = selected_skills.len(),
+                skills_prompt_chars = skills_context.chars().count(),
+                "skills_context prepared"
+            );
 
             info!(
                 turn_id = turn_id,

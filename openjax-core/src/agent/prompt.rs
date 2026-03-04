@@ -29,6 +29,7 @@ pub(crate) fn build_planner_input(
     history: &[HistoryEntry],
     tool_traces: &[String],
     remaining_calls: usize,
+    skills_context: &str,
 ) -> String {
     let history_context = if history.is_empty() {
         "(no prior turns)".to_string()
@@ -85,6 +86,9 @@ Rules:\n\
 - After a successful apply_patch, do not call apply_patch again until you call read_file and inspect the latest file content.\n\
 - After verification read_file, if the result already satisfies the request, return final immediately.\n\
 - If verification already shows the requested content/changes are present, return final immediately.\n\
+\n\
+Available skills (auto-selected):\n\
+{skills_context}\n\
 \n\
 Conversation history (most recent last):\n{history_context}\n\
 \n\

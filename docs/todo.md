@@ -54,3 +54,7 @@
 2. subAgent
 3. 强化沙箱
 4. 接入telegram
+
+
+### skills
+1. skills 执行完后要清除对应的无关上下文，或者只生产部分摘要，后期引入subAgent 后skill 可以丢给subAgent 去执行，避免污染主对话的上下文

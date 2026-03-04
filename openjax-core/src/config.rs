@@ -68,6 +68,11 @@ approval_policy = "on_request"
 [agent]
 max_agents = 4
 max_depth = 1
+
+[skills]
+enabled = true
+max_selected = 3
+max_prompt_chars = 6000
 "#;
 
 /// OpenJax configuration
@@ -88,6 +93,10 @@ pub struct Config {
     /// Tools configuration
     #[serde(default)]
     pub tools: Option<crate::tools::spec::ToolsConfig>,
+
+    /// Skills configuration
+    #[serde(default)]
+    pub skills: Option<SkillsConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -177,6 +186,18 @@ pub struct AgentConfig {
     /// Maximum agent depth
     #[serde(default)]
     pub max_depth: Option<i32>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SkillsConfig {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+
+    #[serde(default)]
+    pub max_selected: Option<usize>,
+
+    #[serde(default)]
+    pub max_prompt_chars: Option<usize>,
 }
 
 impl Config {
@@ -280,6 +301,8 @@ mod tests {
         assert!(content.contains("[model.models.kimi_default]"));
         assert!(content.contains("api_key_env = \"OPENJAX_KIMI_API_KEY\""));
         assert!(content.contains("[model.models.claude_default]"));
+        assert!(content.contains("[skills]"));
+        assert!(content.contains("enabled = true"));
         assert_eq!(content, DEFAULT_CONFIG_TEMPLATE);
 
         let parsed = Config::from_file(&target).expect("config parse");
@@ -288,6 +311,10 @@ mod tests {
         assert!(model.models.contains_key("glm_fast"));
         assert!(model.models.contains_key("openai_default"));
         assert!(model.models.contains_key("claude_default"));
+        let skills = parsed.skills.expect("skills section");
+        assert_eq!(skills.enabled, Some(true));
+        assert_eq!(skills.max_selected, Some(3));
+        assert_eq!(skills.max_prompt_chars, Some(6000));
     }
 
     #[test]

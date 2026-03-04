@@ -26,6 +26,13 @@
 5. 决策为 `tool` 时调用工具并记录 trace；决策为 `final` 时输出最终回复。
 6. 发出 `TurnCompleted` 并返回本回合事件序列。
 
+### Skills 注入链路
+
+1. `bootstrap.rs` 启动时加载 `SkillRegistry` 和 `SkillRuntimeConfig`。
+2. `planner.rs` 每轮根据 `user_input` 匹配 top-N skills。
+3. `prompt.rs` 在 planner prompt 中注入 `Available skills (auto-selected)` 上下文。
+4. Skills 失败仅记录 warning，不会中断主回合执行。
+
 ## 关键约束
 
 - 每回合最多工具调用次数：`MAX_TOOL_CALLS_PER_TURN = 5`。
