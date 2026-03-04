@@ -68,6 +68,8 @@ approval_policy = "on_request"
 [agent]
 max_agents = 4
 max_depth = 1
+max_tool_calls_per_turn = 10
+max_planner_rounds_per_turn = 20
 
 [skills]
 enabled = true
@@ -186,6 +188,14 @@ pub struct AgentConfig {
     /// Maximum agent depth
     #[serde(default)]
     pub max_depth: Option<i32>,
+
+    /// Maximum tool calls allowed in one user turn
+    #[serde(default)]
+    pub max_tool_calls_per_turn: Option<usize>,
+
+    /// Maximum planner rounds allowed in one user turn
+    #[serde(default)]
+    pub max_planner_rounds_per_turn: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -301,6 +311,8 @@ mod tests {
         assert!(content.contains("[model.models.kimi_default]"));
         assert!(content.contains("api_key_env = \"OPENJAX_KIMI_API_KEY\""));
         assert!(content.contains("[model.models.claude_default]"));
+        assert!(content.contains("max_tool_calls_per_turn = 10"));
+        assert!(content.contains("max_planner_rounds_per_turn = 20"));
         assert!(content.contains("[skills]"));
         assert!(content.contains("enabled = true"));
         assert_eq!(content, DEFAULT_CONFIG_TEMPLATE);
@@ -315,6 +327,9 @@ mod tests {
         assert_eq!(skills.enabled, Some(true));
         assert_eq!(skills.max_selected, Some(3));
         assert_eq!(skills.max_prompt_chars, Some(6000));
+        let agent = parsed.agent.expect("agent section");
+        assert_eq!(agent.max_tool_calls_per_turn, Some(10));
+        assert_eq!(agent.max_planner_rounds_per_turn, Some(20));
     }
 
     #[test]

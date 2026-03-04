@@ -35,8 +35,8 @@
 
 ## 关键约束
 
-- 每回合最多工具调用次数：`MAX_TOOL_CALLS_PER_TURN = 5`。
-- 每回合最多 planner 轮数：`MAX_PLANNER_ROUNDS_PER_TURN = 10`。
+- 每回合最多工具调用次数（默认）：`10`（可配置）。
+- 每回合最多 planner 轮数（默认）：`20`（可配置）。
 - 连续重复调用跳过上限：`MAX_CONSECUTIVE_DUPLICATE_SKIPS = 2`。
 - 历史窗口上限：`MAX_CONVERSATION_HISTORY_ITEMS = 20`。
 - 默认请求限速：模型请求间隔最少 `1000ms`。

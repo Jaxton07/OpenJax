@@ -1,5 +1,8 @@
 use crate::{Config, tools};
 
+const DEFAULT_MAX_TOOL_CALLS_PER_TURN: usize = 10;
+const DEFAULT_MAX_PLANNER_ROUNDS_PER_TURN: usize = 20;
+
 pub(crate) fn parse_approval_policy(value: &str) -> Option<tools::ApprovalPolicy> {
     match value.trim().to_ascii_lowercase().as_str() {
         "always_ask" => Some(tools::ApprovalPolicy::AlwaysAsk),
@@ -53,4 +56,63 @@ pub(crate) fn resolve_sandbox_mode(config: &Config) -> tools::SandboxMode {
     }
 
     tools::SandboxMode::WorkspaceWrite
+}
+
+pub(crate) fn resolve_max_tool_calls_per_turn(config: &Config) -> usize {
+    resolve_max_tool_calls_per_turn_with_lookup(config, |key| std::env::var(key).ok())
+}
+
+pub(crate) fn resolve_max_planner_rounds_per_turn(config: &Config) -> usize {
+    resolve_max_planner_rounds_per_turn_with_lookup(config, |key| std::env::var(key).ok())
+}
+
+pub(crate) fn resolve_max_tool_calls_per_turn_with_lookup<F>(config: &Config, lookup: F) -> usize
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if let Some(raw) = lookup("OPENJAX_MAX_TOOL_CALLS_PER_TURN")
+        && let Some(parsed) = parse_positive_usize(&raw)
+    {
+        return parsed;
+    }
+
+    if let Some(parsed) = config
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.max_tool_calls_per_turn)
+        .filter(|value| *value > 0)
+    {
+        return parsed;
+    }
+
+    DEFAULT_MAX_TOOL_CALLS_PER_TURN
+}
+
+pub(crate) fn resolve_max_planner_rounds_per_turn_with_lookup<F>(
+    config: &Config,
+    lookup: F,
+) -> usize
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if let Some(raw) = lookup("OPENJAX_MAX_PLANNER_ROUNDS_PER_TURN")
+        && let Some(parsed) = parse_positive_usize(&raw)
+    {
+        return parsed;
+    }
+
+    if let Some(parsed) = config
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.max_planner_rounds_per_turn)
+        .filter(|value| *value > 0)
+    {
+        return parsed;
+    }
+
+    DEFAULT_MAX_PLANNER_ROUNDS_PER_TURN
+}
+
+fn parse_positive_usize(value: &str) -> Option<usize> {
+    value.trim().parse::<usize>().ok().filter(|v| *v > 0)
 }

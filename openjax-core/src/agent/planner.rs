@@ -15,8 +15,8 @@ use crate::agent::tool_policy::{
 };
 use crate::model::{ModelRequest, ModelStage};
 use crate::{
-    Agent, FinalResponseMode, MAX_CONSECUTIVE_DUPLICATE_SKIPS, MAX_PLANNER_ROUNDS_PER_TURN,
-    MAX_TOOL_CALLS_PER_TURN, SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS, tools,
+    Agent, FinalResponseMode, MAX_CONSECUTIVE_DUPLICATE_SKIPS,
+    SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS, tools,
 };
 
 impl Agent {
@@ -38,10 +38,10 @@ impl Agent {
             "natural_language_turn started"
         );
 
-        while executed_count < MAX_TOOL_CALLS_PER_TURN
-            && planner_rounds < MAX_PLANNER_ROUNDS_PER_TURN
+        while executed_count < self.max_tool_calls_per_turn
+            && planner_rounds < self.max_planner_rounds_per_turn
         {
-            let remaining = MAX_TOOL_CALLS_PER_TURN - executed_count;
+            let remaining = self.max_tool_calls_per_turn - executed_count;
             let selected_skills = if self.skill_runtime_config.enabled {
                 self.skill_registry
                     .select_for_input(user_input, self.skill_runtime_config.max_selected)
@@ -492,26 +492,26 @@ impl Agent {
             return;
         }
 
-        let message = if executed_count >= MAX_TOOL_CALLS_PER_TURN {
+        let message = if executed_count >= self.max_tool_calls_per_turn {
             warn!(
                 turn_id = turn_id,
-                max_calls = MAX_TOOL_CALLS_PER_TURN,
+                max_calls = self.max_tool_calls_per_turn,
                 "natural_language_turn reached max tool calls"
             );
             format!(
                 "已达到单回合最多 {} 次工具调用限制，请继续下一轮。",
-                MAX_TOOL_CALLS_PER_TURN
+                self.max_tool_calls_per_turn
             )
         } else {
             warn!(
                 turn_id = turn_id,
                 planner_rounds = planner_rounds,
-                max_rounds = MAX_PLANNER_ROUNDS_PER_TURN,
+                max_rounds = self.max_planner_rounds_per_turn,
                 "natural_language_turn reached max planner rounds"
             );
             format!(
                 "已达到单回合最多 {} 次规划轮次限制，请继续下一轮。",
-                MAX_PLANNER_ROUNDS_PER_TURN
+                self.max_planner_rounds_per_turn
             )
         };
         self.push_event(

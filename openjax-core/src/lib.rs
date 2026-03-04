@@ -27,8 +27,6 @@ pub use tools::SandboxMode;
 // Re-export protocol types for external use
 pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 
-const MAX_TOOL_CALLS_PER_TURN: usize = 5;
-const MAX_PLANNER_ROUNDS_PER_TURN: usize = 10;
 const MAX_CONSECUTIVE_DUPLICATE_SKIPS: usize = 2;
 pub(crate) const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
 pub(crate) const MAX_CONVERSATION_HISTORY_ITEMS: usize = 20;
@@ -80,6 +78,8 @@ pub struct Agent {
     depth: i32,
     last_api_call_time: Option<std::time::Instant>,
     rate_limit_config: RateLimitConfig,
+    max_tool_calls_per_turn: usize,
+    max_planner_rounds_per_turn: usize,
     recent_tool_calls: Vec<ToolCallRecord>,
     state_epoch: u64,
     final_response_mode: FinalResponseMode,

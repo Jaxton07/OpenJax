@@ -7,11 +7,15 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{
-    Agent, ApprovalPolicy, FinalResponseMode, SandboxMode,
+    Agent, ApprovalPolicy, Config, FinalResponseMode, SandboxMode,
     agent::{
         decision::{normalize_model_decision, parse_model_decision},
         prompt::{build_planner_input, summarize_user_input},
-        runtime_policy::{parse_approval_policy, parse_sandbox_mode},
+        runtime_policy::{
+            parse_approval_policy, parse_sandbox_mode,
+            resolve_max_planner_rounds_per_turn_with_lookup,
+            resolve_max_tool_calls_per_turn_with_lookup,
+        },
         tool_policy::should_abort_on_consecutive_duplicate_skips,
     },
     model::{ModelClient, ModelRequest, ModelResponse},
@@ -159,6 +163,42 @@ fn parse_runtime_policies() {
         Some(SandboxMode::DangerFullAccess)
     ));
     assert!(parse_sandbox_mode("invalid").is_none());
+}
+
+#[test]
+fn resolves_turn_limits_from_config_and_env_with_precedence() {
+    let config = Config {
+        agent: Some(crate::AgentConfig {
+            max_agents: None,
+            max_depth: None,
+            max_tool_calls_per_turn: Some(15),
+            max_planner_rounds_per_turn: Some(30),
+        }),
+        ..Config::default()
+    };
+
+    assert_eq!(
+        resolve_max_tool_calls_per_turn_with_lookup(&config, |_| None),
+        15
+    );
+    assert_eq!(
+        resolve_max_planner_rounds_per_turn_with_lookup(&config, |_| None),
+        30
+    );
+
+    let env_lookup = |key: &str| match key {
+        "OPENJAX_MAX_TOOL_CALLS_PER_TURN" => Some("12".to_string()),
+        "OPENJAX_MAX_PLANNER_ROUNDS_PER_TURN" => Some("25".to_string()),
+        _ => None,
+    };
+    assert_eq!(
+        resolve_max_tool_calls_per_turn_with_lookup(&config, env_lookup),
+        12
+    );
+    assert_eq!(
+        resolve_max_planner_rounds_per_turn_with_lookup(&config, env_lookup),
+        25
+    );
 }
 
 #[test]

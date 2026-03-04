@@ -35,6 +35,10 @@ backend = "glm" # anthropic | glm | minimax | openai | echo
 model = "GLM-4.7"
 base_url = "https://open.bigmodel.cn/api/anthropic"
 api_key = "your_api_key"
+
+[agent]
+max_tool_calls_per_turn = 10
+max_planner_rounds_per_turn = 20
 ```
 
 行为：
@@ -104,6 +108,8 @@ Provider 相关：
 3. `OPENJAX_MINIMAX_API_KEY`
 4. `OPENJAX_ANTHROPIC_API_KEY`
 5. `OPENJAX_THINKING_BUDGET_TOKENS`（Anthropic 协议请求中可覆盖 thinking budget）
+6. `OPENJAX_MAX_TOOL_CALLS_PER_TURN`
+7. `OPENJAX_MAX_PLANNER_ROUNDS_PER_TURN`
 
 ## 兼容策略
 
