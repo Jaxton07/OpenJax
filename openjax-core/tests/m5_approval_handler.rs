@@ -245,3 +245,34 @@ async fn approval_timeout_is_reported_as_timeout() {
 
     let _ = fs::remove_dir_all(workspace);
 }
+
+#[tokio::test]
+async fn on_request_prompts_for_git_commit_and_rejects() {
+    let workspace = create_workspace();
+    fs::write(workspace.join("todo.txt"), "a\n").expect("seed file");
+
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::OnRequest,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+    let handler = Arc::new(MockApprovalHandler::new(vec![false]));
+    agent.set_approval_handler(handler.clone());
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "tool:shell cmd='git commit -m \"test\"'".to_string(),
+        })
+        .await;
+
+    match tool_completion(&events, "shell") {
+        Event::ToolCallCompleted { ok, output, .. } => {
+            assert!(!ok);
+            assert!(output.contains("Approval rejected"));
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(handler.call_count(), 1);
+
+    let _ = fs::remove_dir_all(workspace);
+}

@@ -184,7 +184,12 @@ pub fn summarize_capabilities(caps: &[SandboxCapability]) -> String {
 
 pub fn ensure_workspace_relative_paths(command: &str, cwd: &Path) -> Result<()> {
     let tokens = shlex::split(command).ok_or_else(|| anyhow!("invalid shell command syntax"))?;
-    for arg in tokens.iter().skip(1) {
+    let mut start_index = 1usize;
+    if is_explicit_cwd_chdir_prefix(&tokens, cwd)? {
+        start_index = 3;
+    }
+
+    for arg in tokens.iter().skip(start_index) {
         if arg.starts_with('-') || !looks_like_path_arg(arg) {
             continue;
         }
@@ -258,16 +263,55 @@ fn validate_command_path_arg(arg: &str, cwd: &Path) -> Result<()> {
     Ok(())
 }
 
+fn is_explicit_cwd_chdir_prefix(tokens: &[String], cwd: &Path) -> Result<bool> {
+    if tokens.len() < 3 || tokens[0] != "cd" || tokens[2] != "&&" {
+        return Ok(false);
+    }
+
+    let target = Path::new(&tokens[1]);
+    if !target.is_absolute() {
+        return Ok(false);
+    }
+
+    let workspace_root = cwd
+        .canonicalize()
+        .with_context(|| format!("failed to canonicalize workspace root: {}", cwd.display()))?;
+    let target_root = target
+        .canonicalize()
+        .with_context(|| format!("failed to canonicalize chdir target: {}", target.display()))?;
+
+    Ok(target_root == workspace_root)
+}
+
 pub use none::run_without_sandbox;
 
 #[cfg(test)]
 mod tests {
-    use super::wrap_command_for_runner;
+    use std::path::Path;
+
+    use super::{ensure_workspace_relative_paths, wrap_command_for_runner};
 
     #[test]
     fn sh_runner_does_not_inject_pipefail_with_devnull_redirection() {
         let wrapped = wrap_command_for_runner("/bin/sh", "cat test.txt");
         assert_eq!(wrapped, "cat test.txt");
         assert!(!wrapped.contains("/dev/null"));
+    }
+
+    #[test]
+    fn allows_absolute_chdir_when_target_is_current_workspace() {
+        let cwd = std::env::current_dir().expect("current dir");
+        let command = format!("cd {} && git status", cwd.display());
+        let result = ensure_workspace_relative_paths(&command, &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_absolute_chdir_when_target_is_not_workspace() {
+        let cwd = std::env::current_dir().expect("current dir");
+        let outside = if cfg!(windows) { "C:/Windows" } else { "/tmp" };
+        let command = format!("cd {outside} && ls");
+        let result = ensure_workspace_relative_paths(&command, Path::new(&cwd));
+        assert!(result.is_err());
     }
 }

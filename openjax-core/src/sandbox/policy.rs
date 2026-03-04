@@ -283,6 +283,14 @@ fn detect_capabilities(command: &str) -> Vec<SandboxCapability> {
         "sed -i",
         "perl -i",
         "truncate ",
+        "git add ",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git cherry-pick",
+        "git tag -a",
+        "git reset --hard",
+        "git clean -fd",
     ];
     if write_tokens.iter().any(|token| lower.contains(token)) {
         caps.insert(SandboxCapability::FsWrite);
@@ -435,6 +443,19 @@ mod tests {
                 .trace
                 .capabilities
                 .contains(&SandboxCapability::Network)
+        );
+    }
+
+    #[test]
+    fn shell_git_commit_requires_approval() {
+        let invocation = shell_invocation("git commit -m \"feat: test\"");
+        let outcome = evaluate_tool_invocation_policy(&invocation, true);
+        assert_eq!(outcome.trace.decision, PolicyDecision::AskApproval);
+        assert!(
+            outcome
+                .trace
+                .capabilities
+                .contains(&SandboxCapability::FsWrite)
         );
     }
 }

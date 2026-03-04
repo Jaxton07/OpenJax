@@ -92,12 +92,18 @@ pub async fn execute_shell(
                     )));
                 }
                 SandboxDegradePolicy::AskThenAllow => {
-                    let needs_extra_approval =
-                        !matches!(
-                            execution_request.policy_trace.decision,
-                            PolicyDecision::Allow
-                        ) || matches!(command_class, CommandClass::ProcessObserve);
-                    if needs_extra_approval
+                    let requires_degrade_approval =
+                        !matches!(execution_request.policy_trace.decision, PolicyDecision::Allow)
+                            || matches!(command_class, CommandClass::ProcessObserve)
+                            || execution_request.policy_trace.capabilities.iter().any(|cap| {
+                                matches!(
+                                    cap,
+                                    self::policy::SandboxCapability::FsWrite
+                                        | self::policy::SandboxCapability::EnvWrite
+                                        | self::policy::SandboxCapability::Network
+                                )
+                            });
+                    if requires_degrade_approval
                         && !request_degrade_approval(
                             invocation,
                             command,

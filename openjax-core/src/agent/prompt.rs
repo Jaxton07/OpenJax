@@ -62,6 +62,7 @@ Rules:\n\
 - If required information is missing, use final.message to ask one concise clarification question.\n\
 - IMPORTANT: All values inside args MUST be JSON strings (not numbers/booleans). Example: \"start_line\":\"6\".\n\
 - For shell, put shell command in args.cmd.\n\
+- For shell, prefer workspace-relative commands; avoid absolute-path `cd` unless required.\n\
 - Prefer process_snapshot/system_load/disk_usage for process and host metrics instead of shell ps/top/df commands when possible.\n\
 - For apply_patch, use this EXACT format (note the space prefix for context lines):\n\
   *** Begin Patch\n\
