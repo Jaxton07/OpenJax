@@ -2,7 +2,9 @@ target/
 .DS_Store
 .openjax.toml
 .openjax/
+.sisyphus/
 .trae/
+dist/
 .venv/
 __pycache__/
 *.pyc
