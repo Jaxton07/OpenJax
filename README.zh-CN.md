@@ -68,11 +68,13 @@ cargo run -q -p tui_next
 
 ## 安装方式
 
-### 方式 A：源码安装（macOS / Linux / Windows）
+### 方式 A：源码安装（本地仓库，一键命令）
 
 ```bash
 make install-source
 ```
+
+适用于你已经 `git clone` 到本地并进入仓库目录的场景。
 
 ### 方式 B：预编译包安装（仅 macOS ARM）
 

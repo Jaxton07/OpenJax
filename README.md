@@ -68,11 +68,13 @@ cargo run -q -p tui_next
 
 ## Installation
 
-### Option A: Source install (macOS / Linux / Windows)
+### Option A: Source install (local repo, one command)
 
 ```bash
 make install-source
 ```
+
+Use this if you are already in a cloned OpenJax repository.
 
 ### Option B: Prebuilt package (macOS ARM)
 

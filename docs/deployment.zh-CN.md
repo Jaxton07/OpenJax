@@ -5,7 +5,7 @@
 当前部署标准：
 
 1. 预编译安装：仅支持 **macOS ARM**
-2. 源码在线安装：支持 **macOS / Linux / Windows**
+2. 源码安装：支持 **macOS / Linux / Windows**
 3. 一键卸载：支持 `--keep-user-data`
 
 ## 约束与决策
@@ -76,7 +76,15 @@ openjax-cli --help
 openjaxd --help
 ```
 
-## B. 源码在线安装
+## B. 源码安装（本地仓库，一键命令）
+
+适用于已经在本地仓库目录中开发的场景：
+
+```bash
+make install-source
+```
+
+## C. 源码安装（从 Git 克隆，手工步骤）
 
 ### macOS / Linux (bash/zsh)
 
@@ -104,7 +112,7 @@ Copy-Item "target/release/openjax-cli.exe" (Join-Path $prefix "openjax-cli.exe")
 Copy-Item "target/release/openjaxd.exe" (Join-Path $prefix "openjaxd.exe") -Force
 ```
 
-## C. 卸载
+## D. 卸载
 
 ### 默认全清理
 
@@ -135,7 +143,7 @@ make uninstall-local KEEP_USER_DATA=1
 - 若 `<prefix>/userdata` 存在，则保留该目录。
 - 若不存在，则行为等价于全清理。
 
-## D. 弱网建议
+## E. 弱网建议
 
 ```bash
 export CARGO_NET_RETRY=5
@@ -148,7 +156,7 @@ export CARGO_HTTP_MULTIPLEXING=false
 cargo fetch --locked
 ```
 
-## E. 手工发布 SOP
+## F. 手工发布 SOP
 
 1. `make doctor`
 2. `make build-release-mac`

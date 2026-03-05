@@ -76,7 +76,15 @@ openjax-cli --help
 openjaxd --help
 ```
 
-## B. Source Install (Online)
+## B. Source Install (Local Repo, One Command)
+
+Use this when you are already in a cloned OpenJax repository:
+
+```bash
+make install-source
+```
+
+## C. Source Install (Clone + Manual Steps)
 
 ### macOS / Linux (bash/zsh)
 
@@ -104,7 +112,7 @@ Copy-Item "target/release/openjax-cli.exe" (Join-Path $prefix "openjax-cli.exe")
 Copy-Item "target/release/openjaxd.exe" (Join-Path $prefix "openjaxd.exe") -Force
 ```
 
-## C. Uninstall
+## D. Uninstall
 
 ### Default full cleanup
 
@@ -135,7 +143,7 @@ Behavior today:
 - If `<prefix>/userdata` exists, it is preserved.
 - If it does not exist, result is equivalent to full cleanup.
 
-## D. Weak-Network Suggestions
+## E. Weak-Network Suggestions
 
 ```bash
 export CARGO_NET_RETRY=5
@@ -148,7 +156,7 @@ Optional first step before build:
 cargo fetch --locked
 ```
 
-## E. Release SOP (Manual)
+## F. Release SOP (Manual)
 
 1. `make doctor`
 2. `make build-release-mac`
