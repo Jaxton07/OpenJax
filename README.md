@@ -6,9 +6,36 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Jaxton07/OpenJax"><img alt="GitHub Repo" src="https://img.shields.io/badge/GitHub-Repo-181717?logo=github"></a>
+  <a href="https://github.com/Jaxton07/OpenJax/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-green.svg"></a>
+  <a href="https://github.com/Jaxton07/OpenJax/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/Jaxton07/OpenJax"></a>
+  <a href="https://github.com/Jaxton07/OpenJax/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Jaxton07/OpenJax?style=social"></a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> |
   <a href="README.zh-CN.md">简体中文</a>
 </p>
+
+<p align="center">
+  <a href="OVERVIEW.md">Overview</a> |
+  <a href="CONTRIBUTING.md">Contributing</a> |
+  <a href="SECURITY.md">Security</a> |
+  <a href="docs/deployment.md">Deployment</a>
+</p>
+
+## Contents
+
+- [Highlights](#highlights)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Repository Layout](#repository-layout)
+- [Development](#development)
+- [Documentation](#documentation)
+- [Security](#security)
+- [Contributing](#contributing)
 
 ## Highlights
 

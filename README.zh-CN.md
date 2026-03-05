@@ -6,9 +6,36 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Jaxton07/OpenJax"><img alt="GitHub Repo" src="https://img.shields.io/badge/GitHub-Repo-181717?logo=github"></a>
+  <a href="https://github.com/Jaxton07/OpenJax/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-green.svg"></a>
+  <a href="https://github.com/Jaxton07/OpenJax/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/Jaxton07/OpenJax"></a>
+  <a href="https://github.com/Jaxton07/OpenJax/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Jaxton07/OpenJax?style=social"></a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> |
   <a href="README.zh-CN.md">简体中文</a>
 </p>
+
+<p align="center">
+  <a href="OVERVIEW.md">项目总览</a> |
+  <a href="CONTRIBUTING.md">参与贡献</a> |
+  <a href="SECURITY.md">安全策略</a> |
+  <a href="docs/deployment.zh-CN.md">部署文档</a>
+</p>
+
+## 目录
+
+- [核心能力](#核心能力)
+- [快速开始](#快速开始)
+- [安装方式](#安装方式)
+- [配置项](#配置项)
+- [架构概览](#架构概览)
+- [仓库结构](#仓库结构)
+- [开发与测试](#开发与测试)
+- [文档导航](#文档导航)
+- [安全](#安全)
+- [贡献](#贡献)
 
 ## 核心能力
 
