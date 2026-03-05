@@ -76,9 +76,9 @@ make install-source
 
 Use this if you are already in a cloned OpenJax repository.
 
-### Option B: Prebuilt package (macOS ARM)
+### Option B: Prebuilt package (macOS ARM / Linux x86_64 / Windows x86_64)
 
-Build package locally:
+Build package locally (example: macOS ARM):
 
 ```bash
 make doctor
@@ -99,7 +99,7 @@ export PATH="$HOME/.local/openjax/bin:$PATH"
 tui_next
 ```
 
-For full deployment flow, see [docs/deployment.md](docs/deployment.md).
+For Linux/Windows package commands and full deployment flow, see [docs/deployment.md](docs/deployment.md).
 
 ## Configuration
 

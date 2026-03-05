@@ -11,7 +11,7 @@ export CARGO_HTTP_MULTIPLEXING ?= false
 
 .PHONY: \
 	help doctor prefetch \
-	run-tui build-release-mac package-mac install-local uninstall-local install-source \
+	run-tui build-release-mac package-mac build-release-linux package-linux package-windows install-local uninstall-local install-source \
 	build-all test-rust clean-dist \
 	python-setup python-dev python-test clean-python \
 	setup setup-new dev dev-new test test-new lint format clean
@@ -25,9 +25,12 @@ help:
 	@echo "    make run-tui           - 运行 Rust TUI (tui_next)"
 	@echo "    make build-release-mac - 构建 macOS ARM release 二进制"
 	@echo "    make package-mac       - 打包预编译安装包"
+	@echo "    make build-release-linux - 构建 Linux x86_64 release 二进制"
+	@echo "    make package-linux     - 打包 Linux x86_64 预编译安装包"
+	@echo "    make package-windows   - 打包 Windows x86_64 预编译安装包 (需在 Windows PowerShell 执行)"
 	@echo "    make install-local     - 本机安装到 PREFIX (默认 ~/.local/openjax)"
 	@echo "    make uninstall-local   - 本机卸载 (默认全清理, KEEP_USER_DATA=1 可保留 userdata)"
-	@echo "    make install-source    - 源码在线安装 (构建 + 安装)"
+	@echo "    make install-source    - 源码安装（本地仓库，一键）(构建 + 安装)"
 	@echo ""
 	@echo "  校验与清理:"
 	@echo "    make build-all         - 构建整个 Rust workspace"
@@ -59,6 +62,15 @@ build-release-mac:
 
 package-mac:
 	bash scripts/release/package_macos.sh
+
+build-release-linux:
+	$(CARGO) build --release --locked -p tui_next -p openjax-cli -p openjaxd
+
+package-linux:
+	bash scripts/release/package_linux.sh
+
+package-windows:
+	powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1
 
 install-local: package-mac
 	bash scripts/release/install.sh --prefix "$(PREFIX)" -y

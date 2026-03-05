@@ -4,13 +4,16 @@
 
 当前部署标准：
 
-1. 预编译安装：仅支持 **macOS ARM**
+1. 预编译安装：支持 **macOS ARM / Linux x86_64 / Windows x86_64**
 2. 源码安装：支持 **macOS / Linux / Windows**
 3. 一键卸载：支持 `--keep-user-data`
 
 ## 约束与决策
 
-- 预编译目标：`macOS arm64 (Apple Silicon)`
+- 预编译目标：
+  - `macOS arm64 (Apple Silicon)`
+  - `Linux x86_64`
+  - `Windows x86_64`
 - 默认安装目录：`~/.local/openjax`
 - 分发方式：手工打包 + 手工上传
 - 默认卸载策略：删除 `~/.local/openjax` 下所有文件
@@ -76,7 +79,44 @@ openjax-cli --help
 openjaxd --help
 ```
 
-## B. 源码安装（本地仓库，一键命令）
+## B. 预编译安装（Linux x86_64）
+
+本地打包：
+
+```bash
+make build-release-linux
+make package-linux
+```
+
+从包目录安装：
+
+```bash
+cd dist
+TAR_FILE=$(ls openjax-v*-linux-x86_64.tar.gz | head -n1)
+tar -xzf "$TAR_FILE"
+DIR_NAME=$(basename "$TAR_FILE" .tar.gz)
+cd "$DIR_NAME"
+./install.sh
+```
+
+## C. 预编译安装（Windows x86_64）
+
+在 PowerShell 打包：
+
+```powershell
+cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd
+powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1
+```
+
+从包目录安装：
+
+```powershell
+Expand-Archive .\dist\openjax-v<version>-windows-x86_64.zip -DestinationPath .\dist -Force
+cd .\dist\openjax-v<version>-windows-x86_64
+.\install.ps1
+```
+
+## D. 源码安装（本地仓库，一键命令）
 
 适用于已经在本地仓库目录中开发的场景：
 
@@ -84,7 +124,7 @@ openjaxd --help
 make install-source
 ```
 
-## C. 源码安装（从 Git 克隆，手工步骤）
+## E. 源码安装（从 Git 克隆，手工步骤）
 
 ### macOS / Linux (bash/zsh)
 
@@ -112,7 +152,7 @@ Copy-Item "target/release/openjax-cli.exe" (Join-Path $prefix "openjax-cli.exe")
 Copy-Item "target/release/openjaxd.exe" (Join-Path $prefix "openjaxd.exe") -Force
 ```
 
-## D. 卸载
+## F. 卸载
 
 ### 默认全清理
 
@@ -143,7 +183,7 @@ make uninstall-local KEEP_USER_DATA=1
 - 若 `<prefix>/userdata` 存在，则保留该目录。
 - 若不存在，则行为等价于全清理。
 
-## E. 弱网建议
+## G. 弱网建议
 
 ```bash
 export CARGO_NET_RETRY=5
@@ -156,14 +196,16 @@ export CARGO_HTTP_MULTIPLEXING=false
 cargo fetch --locked
 ```
 
-## F. 手工发布 SOP
+## H. 手工发布 SOP
 
 1. `make doctor`
-2. `make build-release-mac`
-3. `make package-mac`
-4. 在干净目录验证：
+2. 选择目标平台打包：
+- macOS ARM：`make build-release-mac && make package-mac`
+- Linux x86_64：`make build-release-linux && make package-linux`
+- Windows x86_64：`cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd` 后执行 `powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1`
+3. 在干净目录验证：
 - 解压包
-- 执行 `./install.sh`
+- 执行安装脚本（`install.sh` 或 `install.ps1`）
 - 校验 `tui_next` 可执行，`openjax-cli/openjaxd --help` 正常
-- 执行 `./uninstall.sh`
-5. 上传 `tar.gz` 与 `SHA256SUMS`
+- 执行卸载脚本（`uninstall.sh` 或 `uninstall.ps1`）
+4. 上传安装包（`.tar.gz`/`.zip`）与 `SHA256SUMS`

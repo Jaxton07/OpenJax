@@ -4,13 +4,16 @@ Chinese version: [deployment.zh-CN.md](deployment.zh-CN.md)
 
 This guide defines the current deployment standard:
 
-1. Prebuilt package for **macOS ARM only**
+1. Prebuilt packages for **macOS ARM / Linux x86_64 / Windows x86_64**
 2. Source install for **macOS / Linux / Windows**
 3. One-command uninstall with optional `--keep-user-data`
 
 ## Constraints and Decisions
 
-- Prebuilt target: `macOS arm64 (Apple Silicon)`
+- Prebuilt targets:
+  - `macOS arm64 (Apple Silicon)`
+  - `Linux x86_64`
+  - `Windows x86_64`
 - Default install prefix: `~/.local/openjax`
 - Distribution mode: manual packaging and manual upload
 - Uninstall default: remove all files under `~/.local/openjax`
@@ -76,7 +79,44 @@ openjax-cli --help
 openjaxd --help
 ```
 
-## B. Source Install (Local Repo, One Command)
+## B. Prebuilt Install (Linux x86_64)
+
+Build package locally:
+
+```bash
+make build-release-linux
+make package-linux
+```
+
+Install from package directory:
+
+```bash
+cd dist
+TAR_FILE=$(ls openjax-v*-linux-x86_64.tar.gz | head -n1)
+tar -xzf "$TAR_FILE"
+DIR_NAME=$(basename "$TAR_FILE" .tar.gz)
+cd "$DIR_NAME"
+./install.sh
+```
+
+## C. Prebuilt Install (Windows x86_64)
+
+Build package in PowerShell:
+
+```powershell
+cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd
+powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1
+```
+
+Install from package directory:
+
+```powershell
+Expand-Archive .\dist\openjax-v<version>-windows-x86_64.zip -DestinationPath .\dist -Force
+cd .\dist\openjax-v<version>-windows-x86_64
+.\install.ps1
+```
+
+## D. Source Install (Local Repo, One Command)
 
 Use this when you are already in a cloned OpenJax repository:
 
@@ -84,7 +124,7 @@ Use this when you are already in a cloned OpenJax repository:
 make install-source
 ```
 
-## C. Source Install (Clone + Manual Steps)
+## E. Source Install (Clone + Manual Steps)
 
 ### macOS / Linux (bash/zsh)
 
@@ -112,7 +152,7 @@ Copy-Item "target/release/openjax-cli.exe" (Join-Path $prefix "openjax-cli.exe")
 Copy-Item "target/release/openjaxd.exe" (Join-Path $prefix "openjaxd.exe") -Force
 ```
 
-## D. Uninstall
+## F. Uninstall
 
 ### Default full cleanup
 
@@ -143,7 +183,7 @@ Behavior today:
 - If `<prefix>/userdata` exists, it is preserved.
 - If it does not exist, result is equivalent to full cleanup.
 
-## E. Weak-Network Suggestions
+## G. Weak-Network Suggestions
 
 ```bash
 export CARGO_NET_RETRY=5
@@ -156,14 +196,16 @@ Optional first step before build:
 cargo fetch --locked
 ```
 
-## F. Release SOP (Manual)
+## H. Release SOP (Manual)
 
 1. `make doctor`
-2. `make build-release-mac`
-3. `make package-mac`
-4. Fresh-folder validation:
+2. build one target:
+- macOS ARM: `make build-release-mac && make package-mac`
+- Linux x86_64: `make build-release-linux && make package-linux`
+- Windows x86_64: `cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd` then `powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1`
+3. Fresh-folder validation:
 - unpack package
-- run `./install.sh`
+- run install script (`install.sh` or `install.ps1`)
 - verify `tui_next` exists and `--help` for `openjax-cli/openjaxd`
-- run `./uninstall.sh`
-5. Upload `tar.gz` + `SHA256SUMS`
+- run uninstall script (`uninstall.sh` or `uninstall.ps1`)
+4. Upload package (`.tar.gz`/`.zip`) + `SHA256SUMS`

@@ -76,9 +76,9 @@ make install-source
 
 适用于你已经 `git clone` 到本地并进入仓库目录的场景。
 
-### 方式 B：预编译包安装（仅 macOS ARM）
+### 方式 B：预编译包安装（macOS ARM / Linux x86_64 / Windows x86_64）
 
-本地打包：
+本地打包（以下示例为 macOS ARM）：
 
 ```bash
 make doctor
@@ -99,7 +99,7 @@ export PATH="$HOME/.local/openjax/bin:$PATH"
 tui_next
 ```
 
-完整部署说明见 [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)。
+Linux/Windows 的打包命令与完整部署说明见 [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)。
 
 ## 配置项
 
