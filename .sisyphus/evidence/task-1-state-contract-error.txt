@@ -1,8 +1,0 @@
-=== Task 1: Invalid Mode Guard (Error Path) ===
-Timestamp: 2026-02-24T04:37:04Z
-
-Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -c "from openjax_tui.state import AppState, normalize_view_mode; print('Testing invalid mode handling...'); result = normalize_view_mode('invalid_mode'); print(f'Invalid mode normalized to: {result}'); assert result == 'session', f'Expected session, got {result}'; print('PASS: Invalid mode correctly normalized to session')"
-
-Traceback (most recent call last):
-  File "<string>", line 1, in <module>
-ImportError: cannot import name 'normalize_view_mode' from 'openjax_tui.state' (/Users/ericw/work/code/ai/openJax/python/openjax_tui/src/openjax_tui/state.py)

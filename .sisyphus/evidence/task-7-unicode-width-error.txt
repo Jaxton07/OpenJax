@@ -1,9 +1,0 @@
-=== Task 7: Width Regression Guard (Error Path) ===
-Timestamp: 2026-02-24T04:38:05Z
-
-Command: PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3 -c "text = 'Caf́'; print(f'Testing naive vs display width...'); print(f'Codepoint count (naive): {len(text)}'); print(f'Content: {text}'); print('PASS: Demonstrates why display width matters for combining chars')"
-
-Testing naive vs display width...
-Codepoint count (naive): 4
-Content: Caf́
-PASS: Demonstrates why display width matters for combining chars
