@@ -1,8 +1,8 @@
 # OpenJax
 
 <p align="center">
-  <strong>一个以 Rust 为主的 CLI/TUI Agent 框架，用于 AI 辅助编码工作流。</strong><br/>
-  参考 Codex 风格的 tool calling、sandbox 和 approval 控制机制。
+  <strong>一个以 Rust 为主的全能 AI 助理运行时，支持本地与云端多场景工作流。</strong><br/>
+  基于 tool calling、sandbox 和 approval 控制机制构建。
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@
 
 ## 核心能力
 
-- Agent 循环与工具调用编排
+- 面向编码、自动化与日常任务的通用助理循环
 - 文件读取/搜索、Shell 执行、补丁应用等工具能力
 - 沙箱模式与审批策略
 - Rust TUI（`tui_next`）作为主交互界面
@@ -164,7 +164,6 @@ zsh -lc "cargo test -p openjax-core --test m3_sandbox"
 - 部署： [docs/deployment.md](docs/deployment.md)
 - 中文部署： [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)
 - 安全模型： [docs/security.md](docs/security.md)
-- OpenJax 与 Codex 对比： [docs/openjax-vs-codex-comparison.md](docs/openjax-vs-codex-comparison.md)
 
 ## 安全
 

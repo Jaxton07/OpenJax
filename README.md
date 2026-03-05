@@ -1,8 +1,8 @@
 # OpenJax
 
 <p align="center">
-  <strong>Rust-first CLI/TUI agent framework for AI-assisted coding workflows.</strong><br/>
-  Inspired by Codex-style tool calling, sandboxing, and approval control.
+  <strong>A Rust-first, general-purpose AI assistant runtime for local and cloud workflows.</strong><br/>
+  Built around tool calling, sandboxing, and approval control.
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@
 
 ## Highlights
 
-- Agent loop with tool-calling orchestration
+- General-purpose assistant loop for coding, automation, and everyday workflows
 - Tooling for file read/search, shell execution, and patch application
 - Sandbox modes and approval policies
 - Rust TUI runtime (`tui_next`) as the primary interactive interface
@@ -164,7 +164,6 @@ zsh -lc "cargo test -p openjax-core --test m3_sandbox"
 - Deployment: [docs/deployment.md](docs/deployment.md)
 - Chinese Deployment Guide: [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)
 - Security model: [docs/security.md](docs/security.md)
-- OpenJax vs Codex: [docs/openjax-vs-codex-comparison.md](docs/openjax-vs-codex-comparison.md)
 
 ## Security
 
