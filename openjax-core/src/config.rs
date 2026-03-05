@@ -75,6 +75,9 @@ max_planner_rounds_per_turn = 20
 enabled = true
 max_selected = 3
 max_prompt_chars = 6000
+prevent_shell_skill_trigger = true
+prefer_lightweight_git_inspection = true
+max_diff_chars_for_planner = 4000
 "#;
 
 /// OpenJax configuration
@@ -208,6 +211,15 @@ pub struct SkillsConfig {
 
     #[serde(default)]
     pub max_prompt_chars: Option<usize>,
+
+    #[serde(default)]
+    pub prevent_shell_skill_trigger: Option<bool>,
+
+    #[serde(default)]
+    pub prefer_lightweight_git_inspection: Option<bool>,
+
+    #[serde(default)]
+    pub max_diff_chars_for_planner: Option<usize>,
 }
 
 impl Config {
@@ -327,6 +339,9 @@ mod tests {
         assert_eq!(skills.enabled, Some(true));
         assert_eq!(skills.max_selected, Some(3));
         assert_eq!(skills.max_prompt_chars, Some(6000));
+        assert_eq!(skills.prevent_shell_skill_trigger, Some(true));
+        assert_eq!(skills.prefer_lightweight_git_inspection, Some(true));
+        assert_eq!(skills.max_diff_chars_for_planner, Some(4000));
         let agent = parsed.agent.expect("agent section");
         assert_eq!(agent.max_tool_calls_per_turn, Some(10));
         assert_eq!(agent.max_planner_rounds_per_turn, Some(20));

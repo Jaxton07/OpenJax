@@ -95,6 +95,7 @@ pub fn create_tool_invocation(
     cwd: std::path::PathBuf,
     sandbox_policy: SandboxPolicy,
     approval_policy: ApprovalPolicy,
+    prevent_shell_skill_trigger: bool,
     approval_handler: Arc<dyn ApprovalHandler>,
     event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
 ) -> crate::tools::context::ToolInvocation {
@@ -107,6 +108,7 @@ pub fn create_tool_invocation(
             cwd,
             sandbox_policy,
             approval_policy,
+            prevent_shell_skill_trigger,
             approval_handler,
             event_sink,
             windows_sandbox_level: None,

@@ -422,6 +422,7 @@ mod tests {
                 approval_handler: Arc::new(StdinApprovalHandler::new()),
                 event_sink: None,
                 windows_sandbox_level: None,
+                prevent_shell_skill_trigger: true,
             },
         }
     }

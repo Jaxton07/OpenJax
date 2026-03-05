@@ -80,6 +80,7 @@ pub struct ToolTurnContext {
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<UnboundedSender<Event>>,
     pub windows_sandbox_level: Option<String>,
+    pub prevent_shell_skill_trigger: bool,
 }
 
 impl Default for ToolTurnContext {
@@ -92,6 +93,7 @@ impl Default for ToolTurnContext {
             approval_handler: Arc::new(StdinApprovalHandler::new()),
             event_sink: None,
             windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
         }
     }
 }
@@ -104,6 +106,10 @@ impl std::fmt::Debug for ToolTurnContext {
             .field("sandbox_policy", &self.sandbox_policy)
             .field("approval_policy", &self.approval_policy)
             .field("windows_sandbox_level", &self.windows_sandbox_level)
+            .field(
+                "prevent_shell_skill_trigger",
+                &self.prevent_shell_skill_trigger,
+            )
             .finish()
     }
 }

@@ -1,14 +1,12 @@
 use crate::{HistoryEntry, MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT};
 
-pub(crate) fn truncate_for_prompt(text: &str) -> String {
-    if text.chars().count() <= MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT {
+pub(crate) fn truncate_for_prompt(text: &str, max_chars: usize) -> String {
+    let limit = max_chars.max(256).min(MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT);
+    if text.chars().count() <= limit {
         return text.to_string();
     }
 
-    let snippet = text
-        .chars()
-        .take(MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT)
-        .collect::<String>();
+    let snippet = text.chars().take(limit).collect::<String>();
     format!("{snippet}...")
 }
 
@@ -63,6 +61,8 @@ Rules:\n\
 - IMPORTANT: All values inside args MUST be JSON strings (not numbers/booleans). Example: \"start_line\":\"6\".\n\
 - For shell, put shell command in args.cmd.\n\
 - For shell, prefer workspace-relative commands; avoid absolute-path `cd` unless required.\n\
+- Skills invocation rule: skill markers like `/skill-name` are not shell executables.\n\
+- Do not call shell with a lone slash-trigger command (e.g. `/xxx`); convert selected skills into concrete tool steps.\n\
 - Prefer process_snapshot/system_load/disk_usage for process and host metrics instead of shell ps/top/df commands when possible.\n\
 - For apply_patch, use this EXACT format (note the space prefix for context lines):\n\
   *** Begin Patch\n\

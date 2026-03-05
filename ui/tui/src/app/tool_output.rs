@@ -69,6 +69,14 @@ pub(crate) fn degraded_risk_summary(output: &str) -> Option<String> {
     }
 }
 
+pub(crate) fn skill_trigger_guard_hint(output: &str) -> Option<String> {
+    if output.contains("runtime_deny_reason=skill_trigger_not_shell_command") {
+        Some("hint: detected skill trigger string in shell; use skill workflow steps".to_string())
+    } else {
+        None
+    }
+}
+
 fn split_embedded_line_markers(text: &str) -> Vec<&str> {
     let bytes = text.as_bytes();
     let mut starts = Vec::new();
@@ -183,7 +191,7 @@ fn is_mutating_command(command: &str) -> bool {
 mod tests {
     use super::{
         degraded_risk_summary, extract_backend_summary, sanitize_target_for_title,
-        summarize_tool_output,
+        skill_trigger_guard_hint, summarize_tool_output,
     };
 
     #[test]
@@ -226,5 +234,11 @@ mod tests {
             degraded_risk_summary(output).as_deref(),
             Some("risk: mutating command ran unsandboxed")
         );
+    }
+
+    #[test]
+    fn skill_trigger_guard_emits_hint() {
+        let output = "result_class=failure\nruntime_deny_reason=skill_trigger_not_shell_command\n";
+        assert!(skill_trigger_guard_hint(output).is_some());
     }
 }

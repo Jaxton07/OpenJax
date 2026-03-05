@@ -158,6 +158,7 @@ pub struct ToolRuntimeConfig {
     pub sandbox_mode: SandboxMode,
     pub shell_type: ShellType,
     pub tools_config: ToolsConfig,
+    pub prevent_shell_skill_trigger: bool,
 }
 
 impl Default for ToolRuntimeConfig {
@@ -167,6 +168,7 @@ impl Default for ToolRuntimeConfig {
             sandbox_mode: SandboxMode::WorkspaceWrite,
             shell_type: ShellType::default(),
             tools_config: ToolsConfig::default(),
+            prevent_shell_skill_trigger: true,
         }
     }
 }
@@ -178,6 +180,7 @@ impl ToolRuntimeConfig {
             sandbox_mode: SandboxMode::WorkspaceWrite,
             shell_type: ShellType::default(),
             tools_config: config,
+            prevent_shell_skill_trigger: true,
         }
     }
 }

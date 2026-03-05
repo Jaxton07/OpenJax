@@ -87,6 +87,7 @@ impl ToolRouter {
             cwd.to_path_buf(),
             sandbox_policy,
             approval_policy,
+            config.prevent_shell_skill_trigger,
             approval_handler,
             event_sink,
         );

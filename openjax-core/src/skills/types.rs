@@ -6,6 +6,9 @@ use serde_json::Value;
 pub const DEFAULT_SKILLS_ENABLED: bool = true;
 pub const DEFAULT_SKILLS_MAX_SELECTED: usize = 3;
 pub const DEFAULT_SKILLS_MAX_PROMPT_CHARS: usize = 6_000;
+pub const DEFAULT_SKILLS_PREVENT_SHELL_SKILL_TRIGGER: bool = true;
+pub const DEFAULT_SKILLS_PREFER_LIGHTWEIGHT_GIT_INSPECTION: bool = true;
+pub const DEFAULT_SKILLS_MAX_DIFF_CHARS_FOR_PLANNER: usize = 4_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillSourceScope {
@@ -68,6 +71,9 @@ pub struct SkillRuntimeConfig {
     pub enabled: bool,
     pub max_selected: usize,
     pub max_prompt_chars: usize,
+    pub prevent_shell_skill_trigger: bool,
+    pub prefer_lightweight_git_inspection: bool,
+    pub max_diff_chars_for_planner: usize,
 }
 
 impl Default for SkillRuntimeConfig {
@@ -76,6 +82,9 @@ impl Default for SkillRuntimeConfig {
             enabled: DEFAULT_SKILLS_ENABLED,
             max_selected: DEFAULT_SKILLS_MAX_SELECTED,
             max_prompt_chars: DEFAULT_SKILLS_MAX_PROMPT_CHARS,
+            prevent_shell_skill_trigger: DEFAULT_SKILLS_PREVENT_SHELL_SKILL_TRIGGER,
+            prefer_lightweight_git_inspection: DEFAULT_SKILLS_PREFER_LIGHTWEIGHT_GIT_INSPECTION,
+            max_diff_chars_for_planner: DEFAULT_SKILLS_MAX_DIFF_CHARS_FOR_PLANNER,
         }
     }
 }
@@ -85,6 +94,9 @@ impl SkillRuntimeConfig {
         enabled: Option<bool>,
         max_selected: Option<usize>,
         max_prompt_chars: Option<usize>,
+        prevent_shell_skill_trigger: Option<bool>,
+        prefer_lightweight_git_inspection: Option<bool>,
+        max_diff_chars_for_planner: Option<usize>,
     ) -> Self {
         let mut config = Self::default();
         if let Some(value) = enabled {
@@ -95,6 +107,15 @@ impl SkillRuntimeConfig {
         }
         if let Some(value) = max_prompt_chars {
             config.max_prompt_chars = value.max(256);
+        }
+        if let Some(value) = prevent_shell_skill_trigger {
+            config.prevent_shell_skill_trigger = value;
+        }
+        if let Some(value) = prefer_lightweight_git_inspection {
+            config.prefer_lightweight_git_inspection = value;
+        }
+        if let Some(value) = max_diff_chars_for_planner {
+            config.max_diff_chars_for_planner = value.max(256);
         }
         config
     }
@@ -125,6 +146,21 @@ impl SkillRuntimeConfig {
             && let Ok(parsed) = raw.trim().parse::<usize>()
         {
             updated.max_prompt_chars = parsed.max(256);
+        }
+        if let Some(raw) = lookup("OPENJAX_SKILLS_PREVENT_SHELL_TRIGGER")
+            && let Some(parsed) = parse_bool(&raw)
+        {
+            updated.prevent_shell_skill_trigger = parsed;
+        }
+        if let Some(raw) = lookup("OPENJAX_SKILLS_PREFER_LIGHTWEIGHT_GIT")
+            && let Some(parsed) = parse_bool(&raw)
+        {
+            updated.prefer_lightweight_git_inspection = parsed;
+        }
+        if let Some(raw) = lookup("OPENJAX_SKILLS_MAX_DIFF_CHARS")
+            && let Ok(parsed) = raw.trim().parse::<usize>()
+        {
+            updated.max_diff_chars_for_planner = parsed.max(256);
         }
 
         updated

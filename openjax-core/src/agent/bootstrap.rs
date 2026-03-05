@@ -52,6 +52,9 @@ impl Agent {
             skill_config.and_then(|cfg| cfg.enabled),
             skill_config.and_then(|cfg| cfg.max_selected),
             skill_config.and_then(|cfg| cfg.max_prompt_chars),
+            skill_config.and_then(|cfg| cfg.prevent_shell_skill_trigger),
+            skill_config.and_then(|cfg| cfg.prefer_lightweight_git_inspection),
+            skill_config.and_then(|cfg| cfg.max_diff_chars_for_planner),
         )
         .apply_env();
         let skill_registry = skills::SkillRegistry::load_from_default_locations(&cwd);
@@ -65,6 +68,10 @@ impl Agent {
             max_planner_rounds_per_turn = max_planner_rounds_per_turn,
             skills_enabled = skill_runtime_config.enabled,
             skills_loaded = skill_registry.len(),
+            prevent_shell_skill_trigger = skill_runtime_config.prevent_shell_skill_trigger,
+            prefer_lightweight_git_inspection =
+                skill_runtime_config.prefer_lightweight_git_inspection,
+            max_diff_chars_for_planner = skill_runtime_config.max_diff_chars_for_planner,
             cwd = %cwd.display(),
             "agent created"
         );
@@ -76,12 +83,14 @@ impl Agent {
                 sandbox_mode,
                 shell_type: tools::ShellType::default(),
                 tools_config: tools::spec::ToolsConfig::default(),
+                prevent_shell_skill_trigger: skill_runtime_config.prevent_shell_skill_trigger,
             }),
             tool_runtime_config: tools::ToolRuntimeConfig {
                 approval_policy,
                 sandbox_mode,
                 shell_type: tools::ShellType::default(),
                 tools_config: tools::spec::ToolsConfig::default(),
+                prevent_shell_skill_trigger: skill_runtime_config.prevent_shell_skill_trigger,
             },
             skill_registry,
             skill_runtime_config,

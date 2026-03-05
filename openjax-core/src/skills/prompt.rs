@@ -1,6 +1,11 @@
 use crate::skills::types::SkillMatch;
 
 const INSTRUCTIONS_PREVIEW_CHARS: usize = 420;
+const SKILLS_RUNTIME_GUIDANCE: &str = "- Runtime guidance:\n\
+  - Skill trigger syntax like `/skill-name` is an invocation marker, not a shell executable.\n\
+  - Do NOT call shell with only a trigger string (for example `/xxx`); execute concrete workflow steps instead.\n\
+  - For commit workflows, prefer lightweight inspection first: `git status --short` + `git diff --stat`, then expand diff only if needed.\n\
+  - Prefer separate `git add` and `git commit` calls over one chained command when possible.\n";
 
 pub fn build_skills_context(selected: &[SkillMatch], max_prompt_chars: usize) -> String {
     if selected.is_empty() {
@@ -8,6 +13,7 @@ pub fn build_skills_context(selected: &[SkillMatch], max_prompt_chars: usize) ->
     }
 
     let mut output = String::new();
+    output.push_str(SKILLS_RUNTIME_GUIDANCE);
     for skill in selected {
         let block = render_skill_block(skill);
         if output.chars().count() + block.chars().count() > max_prompt_chars {
@@ -19,7 +25,7 @@ pub fn build_skills_context(selected: &[SkillMatch], max_prompt_chars: usize) ->
     if output.is_empty() {
         truncate_chars(&render_skill_block(&selected[0]), max_prompt_chars)
     } else {
-        output.trim_end().to_string()
+        truncate_chars(output.trim_end(), max_prompt_chars)
     }
 }
 
@@ -83,5 +89,31 @@ mod tests {
 
         let ctx = build_skills_context(&[selection], 120);
         assert!(ctx.chars().count() <= 123);
+    }
+
+    #[test]
+    fn includes_runtime_guidance_for_selected_skills() {
+        let selection = SkillMatch {
+            entry: SkillEntry {
+                id: "local-commit".to_string(),
+                normalized_name: "local-commit".to_string(),
+                package_dir: PathBuf::from("/tmp/local-commit"),
+                manifest_path: PathBuf::from("/tmp/local-commit/SKILL.md"),
+                source_scope: SkillSourceScope::Workspace,
+                manifest: SkillManifest {
+                    name: "local-commit".to_string(),
+                    description: "commit changes".to_string(),
+                    instructions_markdown: "Do commit workflow".to_string(),
+                    extra: serde_json::json!({}),
+                },
+            },
+            score: 11,
+        };
+
+        let ctx = build_skills_context(&[selection], 6000);
+        assert!(ctx.contains("Skill trigger syntax like `/skill-name`"));
+        assert!(ctx.contains("Do NOT call shell with only a trigger string"));
+        assert!(ctx.contains("git status --short"));
+        assert!(ctx.contains("git diff --stat"));
     }
 }

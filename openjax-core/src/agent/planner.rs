@@ -31,6 +31,10 @@ impl Agent {
         let mut planner_rounds = 0usize;
         let mut consecutive_duplicate_skips = 0usize;
         let mut apply_patch_read_guard = ApplyPatchReadGuard::default();
+        let mut skill_shell_misfire_count = 0usize;
+        let mut saw_git_status_short = false;
+        let mut saw_git_diff_stat = false;
+        let mut diff_strategy = "none";
 
         debug!(
             turn_id = turn_id,
@@ -211,6 +215,9 @@ impl Agent {
                     phase = "completed",
                     action = "final",
                     final_response_mode = self.final_response_mode.as_str(),
+                    skill_shell_misfire_count = skill_shell_misfire_count,
+                    skill_workflow_shortcut_used = saw_git_status_short && saw_git_diff_stat,
+                    diff_strategy = diff_strategy,
                     "natural_language_turn completed"
                 );
                 let message = if self.final_response_mode == FinalResponseMode::FinalWriter {
@@ -275,6 +282,22 @@ impl Agent {
                 };
 
                 let args = decision.args.clone().unwrap_or_default();
+                if let Some(cmd) = args.get("cmd")
+                    && looks_like_skill_trigger_shell_command(cmd)
+                {
+                    skill_shell_misfire_count = skill_shell_misfire_count.saturating_add(1);
+                }
+                if let Some(cmd) = args.get("cmd") {
+                    if is_git_status_short(cmd) {
+                        saw_git_status_short = true;
+                    }
+                    if is_git_diff_stat(cmd) {
+                        saw_git_diff_stat = true;
+                    }
+                    if let Some(next_strategy) = detect_diff_strategy(cmd) {
+                        diff_strategy = merge_diff_strategy(diff_strategy, next_strategy);
+                    }
+                }
 
                 if let Some(message) =
                     apply_patch_read_guard.block_user_message_for_tool(&tool_name)
@@ -299,7 +322,10 @@ impl Agent {
                     self.record_tool_call(&tool_name, &args, false, &message);
                     tool_traces.push(format!(
                         "tool={tool_name}; ok=false; output={}",
-                        truncate_for_prompt(&message)
+                        truncate_for_prompt(
+                            &message,
+                            self.skill_runtime_config.max_diff_chars_for_planner
+                        )
                     ));
                     self.push_event(
                         events,
@@ -403,7 +429,10 @@ impl Agent {
                         );
                         let trace = format!(
                             "tool={tool_name}; ok={ok}; output={}",
-                            truncate_for_prompt(&output)
+                            truncate_for_prompt(
+                                &output,
+                                self.skill_runtime_config.max_diff_chars_for_planner
+                            )
                         );
                         tool_traces.push(trace);
 
@@ -435,7 +464,10 @@ impl Agent {
                         );
                         let trace = format!(
                             "tool={tool_name}; ok=false; output={}",
-                            truncate_for_prompt(&err_text)
+                            truncate_for_prompt(
+                                &err_text,
+                                self.skill_runtime_config.max_diff_chars_for_planner
+                            )
                         );
                         tool_traces.push(trace);
 
@@ -496,6 +528,9 @@ impl Agent {
             warn!(
                 turn_id = turn_id,
                 max_calls = self.max_tool_calls_per_turn,
+                skill_shell_misfire_count = skill_shell_misfire_count,
+                skill_workflow_shortcut_used = saw_git_status_short && saw_git_diff_stat,
+                diff_strategy = diff_strategy,
                 "natural_language_turn reached max tool calls"
             );
             format!(
@@ -507,6 +542,9 @@ impl Agent {
                 turn_id = turn_id,
                 planner_rounds = planner_rounds,
                 max_rounds = self.max_planner_rounds_per_turn,
+                skill_shell_misfire_count = skill_shell_misfire_count,
+                skill_workflow_shortcut_used = saw_git_status_short && saw_git_diff_stat,
+                diff_strategy = diff_strategy,
                 "natural_language_turn reached max planner rounds"
             );
             format!(
@@ -683,4 +721,70 @@ fn summarize_log_preview_json(text: &str, limit: usize) -> String {
         "truncated": truncated,
     })
     .to_string()
+}
+
+fn looks_like_skill_trigger_shell_command(command: &str) -> bool {
+    let trimmed = command.trim();
+    if trimmed.is_empty() || !trimmed.starts_with('/') {
+        return false;
+    }
+    if trimmed.contains(char::is_whitespace) {
+        return false;
+    }
+    trimmed[1..].chars().all(|ch| ch != '/')
+}
+
+fn is_git_status_short(command: &str) -> bool {
+    let normalized = command.trim().to_ascii_lowercase();
+    normalized == "git status --short" || normalized == "git status -s"
+}
+
+fn is_git_diff_stat(command: &str) -> bool {
+    command
+        .trim()
+        .to_ascii_lowercase()
+        .contains("git diff --stat")
+}
+
+fn detect_diff_strategy(command: &str) -> Option<&'static str> {
+    let normalized = command.trim().to_ascii_lowercase();
+    if !normalized.contains("git diff") {
+        return None;
+    }
+    if normalized.contains("git diff --stat") {
+        return Some("stat_only");
+    }
+    if normalized.contains("git diff --staged")
+        || normalized.contains("git diff --cached")
+        || normalized.contains("git diff -- ")
+    {
+        return Some("targeted");
+    }
+    Some("full")
+}
+
+fn merge_diff_strategy(current: &str, next: &str) -> &'static str {
+    fn rank(value: &str) -> u8 {
+        match value {
+            "stat_only" => 1,
+            "targeted" => 2,
+            "full" => 3,
+            _ => 0,
+        }
+    }
+    if rank(next) >= rank(current) {
+        match next {
+            "stat_only" => "stat_only",
+            "targeted" => "targeted",
+            "full" => "full",
+            _ => "none",
+        }
+    } else {
+        match current {
+            "stat_only" => "stat_only",
+            "targeted" => "targeted",
+            "full" => "full",
+            _ => "none",
+        }
+    }
 }

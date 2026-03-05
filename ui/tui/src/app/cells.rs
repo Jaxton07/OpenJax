@@ -4,7 +4,9 @@ use ratatui::text::{Line, Span};
 use crate::history_cell::{CellRole, HistoryCell};
 
 use super::App;
-use super::tool_output::{degraded_risk_summary, extract_backend_summary, summarize_tool_output};
+use super::tool_output::{
+    degraded_risk_summary, extract_backend_summary, skill_trigger_guard_hint, summarize_tool_output,
+};
 
 impl App {
     pub(crate) fn user_cell(&mut self, input: &str) -> HistoryCell {
@@ -106,6 +108,12 @@ impl App {
             lines.push(Line::from(vec![
                 Span::styled("  ├ ", Style::default().fg(Color::DarkGray)),
                 Span::styled(risk, Style::default().fg(Color::LightRed)),
+            ]));
+        }
+        if let Some(hint) = skill_trigger_guard_hint(output) {
+            lines.push(Line::from(vec![
+                Span::styled("  ├ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(hint, Style::default().fg(Color::Yellow)),
             ]));
         }
 
