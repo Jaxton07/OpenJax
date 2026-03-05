@@ -1,5 +1,6 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
+use std::path::Path;
 use std::time::Instant;
 use tracing::info;
 
@@ -23,25 +24,48 @@ impl App {
             return;
         }
         self.state.banner_printed = true;
+        let model_name = self
+            .state
+            .model_name
+            .as_deref()
+            .unwrap_or("unknown")
+            .to_string();
+        let cwd_display = self
+            .state
+            .cwd_display
+            .as_deref()
+            .unwrap_or(".")
+            .to_string();
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        let info_lines = vec![
+            Line::from(vec![
+                Span::styled(">_ ", Style::default().fg(Color::Rgb(157, 215, 255))),
+                Span::styled(
+                    "OpenJax TUI ",
+                    Style::default().fg(Color::Rgb(203, 172, 255)),
+                ),
+                Span::styled(
+                    format!("(v{version})"),
+                    Style::default().fg(Color::Rgb(255, 176, 218)),
+                ),
+            ]),
+            Line::default(),
+            Line::from(vec![
+                Span::styled("model:     ", Style::default().fg(Color::DarkGray)),
+                Span::styled(model_name, Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("directory: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(cwd_display, Style::default().fg(Color::White)),
+            ]),
+        ];
+        let banner_lines = Self::boxed_info_lines(&info_lines);
         let banner_id = self.alloc_id();
         self.queue_history_cell(HistoryCell {
             id: banner_id,
             role: CellRole::Banner,
             committed: true,
-            lines: vec![
-                Line::from(Span::styled(
-                    "OPENJAX",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                Line::from(Span::styled(
-                    "Personal Assistant",
-                    Style::default()
-                        .fg(Color::Gray)
-                        .add_modifier(Modifier::BOLD | Modifier::DIM),
-                )),
-            ],
+            lines: banner_lines,
         });
     }
 
@@ -50,10 +74,59 @@ impl App {
         model_name: String,
         approval_policy: String,
         sandbox_mode: String,
+        cwd: &Path,
     ) {
         self.state.model_name = Some(model_name);
         self.state.approval_policy = Some(approval_policy);
         self.state.sandbox_mode = Some(sandbox_mode);
+        self.state.cwd_display = Some(Self::display_path(cwd));
+    }
+
+    fn boxed_info_lines(content_lines: &[Line<'static>]) -> Vec<Line<'static>> {
+        let content_width = content_lines
+            .iter()
+            .map(Self::line_content_width)
+            .max()
+            .unwrap_or(0);
+        let top = format!("╭{}╮", "─".repeat(content_width + 2));
+        let bottom = format!("╰{}╯", "─".repeat(content_width + 2));
+
+        let mut lines = Vec::with_capacity(content_lines.len() + 2);
+        lines.push(Line::from(Span::styled(
+            top,
+            Style::default().fg(Color::Gray),
+        )));
+        for raw in content_lines {
+            let mut spans = Vec::with_capacity(raw.spans.len() + 3);
+            spans.push(Span::styled("│ ", Style::default().fg(Color::Gray)));
+            spans.extend(raw.spans.clone());
+            let pad = content_width.saturating_sub(Self::line_content_width(raw));
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.push(Span::styled(" │", Style::default().fg(Color::Gray)));
+            lines.push(Line::from(spans));
+        }
+        lines.push(Line::from(Span::styled(
+            bottom,
+            Style::default().fg(Color::Gray),
+        )));
+        lines
+    }
+
+    fn line_content_width(line: &Line<'_>) -> usize {
+        line.spans.iter().map(|span| span.content.chars().count()).sum()
+    }
+
+    fn display_path(path: &Path) -> String {
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = Path::new(&home);
+            if let Ok(rel) = path.strip_prefix(home_path) {
+                if rel.as_os_str().is_empty() {
+                    return "~".to_string();
+                }
+                return format!("~/{}", rel.display());
+            }
+        }
+        path.display().to_string()
     }
 
     pub fn drain_history_cells(&mut self) -> Vec<HistoryCell> {

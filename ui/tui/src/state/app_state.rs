@@ -72,6 +72,7 @@ pub struct AppState {
     pub model_name: Option<String>,
     pub approval_policy: Option<String>,
     pub sandbox_mode: Option<String>,
+    pub cwd_display: Option<String>,
     pub next_cell_id: u64,
 }
 
@@ -97,6 +98,7 @@ impl Default for AppState {
             model_name: None,
             approval_policy: None,
             sandbox_mode: None,
+            cwd_display: None,
             next_cell_id: 1,
         }
     }

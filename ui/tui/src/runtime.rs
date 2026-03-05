@@ -38,17 +38,19 @@ pub async fn run() -> anyhow::Result<()> {
     let approval_handler = Arc::new(TuiApprovalHandler::new());
     agent.set_approval_handler(approval_handler.clone());
     let agent = Arc::new(Mutex::new(agent));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
     let mut app = App::default();
-    app.initialize_banner_once();
     {
         let guard = agent.lock().await;
         app.set_runtime_info(
             guard.model_backend_name().to_string(),
             guard.approval_policy_name().to_string(),
             guard.sandbox_mode_name().to_string(),
+            cwd.as_path(),
         );
     }
+    app.initialize_banner_once();
 
     let mut tui = Tui::new()?;
     info!("tui initialized");
