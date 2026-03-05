@@ -113,7 +113,10 @@ impl App {
             let prefix = if idx == 0 { "  └ " } else { "    " };
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(Color::DarkGray)),
-                Span::styled(preview, Style::default().fg(Color::Gray)),
+                Span::styled(
+                    preview,
+                    Style::default().fg(Color::Gray).add_modifier(Modifier::DIM),
+                ),
             ]));
         }
 

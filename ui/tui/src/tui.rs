@@ -52,6 +52,7 @@ impl Tui {
     pub fn draw<F>(
         &mut self,
         desired_height: u16,
+        status_line: Option<Line<'static>>,
         input_line: Line<'static>,
         input_cursor: u16,
         approval_lines: Option<Vec<Line<'static>>>,
@@ -83,35 +84,50 @@ impl Tui {
             let draw_area = frame.area();
             frame.render_widget(Clear, draw_area);
             let approval_height = approval_lines.as_ref().map_or(0, |l| l.len() as u16);
-            let mut constraints = vec![Constraint::Min(2), Constraint::Length(2)];
-            if approval_height > 0 {
-                constraints.push(Constraint::Length(1));
-                constraints.push(Constraint::Length(approval_height));
-                constraints.push(Constraint::Length(1));
-            }
-            constraints.push(Constraint::Length(1));
+            let constraints = layout_constraints(approval_height, status_line.is_some());
+            let status_idx = if status_line.is_some() {
+                Some(1usize)
+            } else {
+                None
+            };
+            let input_idx = if status_line.is_some() { 2 } else { 1 };
             let chunks = Layout::vertical(constraints).split(draw_area);
 
             render_live(chunks[0], frame.buffer_mut());
 
-            frame.render_widget(Clear, chunks[1]);
-            let input_widget =
-                Paragraph::new(input_line.clone()).block(Block::default().borders(Borders::TOP));
-            input_widget.render(chunks[1], frame.buffer_mut());
-            let cursor_x = chunks[1]
+            if let Some(idx) = status_idx
+                && let Some(status_line) = status_line.clone()
+            {
+                frame.render_widget(Clear, chunks[idx]);
+                let status_widget = Paragraph::new(status_line);
+                status_widget.render(chunks[idx], frame.buffer_mut());
+            }
+
+            frame.render_widget(Clear, chunks[input_idx]);
+            let input_widget = Paragraph::new(input_line.clone()).block(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::default().fg(Color::Gray).add_modifier(Modifier::DIM)),
+            );
+            input_widget.render(chunks[input_idx], frame.buffer_mut());
+            let cursor_x = chunks[input_idx]
                 .x
                 .saturating_add(input_cursor)
-                .min(chunks[1].x + chunks[1].width.saturating_sub(1));
-            frame.set_cursor_position((cursor_x, chunks[1].y + 1));
+                .min(chunks[input_idx].x + chunks[input_idx].width.saturating_sub(1));
+            frame.set_cursor_position((cursor_x, chunks[input_idx].y + 1));
 
-            let footer_idx = if approval_height > 0 { 5 } else { 2 };
+            let footer_idx = if approval_height > 0 {
+                input_idx + 4
+            } else {
+                input_idx + 1
+            };
             if approval_height > 0 {
-                frame.render_widget(Clear, chunks[2]);
-                let approval_area = chunks[3];
+                frame.render_widget(Clear, chunks[input_idx + 1]);
+                let approval_area = chunks[input_idx + 2];
                 frame.render_widget(Clear, approval_area);
                 let approval_widget = Paragraph::new(approval_lines.unwrap_or_default());
                 approval_widget.render(approval_area, frame.buffer_mut());
-                frame.render_widget(Clear, chunks[4]);
+                frame.render_widget(Clear, chunks[input_idx + 3]);
             }
 
             frame.render_widget(Clear, chunks[footer_idx]);
@@ -154,11 +170,27 @@ fn compute_viewport_plan(
     ViewportPlan { area, scroll_up }
 }
 
+fn layout_constraints(approval_height: u16, status_visible: bool) -> Vec<Constraint> {
+    let mut constraints = vec![Constraint::Min(2)];
+    if status_visible {
+        constraints.push(Constraint::Length(1));
+    }
+    constraints.push(Constraint::Length(2));
+    if approval_height > 0 {
+        constraints.push(Constraint::Length(1));
+        constraints.push(Constraint::Length(approval_height));
+        constraints.push(Constraint::Length(1));
+    }
+    constraints.push(Constraint::Length(1));
+    constraints
+}
+
 #[cfg(test)]
 mod tests {
+    use ratatui::layout::Constraint;
     use ratatui::layout::Rect;
 
-    use super::{ViewportPlan, compute_viewport_plan};
+    use super::{ViewportPlan, compute_viewport_plan, layout_constraints};
 
     #[test]
     fn viewport_stays_near_current_cursor_when_space_is_available() {
@@ -183,6 +215,20 @@ mod tests {
                 area: Rect::new(0, 18, 100, 12),
                 scroll_up: 7,
             }
+        );
+    }
+
+    #[test]
+    fn layout_places_status_row_above_input() {
+        let constraints = layout_constraints(0, true);
+        assert_eq!(
+            constraints,
+            vec![
+                Constraint::Min(2),
+                Constraint::Length(1),
+                Constraint::Length(2),
+                Constraint::Length(1),
+            ]
         );
     }
 }

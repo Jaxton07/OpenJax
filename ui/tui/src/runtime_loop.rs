@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use openjax_core::Agent;
 use openjax_protocol::Event;
@@ -70,7 +71,10 @@ pub(crate) async fn drain_finished_turn_task(
                 app.apply_core_event(event);
             }
             if drained > 0 {
-                info!(count = drained, "tui core events drained after turn finished");
+                info!(
+                    count = drained,
+                    "tui core events drained after turn finished"
+                );
             }
         }
     }
@@ -80,6 +84,7 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     let viewport = tui.viewport_size();
     let term_width = viewport.width.max(8);
     let desired = app.desired_height(term_width);
+    let status_line = app.status_bar_line(Instant::now(), term_width, true);
     let cells = app.drain_history_cells();
     if !cells.is_empty() {
         info!(count = cells.len(), "tui rendering history cells");
@@ -87,6 +92,7 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     tui.queue_history_cells(cells);
     tui.draw(
         desired,
+        status_line,
         app.input_line(),
         app.input_cursor_offset(term_width),
         app.approval_panel_lines(),

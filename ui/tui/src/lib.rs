@@ -4,6 +4,7 @@ pub mod history_cell;
 pub mod input;
 pub mod insert_history;
 pub mod state;
+pub mod status;
 pub mod terminal;
 pub mod tui;
 pub mod wrapping;

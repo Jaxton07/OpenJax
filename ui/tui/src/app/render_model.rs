@@ -3,9 +3,11 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 use std::time::Duration;
+use std::time::Instant;
 use unicode_width::UnicodeWidthStr;
 
 use crate::state::ApprovalSelection;
+use crate::status::indicator;
 
 use super::App;
 
@@ -83,6 +85,21 @@ impl App {
             self.state.approval_policy.as_deref().unwrap_or("unknown"),
             self.state.sandbox_mode.as_deref().unwrap_or("unknown"),
         )
+    }
+
+    pub fn status_bar_line(
+        &self,
+        now: Instant,
+        width: u16,
+        animations_enabled: bool,
+    ) -> Option<Line<'static>> {
+        let status = self.state.status_bar.as_ref()?;
+        Some(indicator::status_line(
+            status,
+            now,
+            width,
+            animations_enabled,
+        ))
     }
 
     pub fn move_approval_selection(&mut self, delta: i8) {

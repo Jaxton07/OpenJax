@@ -1,9 +1,10 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use std::time::Instant;
 use tracing::info;
 
 use crate::history_cell::{CellRole, HistoryCell};
-use crate::state::{AppState, ApprovalSelection, LiveMessage};
+use crate::state::{AppState, ApprovalSelection, LiveMessage, StatusBarState, StatusPhase};
 
 mod cells;
 mod layout_metrics;
@@ -109,7 +110,7 @@ impl App {
         self.push_input_history(input.clone());
         self.state.input.clear();
         self.state.input_cursor = 0;
-        self.set_live_status("Thinking...");
+        self.set_status_running("Working");
         Some(SubmitAction::UserTurn { input })
     }
 
@@ -179,6 +180,7 @@ impl App {
         self.state.history_cells.clear();
         self.state.pending_history_cells.clear();
         self.state.live_messages.clear();
+        self.state.status_bar = None;
         self.state.input.clear();
         self.state.input_cursor = 0;
         self.state.history_nav_index = None;
@@ -198,6 +200,25 @@ impl App {
             role: "status",
             content: text.into(),
         }];
+    }
+
+    pub fn set_status_running(&mut self, label: impl Into<String>) {
+        let started_at = self
+            .state
+            .status_bar
+            .as_ref()
+            .map(|status| status.started_at)
+            .unwrap_or_else(Instant::now);
+        self.state.status_bar = Some(StatusBarState {
+            phase: StatusPhase::Running,
+            label: label.into(),
+            show_interrupt_hint: true,
+            started_at,
+        });
+    }
+
+    pub fn clear_status_bar(&mut self) {
+        self.state.status_bar = None;
     }
 
     pub(crate) fn queue_history_cell(&mut self, cell: HistoryCell) {

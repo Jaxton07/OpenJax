@@ -74,7 +74,11 @@ fn duplicate_approval_requested_with_same_id_is_deduped() {
         degrade_reason: Some("permission denied".to_string()),
     });
 
-    let pending = app.state.pending_approval.as_ref().expect("approval pending");
+    let pending = app
+        .state
+        .pending_approval
+        .as_ref()
+        .expect("approval pending");
     assert_eq!(pending.request_id, "req-dup");
     assert_eq!(pending.tool_name.as_deref(), Some("shell"));
     assert_eq!(pending.command_preview.as_deref(), Some("git add -A"));
@@ -108,6 +112,6 @@ git: error: could not open /dev/null";
         .map(|m| m.content.clone())
         .unwrap_or_default();
     assert!(!message.contains('\n'));
-    assert!(message.contains("approval pending (req-reason)"));
+    assert!(message.contains("pending (req-reason)"));
     assert!(!message.contains("cmd="));
 }

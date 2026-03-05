@@ -15,7 +15,7 @@ impl App {
                 self.state.active_turn_id = Some(turn_id);
                 self.state.stream_turn_id = None;
                 self.state.stream_text.clear();
-                self.set_live_status("Thinking...");
+                self.set_status_running("Working");
             }
             Event::AssistantDelta {
                 turn_id,
@@ -176,9 +176,11 @@ impl App {
                     self.state.last_assistant_committed_turn = Some(turn_id);
                 }
                 self.state.stream_text.clear();
+                self.clear_status_bar();
                 self.state.live_messages.clear();
             }
             Event::ShutdownComplete => {
+                self.clear_status_bar();
                 self.set_live_status("Shutdown complete");
             }
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
@@ -187,10 +189,7 @@ impl App {
 
     fn refresh_approval_live_message(&mut self) {
         if let Some(pending) = &self.state.pending_approval {
-            let content = format!(
-                "approval pending ({}) (input y/n + Enter)",
-                pending.request_id
-            );
+            let content = format!("pending ({}) (input y/n + Enter)", pending.request_id);
             self.state.live_messages = vec![LiveMessage {
                 role: "approval",
                 content,
@@ -210,6 +209,7 @@ mod tests {
         let mut app = App::default();
 
         app.apply_core_event(Event::TurnStarted { turn_id: 1 });
+        assert!(app.state.status_bar.is_some());
         app.apply_core_event(Event::AssistantDelta {
             turn_id: 1,
             content_delta: "hello".to_string(),
@@ -223,6 +223,7 @@ mod tests {
         assert_eq!(app.drain_history_cells().len(), 1);
 
         app.apply_core_event(Event::TurnCompleted { turn_id: 1 });
+        assert!(app.state.status_bar.is_none());
         assert!(app.drain_history_cells().is_empty());
     }
 }

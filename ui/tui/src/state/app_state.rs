@@ -7,6 +7,19 @@ pub struct LiveMessage {
     pub content: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StatusPhase {
+    Running,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatusBarState {
+    pub phase: StatusPhase,
+    pub label: String,
+    pub show_interrupt_hint: bool,
+    pub started_at: Instant,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingApproval {
     pub request_id: String,
@@ -49,6 +62,7 @@ pub struct AppState {
     pub history_cells: Vec<HistoryCell>,
     pub pending_history_cells: Vec<HistoryCell>,
     pub live_messages: Vec<LiveMessage>,
+    pub status_bar: Option<StatusBarState>,
     pub pending_approval: Option<PendingApproval>,
     pub approval_selection: ApprovalSelection,
     pub active_turn_id: Option<u64>,
@@ -73,6 +87,7 @@ impl Default for AppState {
             history_cells: Vec::new(),
             pending_history_cells: Vec::new(),
             live_messages: Vec::new(),
+            status_bar: None,
             pending_approval: None,
             approval_selection: ApprovalSelection::Approve,
             active_turn_id: None,

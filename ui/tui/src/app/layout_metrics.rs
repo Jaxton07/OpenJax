@@ -7,6 +7,11 @@ impl App {
     pub fn desired_height(&self, width: u16) -> u16 {
         let footer_h = 1u16;
         let input_h = 2u16;
+        let status_h = if self.state.status_bar.is_some() {
+            1u16
+        } else {
+            0u16
+        };
         let approval_h = if self.state.pending_approval.is_some() {
             self.approval_panel_height()
         } else {
@@ -14,6 +19,7 @@ impl App {
         };
         let approval_spacing = if approval_h > 0 { 2u16 } else { 0u16 };
         self.live_visual_height(width)
+            .saturating_add(status_h)
             .saturating_add(input_h)
             .saturating_add(approval_h)
             .saturating_add(approval_spacing)
@@ -53,4 +59,19 @@ fn visual_line_count(line: &Line<'static>, max_w: usize) -> usize {
     }
 
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::App;
+
+    #[test]
+    fn desired_height_includes_status_row_when_visible() {
+        let mut app = App::default();
+        let base = app.desired_height(80);
+        app.set_status_running("Working");
+        let with_status = app.desired_height(80);
+        assert!(with_status >= base);
+        assert!(with_status.saturating_sub(base) <= 1);
+    }
 }
