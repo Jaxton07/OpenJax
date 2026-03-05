@@ -44,6 +44,8 @@
 1. apply_patch 成功后再次调用的问题
 2. 打印顶部版本信息和logo
 3. 等待模型回复时，thinking 状态无法ctrl + C 退出，添加esc 终止当前模型的操作进程
+4. markdown 支持
+5. /cmd 提示面板
 
 
 设计未来新的目录架构

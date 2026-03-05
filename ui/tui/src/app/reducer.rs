@@ -84,6 +84,42 @@ impl App {
                 degrade_reason,
                 ..
             } => {
+                let now = Instant::now();
+                let timeout_ms = approval_timeout_ms_from_env();
+                let mut dedup_request_id: Option<String> = None;
+                if let Some(existing) = self.state.pending_approval.as_mut() {
+                    if existing.request_id == request_id {
+                        // Same request emitted from multiple channels: merge richer fields
+                        // without creating a second approval state transition.
+                        existing.target = target.clone();
+                        existing.reason = reason.clone();
+                        if existing.tool_name.is_none() {
+                            existing.tool_name = tool_name.clone();
+                        }
+                        if existing.command_preview.is_none() {
+                            existing.command_preview = command_preview.clone();
+                        }
+                        if existing.risk_tags.is_empty() {
+                            existing.risk_tags = risk_tags.clone();
+                        }
+                        if existing.sandbox_backend.is_none() {
+                            existing.sandbox_backend = sandbox_backend.clone();
+                        }
+                        if existing.degrade_reason.is_none() {
+                            existing.degrade_reason = degrade_reason.clone();
+                        }
+                        existing.requested_at = now;
+                        existing.timeout_ms = timeout_ms;
+                        self.state.approval_selection = ApprovalSelection::Approve;
+                        dedup_request_id = Some(existing.request_id.clone());
+                    }
+                }
+                if let Some(request_id) = dedup_request_id {
+                    self.refresh_approval_live_message();
+                    info!(request_id = %request_id, "tui dedup ApprovalRequested");
+                    return;
+                }
+
                 self.state.pending_approval = Some(PendingApproval {
                     request_id,
                     target,
@@ -93,25 +129,11 @@ impl App {
                     risk_tags,
                     sandbox_backend,
                     degrade_reason,
-                    requested_at: Instant::now(),
-                    timeout_ms: approval_timeout_ms_from_env(),
+                    requested_at: now,
+                    timeout_ms,
                 });
                 self.state.approval_selection = ApprovalSelection::Approve;
-                if let Some(pending) = &self.state.pending_approval {
-                    let target_preview = sanitize_target_for_title(&pending.target, 120);
-                    let cmd_preview = pending
-                        .command_preview
-                        .as_deref()
-                        .map(|raw| sanitize_target_for_title(raw, 120))
-                        .unwrap_or_default();
-                    self.state.live_messages = vec![LiveMessage {
-                        role: "approval",
-                        content: format!(
-                            "{} - {} | cmd={} (input y/n + Enter)",
-                            target_preview, pending.reason, cmd_preview
-                        ),
-                    }];
-                }
+                self.refresh_approval_live_message();
                 info!(
                     request_id = %self
                         .state
@@ -160,6 +182,33 @@ impl App {
                 self.set_live_status("Shutdown complete");
             }
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
+        }
+    }
+
+    fn refresh_approval_live_message(&mut self) {
+        if let Some(pending) = &self.state.pending_approval {
+            let target_preview = sanitize_target_for_title(&pending.target, 120);
+            let reason_preview = sanitize_target_for_title(&pending.reason, 140);
+            let cmd_preview = pending
+                .command_preview
+                .as_deref()
+                .map(|raw| sanitize_target_for_title(raw, 120))
+                .unwrap_or_default();
+            let content = if cmd_preview.is_empty() {
+                format!(
+                    "{} - {} (input y/n + Enter)",
+                    target_preview, reason_preview
+                )
+            } else {
+                format!(
+                    "{} - {} | cmd={} (input y/n + Enter)",
+                    target_preview, reason_preview, cmd_preview
+                )
+            };
+            self.state.live_messages = vec![LiveMessage {
+                role: "approval",
+                content,
+            }];
         }
     }
 }
