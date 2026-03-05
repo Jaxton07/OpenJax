@@ -14,10 +14,9 @@ pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &Tu
     let mut drained = 0usize;
     while let Some(request) = approval_handler.pop_request().await {
         drained += 1;
-        let reason_summary = summarize_reason(&request.reason);
         info!(
             request_id = %request.request_id,
-            reason_summary = %reason_summary,
+            reason = %request.reason,
             "tui approval request drained"
         );
         app.apply_core_event(openjax_protocol::Event::ApprovalRequested {
@@ -130,7 +129,7 @@ fn log_core_event(event: &Event) {
             turn_id = *turn_id,
             request_id = %request_id,
             tool_name = %tool_name.as_deref().unwrap_or(""),
-            reason_summary = %summarize_reason(reason),
+            reason = %reason,
             "tui core event ApprovalRequested"
         ),
         Event::ApprovalResolved {
@@ -149,30 +148,6 @@ fn log_core_event(event: &Event) {
         }
         _ => {}
     }
-}
-
-fn summarize_reason(reason: &str) -> String {
-    let mut collapsed = String::new();
-    let mut prev_space = false;
-    for ch in reason.replace('\r', " ").replace('\n', " ").chars() {
-        if ch.is_whitespace() {
-            if !prev_space {
-                collapsed.push(' ');
-                prev_space = true;
-            }
-            continue;
-        }
-        collapsed.push(ch);
-        prev_space = false;
-    }
-    let collapsed = collapsed.trim();
-    let max_chars = 160usize;
-    if collapsed.chars().count() <= max_chars {
-        return collapsed.to_string();
-    }
-    let mut out = collapsed.chars().take(max_chars).collect::<String>();
-    out.push_str("...");
-    out
 }
 
 pub(crate) async fn handle_submit_action(

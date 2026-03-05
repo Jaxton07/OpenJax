@@ -79,7 +79,7 @@ fn duplicate_approval_requested_with_same_id_is_deduped() {
     assert_eq!(pending.tool_name.as_deref(), Some("shell"));
     assert_eq!(pending.command_preview.as_deref(), Some("git add -A"));
     assert_eq!(pending.sandbox_backend.as_deref(), Some("macos_seatbelt"));
-    assert_ne!(app.state.live_messages, first_live);
+    assert_eq!(app.state.live_messages, first_live);
     assert_eq!(app.drain_history_cells().len(), 0);
 }
 
@@ -108,5 +108,6 @@ git: error: could not open /dev/null";
         .map(|m| m.content.clone())
         .unwrap_or_default();
     assert!(!message.contains('\n'));
-    assert!(message.contains("cmd=git add -A"));
+    assert!(message.contains("approval pending (req-reason)"));
+    assert!(!message.contains("cmd="));
 }

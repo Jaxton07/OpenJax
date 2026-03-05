@@ -187,24 +187,10 @@ impl App {
 
     fn refresh_approval_live_message(&mut self) {
         if let Some(pending) = &self.state.pending_approval {
-            let target_preview = sanitize_target_for_title(&pending.target, 120);
-            let reason_preview = sanitize_target_for_title(&pending.reason, 140);
-            let cmd_preview = pending
-                .command_preview
-                .as_deref()
-                .map(|raw| sanitize_target_for_title(raw, 120))
-                .unwrap_or_default();
-            let content = if cmd_preview.is_empty() {
-                format!(
-                    "{} - {} (input y/n + Enter)",
-                    target_preview, reason_preview
-                )
-            } else {
-                format!(
-                    "{} - {} | cmd={} (input y/n + Enter)",
-                    target_preview, reason_preview, cmd_preview
-                )
-            };
+            let content = format!(
+                "approval pending ({}) (input y/n + Enter)",
+                pending.request_id
+            );
             self.state.live_messages = vec![LiveMessage {
                 role: "approval",
                 content,
