@@ -14,6 +14,8 @@ pub use config::AgentConfig;
 pub use config::Config;
 pub use config::SkillsConfig;
 pub use logger::init_logger;
+pub use logger::init_logger_with_file;
+pub use logger::init_split_logger;
 use openjax_protocol::Event;
 use std::path::PathBuf;
 use std::sync::Arc;

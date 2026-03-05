@@ -1,5 +1,6 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use tracing::info;
 
 use crate::history_cell::{CellRole, HistoryCell};
 use crate::state::{AppState, ApprovalSelection, LiveMessage};
@@ -200,6 +201,12 @@ impl App {
     }
 
     pub(crate) fn queue_history_cell(&mut self, cell: HistoryCell) {
+        info!(
+            id = cell.id,
+            role = ?cell.role,
+            lines = cell.lines.len(),
+            "tui queue history cell"
+        );
         self.state.history_cells.push(cell.clone());
         self.state.pending_history_cells.push(cell);
     }

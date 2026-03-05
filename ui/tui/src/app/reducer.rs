@@ -1,5 +1,6 @@
 use openjax_protocol::Event;
 use std::time::Instant;
+use tracing::info;
 
 use crate::state::{ApprovalSelection, LiveMessage, PendingApproval};
 use openjax_core::approval_timeout_ms_from_env;
@@ -51,6 +52,11 @@ impl App {
                     format!("Run {} ({})", tool_name, suffix)
                 });
                 self.queue_history_cell(cell);
+                info!(
+                    tool_name = %tool_name,
+                    pending_cells = self.state.pending_history_cells.len(),
+                    "tui applied ToolCallStarted"
+                );
             }
             Event::ToolCallCompleted {
                 tool_name,
@@ -60,6 +66,12 @@ impl App {
             } => {
                 let cell = self.tool_completed_cell(&tool_name, ok, &output);
                 self.queue_history_cell(cell);
+                info!(
+                    tool_name = %tool_name,
+                    ok = ok,
+                    pending_cells = self.state.pending_history_cells.len(),
+                    "tui applied ToolCallCompleted"
+                );
             }
             Event::ApprovalRequested {
                 request_id,
@@ -100,6 +112,15 @@ impl App {
                         ),
                     }];
                 }
+                info!(
+                    request_id = %self
+                        .state
+                        .pending_approval
+                        .as_ref()
+                        .map(|p| p.request_id.as_str())
+                        .unwrap_or(""),
+                    "tui applied ApprovalRequested"
+                );
             }
             Event::ApprovalResolved {
                 request_id,
@@ -114,6 +135,12 @@ impl App {
                     request_id
                 ));
                 self.queue_history_cell(cell);
+                info!(
+                    request_id = %request_id,
+                    approved = approved,
+                    pending_cells = self.state.pending_history_cells.len(),
+                    "tui applied ApprovalResolved"
+                );
             }
             Event::TurnCompleted { turn_id } => {
                 self.state.active_turn_id = None;

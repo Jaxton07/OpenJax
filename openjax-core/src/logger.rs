@@ -1,10 +1,12 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write as IoWrite};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use time::format_description::well_known::Rfc3339;
 use tracing::Level;
+use tracing_subscriber::filter::FilterExt;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::fmt::time::OffsetTime;
 use tracing_subscriber::prelude::*;
@@ -14,10 +16,9 @@ const DEFAULT_MAX_LINES: usize = 10_000;
 const DEFAULT_MAX_ARCHIVES: usize = 4;
 const LOG_FILE_NAME: &str = "openjax.log";
 
-static LINE_COUNT: AtomicU64 = AtomicU64::new(0);
-
 pub struct LoggerConfig {
     pub log_dir: PathBuf,
+    pub log_file_name: String,
     pub max_lines: usize,
     pub max_archives: usize,
     pub session_id: String,
@@ -31,6 +32,7 @@ impl LoggerConfig {
 
         Self {
             log_dir,
+            log_file_name: LOG_FILE_NAME.to_string(),
             max_lines: DEFAULT_MAX_LINES,
             max_archives: DEFAULT_MAX_ARCHIVES,
             session_id,
@@ -71,6 +73,12 @@ impl LoggerConfig {
                 config.max_archives = archives;
             }
         }
+        if let Ok(val) = std::env::var("OPENJAX_LOG_FILE") {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                config.log_file_name = trimmed.to_string();
+            }
+        }
 
         config
     }
@@ -93,22 +101,27 @@ fn generate_session_id() -> String {
 }
 
 pub fn init_logger() -> Option<()> {
+    init_logger_with_file(LOG_FILE_NAME)
+}
+
+pub fn init_logger_with_file(log_file_name: &str) -> Option<()> {
     if std::env::var("OPENJAX_LOG").is_ok_and(|v| v == "off") {
         return Some(());
     }
 
-    let config = LoggerConfig::from_env();
+    let mut config = LoggerConfig::from_env();
+    let trimmed_file = log_file_name.trim();
+    if !trimmed_file.is_empty() {
+        config.log_file_name = trimmed_file.to_string();
+    }
 
     if fs::create_dir_all(&config.log_dir).is_err() {
         return Some(());
     }
 
-    let log_file_path = config.log_dir.join(LOG_FILE_NAME);
-    let existing_lines = count_file_lines(&log_file_path).unwrap_or(0);
-    LINE_COUNT.store(existing_lines as u64, Ordering::SeqCst);
-
     let file_writer = RollingFileWriter::new(
         config.log_dir.clone(),
+        config.log_file_name.clone(),
         config.max_lines,
         config.max_archives,
     );
@@ -137,13 +150,97 @@ pub fn init_logger() -> Option<()> {
         .ok()?;
 
     tracing::info!(
-        "logger initialized session={} pid={} log_dir={}",
+        "logger initialized session={} pid={} log_dir={} file={}",
         config.session_id,
         std::process::id(),
-        config.log_dir.display()
+        config.log_dir.display(),
+        config.log_file_name
     );
 
     Some(())
+}
+
+pub fn init_split_logger(core_log_file_name: &str, tui_log_file_name: &str) -> Option<()> {
+    if std::env::var("OPENJAX_LOG").is_ok_and(|v| v == "off") {
+        return Some(());
+    }
+
+    let mut config = LoggerConfig::from_env();
+    let core_file = core_log_file_name.trim();
+    let tui_file = tui_log_file_name.trim();
+    if core_file.is_empty() || tui_file.is_empty() {
+        return init_logger();
+    }
+    config.log_file_name = core_file.to_string();
+
+    if fs::create_dir_all(&config.log_dir).is_err() {
+        return Some(());
+    }
+
+    let core_writer = RollingFileWriter::new(
+        config.log_dir.clone(),
+        core_file.to_string(),
+        config.max_lines,
+        config.max_archives,
+    );
+    let tui_writer = RollingFileWriter::new(
+        config.log_dir.clone(),
+        tui_file.to_string(),
+        config.max_lines,
+        config.max_archives,
+    );
+
+    let level_filter = get_log_level_from_env();
+    let timer = OffsetTime::local_rfc_3339().unwrap_or_else(|_| {
+        let offset = time::UtcOffset::from_hms(8, 0, 0).unwrap();
+        OffsetTime::new(offset, Rfc3339)
+    });
+
+    let core_filter = tracing_subscriber::filter::filter_fn(|meta| !is_tui_target(meta.target()))
+        .and(tracing_subscriber::filter::LevelFilter::from(level_filter));
+    let tui_filter = tracing_subscriber::filter::filter_fn(|meta| is_tui_target(meta.target()))
+        .and(tracing_subscriber::filter::LevelFilter::from(level_filter));
+
+    let core_layer = tracing_subscriber::fmt::layer()
+        .with_writer(core_writer)
+        .with_ansi(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_timer(timer.clone())
+        .with_filter(core_filter);
+
+    let tui_layer = tracing_subscriber::fmt::layer()
+        .with_writer(tui_writer)
+        .with_ansi(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_timer(timer)
+        .with_filter(tui_filter);
+
+    let subscriber = registry().with(core_layer).with(tui_layer);
+
+    tracing::subscriber::set_global_default(subscriber)
+        .map_err(|e| eprintln!("[logger] failed to set subscriber: {}", e))
+        .ok()?;
+
+    tracing::info!(
+        "split logger initialized session={} pid={} log_dir={} core_file={} tui_file={}",
+        config.session_id,
+        std::process::id(),
+        config.log_dir.display(),
+        core_file,
+        tui_file
+    );
+
+    Some(())
+}
+
+fn is_tui_target(target: &str) -> bool {
+    target == "tui_next" || target.starts_with("tui_next::")
 }
 
 fn get_log_level_from_env() -> Level {
@@ -169,30 +266,49 @@ fn count_file_lines(path: &PathBuf) -> Option<usize> {
 #[derive(Clone)]
 pub struct RollingFileWriter {
     log_dir: PathBuf,
+    log_file_name: String,
+    archive_prefix: String,
     max_lines: usize,
     max_archives: usize,
+    line_count: Arc<AtomicU64>,
 }
 
 impl RollingFileWriter {
-    pub fn new(log_dir: PathBuf, max_lines: usize, max_archives: usize) -> Self {
+    pub fn new(
+        log_dir: PathBuf,
+        log_file_name: String,
+        max_lines: usize,
+        max_archives: usize,
+    ) -> Self {
+        let archive_prefix = PathBuf::from(&log_file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("openjax")
+            .to_string();
+        let log_file_path = log_dir.join(&log_file_name);
+        let existing_lines = count_file_lines(&log_file_path).unwrap_or(0) as u64;
         Self {
             log_dir,
+            log_file_name,
+            archive_prefix,
             max_lines,
             max_archives,
+            line_count: Arc::new(AtomicU64::new(existing_lines)),
         }
     }
 
     fn rotate(&self) {
-        let archive_name = format!("openjax.{}.log", chrono_timestamp());
+        let archive_name = format!("{}.{}.log", self.archive_prefix, chrono_timestamp());
         let archive_path = self.log_dir.join(&archive_name);
-        let current_path = self.log_dir.join(LOG_FILE_NAME);
+        let current_path = self.log_dir.join(&self.log_file_name);
 
         if let Err(e) = fs::rename(&current_path, &archive_path) {
             eprintln!("[logger] failed to rotate log: {}", e);
             return;
         }
 
-        LINE_COUNT.store(0, Ordering::SeqCst);
+        self.line_count.store(0, Ordering::SeqCst);
 
         self.cleanup_old_archives();
     }
@@ -206,7 +322,8 @@ impl RollingFileWriter {
             .filter_map(|e| e.ok())
             .filter(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                name.starts_with("openjax.") && name.ends_with(".log") && name != LOG_FILE_NAME
+                let prefix = format!("{}.", self.archive_prefix);
+                name.starts_with(&prefix) && name.ends_with(".log") && name != self.log_file_name
             })
             .map(|e| e.path())
             .collect();
@@ -222,7 +339,7 @@ impl RollingFileWriter {
     }
 
     fn open_file(&self) -> File {
-        let log_file_path = self.log_dir.join(LOG_FILE_NAME);
+        let log_file_path = self.log_dir.join(&self.log_file_name);
         OpenOptions::new()
             .create(true)
             .append(true)
@@ -296,11 +413,11 @@ impl MakeWriter<'_> for RollingFileWriter {
     type Writer = RollingFileWriterGuard;
 
     fn make_writer(&self) -> Self::Writer {
-        if LINE_COUNT.load(Ordering::SeqCst) >= self.max_lines as u64 {
+        if self.line_count.load(Ordering::SeqCst) >= self.max_lines as u64 {
             self.rotate();
         }
 
-        LINE_COUNT.fetch_add(1, Ordering::SeqCst);
+        self.line_count.fetch_add(1, Ordering::SeqCst);
 
         RollingFileWriterGuard {
             writer: self.open_file(),

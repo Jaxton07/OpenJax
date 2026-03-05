@@ -1,15 +1,24 @@
 use std::sync::Arc;
 
 use openjax_core::Agent;
+use openjax_protocol::Event;
 use openjax_protocol::Op;
 use tokio::sync::Mutex;
+use tracing::info;
 
 use crate::app::{App, SubmitAction};
 use crate::approval::TuiApprovalHandler;
 use crate::tui::Tui;
 
 pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &TuiApprovalHandler) {
+    let mut drained = 0usize;
     while let Some(request) = approval_handler.pop_request().await {
+        drained += 1;
+        info!(
+            request_id = %request.request_id,
+            reason = %request.reason,
+            "tui approval request drained"
+        );
         app.apply_core_event(openjax_protocol::Event::ApprovalRequested {
             turn_id: 0,
             request_id: request.request_id,
@@ -22,6 +31,9 @@ pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &Tu
             degrade_reason: None,
         });
     }
+    if drained > 0 {
+        info!(count = drained, "tui approval requests drained");
+    }
 }
 
 pub(crate) fn drain_core_events(
@@ -29,8 +41,14 @@ pub(crate) fn drain_core_events(
     core_event_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>>,
 ) {
     if let Some(rx) = core_event_rx.as_mut() {
+        let mut drained = 0usize;
         while let Ok(event) = rx.try_recv() {
+            drained += 1;
+            log_core_event(&event);
             app.apply_core_event(event);
+        }
+        if drained > 0 {
+            info!(count = drained, "tui core events drained");
         }
     }
 }
@@ -45,8 +63,14 @@ pub(crate) async fn drain_finished_turn_task(
             let _ = task.await;
         }
         if let Some(mut rx) = core_event_rx.take() {
+            let mut drained = 0usize;
             while let Ok(event) = rx.try_recv() {
+                drained += 1;
+                log_core_event(&event);
                 app.apply_core_event(event);
+            }
+            if drained > 0 {
+                info!(count = drained, "tui core events drained after turn finished");
             }
         }
     }
@@ -57,6 +81,9 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     let term_width = viewport.width.max(8);
     let desired = app.desired_height(term_width);
     let cells = app.drain_history_cells();
+    if !cells.is_empty() {
+        info!(count = cells.len(), "tui rendering history cells");
+    }
     tui.queue_history_cells(cells);
     tui.draw(
         desired,
@@ -67,6 +94,58 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
         |area, buf| app.render_live(area, buf),
     )?;
     Ok(())
+}
+
+fn log_core_event(event: &Event) {
+    match event {
+        Event::ToolCallStarted {
+            turn_id,
+            tool_name,
+            target,
+        } => info!(
+            turn_id = *turn_id,
+            tool_name = %tool_name,
+            target = %target.as_deref().unwrap_or(""),
+            "tui core event ToolCallStarted"
+        ),
+        Event::ToolCallCompleted {
+            turn_id,
+            tool_name,
+            ok,
+            ..
+        } => info!(
+            turn_id = *turn_id,
+            tool_name = %tool_name,
+            ok = *ok,
+            "tui core event ToolCallCompleted"
+        ),
+        Event::ApprovalRequested {
+            turn_id,
+            request_id,
+            tool_name,
+            ..
+        } => info!(
+            turn_id = *turn_id,
+            request_id = %request_id,
+            tool_name = %tool_name.as_deref().unwrap_or(""),
+            "tui core event ApprovalRequested"
+        ),
+        Event::ApprovalResolved {
+            turn_id,
+            request_id,
+            approved,
+        } => info!(
+            turn_id = *turn_id,
+            request_id = %request_id,
+            approved = *approved,
+            "tui core event ApprovalResolved"
+        ),
+        Event::TurnStarted { turn_id } => info!(turn_id = *turn_id, "tui core event TurnStarted"),
+        Event::TurnCompleted { turn_id } => {
+            info!(turn_id = *turn_id, "tui core event TurnCompleted")
+        }
+        _ => {}
+    }
 }
 
 pub(crate) async fn handle_submit_action(

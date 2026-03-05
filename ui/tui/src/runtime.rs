@@ -8,10 +8,11 @@ use crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use openjax_core::{Agent, Config, init_logger};
+use openjax_core::{Agent, Config, init_split_logger};
 use openjax_protocol::Op;
 use scopeguard::guard;
 use tokio::sync::Mutex;
+use tracing::info;
 
 use crate::app::App;
 use crate::approval::TuiApprovalHandler;
@@ -23,7 +24,8 @@ use crate::runtime_loop::{
 use crate::tui::Tui;
 
 pub async fn run() -> anyhow::Result<()> {
-    init_logger();
+    init_split_logger("openjax.log", "openjax_tui.log");
+    info!("tui runtime starting");
     enable_raw_mode().context("failed to enable raw mode")?;
     execute!(std::io::stdout(), EnableBracketedPaste).ok();
     let _raw_guard = guard((), |_| {
@@ -49,6 +51,7 @@ pub async fn run() -> anyhow::Result<()> {
     }
 
     let mut tui = Tui::new()?;
+    info!("tui initialized");
     let mut turn_task: Option<tokio::task::JoinHandle<()>> = None;
     let mut core_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>> =
         None;
@@ -107,6 +110,7 @@ pub async fn run() -> anyhow::Result<()> {
     }
 
     let mut guard = agent.lock().await;
+    info!("tui shutting down");
     let events = guard.submit(Op::Shutdown).await;
     for event in events {
         app.apply_core_event(event);
