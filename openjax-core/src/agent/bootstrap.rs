@@ -57,7 +57,7 @@ impl Agent {
             skill_config.and_then(|cfg| cfg.max_diff_chars_for_planner),
         )
         .apply_env();
-        let skill_registry = skills::SkillRegistry::load_from_default_locations(&cwd);
+        let skill_registry = skills::SkillRegistry::load_from_default_locations();
         let thread_id = crate::ThreadId::new();
         info!(
             thread_id = ?thread_id,

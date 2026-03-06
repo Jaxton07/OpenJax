@@ -12,6 +12,8 @@ use tracing_subscriber::fmt::time::OffsetTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry;
 
+use crate::OpenJaxPaths;
+
 const DEFAULT_MAX_LINES: usize = 10_000;
 const DEFAULT_MAX_ARCHIVES: usize = 4;
 const LOG_FILE_NAME: &str = "openjax.log";
@@ -40,17 +42,9 @@ impl LoggerConfig {
     }
 
     fn resolve_log_dir() -> PathBuf {
-        if let Ok(cwd) = std::env::current_dir() {
-            let cwd_logs = cwd.join(".openjax").join("logs");
-            if fs::create_dir_all(&cwd_logs).is_ok() {
-                return cwd_logs;
-            }
-        }
-
-        if let Some(home) = dirs::home_dir() {
-            let home_logs = home.join(".openjax").join("logs");
-            if fs::create_dir_all(&home_logs).is_ok() {
-                return home_logs;
+        if let Some(paths) = OpenJaxPaths::detect() {
+            if paths.ensure_runtime_dirs().is_ok() {
+                return paths.logs_dir;
             }
         }
 

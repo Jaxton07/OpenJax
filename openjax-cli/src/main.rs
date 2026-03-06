@@ -1,5 +1,5 @@
 use clap::Parser;
-use openjax_core::{Agent, Config, init_logger};
+use openjax_core::{Agent, Config, OpenJaxPaths, init_logger};
 use openjax_protocol::{Event, Op};
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
@@ -23,7 +23,7 @@ struct Cli {
     #[arg(long)]
     sandbox: Option<String>,
 
-    /// 配置文件路径 (默认自动查找 ./.openjax/config/config.toml 或 ~/.openjax/config.toml)
+    /// 配置文件路径 (默认自动查找 ~/.openjax/config.toml)
     #[arg(long)]
     config: Option<PathBuf>,
 }
@@ -84,9 +84,10 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut rl = Editor::<(), DefaultHistory>::new()?;
-    let history_path = std::env::current_dir()?
-        .join(".openjax")
-        .join("history.txt");
+    let paths =
+        OpenJaxPaths::detect().ok_or_else(|| anyhow::anyhow!("failed to resolve ~/.openjax"))?;
+    paths.ensure_runtime_dirs()?;
+    let history_path = paths.history_file;
 
     if let Some(dir) = history_path.parent() {
         if !dir.exists() {

@@ -13,31 +13,18 @@ fn write_skill(root: &PathBuf, dir_name: &str, name: &str, description: &str) {
 }
 
 #[test]
-fn discovers_skills_across_openjax_claude_openclaw_roots() {
+fn discovers_skills_only_from_openjax_user_root() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let cwd = tmp.path().join("workspace");
-    let home = tmp.path().join("home");
+    let skills_root = tmp.path().join("home/.openjax/skills");
 
     write_skill(
-        &cwd.join(".openjax/skills"),
+        &skills_root,
         "rust-debug",
         "Rust Debug",
         "debug rust compiler issues",
     );
-    write_skill(
-        &cwd.join(".claude/skills"),
-        "python-tests",
-        "Python Tests",
-        "run python unit tests",
-    );
-    write_skill(
-        &home.join(".openclaw/skills"),
-        "release-check",
-        "Release Check",
-        "release checklist",
-    );
 
-    let registry = SkillRegistry::load_from_locations(&cwd, Some(home.as_path()));
-    assert_eq!(registry.entries.len(), 3);
-    assert!(registry.discovered_count >= 3);
+    let registry = SkillRegistry::load_from_locations(&skills_root);
+    assert_eq!(registry.entries.len(), 1);
+    assert_eq!(registry.discovered_count, 1);
 }

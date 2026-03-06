@@ -11,15 +11,9 @@ Skills 不会替代工具系统，也不会改变审批与沙箱策略。
 
 ## 目录发现范围
 
-1. `<cwd>/.openjax/skills`
-2. `<cwd>/.claude/skills`
-3. `<cwd>/.openclaw/skills`
-4. `~/.openjax/skills`
-5. `~/.claude/skills`
-6. `~/.openclaw/skills`
+1. `~/.openjax/skills`
 
 ## 去重规则
 
 1. key 为 skill 名称标准化后的 `normalized_name`
-2. workspace 优先于 user
-3. 同层按扫描顺序先到先得
+2. 同层按目录名字典序扫描，先到先得

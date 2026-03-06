@@ -63,7 +63,7 @@ pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn M
             return Box::new(client);
         }
         return Box::new(MissingConfigModelClient::new(
-            "未检测到可用模型凭据。OpenJax 已支持自动生成配置模板（./.openjax/config/config.toml 或 ~/.openjax/config.toml）；请设置对应 API Key 环境变量（如 OPENJAX_KIMI_API_KEY / OPENJAX_GLM_API_KEY / OPENAI_API_KEY / OPENJAX_ANTHROPIC_API_KEY）。",
+            "未检测到可用模型凭据。OpenJax 已支持自动生成配置模板（~/.openjax/config.toml）；请设置对应 API Key 环境变量（如 OPENJAX_KIMI_API_KEY / OPENJAX_GLM_API_KEY / OPENAI_API_KEY / OPENJAX_ANTHROPIC_API_KEY）。",
         ));
     }
 

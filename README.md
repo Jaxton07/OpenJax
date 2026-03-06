@@ -114,8 +114,7 @@ For Linux/Windows package commands and full deployment flow, see [docs/deploymen
 | `OPENJAX_SANDBOX_MODE` | Sandbox mode | `workspace_write` |
 
 If no config file exists, OpenJax auto-generates a template at:
-- `./.openjax/config/config.toml` (project-local)
-- fallback `~/.openjax/config.toml`
+- `~/.openjax/config.toml`
 
 ## Architecture
 

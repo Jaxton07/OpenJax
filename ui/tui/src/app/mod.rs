@@ -30,12 +30,7 @@ impl App {
             .as_deref()
             .unwrap_or("unknown")
             .to_string();
-        let cwd_display = self
-            .state
-            .cwd_display
-            .as_deref()
-            .unwrap_or(".")
-            .to_string();
+        let cwd_display = self.state.cwd_display.as_deref().unwrap_or(".").to_string();
         let version = env!("CARGO_PKG_VERSION").to_string();
         let info_lines = vec![
             Line::from(vec![
@@ -113,7 +108,10 @@ impl App {
     }
 
     fn line_content_width(line: &Line<'_>) -> usize {
-        line.spans.iter().map(|span| span.content.chars().count()).sum()
+        line.spans
+            .iter()
+            .map(|span| span.content.chars().count())
+            .sum()
     }
 
     fn display_path(path: &Path) -> String {

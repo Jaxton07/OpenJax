@@ -13,34 +13,14 @@ fn write_skill(root: &Path, package_name: &str, skill_name: &str, description: &
 }
 
 #[test]
-fn duplicate_skills_follow_priority_workspace_then_user_and_first_root_wins() {
+fn duplicate_skills_follow_first_directory_wins_within_user_root() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let cwd = tmp.path().join("workspace");
-    let home = tmp.path().join("home");
+    let skills_root = tmp.path().join("home/.openjax/skills");
 
-    write_skill(
-        &cwd.join(".openjax/skills"),
-        "main",
-        "Build Skill",
-        "workspace-openjax",
-    );
-    write_skill(
-        &cwd.join(".claude/skills"),
-        "alt",
-        "build skill",
-        "workspace-claude",
-    );
-    write_skill(
-        &home.join(".openjax/skills"),
-        "user",
-        "BUILD SKILL",
-        "user-openjax",
-    );
+    write_skill(&skills_root, "main", "Build Skill", "user-openjax");
+    write_skill(&skills_root, "alt", "build skill", "user-alt");
 
-    let registry = SkillRegistry::load_from_locations(&cwd, Some(home.as_path()));
+    let registry = SkillRegistry::load_from_locations(&skills_root);
     assert_eq!(registry.entries.len(), 1);
-    assert_eq!(
-        registry.entries[0].manifest.description,
-        "workspace-openjax"
-    );
+    assert_eq!(registry.entries[0].manifest.description, "user-alt");
 }

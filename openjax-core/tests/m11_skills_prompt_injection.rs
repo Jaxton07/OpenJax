@@ -4,8 +4,8 @@ use std::fs;
 #[test]
 fn selected_skills_render_prompt_context_with_name_description_path() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let cwd = tmp.path().join("workspace");
-    let skill_dir = cwd.join(".openjax/skills/rust-debug");
+    let skills_root = tmp.path().join("home/.openjax/skills");
+    let skill_dir = skills_root.join("rust-debug");
     fs::create_dir_all(&skill_dir).expect("create skill dir");
     fs::write(
         skill_dir.join("SKILL.md"),
@@ -13,7 +13,7 @@ fn selected_skills_render_prompt_context_with_name_description_path() {
     )
     .expect("write skill");
 
-    let registry = SkillRegistry::load_from_locations(&cwd, None);
+    let registry = SkillRegistry::load_from_locations(&skills_root);
     let selected = registry.select_for_input("please debug rust compile error", 3);
     assert_eq!(selected.len(), 1);
 

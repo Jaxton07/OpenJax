@@ -42,7 +42,7 @@ openjax-core/
 ## 核心入口（代码）
 
 - `src/lib.rs`: 对外导出 `Agent`、模型构建与策略类型。
-- `src/config.rs`: 加载 `.openjax/config/config.toml` 或 `~/.openjax/config.toml`。
+- `src/config.rs`: 加载 `~/.openjax/config.toml`。
 - `src/approval.rs`: 审批抽象 `ApprovalHandler` 与默认实现。
 
 ## 最小使用示例

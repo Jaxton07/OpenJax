@@ -2,11 +2,15 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::OpenJaxPaths;
+
 const DEFAULT_CONFIG_TEMPLATE: &str = r#"# OpenJax default config template
 # Auto-generated on first startup when no config file is found.
-# Fill API keys via environment variables.
+# Configure each model with either:
+# - api_key_env = "YOUR_ENV_VAR_NAME"
+# - api_key = "your-direct-api-key"
 #
-# Required env vars for this template:
+# Example env vars used by this template:
 # - OPENJAX_KIMI_API_KEY
 # - OPENJAX_GLM_API_KEY
 # - OPENAI_API_KEY
@@ -28,6 +32,7 @@ protocol = "anthropic_messages"
 model = "K2.5"
 base_url = "https://api.kimi.com/coding/"
 api_key_env = "OPENJAX_KIMI_API_KEY"
+# api_key = ""
 thinking_budget_tokens = 4000
 supports_stream = true
 supports_reasoning = true
@@ -38,6 +43,7 @@ protocol = "anthropic_messages"
 model = "GLM-4.7-FlashX"
 base_url = "https://open.bigmodel.cn/api/anthropic"
 api_key_env = "OPENJAX_GLM_API_KEY"
+# api_key = ""
 thinking_budget_tokens = 2000
 supports_stream = true
 supports_reasoning = true
@@ -48,6 +54,7 @@ protocol = "chat_completions"
 model = "gpt-4.1-mini"
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
+# api_key = ""
 supports_stream = true
 supports_reasoning = false
 
@@ -57,6 +64,7 @@ protocol = "anthropic_messages"
 model = "claude-sonnet-4-5"
 base_url = "https://api.anthropic.com/v1"
 api_key_env = "OPENJAX_ANTHROPIC_API_KEY"
+# api_key = ""
 thinking_budget_tokens = 2000
 supports_stream = true
 supports_reasoning = true
@@ -230,69 +238,41 @@ impl Config {
         Ok(config)
     }
 
-    /// Find and load config from default locations
-    /// Search order: ./.openjax/config/config.toml -> ~/.openjax/config.toml
+    /// Find and load config from the OpenJax user directory.
     pub fn load() -> Self {
-        Self::find_or_create_config_file()
+        OpenJaxPaths::detect()
+            .and_then(|paths| Self::find_or_create_config_file_at(&paths))
             .and_then(|path| Self::from_file(&path).ok())
             .unwrap_or_default()
     }
 
-    /// Find config file; create default template when not found.
-    /// Search/create order: ./.openjax/config/config.toml -> ~/.openjax/config.toml
+    /// Find config file in the OpenJax user directory; create default template when missing.
     pub fn find_or_create_config_file() -> Option<PathBuf> {
-        if let Some(existing) = Self::find_config_file() {
+        OpenJaxPaths::detect().and_then(|paths| Self::find_or_create_config_file_at(&paths))
+    }
+
+    /// Find config file in the OpenJax user directory.
+    pub fn find_config_file() -> Option<PathBuf> {
+        OpenJaxPaths::detect().and_then(|paths| Self::find_config_file_at(&paths))
+    }
+
+    fn find_or_create_config_file_at(paths: &OpenJaxPaths) -> Option<PathBuf> {
+        if let Some(existing) = Self::find_config_file_at(paths) {
             return Some(existing);
         }
-        Self::create_default_config_file()
+        Self::create_default_config_file_at(paths)
     }
 
-    /// Find config file in default locations
-    pub fn find_config_file() -> Option<PathBuf> {
-        let cwd_config = cwd_config_path()?;
-
-        if cwd_config.exists() {
-            return Some(cwd_config);
-        }
-
-        let home_config = home_config_path()?;
-
-        if home_config.exists() {
-            return Some(home_config);
-        }
-
-        None
+    fn find_config_file_at(paths: &OpenJaxPaths) -> Option<PathBuf> {
+        let config_file = paths.config_file.clone();
+        config_file.exists().then_some(config_file)
     }
 
-    fn create_default_config_file() -> Option<PathBuf> {
-        if let Some(cwd_config) = cwd_config_path()
-            && write_template_if_missing(&cwd_config).is_ok()
-        {
-            return Some(cwd_config);
-        }
-
-        if let Some(home_config) = home_config_path()
-            && write_template_if_missing(&home_config).is_ok()
-        {
-            return Some(home_config);
-        }
-
-        None
+    fn create_default_config_file_at(paths: &OpenJaxPaths) -> Option<PathBuf> {
+        paths.ensure_runtime_dirs().ok()?;
+        write_template_if_missing(&paths.config_file).ok()?;
+        Some(paths.config_file.clone())
     }
-}
-
-fn cwd_config_path() -> Option<PathBuf> {
-    Some(
-        std::env::current_dir()
-            .ok()?
-            .join(".openjax")
-            .join("config")
-            .join("config.toml"),
-    )
-}
-
-fn home_config_path() -> Option<PathBuf> {
-    Some(dirs::home_dir()?.join(".openjax").join("config.toml"))
 }
 
 fn write_template_if_missing(path: &Path) -> std::io::Result<()> {
@@ -308,20 +288,18 @@ fn write_template_if_missing(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{Config, DEFAULT_CONFIG_TEMPLATE, write_template_if_missing};
+    use crate::OpenJaxPaths;
 
     #[test]
     fn write_template_creates_file_and_is_parseable() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let target = tmp
-            .path()
-            .join(".openjax")
-            .join("config")
-            .join("config.toml");
+        let target = tmp.path().join(".openjax").join("config.toml");
         write_template_if_missing(&target).expect("write template");
 
         let content = std::fs::read_to_string(&target).expect("read config");
         assert!(content.contains("[model.models.kimi_default]"));
         assert!(content.contains("api_key_env = \"OPENJAX_KIMI_API_KEY\""));
+        assert!(content.contains("# api_key = \"\""));
         assert!(content.contains("[model.models.claude_default]"));
         assert!(content.contains("max_tool_calls_per_turn = 10"));
         assert!(content.contains("max_planner_rounds_per_turn = 20"));
@@ -350,11 +328,7 @@ mod tests {
     #[test]
     fn write_template_does_not_overwrite_existing_file() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let target = tmp
-            .path()
-            .join(".openjax")
-            .join("config")
-            .join("config.toml");
+        let target = tmp.path().join(".openjax").join("config.toml");
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).expect("create parent");
         }
@@ -364,5 +338,19 @@ mod tests {
 
         let content = std::fs::read_to_string(&target).expect("read config");
         assert_eq!(content, "custom=true\n");
+    }
+
+    #[test]
+    fn find_or_create_uses_only_user_root_config_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let paths = OpenJaxPaths::from_home_dir(tmp.path());
+
+        let created = Config::find_or_create_config_file_at(&paths).expect("config path");
+
+        assert_eq!(created, paths.config_file);
+        assert!(paths.config_file.is_file());
+        assert!(paths.logs_dir.is_dir());
+        assert!(paths.skills_dir.is_dir());
+        assert!(!tmp.path().join("workspace/.openjax/config.toml").exists());
     }
 }

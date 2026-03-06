@@ -9,39 +9,12 @@ use crate::skills::types::{SkillEntry, SkillRegistry, SkillSourceScope};
 
 const SKILL_FILE_NAME: &str = "SKILL.md";
 
-pub fn default_skill_roots(
-    cwd: &Path,
-    home_dir: Option<&Path>,
-) -> Vec<(SkillSourceScope, PathBuf)> {
-    let mut roots = vec![
-        (
-            SkillSourceScope::Workspace,
-            cwd.join(".openjax").join("skills"),
-        ),
-        (
-            SkillSourceScope::Workspace,
-            cwd.join(".claude").join("skills"),
-        ),
-        (
-            SkillSourceScope::Workspace,
-            cwd.join(".openclaw").join("skills"),
-        ),
-    ];
-
-    if let Some(home) = home_dir {
-        roots.push((SkillSourceScope::User, home.join(".openjax").join("skills")));
-        roots.push((SkillSourceScope::User, home.join(".claude").join("skills")));
-        roots.push((
-            SkillSourceScope::User,
-            home.join(".openclaw").join("skills"),
-        ));
-    }
-
-    roots
+pub fn default_skill_roots(skills_dir: &Path) -> Vec<(SkillSourceScope, PathBuf)> {
+    vec![(SkillSourceScope::User, skills_dir.to_path_buf())]
 }
 
-pub fn discover_registry(cwd: &Path, home_dir: Option<&Path>) -> SkillRegistry {
-    let roots = default_skill_roots(cwd, home_dir);
+pub fn discover_registry(skills_dir: &Path) -> SkillRegistry {
+    let roots = default_skill_roots(skills_dir);
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut discovered_count = 0usize;
@@ -173,32 +146,25 @@ mod tests {
     #[test]
     fn workspace_overrides_user_for_same_skill_name() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let cwd = tmp.path().join("workspace");
         let home = tmp.path().join("home");
-        fs::create_dir_all(cwd.join(".openjax/skills/dup")).expect("create workspace skill");
         fs::create_dir_all(home.join(".openjax/skills/dup")).expect("create user skill");
-        fs::write(
-            cwd.join(".openjax/skills/dup/SKILL.md"),
-            "---\nname: Same Skill\ndescription: workspace\n---\nworkspace body",
-        )
-        .expect("write workspace skill");
         fs::write(
             home.join(".openjax/skills/dup/SKILL.md"),
             "---\nname: Same Skill\ndescription: user\n---\nuser body",
         )
         .expect("write user skill");
 
-        let registry = discover_registry(&cwd, Some(home.as_path()));
+        let registry = discover_registry(&home.join(".openjax/skills"));
         assert_eq!(registry.entries.len(), 1);
-        assert_eq!(registry.entries[0].manifest.description, "workspace");
+        assert_eq!(registry.entries[0].manifest.description, "user");
     }
 
     #[test]
     fn ignores_folders_without_skill_manifest() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let cwd = tmp.path().join("workspace");
-        fs::create_dir_all(cwd.join(".openjax/skills/no_manifest")).expect("create skill dir");
-        let registry = discover_registry(&cwd, None);
+        let root = tmp.path().join("home/.openjax/skills");
+        fs::create_dir_all(root.join("no_manifest")).expect("create skill dir");
+        let registry = discover_registry(&root);
         assert!(registry.entries.is_empty());
     }
 }

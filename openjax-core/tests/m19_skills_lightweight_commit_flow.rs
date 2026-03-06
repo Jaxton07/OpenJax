@@ -4,8 +4,8 @@ use std::fs;
 #[test]
 fn skills_context_includes_lightweight_commit_best_practice() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let cwd = tmp.path().join("workspace");
-    let skill_dir = cwd.join(".openjax/skills/local-commit");
+    let skills_root = tmp.path().join("home/.openjax/skills");
+    let skill_dir = skills_root.join("local-commit");
     fs::create_dir_all(&skill_dir).expect("create skill dir");
     fs::write(
         skill_dir.join("SKILL.md"),
@@ -14,7 +14,7 @@ fn skills_context_includes_lightweight_commit_best_practice() {
     )
     .expect("write skill");
 
-    let registry = SkillRegistry::load_from_locations(&cwd, None);
+    let registry = SkillRegistry::load_from_locations(&skills_root);
     let selected = registry.select_for_input("你commit一下本地的修改", 3);
     let context = build_skills_context(&selected, 6000);
 

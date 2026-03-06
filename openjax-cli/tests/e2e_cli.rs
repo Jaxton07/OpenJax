@@ -60,6 +60,8 @@ fn test_cli_exit_command_smoke() {
     init();
 
     let temp_dir = test_temp_dir("exit");
+    let temp_home = temp_dir.join("home");
+    fs::create_dir_all(&temp_home).expect("failed to create temp home");
     let bin_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("target")
@@ -68,6 +70,7 @@ fn test_cli_exit_command_smoke() {
 
     let mut child = Command::new(&bin_path)
         .current_dir(&temp_dir)
+        .env("HOME", &temp_home)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
