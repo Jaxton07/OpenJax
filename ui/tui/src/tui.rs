@@ -53,6 +53,7 @@ impl Tui {
         &mut self,
         desired_height: u16,
         status_line: Option<Line<'static>>,
+        slash_lines: Option<Vec<Line<'static>>>,
         input_line: Line<'static>,
         input_cursor: u16,
         approval_lines: Option<Vec<Line<'static>>>,
@@ -83,14 +84,49 @@ impl Tui {
         self.terminal.draw(|frame| {
             let draw_area = frame.area();
             frame.render_widget(Clear, draw_area);
+            let slash_height = slash_lines.as_ref().map_or(0, |l| l.len() as u16);
             let approval_height = approval_lines.as_ref().map_or(0, |l| l.len() as u16);
-            let constraints = layout_constraints(approval_height, status_line.is_some());
+            let constraints =
+                layout_constraints(slash_height, approval_height, status_line.is_some());
+            let mut next_idx = 1usize;
             let status_idx = if status_line.is_some() {
-                Some(1usize)
+                let idx = next_idx;
+                next_idx += 1;
+                Some(idx)
             } else {
                 None
             };
-            let input_idx = if status_line.is_some() { 2 } else { 1 };
+            let input_idx = next_idx;
+            next_idx += 1;
+            let slash_idx = if slash_height > 0 {
+                let idx = next_idx;
+                next_idx += 1;
+                Some(idx)
+            } else {
+                None
+            };
+            let approval_spacing_idx = if approval_height > 0 {
+                let idx = next_idx;
+                next_idx += 1;
+                Some(idx)
+            } else {
+                None
+            };
+            let approval_idx = if approval_height > 0 {
+                let idx = next_idx;
+                next_idx += 1;
+                Some(idx)
+            } else {
+                None
+            };
+            let approval_bottom_spacing_idx = if approval_height > 0 {
+                let idx = next_idx;
+                next_idx += 1;
+                Some(idx)
+            } else {
+                None
+            };
+            let footer_idx = next_idx;
             let chunks = Layout::vertical(constraints).split(draw_area);
 
             render_live(chunks[0], frame.buffer_mut());
@@ -116,18 +152,23 @@ impl Tui {
                 .min(chunks[input_idx].x + chunks[input_idx].width.saturating_sub(1));
             frame.set_cursor_position((cursor_x, chunks[input_idx].y + 1));
 
-            let footer_idx = if approval_height > 0 {
-                input_idx + 4
-            } else {
-                input_idx + 1
-            };
-            if approval_height > 0 {
-                frame.render_widget(Clear, chunks[input_idx + 1]);
-                let approval_area = chunks[input_idx + 2];
+            if let Some(idx) = slash_idx {
+                frame.render_widget(Clear, chunks[idx]);
+                let slash_widget = Paragraph::new(slash_lines.clone().unwrap_or_default());
+                slash_widget.render(chunks[idx], frame.buffer_mut());
+            }
+
+            if let Some(idx) = approval_spacing_idx {
+                frame.render_widget(Clear, chunks[idx]);
+            }
+            if let Some(idx) = approval_idx {
+                let approval_area = chunks[idx];
                 frame.render_widget(Clear, approval_area);
                 let approval_widget = Paragraph::new(approval_lines.unwrap_or_default());
                 approval_widget.render(approval_area, frame.buffer_mut());
-                frame.render_widget(Clear, chunks[input_idx + 3]);
+            }
+            if let Some(idx) = approval_bottom_spacing_idx {
+                frame.render_widget(Clear, chunks[idx]);
             }
 
             frame.render_widget(Clear, chunks[footer_idx]);
@@ -170,12 +211,19 @@ fn compute_viewport_plan(
     ViewportPlan { area, scroll_up }
 }
 
-fn layout_constraints(approval_height: u16, status_visible: bool) -> Vec<Constraint> {
+fn layout_constraints(
+    slash_height: u16,
+    approval_height: u16,
+    status_visible: bool,
+) -> Vec<Constraint> {
     let mut constraints = vec![Constraint::Min(2)];
     if status_visible {
         constraints.push(Constraint::Length(1));
     }
     constraints.push(Constraint::Length(2));
+    if slash_height > 0 {
+        constraints.push(Constraint::Length(slash_height));
+    }
     if approval_height > 0 {
         constraints.push(Constraint::Length(1));
         constraints.push(Constraint::Length(approval_height));
@@ -220,13 +268,44 @@ mod tests {
 
     #[test]
     fn layout_places_status_row_above_input() {
-        let constraints = layout_constraints(0, true);
+        let constraints = layout_constraints(0, 0, true);
         assert_eq!(
             constraints,
             vec![
                 Constraint::Min(2),
                 Constraint::Length(1),
                 Constraint::Length(2),
+                Constraint::Length(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn layout_places_slash_palette_below_input() {
+        let constraints = layout_constraints(3, 0, false);
+        assert_eq!(
+            constraints,
+            vec![
+                Constraint::Min(2),
+                Constraint::Length(2),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn layout_places_approval_panel_below_input_or_slash() {
+        let constraints = layout_constraints(2, 3, false);
+        assert_eq!(
+            constraints,
+            vec![
+                Constraint::Min(2),
+                Constraint::Length(2),
+                Constraint::Length(2),
+                Constraint::Length(1),
+                Constraint::Length(3),
+                Constraint::Length(1),
                 Constraint::Length(1),
             ]
         );

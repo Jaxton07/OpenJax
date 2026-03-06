@@ -11,7 +11,10 @@ mod cells;
 mod layout_metrics;
 mod reducer;
 mod render_model;
+mod slash_palette;
 mod tool_output;
+
+pub use slash_palette::SlashAcceptResult;
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -176,11 +179,16 @@ impl App {
             return None;
         }
 
+        if input.starts_with('/') && self.submit_slash_command_if_exact() {
+            return None;
+        }
+
         let user_cell = self.user_cell(&input);
         self.queue_history_cell(user_cell);
         self.push_input_history(input.clone());
         self.state.input.clear();
         self.state.input_cursor = 0;
+        self.dismiss_slash_palette();
         self.set_status_running("Working");
         Some(SubmitAction::UserTurn { input })
     }
@@ -193,6 +201,7 @@ impl App {
         self.state.input_cursor = cursor
             .saturating_add(text.len())
             .min(self.state.input.len());
+        self.refresh_slash_palette();
     }
 
     pub fn backspace(&mut self) {
@@ -203,16 +212,19 @@ impl App {
         let prev = self.prev_char_boundary(cursor);
         self.state.input.replace_range(prev..cursor, "");
         self.state.input_cursor = prev;
+        self.refresh_slash_palette();
     }
 
     pub fn move_cursor_left(&mut self) {
         let cursor = self.clamp_cursor_to_char_boundary(self.state.input_cursor);
         self.state.input_cursor = self.prev_char_boundary(cursor);
+        self.refresh_slash_palette();
     }
 
     pub fn move_cursor_right(&mut self) {
         let cursor = self.clamp_cursor_to_char_boundary(self.state.input_cursor);
         self.state.input_cursor = self.next_char_boundary(cursor);
+        self.refresh_slash_palette();
     }
 
     pub fn history_prev(&mut self) {
@@ -230,6 +242,7 @@ impl App {
         self.state.history_nav_index = Some(next_index);
         self.state.input = self.state.input_history[next_index].clone();
         self.state.input_cursor = self.state.input.len();
+        self.refresh_slash_palette();
     }
 
     pub fn history_next(&mut self) {
@@ -245,6 +258,7 @@ impl App {
             self.state.input = self.state.input_history[next].clone();
         }
         self.state.input_cursor = self.state.input.len();
+        self.refresh_slash_palette();
     }
 
     pub fn clear(&mut self) {
@@ -254,6 +268,7 @@ impl App {
         self.state.status_bar = None;
         self.state.input.clear();
         self.state.input_cursor = 0;
+        self.dismiss_slash_palette();
         self.state.history_nav_index = None;
         self.state.history_nav_draft.clear();
         self.state.pending_approval = None;

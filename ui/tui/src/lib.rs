@@ -3,6 +3,7 @@ pub mod approval;
 pub mod history_cell;
 pub mod input;
 pub mod insert_history;
+pub mod slash_commands;
 pub mod state;
 pub mod status;
 pub mod terminal;

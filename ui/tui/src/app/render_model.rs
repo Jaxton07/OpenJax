@@ -80,11 +80,45 @@ impl App {
 
     pub fn footer_text(&self) -> String {
         format!(
-            "Enter submit | / commands | Ctrl-C quit || model={} | approval={} | sandbox={}",
+            "Enter/Tab complete slash | Enter again runs command | Esc dismiss | Ctrl-C quit || model={} | approval={} | sandbox={}",
             self.state.model_name.as_deref().unwrap_or("unknown"),
             self.state.approval_policy.as_deref().unwrap_or("unknown"),
             self.state.sandbox_mode.as_deref().unwrap_or("unknown"),
         )
+    }
+
+    pub fn slash_palette_lines(&self) -> Option<Vec<Line<'static>>> {
+        if !self.state.slash_palette.visible {
+            return None;
+        }
+
+        if self.state.slash_palette.matches.is_empty() {
+            return Some(vec![Line::from(Span::styled(
+                "No matching commands",
+                Style::default().fg(Color::DarkGray),
+            ))]);
+        }
+
+        let mut lines = Vec::new();
+        for (index, matched) in self.state.slash_palette.matches.iter().enumerate() {
+            let selected = index == self.state.slash_palette.selected_index;
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("/{:<10}", matched.command_name),
+                    Style::default()
+                        .fg(if selected { Color::Cyan } else { Color::White })
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(matched.description, Style::default().fg(Color::Gray)),
+            ]));
+        }
+        Some(lines)
+    }
+
+    pub fn slash_palette_height(&self) -> u16 {
+        self.slash_palette_lines()
+            .map(|lines| lines.len() as u16)
+            .unwrap_or(0)
     }
 
     pub fn status_bar_line(

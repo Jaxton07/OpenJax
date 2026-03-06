@@ -55,6 +55,7 @@
 2. subAgent
 3. 强化沙箱
 4. 接入telegram
+5. 一个规划多个tool 或者shell 调用，然后一起审批，等待所有执行完成一次返回所有结果
 
 
 ### skills

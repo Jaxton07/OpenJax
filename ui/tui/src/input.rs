@@ -5,13 +5,14 @@ pub enum InputAction {
     None,
     Quit,
     Submit,
+    AcceptSuggestion,
     Backspace,
     MoveLeft,
     MoveRight,
     MoveUp,
     MoveDown,
     Append(String),
-    Clear,
+    DismissOverlay,
 }
 
 pub fn map_event(event: Event) -> InputAction {
@@ -28,12 +29,13 @@ fn map_key(key: KeyEvent) -> InputAction {
     }
     match key.code {
         KeyCode::Enter => InputAction::Submit,
+        KeyCode::Tab => InputAction::AcceptSuggestion,
         KeyCode::Backspace => InputAction::Backspace,
         KeyCode::Left => InputAction::MoveLeft,
         KeyCode::Right => InputAction::MoveRight,
         KeyCode::Up => InputAction::MoveUp,
         KeyCode::Down => InputAction::MoveDown,
-        KeyCode::Esc => InputAction::Clear,
+        KeyCode::Esc => InputAction::DismissOverlay,
         KeyCode::Char(c) => InputAction::Append(c.to_string()),
         _ => InputAction::None,
     }

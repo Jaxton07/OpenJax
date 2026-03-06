@@ -93,6 +93,7 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     tui.draw(
         desired,
         status_line,
+        app.slash_palette_lines(),
         app.input_line(),
         app.input_cursor_offset(term_width),
         app.approval_panel_lines(),

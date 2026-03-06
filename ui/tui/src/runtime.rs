@@ -76,6 +76,11 @@ pub async fn run() -> anyhow::Result<()> {
                     app.set_live_status("Busy: previous turn still running");
                     continue;
                 }
+                if app.state.pending_approval.is_none() && app.is_slash_palette_active() {
+                    if app.complete_slash_selection() != crate::app::SlashAcceptResult::None {
+                        continue;
+                    }
+                }
                 if let Some(action) = app.submit_input() {
                     handle_submit_action(
                         &mut app,
@@ -88,12 +93,19 @@ pub async fn run() -> anyhow::Result<()> {
                     .await;
                 }
             }
+            InputAction::AcceptSuggestion => {
+                if app.state.pending_approval.is_none() && app.is_slash_palette_active() {
+                    let _ = app.complete_slash_selection();
+                }
+            }
             InputAction::Backspace => app.backspace(),
             InputAction::MoveLeft => app.move_cursor_left(),
             InputAction::MoveRight => app.move_cursor_right(),
             InputAction::MoveUp => {
                 if app.state.pending_approval.is_some() {
                     app.move_approval_selection(-1);
+                } else if app.is_slash_palette_active() {
+                    app.move_slash_selection(-1);
                 } else {
                     app.history_prev();
                 }
@@ -101,12 +113,20 @@ pub async fn run() -> anyhow::Result<()> {
             InputAction::MoveDown => {
                 if app.state.pending_approval.is_some() {
                     app.move_approval_selection(1);
+                } else if app.is_slash_palette_active() {
+                    app.move_slash_selection(1);
                 } else {
                     app.history_next();
                 }
             }
             InputAction::Append(text) => app.append_input(&text),
-            InputAction::Clear => app.clear(),
+            InputAction::DismissOverlay => {
+                if app.is_slash_palette_active() {
+                    app.dismiss_slash_palette();
+                } else if app.state.pending_approval.is_none() {
+                    app.clear();
+                }
+            }
             InputAction::None => {}
         }
     }

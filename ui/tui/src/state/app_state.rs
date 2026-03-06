@@ -2,6 +2,35 @@ use crate::history_cell::HistoryCell;
 use std::time::Instant;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlashMatch {
+    pub command_name: &'static str,
+    pub description: &'static str,
+    pub usage_hint: &'static str,
+    pub replacement: String,
+    pub kind: SlashCommandKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SlashCommandKind {
+    LocalAction(SlashLocalAction),
+    PromptTemplate,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SlashLocalAction {
+    Clear,
+    Help,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct SlashPaletteState {
+    pub visible: bool,
+    pub query: String,
+    pub matches: Vec<SlashMatch>,
+    pub selected_index: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveMessage {
     pub role: &'static str,
     pub content: String,
@@ -63,6 +92,7 @@ pub struct AppState {
     pub pending_history_cells: Vec<HistoryCell>,
     pub live_messages: Vec<LiveMessage>,
     pub status_bar: Option<StatusBarState>,
+    pub slash_palette: SlashPaletteState,
     pub pending_approval: Option<PendingApproval>,
     pub approval_selection: ApprovalSelection,
     pub active_turn_id: Option<u64>,
@@ -89,6 +119,7 @@ impl Default for AppState {
             pending_history_cells: Vec::new(),
             live_messages: Vec::new(),
             status_bar: None,
+            slash_palette: SlashPaletteState::default(),
             pending_approval: None,
             approval_selection: ApprovalSelection::Approve,
             active_turn_id: None,

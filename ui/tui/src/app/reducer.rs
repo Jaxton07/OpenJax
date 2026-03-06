@@ -132,6 +132,7 @@ impl App {
                     requested_at: now,
                     timeout_ms,
                 });
+                self.dismiss_slash_palette();
                 self.state.approval_selection = ApprovalSelection::Approve;
                 self.refresh_approval_live_message();
                 info!(

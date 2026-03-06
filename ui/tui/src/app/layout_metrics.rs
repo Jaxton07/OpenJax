@@ -12,6 +12,8 @@ impl App {
         } else {
             0u16
         };
+        let slash_h = self.slash_palette_height();
+        let slash_spacing = if slash_h > 0 { 1u16 } else { 0u16 };
         let approval_h = if self.state.pending_approval.is_some() {
             self.approval_panel_height()
         } else {
@@ -20,6 +22,8 @@ impl App {
         let approval_spacing = if approval_h > 0 { 2u16 } else { 0u16 };
         self.live_visual_height(width)
             .saturating_add(status_h)
+            .saturating_add(slash_h)
+            .saturating_add(slash_spacing)
             .saturating_add(input_h)
             .saturating_add(approval_h)
             .saturating_add(approval_spacing)
@@ -73,5 +77,26 @@ mod tests {
         let with_status = app.desired_height(80);
         assert!(with_status >= base);
         assert!(with_status.saturating_sub(base) <= 1);
+    }
+
+    #[test]
+    fn slash_palette_height_includes_border_for_single_match() {
+        let mut app = App::default();
+        app.append_input("/c");
+
+        assert!(app.is_slash_palette_active());
+        assert_eq!(app.state.slash_palette.matches.len(), 1);
+        assert_eq!(app.state.slash_palette.matches[0].command_name, "clear");
+        assert_eq!(app.slash_palette_height(), 1);
+    }
+
+    #[test]
+    fn slash_palette_height_includes_border_for_empty_state() {
+        let mut app = App::default();
+        app.append_input("/z");
+
+        assert!(app.is_slash_palette_active());
+        assert!(app.state.slash_palette.matches.is_empty());
+        assert_eq!(app.slash_palette_height(), 1);
     }
 }
