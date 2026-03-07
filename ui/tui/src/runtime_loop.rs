@@ -85,6 +85,7 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     let term_width = viewport.width.max(8);
     let desired = app.desired_height(term_width);
     let status_line = app.status_bar_line(Instant::now(), term_width, true);
+    let reset_viewport = app.take_viewport_reset_requested();
     let cells = app.drain_history_cells();
     if !cells.is_empty() {
         info!(count = cells.len(), "tui rendering history cells");
@@ -92,6 +93,7 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     tui.queue_history_cells(cells);
     tui.draw(
         desired,
+        reset_viewport,
         status_line,
         app.slash_palette_lines(),
         app.input_line(),

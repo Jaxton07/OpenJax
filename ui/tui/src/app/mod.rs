@@ -19,6 +19,7 @@ pub use slash_palette::SlashAcceptResult;
 #[derive(Debug, Default)]
 pub struct App {
     pub state: AppState,
+    viewport_reset_requested: bool,
 }
 
 impl App {
@@ -278,7 +279,12 @@ impl App {
         self.state.stream_text.clear();
         self.state.last_assistant_committed_turn = None;
         self.state.banner_printed = false;
+        self.viewport_reset_requested = true;
         self.initialize_banner_once();
+    }
+
+    pub fn take_viewport_reset_requested(&mut self) -> bool {
+        std::mem::take(&mut self.viewport_reset_requested)
     }
 
     pub fn set_live_status(&mut self, text: impl Into<String>) {

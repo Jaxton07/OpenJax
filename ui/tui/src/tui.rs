@@ -11,6 +11,8 @@ pub struct Tui {
     terminal: CrosstermTerminal,
     pending_history_lines: Vec<Line<'static>>,
     has_rendered_history: bool,
+    sticky_extra_height: u16,
+    last_bottom_chrome_height: u16,
 }
 
 impl Tui {
@@ -26,6 +28,8 @@ impl Tui {
             terminal,
             pending_history_lines: Vec::new(),
             has_rendered_history: false,
+            sticky_extra_height: 0,
+            last_bottom_chrome_height: 1,
         })
     }
 
@@ -52,6 +56,7 @@ impl Tui {
     pub fn draw<F>(
         &mut self,
         desired_height: u16,
+        reset_sticky_height: bool,
         status_line: Option<Line<'static>>,
         slash_lines: Option<Vec<Line<'static>>>,
         input_line: Line<'static>,
@@ -65,7 +70,37 @@ impl Tui {
     {
         let screen = self.terminal.size()?;
         let current_area = self.terminal.area();
-        let plan = compute_viewport_plan(current_area, screen.width, screen.height, desired_height);
+        self.sticky_extra_height = next_sticky_extra_height(
+            self.sticky_extra_height,
+            0,
+            screen.height,
+            reset_sticky_height,
+        );
+        let slash_height = slash_lines.as_ref().map_or(0, |l| l.len() as u16);
+        let approval_height = approval_lines.as_ref().map_or(0, |l| l.len() as u16);
+        let footer_visible = slash_height == 0 && approval_height == 0;
+        let transient_height =
+            transient_region_height(slash_height, approval_height).max(self.sticky_extra_height);
+        let current_bottom_chrome_height =
+            transient_height.saturating_add(if footer_visible { 1 } else { 0 });
+        let bottom_chrome_growth =
+            current_bottom_chrome_height.saturating_sub(self.last_bottom_chrome_height);
+        let desired_with_reserve = desired_height
+            .saturating_add(self.sticky_extra_height)
+            .max(current_area.height.saturating_add(bottom_chrome_growth));
+        let plan = compute_viewport_plan(
+            current_area,
+            screen.width,
+            screen.height,
+            desired_with_reserve,
+        );
+        self.last_bottom_chrome_height = current_bottom_chrome_height;
+        self.sticky_extra_height = next_sticky_extra_height(
+            self.sticky_extra_height,
+            plan.scroll_up,
+            screen.height,
+            reset_sticky_height,
+        );
         if plan.scroll_up > 0 && current_area.top() > 0 {
             self.terminal
                 .scroll_region_up(0..current_area.top(), plan.scroll_up)?;
@@ -84,10 +119,8 @@ impl Tui {
         self.terminal.draw(|frame| {
             let draw_area = frame.area();
             frame.render_widget(Clear, draw_area);
-            let slash_height = slash_lines.as_ref().map_or(0, |l| l.len() as u16);
-            let approval_height = approval_lines.as_ref().map_or(0, |l| l.len() as u16);
             let constraints =
-                layout_constraints(slash_height, approval_height, status_line.is_some());
+                layout_constraints(transient_height, status_line.is_some(), footer_visible);
             let mut next_idx = 1usize;
             let status_idx = if status_line.is_some() {
                 let idx = next_idx;
@@ -98,35 +131,19 @@ impl Tui {
             };
             let input_idx = next_idx;
             next_idx += 1;
-            let slash_idx = if slash_height > 0 {
+            let transient_idx = if transient_height > 0 {
                 let idx = next_idx;
                 next_idx += 1;
                 Some(idx)
             } else {
                 None
             };
-            let approval_spacing_idx = if approval_height > 0 {
+            let footer_idx = if footer_visible {
                 let idx = next_idx;
-                next_idx += 1;
                 Some(idx)
             } else {
                 None
             };
-            let approval_idx = if approval_height > 0 {
-                let idx = next_idx;
-                next_idx += 1;
-                Some(idx)
-            } else {
-                None
-            };
-            let approval_bottom_spacing_idx = if approval_height > 0 {
-                let idx = next_idx;
-                next_idx += 1;
-                Some(idx)
-            } else {
-                None
-            };
-            let footer_idx = next_idx;
             let chunks = Layout::vertical(constraints).split(draw_area);
 
             render_live(chunks[0], frame.buffer_mut());
@@ -152,33 +169,28 @@ impl Tui {
                 .min(chunks[input_idx].x + chunks[input_idx].width.saturating_sub(1));
             frame.set_cursor_position((cursor_x, chunks[input_idx].y + 1));
 
-            if let Some(idx) = slash_idx {
-                frame.render_widget(Clear, chunks[idx]);
-                let slash_widget = Paragraph::new(slash_lines.clone().unwrap_or_default());
-                slash_widget.render(chunks[idx], frame.buffer_mut());
+            if let Some(idx) = transient_idx {
+                let transient_area = chunks[idx];
+                frame.render_widget(Clear, transient_area);
+                if approval_height > 0 {
+                    let approval_widget = Paragraph::new(approval_lines.unwrap_or_default());
+                    approval_widget.render(transient_area, frame.buffer_mut());
+                } else if slash_height > 0 {
+                    let slash_widget = Paragraph::new(slash_lines.clone().unwrap_or_default());
+                    slash_widget.render(transient_area, frame.buffer_mut());
+                }
             }
 
-            if let Some(idx) = approval_spacing_idx {
+            if let Some(idx) = footer_idx {
                 frame.render_widget(Clear, chunks[idx]);
+                let footer = Paragraph::new(Line::from(vec![Span::styled(
+                    footer_text,
+                    Style::default()
+                        .fg(Color::Gray)
+                        .add_modifier(Modifier::BOLD),
+                )]));
+                footer.render(chunks[idx], frame.buffer_mut());
             }
-            if let Some(idx) = approval_idx {
-                let approval_area = chunks[idx];
-                frame.render_widget(Clear, approval_area);
-                let approval_widget = Paragraph::new(approval_lines.unwrap_or_default());
-                approval_widget.render(approval_area, frame.buffer_mut());
-            }
-            if let Some(idx) = approval_bottom_spacing_idx {
-                frame.render_widget(Clear, chunks[idx]);
-            }
-
-            frame.render_widget(Clear, chunks[footer_idx]);
-            let footer = Paragraph::new(Line::from(vec![Span::styled(
-                footer_text,
-                Style::default()
-                    .fg(Color::Gray)
-                    .add_modifier(Modifier::BOLD),
-            )]));
-            footer.render(chunks[footer_idx], frame.buffer_mut());
         })?;
 
         Ok(())
@@ -189,6 +201,30 @@ impl Tui {
 struct ViewportPlan {
     area: Rect,
     scroll_up: u16,
+}
+
+fn next_sticky_extra_height(
+    current_sticky_extra_height: u16,
+    new_scroll_up: u16,
+    screen_height: u16,
+    reset_sticky_height: bool,
+) -> u16 {
+    let screen_clamped = screen_height.max(8);
+    if reset_sticky_height {
+        return 0;
+    }
+
+    let new_scroll_up = new_scroll_up.clamp(0, screen_clamped.saturating_sub(4));
+    let current = current_sticky_extra_height.clamp(0, screen_clamped.saturating_sub(4));
+    current.max(new_scroll_up)
+}
+
+fn transient_region_height(slash_height: u16, approval_height: u16) -> u16 {
+    if approval_height > 0 {
+        approval_height.saturating_add(2)
+    } else {
+        slash_height
+    }
 }
 
 fn compute_viewport_plan(
@@ -212,24 +248,21 @@ fn compute_viewport_plan(
 }
 
 fn layout_constraints(
-    slash_height: u16,
-    approval_height: u16,
+    transient_height: u16,
     status_visible: bool,
+    footer_visible: bool,
 ) -> Vec<Constraint> {
     let mut constraints = vec![Constraint::Min(2)];
     if status_visible {
         constraints.push(Constraint::Length(1));
     }
     constraints.push(Constraint::Length(2));
-    if slash_height > 0 {
-        constraints.push(Constraint::Length(slash_height));
+    if transient_height > 0 {
+        constraints.push(Constraint::Length(transient_height));
     }
-    if approval_height > 0 {
-        constraints.push(Constraint::Length(1));
-        constraints.push(Constraint::Length(approval_height));
+    if footer_visible {
         constraints.push(Constraint::Length(1));
     }
-    constraints.push(Constraint::Length(1));
     constraints
 }
 
@@ -238,7 +271,10 @@ mod tests {
     use ratatui::layout::Constraint;
     use ratatui::layout::Rect;
 
-    use super::{ViewportPlan, compute_viewport_plan, layout_constraints};
+    use super::{
+        ViewportPlan, compute_viewport_plan, layout_constraints, next_sticky_extra_height,
+        transient_region_height,
+    };
 
     #[test]
     fn viewport_stays_near_current_cursor_when_space_is_available() {
@@ -268,7 +304,7 @@ mod tests {
 
     #[test]
     fn layout_places_status_row_above_input() {
-        let constraints = layout_constraints(0, 0, true);
+        let constraints = layout_constraints(0, true, true);
         assert_eq!(
             constraints,
             vec![
@@ -282,32 +318,74 @@ mod tests {
 
     #[test]
     fn layout_places_slash_palette_below_input() {
-        let constraints = layout_constraints(3, 0, false);
+        let constraints = layout_constraints(3, false, false);
         assert_eq!(
             constraints,
             vec![
                 Constraint::Min(2),
                 Constraint::Length(2),
                 Constraint::Length(3),
+            ]
+        );
+    }
+
+    #[test]
+    fn layout_places_transient_region_between_input_and_footer() {
+        let constraints = layout_constraints(5, false, true);
+        assert_eq!(
+            constraints,
+            vec![
+                Constraint::Min(2),
+                Constraint::Length(2),
+                Constraint::Length(5),
                 Constraint::Length(1),
             ]
         );
     }
 
     #[test]
-    fn layout_places_approval_panel_below_input_or_slash() {
-        let constraints = layout_constraints(2, 3, false);
+    fn layout_omits_footer_when_transient_panel_is_visible() {
+        let constraints = layout_constraints(4, false, false);
         assert_eq!(
             constraints,
             vec![
                 Constraint::Min(2),
                 Constraint::Length(2),
-                Constraint::Length(2),
-                Constraint::Length(1),
-                Constraint::Length(3),
-                Constraint::Length(1),
-                Constraint::Length(1),
+                Constraint::Length(4)
             ]
         );
+    }
+
+    #[test]
+    fn sticky_extra_height_grows_and_does_not_shrink_without_reset() {
+        let grown = next_sticky_extra_height(0, 6, 40, false);
+        assert_eq!(grown, 6);
+
+        let retained = next_sticky_extra_height(grown, 0, 40, false);
+        assert_eq!(retained, 6);
+    }
+
+    #[test]
+    fn sticky_extra_height_stays_zero_when_no_overflow_happens() {
+        let sticky = next_sticky_extra_height(0, 0, 40, false);
+        assert_eq!(sticky, 0);
+    }
+
+    #[test]
+    fn sticky_extra_height_resets_when_requested() {
+        let reset = next_sticky_extra_height(6, 0, 40, true);
+        assert_eq!(reset, 0);
+    }
+
+    #[test]
+    fn sticky_extra_height_clamps_on_small_screen() {
+        let clamped = next_sticky_extra_height(0, 28, 12, false);
+        assert_eq!(clamped, 8);
+    }
+
+    #[test]
+    fn approval_transient_height_includes_spacing() {
+        assert_eq!(transient_region_height(0, 3), 5);
+        assert_eq!(transient_region_height(2, 0), 2);
     }
 }
