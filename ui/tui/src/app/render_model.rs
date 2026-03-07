@@ -9,7 +9,14 @@ use unicode_width::UnicodeWidthStr;
 use crate::state::ApprovalSelection;
 use crate::status::indicator;
 
-use super::App;
+use super::{App, FooterMode, TransientKind};
+
+#[derive(Debug, Clone)]
+pub struct TransientPanel {
+    pub kind: TransientKind,
+    pub lines: Vec<Line<'static>>,
+    pub selected_index: Option<usize>,
+}
 
 impl App {
     pub fn render_live(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -79,12 +86,11 @@ impl App {
     }
 
     pub fn footer_text(&self) -> String {
-        format!(
-            "Enter/Tab complete slash | Enter again runs command | Esc dismiss | Ctrl-C quit || model={} | approval={} | sandbox={}",
-            self.state.model_name.as_deref().unwrap_or("unknown"),
-            self.state.approval_policy.as_deref().unwrap_or("unknown"),
-            self.state.sandbox_mode.as_deref().unwrap_or("unknown"),
-        )
+        match self.bottom_layout(0).footer_mode {
+            FooterMode::Idle => "Enter submit | / commands | Esc clear | Ctrl-C quit".to_string(),
+            FooterMode::SlashActive => "Tab/Enter complete | Esc dismiss".to_string(),
+            FooterMode::ApprovalActive => "↑↓ select | Enter confirm | Esc later".to_string(),
+        }
     }
 
     pub fn slash_palette_lines(&self) -> Option<Vec<Line<'static>>> {
@@ -210,6 +216,38 @@ impl App {
             .unwrap_or(0)
     }
 
+    pub fn transient_panel(&self) -> Option<TransientPanel> {
+        let layout = self.bottom_layout(0);
+        match layout.transient_kind {
+            TransientKind::Approval => self.approval_panel_lines().map(|lines| {
+                let selected = self.approval_selected_line_index(lines.len());
+                TransientPanel {
+                    kind: TransientKind::Approval,
+                    lines,
+                    selected_index: selected,
+                }
+            }),
+            TransientKind::Slash => self.slash_palette_lines().map(|lines| {
+                let selected = if lines.is_empty() {
+                    None
+                } else {
+                    Some(
+                        self.state
+                            .slash_palette
+                            .selected_index
+                            .min(lines.len().saturating_sub(1)),
+                    )
+                };
+                TransientPanel {
+                    kind: TransientKind::Slash,
+                    lines,
+                    selected_index: selected,
+                }
+            }),
+            TransientKind::None => None,
+        }
+    }
+
     fn approval_option_line(&self, label: &str, selected: bool) -> Line<'static> {
         let marker = if selected { "› " } else { "  " };
         let style = if selected {
@@ -283,6 +321,19 @@ impl App {
             self.state.approval_selection == ApprovalSelection::Later,
         ));
         lines
+    }
+
+    fn approval_selected_line_index(&self, total_lines: usize) -> Option<usize> {
+        if total_lines == 0 {
+            return None;
+        }
+        let action_base = total_lines.saturating_sub(3);
+        let offset = match self.state.approval_selection {
+            ApprovalSelection::Approve => 0usize,
+            ApprovalSelection::Deny => 1usize,
+            ApprovalSelection::Later => 2usize,
+        };
+        Some((action_base + offset).min(total_lines.saturating_sub(1)))
     }
 
     fn approval_remaining_text(&self, pending: &crate::state::PendingApproval) -> String {

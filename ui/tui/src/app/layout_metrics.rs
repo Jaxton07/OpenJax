@@ -3,33 +3,75 @@ use unicode_width::UnicodeWidthChar;
 
 use super::App;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum TransientKind {
+    None,
+    Slash,
+    Approval,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum FooterMode {
+    Idle,
+    SlashActive,
+    ApprovalActive,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct BottomLayout {
+    pub status_rows: u16,
+    pub input_rows: u16,
+    pub footer_rows: u16,
+    pub transient_rows: u16,
+    pub transient_kind: TransientKind,
+    pub footer_mode: FooterMode,
+}
+
 impl App {
-    pub fn desired_height(&self, width: u16) -> u16 {
-        let slash_h = self.slash_palette_height();
-        let approval_h = if self.state.pending_approval.is_some() {
+    pub fn bottom_layout(&self, _width: u16) -> BottomLayout {
+        let approval_rows = if self.state.pending_approval.is_some() {
             self.approval_panel_height()
         } else {
             0
         };
-        let footer_h = if slash_h > 0 || approval_h > 0 {
-            0u16
+        let slash_rows = if approval_rows > 0 {
+            0
         } else {
-            1u16
+            self.slash_palette_height()
         };
-        let input_h = 2u16;
-        let status_h = if self.state.status_bar.is_some() {
-            1u16
+
+        let (transient_kind, transient_rows, footer_mode) = if approval_rows > 0 {
+            (
+                TransientKind::Approval,
+                approval_rows,
+                FooterMode::ApprovalActive,
+            )
+        } else if slash_rows > 0 {
+            (TransientKind::Slash, slash_rows, FooterMode::SlashActive)
         } else {
-            0u16
+            (TransientKind::None, 0, FooterMode::Idle)
         };
-        let approval_spacing = if approval_h > 0 { 2u16 } else { 0u16 };
+
+        BottomLayout {
+            status_rows: if self.state.status_bar.is_some() {
+                1
+            } else {
+                0
+            },
+            input_rows: 2,
+            footer_rows: 1,
+            transient_rows,
+            transient_kind,
+            footer_mode,
+        }
+    }
+
+    pub fn desired_height(&self, width: u16) -> u16 {
+        let bottom = self.bottom_layout(width);
         self.live_visual_height(width)
-            .saturating_add(status_h)
-            .saturating_add(slash_h)
-            .saturating_add(input_h)
-            .saturating_add(approval_h)
-            .saturating_add(approval_spacing)
-            .saturating_add(footer_h)
+            .saturating_add(bottom.status_rows)
+            .saturating_add(bottom.input_rows)
+            .saturating_add(bottom.footer_rows)
             .max(8)
     }
 
@@ -69,7 +111,7 @@ fn visual_line_count(line: &Line<'static>, max_w: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::App;
+    use crate::app::{App, FooterMode, TransientKind};
 
     #[test]
     fn desired_height_includes_status_row_when_visible() {
@@ -100,5 +142,25 @@ mod tests {
         assert!(app.is_slash_palette_active());
         assert!(app.state.slash_palette.matches.is_empty());
         assert_eq!(app.slash_palette_height(), 1);
+    }
+
+    #[test]
+    fn desired_height_does_not_change_when_slash_palette_opens() {
+        let mut app = App::default();
+        let base = app.desired_height(80);
+        app.append_input("/");
+        assert!(app.is_slash_palette_active());
+        let with_slash = app.desired_height(80);
+        assert_eq!(with_slash, base);
+    }
+
+    #[test]
+    fn bottom_layout_keeps_footer_row_when_transient_is_visible() {
+        let mut app = App::default();
+        app.append_input("/");
+        let slash_layout = app.bottom_layout(80);
+        assert_eq!(slash_layout.footer_rows, 1);
+        assert_eq!(slash_layout.transient_kind, TransientKind::Slash);
+        assert_eq!(slash_layout.footer_mode, FooterMode::SlashActive);
     }
 }

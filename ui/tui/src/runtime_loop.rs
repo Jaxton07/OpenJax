@@ -84,7 +84,9 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     let viewport = tui.viewport_size();
     let term_width = viewport.width.max(8);
     let desired = app.desired_height(term_width);
+    let bottom_layout = app.bottom_layout(term_width);
     let status_line = app.status_bar_line(Instant::now(), term_width, true);
+    let transient_panel = app.transient_panel();
     let reset_viewport = app.take_viewport_reset_requested();
     let cells = app.drain_history_cells();
     if !cells.is_empty() {
@@ -93,12 +95,12 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     tui.queue_history_cells(cells);
     tui.draw(
         desired,
+        bottom_layout,
         reset_viewport,
         status_line,
-        app.slash_palette_lines(),
         app.input_line(),
         app.input_cursor_offset(term_width),
-        app.approval_panel_lines(),
+        transient_panel,
         app.footer_text(),
         |area, buf| app.render_live(area, buf),
     )?;

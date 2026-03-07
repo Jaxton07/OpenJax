@@ -14,6 +14,8 @@ mod render_model;
 mod slash_palette;
 mod tool_output;
 
+pub use layout_metrics::{BottomLayout, FooterMode, TransientKind};
+pub use render_model::TransientPanel;
 pub use slash_palette::SlashAcceptResult;
 
 #[derive(Debug, Default)]
@@ -93,20 +95,20 @@ impl App {
         let mut lines = Vec::with_capacity(content_lines.len() + 2);
         lines.push(Line::from(Span::styled(
             top,
-            Style::default().fg(Color::Gray),
+            Style::default().fg(Color::DarkGray),
         )));
         for raw in content_lines {
             let mut spans = Vec::with_capacity(raw.spans.len() + 3);
-            spans.push(Span::styled("│ ", Style::default().fg(Color::Gray)));
+            spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
             spans.extend(raw.spans.clone());
             let pad = content_width.saturating_sub(Self::line_content_width(raw));
             spans.push(Span::raw(" ".repeat(pad)));
-            spans.push(Span::styled(" │", Style::default().fg(Color::Gray)));
+            spans.push(Span::styled(" │", Style::default().fg(Color::DarkGray)));
             lines.push(Line::from(spans));
         }
         lines.push(Line::from(Span::styled(
             bottom,
-            Style::default().fg(Color::Gray),
+            Style::default().fg(Color::DarkGray),
         )));
         lines
     }
