@@ -170,8 +170,9 @@ export class GatewayClient {
   }
 
   private headers(): Record<string, string> {
-    return this.settings.apiKey
-      ? { Authorization: `Bearer ${this.settings.apiKey}` }
+    const apiKey = this.settings.apiKey.trim();
+    return apiKey
+      ? { Authorization: `Bearer ${apiKey}` }
       : {};
   }
 }

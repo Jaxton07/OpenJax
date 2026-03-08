@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 pub fn load_api_keys_from_env() -> HashSet<String> {
     std::env::var("OPENJAX_GATEWAY_API_KEYS")
+        .or_else(|_| std::env::var("OPENJAX_API_KEYS"))
         .unwrap_or_default()
         .split(',')
         .map(str::trim)

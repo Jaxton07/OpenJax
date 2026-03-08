@@ -288,8 +288,18 @@ export function useChatApp() {
   }, [client, state.activeSessionId]);
 
   const updateSettings = useCallback((next: AppSettings) => {
-    saveSettings(next);
-    setState((prev) => ({ ...prev, settings: next, globalError: null, infoToast: "设置已保存" }));
+    const normalized: AppSettings = {
+      ...next,
+      apiKey: next.apiKey.trim(),
+      baseUrl: next.baseUrl.trim()
+    };
+    saveSettings(normalized);
+    setState((prev) => ({
+      ...prev,
+      settings: normalized,
+      globalError: null,
+      infoToast: "设置已保存"
+    }));
   }, []);
 
   const testConnection = useCallback(async () => {
