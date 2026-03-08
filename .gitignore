@@ -5,6 +5,9 @@ target/
 .sisyphus/
 .trae/
 dist/
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
 .venv/
 __pycache__/
 *.pyc

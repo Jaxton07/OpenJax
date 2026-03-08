@@ -7,10 +7,25 @@ pub mod state;
 pub use state::AppState;
 
 use axum::Router;
+use axum::http::Method;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
+use tower_http::cors::{Any, CorsLayer};
 
 pub fn build_app(state: AppState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin([
+            "http://localhost:5173".parse().expect("valid origin"),
+            "http://127.0.0.1:5173".parse().expect("valid origin"),
+        ])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers(Any);
+
     let protected = Router::new()
         .route("/api/v1/sessions", post(handlers::create_session))
         .route(
@@ -51,5 +66,6 @@ pub fn build_app(state: AppState) -> Router {
             middleware::access_log_middleware,
         ))
         .layer(from_fn(error::error_catch_middleware))
+        .layer(cors)
         .with_state(state)
 }

@@ -10,8 +10,8 @@
 | phase-3-gateway-design | done | ericw + codex | [phase-3 README](./phase-3-gateway-design/README.md) | 已完成 |
 | phase-4-web-react | done | ericw + codex | [phase-4 README](./phase-4-web-react/README.md) | 已完成 |
 | phase-5-delivery-ops | planned | ericw + codex | [phase-5 README](./phase-5-delivery-ops/README.md) | 明确发版门禁与运行手册 |
-| phase-6-gateway-dev | in_progress | ericw + codex | [phase-6 README](./phase-6-gateway-dev/README.md) | 初始化网关 crate 并打通基础接口骨架 |
-| phase-7-react-dev | planned | ericw + codex | [phase-7 README](./phase-7-react-dev/README.md) | 落地 React 对话与管理页面 |
+| phase-6-gateway-dev | in_progress | ericw + codex | [phase-6 README](./phase-6-gateway-dev/README.md) | 接入指标埋点并完成阶段收口 |
+| phase-7-react-dev | done | ericw + codex | [phase-7 README](./phase-7-react-dev/README.md) | 前端测试与构建验证通过 |
 | phase-8-core-enhancements | planned | ericw + codex | [phase-8 README](./phase-8-core-enhancements/README.md) | 落地 core compact 与上下文管理 |
 
 ## 更新规则
