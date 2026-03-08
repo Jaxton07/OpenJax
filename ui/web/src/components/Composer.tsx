@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 interface ComposerProps {
   disabled?: boolean;
@@ -9,6 +9,20 @@ interface ComposerProps {
 
 export default function Composer({ disabled, onSend, onNewChat, onCompact }: ComposerProps) {
   const [input, setInput] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const resizeTextarea = () => {
+    const el = textareaRef.current;
+    if (!el) {
+      return;
+    }
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  };
+
+  useLayoutEffect(() => {
+    resizeTextarea();
+  }, [input]);
 
   const submit = async () => {
     const content = input.trim();
@@ -17,6 +31,10 @@ export default function Composer({ disabled, onSend, onNewChat, onCompact }: Com
     }
     await onSend(content);
     setInput("");
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = "";
+    }
   };
 
   return (
@@ -41,13 +59,14 @@ export default function Composer({ disabled, onSend, onNewChat, onCompact }: Com
       </div>
       <div className="composer">
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           placeholder="有问题，尽管问"
           rows={1}
           disabled={disabled}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
               event.preventDefault();
               void submit();
             }

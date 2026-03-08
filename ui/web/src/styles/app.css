@@ -58,48 +58,21 @@ textarea {
   overflow: hidden;
 }
 
-.sidebar-top {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.sidebar-brand-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 2px 4px;
-}
-
 .sidebar-toggle-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #d7dbe2;
+  width: 44px;
+  height: 44px;
+  border: none;
   border-radius: 999px;
-  background: #f5f7fa;
+  background: #ffffff;
   cursor: pointer;
   display: grid;
   place-items: center;
   padding: 0;
-  transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease;
+  transition: background-color 0.16s ease;
 }
 
 .sidebar-toggle-btn:hover {
-  background: #eef2f7;
-  border-color: #cfd5de;
-}
-
-.sidebar-toggle-icon {
-  width: 16px;
-  height: 16px;
-  fill: #222222;
-  transition: transform 0.18s ease;
-}
-
-.sidebar-toggle-icon.collapsed {
-  transform: rotate(180deg);
+  background: #f1f3f6;
 }
 
 .new-chat-btn,
@@ -129,43 +102,9 @@ textarea {
   fill: #222222;
 }
 
-.floating-sidebar-controls {
-  position: fixed;
-  left: 14px;
-  top: 10px;
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  background: #f7f8fa;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 6px 8px;
-  z-index: 30;
-}
-
-.floating-control-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #d7dbe2;
-  border-radius: 999px;
-  background: #f5f7fa;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease;
-}
-
-.floating-control-btn:hover {
-  background: #eef2f7;
-  border-color: #cfd5de;
-}
-
-.floating-control-btn svg {
-  width: 18px;
-  height: 18px;
+.sidebar-toggle-btn svg {
+  width: 24px;
+  height: 24px;
   fill: #1f1f1f;
 }
 
@@ -223,7 +162,13 @@ textarea {
   align-items: center;
 }
 
-.chat-header h1 {
+.chat-header-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-header-main h1 {
   margin: 0;
   font-size: 30px;
   font-weight: 540;
@@ -427,6 +372,15 @@ textarea {
   background: transparent;
   padding-top: 6px;
   padding-bottom: 6px;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.composer textarea::placeholder {
+  color: #8d8d8d;
+  font-size: 15px;
+  font-weight: 400;
 }
 
 .composer button {

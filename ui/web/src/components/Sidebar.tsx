@@ -4,7 +4,6 @@ interface SidebarProps {
   sessions: ChatSession[];
   activeSessionId: string | null;
   collapsed: boolean;
-  onToggleCollapsed: () => void;
   onSelectSession: (id: string) => void;
   onOpenSettings: () => void;
 }
@@ -12,29 +11,6 @@ interface SidebarProps {
 export default function Sidebar(props: SidebarProps) {
   return (
     <aside className={`sidebar ${props.collapsed ? "collapsed" : ""}`}>
-      <div className="sidebar-top">
-        {!props.collapsed ? (
-          <>
-            <div className="sidebar-brand-row">
-              <button
-                className="sidebar-toggle-btn"
-                onClick={props.onToggleCollapsed}
-                title="收起侧边栏"
-                aria-label="收起侧边栏"
-              >
-                <svg
-                  className="sidebar-toggle-icon"
-                  viewBox="0 0 1024 1024"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <path d="M740.395 188c88.365 0 160 71.635 160 160v329.347c-0.001 88.365-71.635 159.999-160 160H280c-88.366 0-160-71.635-160-160V348c0-88.365 71.634-160 160-160h460.395zM280 252c-53.019 0-96 42.981-96 96v329.347c0 53.019 42.981 96 96 96h134.051V252H280z m198.051 521.347h262.344c53.019-0.001 95.999-42.981 96-96V348c0-53.019-42.981-96-96-96H478.051v521.347zM337.367 456.266c17.673 0 32 14.326 32 32 0 17.673-14.327 32-32 32H264.33c-17.673-0.001-32-14.327-32-32 0-17.673 14.327-32 32-32h73.037z m0-122.86c17.673 0 32 14.327 32 32 0 17.673-14.327 32-32 32H264.33c-17.673 0-32-14.327-32-32 0-17.673 14.327-32 32-32h73.037z" />
-                </svg>
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
       <div className="history-list">
         {!props.collapsed
           ? props.sessions.map((session) => (
