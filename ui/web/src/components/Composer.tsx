@@ -10,6 +10,7 @@ interface ComposerProps {
 export default function Composer({ disabled, onSend, onNewChat, onCompact }: ComposerProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasContent = input.trim().length > 0;
 
   const resizeTextarea = () => {
     const el = textareaRef.current;
@@ -66,14 +67,29 @@ export default function Composer({ disabled, onSend, onNewChat, onCompact }: Com
           rows={1}
           disabled={disabled}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
+            if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               void submit();
             }
           }}
         />
-        <button onClick={() => void submit()} disabled={disabled}>
-          发送
+        <button
+          type="button"
+          className={`composer-send-btn ${hasContent && !disabled ? "ready" : ""}`}
+          onClick={() => void submit()}
+          disabled={disabled || !hasContent}
+          aria-label="发送"
+          title="发送"
+        >
+          <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path
+              d="M512 1024a512 512 0 1 1 512-512 512 512 0 0 1-512 512z m97.056-256.416L736 321.568a33.696 33.696 0 0 0-33.216-33.152L256 415.264a32 32 0 0 0-32.512 32.416l183.808 107.808 215.744-153.92-154.208 215.36L576.544 800a32 32 0 0 0 32.512-32.416z"
+              fill="currentColor"
+            />
+          </svg>
         </button>
       </div>
     </div>

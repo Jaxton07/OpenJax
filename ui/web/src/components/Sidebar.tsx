@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ChatSession } from "../types/chat";
 
 interface SidebarProps {
@@ -5,23 +6,60 @@ interface SidebarProps {
   activeSessionId: string | null;
   collapsed: boolean;
   onSelectSession: (id: string) => void;
+  onDeleteSession: (id: string) => Promise<void> | void;
   onOpenSettings: () => void;
 }
 
 export default function Sidebar(props: SidebarProps) {
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (deletingSessionId === sessionId) {
+      return;
+    }
+    setDeletingSessionId(sessionId);
+    try {
+      await props.onDeleteSession(sessionId);
+    } finally {
+      setDeletingSessionId((current) => (current === sessionId ? null : current));
+    }
+  };
+
   return (
     <aside className={`sidebar ${props.collapsed ? "collapsed" : ""}`}>
       <div className="history-list">
         {props.sessions.map((session) => (
-          <button
+          <div
             key={session.id}
             className={`history-item ${props.activeSessionId === session.id ? "active" : ""}`}
-            onClick={() => props.onSelectSession(session.id)}
-            title={session.title}
           >
-            <span className="history-title">{session.title}</span>
-            <span className="history-meta">{formatLocalTime(session.createdAt)}</span>
-          </button>
+            <button
+              className="history-main"
+              onClick={() => props.onSelectSession(session.id)}
+              title={session.title}
+            >
+              <span className="history-title">{session.title}</span>
+              <span className="history-meta">{formatLocalTime(session.createdAt)}</span>
+            </button>
+            <button
+              className="history-delete-btn"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleDeleteSession(session.id);
+              }}
+              disabled={deletingSessionId === session.id}
+              title="删除会话"
+              aria-label="删除会话"
+            >
+              <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path
+                  d="M781.28 851.36a58.56 58.56 0 0 1-58.56 58.56H301.28a58.72 58.72 0 0 1-58.56-58.56V230.4h538.56z m-421.6-725.92a11.84 11.84 0 0 1 12-12h281.28a11.84 11.84 0 0 1 12 12V160H359.68zM956.8 160H734.72v-34.56a81.76 81.76 0 0 0-81.76-81.76H371.68a82.08 82.08 0 0 0-81.76 81.76V160H67.2a35.36 35.36 0 0 0 0 70.56h105.12v620.8a128.96 128.96 0 0 0 128.96 128.96h421.44a128.96 128.96 0 0 0 128.96-128.96V230.4H956.8a35.2 35.2 0 0 0 35.2-35.2 34.56 34.56 0 0 0-35.2-35.2zM512 804.16a35.2 35.2 0 0 0 35.2-35.36V393.92a35.2 35.2 0 1 0-70.4 0V768.8a35.2 35.2 0 0 0 35.2 35.36m-164.32 0a35.36 35.36 0 0 0 35.36-35.36V393.92a35.36 35.36 0 1 0-70.56 0V768.8a36.32 36.32 0 0 0 35.2 35.36m328.64 0a35.36 35.36 0 0 0 35.2-35.36V393.92a35.36 35.36 0 1 0-70.56 0V768.8a35.36 35.36 0 0 0 35.36 35.36"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </div>
         ))}
         {props.sessions.length === 0 ? <div className="history-empty">暂无历史对话</div> : null}
       </div>

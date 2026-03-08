@@ -4,7 +4,7 @@ import { applyStreamEvent } from "../lib/eventReducer";
 import { humanizeError } from "../lib/errors";
 import { loadSettings, loadSessions, saveSessions, saveSettings } from "../lib/storage";
 import type { ChatMessage, ChatSession, ChatState, PendingApproval } from "../types/chat";
-import type { AppSettings } from "../types/gateway";
+import type { AppSettings, GatewayError } from "../types/gateway";
 
 const MAX_RECONNECT_RETRY = 6;
 
@@ -110,6 +110,24 @@ export function useChatApp() {
             retry = 0;
           } catch (error) {
             if (abort.signal.aborted) {
+              return;
+            }
+            if (isSessionNotFoundError(error)) {
+              setState((prev) => {
+                const removedIndex = prev.sessions.findIndex((session) => session.id === sessionId);
+                if (removedIndex < 0) {
+                  return prev;
+                }
+                const sessions = prev.sessions.filter((session) => session.id !== sessionId);
+                const nextActive = sessions[removedIndex] ?? sessions[removedIndex - 1] ?? null;
+                return {
+                  ...prev,
+                  sessions,
+                  activeSessionId: nextActive?.id ?? null,
+                  globalError: null,
+                  infoToast: "检测到失效会话，已自动移除。"
+                };
+              });
               return;
             }
             retry += 1;
@@ -235,6 +253,47 @@ export function useChatApp() {
     setState((prev) => ({ ...prev, activeSessionId: sessionId, globalError: null }));
   }, []);
 
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      const shouldDelete = window.confirm("确认删除该会话？此操作不可恢复。");
+      if (!shouldDelete) {
+        return;
+      }
+
+      if (state.activeSessionId === sessionId) {
+        reconnectAbortRef.current?.abort();
+        pollingAbortRef.current?.abort();
+      }
+
+      try {
+        await client.shutdownSession(sessionId);
+        setState((prev) => {
+          const removedIndex = prev.sessions.findIndex((session) => session.id === sessionId);
+          if (removedIndex < 0) {
+            return prev;
+          }
+
+          const sessions = prev.sessions.filter((session) => session.id !== sessionId);
+          const nextActive =
+            prev.activeSessionId === sessionId
+              ? sessions[removedIndex] ?? sessions[removedIndex - 1] ?? null
+              : sessions.find((session) => session.id === prev.activeSessionId) ?? null;
+
+          return {
+            ...prev,
+            sessions,
+            activeSessionId: nextActive?.id ?? null,
+            globalError: null,
+            infoToast: "会话已删除"
+          };
+        });
+      } catch (error) {
+        setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
+      }
+    },
+    [client, state.activeSessionId]
+  );
+
   const resolveApproval = useCallback(
     async (approval: PendingApproval, approved: boolean) => {
       const sessionId = state.activeSessionId;
@@ -327,6 +386,7 @@ export function useChatApp() {
     activeSession,
     newChat,
     switchSession,
+    deleteSession,
     sendMessage,
     resolveApproval,
     clearConversation,
@@ -341,4 +401,12 @@ export function useChatApp() {
 function summarizeTitle(input: string): string {
   const plain = input.replace(/\s+/g, " ").trim();
   return plain.length > 24 ? `${plain.slice(0, 24)}...` : plain;
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const gateway = error as Partial<GatewayError>;
+  return gateway.code === "NOT_FOUND" || gateway.status === 404;
 }

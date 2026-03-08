@@ -14,6 +14,7 @@ export default function App() {
     activeSession,
     newChat,
     switchSession,
+    deleteSession,
     sendMessage,
     resolveApproval,
     clearConversation,
@@ -45,6 +46,7 @@ export default function App() {
         activeSessionId={state.activeSessionId}
         collapsed={sidebarCollapsed}
         onSelectSession={switchSession}
+        onDeleteSession={deleteSession}
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
