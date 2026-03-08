@@ -1,0 +1,55 @@
+mod auth;
+mod error;
+mod handlers;
+mod middleware;
+pub mod state;
+
+pub use state::AppState;
+
+use axum::Router;
+use axum::middleware::{from_fn, from_fn_with_state};
+use axum::routing::{get, post};
+
+pub fn build_app(state: AppState) -> Router {
+    let protected = Router::new()
+        .route("/api/v1/sessions", post(handlers::create_session))
+        .route(
+            "/api/v1/sessions/:session_id",
+            post(handlers::session_action).delete(handlers::shutdown_session),
+        )
+        .route(
+            "/api/v1/sessions/:session_id/turns",
+            post(handlers::submit_turn),
+        )
+        .route(
+            "/api/v1/sessions/:session_id/turns/:turn_id",
+            get(handlers::get_turn),
+        )
+        .route(
+            "/api/v1/sessions/:session_id/approvals/*approval_action",
+            post(handlers::resolve_approval),
+        )
+        .route(
+            "/api/v1/sessions/:session_id/events",
+            get(handlers::stream_events),
+        )
+        .layer(from_fn_with_state(
+            state.clone(),
+            middleware::auth_middleware,
+        ));
+
+    Router::new()
+        .route("/healthz", get(handlers::healthz))
+        .route("/readyz", get(handlers::readyz))
+        .merge(protected)
+        .layer(from_fn_with_state(
+            state.clone(),
+            middleware::request_context_middleware,
+        ))
+        .layer(from_fn_with_state(
+            state.clone(),
+            middleware::access_log_middleware,
+        ))
+        .layer(from_fn(error::error_catch_middleware))
+        .with_state(state)
+}

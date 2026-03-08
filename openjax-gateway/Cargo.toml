@@ -1,0 +1,25 @@
+[package]
+name = "openjax-gateway"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-stream = "0.3"
+async-trait.workspace = true
+axum = { version = "0.7", features = ["macros"] }
+futures-util = "0.3"
+openjax-core = { path = "../openjax-core" }
+openjax-protocol = { path = "../openjax-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tower = "0.5"
