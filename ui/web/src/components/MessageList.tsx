@@ -1,12 +1,14 @@
 import { useEffect, useRef } from "react";
-import type { ChatMessage } from "../types/chat";
+import type { ChatMessage, PendingApproval } from "../types/chat";
 import ToolStepList from "./tool-steps/ToolStepList";
 
 interface MessageListProps {
   messages: ChatMessage[];
+  pendingApprovals: PendingApproval[];
+  onResolveApproval: (approval: PendingApproval, approved: boolean) => Promise<void> | void;
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+export default function MessageList({ messages, pendingApprovals, onResolveApproval }: MessageListProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -29,7 +31,11 @@ export default function MessageList({ messages }: MessageListProps) {
           <div className="message-bubble">
             {message.kind === "tool_steps" ? (
               Array.isArray(message.toolSteps) && message.toolSteps.length > 0 ? (
-                <ToolStepList steps={message.toolSteps} />
+                <ToolStepList
+                  steps={message.toolSteps}
+                  pendingApprovals={pendingApprovals}
+                  onResolveApproval={onResolveApproval}
+                />
               ) : null
             ) : (
               <pre>{message.content}</pre>

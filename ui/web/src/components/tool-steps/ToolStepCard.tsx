@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import type { ToolStep } from "../../types/chat";
+import { formatStepDuration } from "./formatStepDuration";
 import StepBody from "./StepBody";
 
 interface ToolStepCardProps {
@@ -13,7 +14,7 @@ export default function ToolStepCard({ defaultExpanded = false, step }: ToolStep
   const headingId = `step-heading-${reactId}`;
   const bodyId = `step-body-${reactId}`;
   const hasBody = Boolean(step.description || step.code || step.output);
-  const timeText = formatStepTime(step.time);
+  const timeText = formatStepDuration(step);
 
   return (
     <section className={`step-card step-card--${step.status}${expanded ? " expanded" : ""}`}>
@@ -40,16 +41,4 @@ export default function ToolStepCard({ defaultExpanded = false, step }: ToolStep
       <StepBody bodyId={bodyId} expanded={expanded} headingId={headingId} step={step} />
     </section>
   );
-}
-
-function formatStepTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
-  const ms = String(date.getMilliseconds()).padStart(3, "0");
-  return `${hh}:${mm}:${ss}.${ms}`;
 }

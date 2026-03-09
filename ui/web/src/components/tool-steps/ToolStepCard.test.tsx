@@ -84,4 +84,38 @@ describe("ToolStepCard", () => {
     const dot = document.querySelector(".step-dot");
     expect(dot).toHaveClass("step-dot--failed");
   });
+
+  it("renders duration in seconds when under sixty seconds", () => {
+    render(
+      <ToolStepCard
+        step={{
+          id: "step_5",
+          type: "tool",
+          title: "read_file",
+          status: "success",
+          time: "2026-01-01T00:00:00Z",
+          durationSec: 42
+        }}
+      />
+    );
+
+    expect(screen.getByText("42s")).toBeInTheDocument();
+  });
+
+  it("renders duration in minutes and seconds when over sixty seconds", () => {
+    render(
+      <ToolStepCard
+        step={{
+          id: "step_6",
+          type: "tool",
+          title: "read_file",
+          status: "success",
+          time: "2026-01-01T00:00:00Z",
+          durationSec: 125
+        }}
+      />
+    );
+
+    expect(screen.getByText("2m 5s")).toBeInTheDocument();
+  });
 });

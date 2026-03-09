@@ -13,6 +13,9 @@ export interface ToolStep {
   title: string;
   status: ToolStepStatus;
   time: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationSec?: number;
   subtitle?: string;
   description?: string;
   code?: string;
@@ -36,6 +39,7 @@ export interface ChatMessage {
 
 export interface PendingApproval {
   approvalId: string;
+  toolCallId?: string;
   turnId?: string;
   target?: string;
   reason?: string;

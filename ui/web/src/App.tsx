@@ -1,5 +1,4 @@
 import { useState } from "react";
-import ApprovalPanel from "./components/ApprovalPanel";
 import Composer from "./components/Composer";
 import MessageList from "./components/MessageList";
 import SettingsModal from "./components/SettingsModal";
@@ -68,23 +67,26 @@ export default function App() {
           <div className="chat-status">{activeSession?.connection ?? "idle"}</div>
         </header>
 
-        {state.globalError ? (
-          <div className="banner error" onClick={dismissGlobalError}>
-            {state.globalError}
-          </div>
-        ) : null}
-        {state.infoToast ? (
-          <div className="banner info" onClick={dismissToast}>
-            {state.infoToast}
-          </div>
-        ) : null}
+        <div className="chat-banners">
+          {state.globalError ? (
+            <div className="banner error" onClick={dismissGlobalError}>
+              {state.globalError}
+            </div>
+          ) : null}
+          {state.infoToast ? (
+            <div className="banner info" onClick={dismissToast}>
+              {state.infoToast}
+            </div>
+          ) : null}
+        </div>
 
-        <ApprovalPanel
-          approvals={activeSession?.pendingApprovals ?? []}
-          onResolve={(approval, approved) => resolveApproval(approval, approved)}
-        />
-
-        <MessageList messages={activeSession?.messages ?? []} />
+        <section className="chat-scroll-region">
+          <MessageList
+            messages={activeSession?.messages ?? []}
+            pendingApprovals={activeSession?.pendingApprovals ?? []}
+            onResolveApproval={(approval, approved) => resolveApproval(approval, approved)}
+          />
+        </section>
 
         <Composer
           disabled={state.loading}

@@ -92,6 +92,7 @@ describe("applyStreamEvent", () => {
     expect(startedStep?.status).toBe("running");
     expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
     expect(stepMessages[0].toolSteps?.[0].output).toBe("ok");
+    expect(stepMessages[0].toolSteps?.[0].durationSec).toBe(1);
   });
 
   it("keeps different tool_call_id entries as separate cards even in same turn", () => {
@@ -191,7 +192,9 @@ describe("applyStreamEvent", () => {
       .filter(Boolean);
     expect(steps).toHaveLength(1);
     expect(steps[0]?.status).toBe("success");
+    expect(steps[0]?.durationSec).toBe(1);
     expect(requested.pendingApprovals).toHaveLength(1);
+    expect(requested.pendingApprovals[0]?.toolCallId).toBe("call_1");
     expect(resolved.pendingApprovals).toHaveLength(0);
   });
 

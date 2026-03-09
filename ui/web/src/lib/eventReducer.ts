@@ -35,6 +35,7 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   if (event.type === "approval_requested") {
     next.pendingApprovals.push({
       approvalId: String(event.payload.approval_id ?? ""),
+      toolCallId: toolCallIdFromPayload(event),
       turnId,
       target: String(event.payload.target ?? ""),
       reason: String(event.payload.reason ?? ""),
@@ -138,17 +139,18 @@ function mergeToolStep(previous: ToolStep | undefined, next: ToolStep): ToolStep
   }
   // Keep existing tool identity when approval events update the same tool call card.
   if (previous.type === "tool" && next.type === "approval") {
-    return {
+    return withDuration({
       ...previous,
       status: next.status,
       time: next.time,
       description: next.description ?? previous.description,
       approvalId: next.approvalId ?? previous.approvalId,
       toolCallId: next.toolCallId ?? previous.toolCallId,
+      endedAt: next.endedAt ?? previous.endedAt,
       meta: next.meta
-    };
+    });
   }
-  return { ...previous, ...next };
+  return withDuration({ ...previous, ...next });
 }
 
 type AggregateKey = { type: "tool_call_id" | "approval_id"; value: string } | null;
@@ -191,6 +193,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       subtitle: String(event.payload.target ?? ""),
       status: "running",
       time: event.timestamp,
+      startedAt: event.timestamp,
       toolCallId: toolCallIdFromPayload(event),
       meta: event.payload
     };
@@ -204,6 +207,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       status: "success",
       output: String(event.payload.output ?? ""),
       time: event.timestamp,
+      endedAt: event.timestamp,
       toolCallId: toolCallIdFromPayload(event),
       meta: event.payload
     };
@@ -225,6 +229,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       status: "waiting",
       description,
       time: event.timestamp,
+      startedAt: event.timestamp,
       approvalId: String(event.payload.approval_id ?? ""),
       toolCallId: toolCallIdFromPayload(event),
       meta: event.payload
@@ -238,6 +243,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       title: String(event.payload.tool_name ?? "approval"),
       status: "success",
       time: event.timestamp,
+      endedAt: event.timestamp,
       approvalId: String(event.payload.approval_id ?? ""),
       toolCallId: toolCallIdFromPayload(event),
       meta: event.payload
@@ -272,6 +278,34 @@ function resolveToolStepId(event: StreamEvent, prefix: string): string {
 
 function toolCallIdFromPayload(event: StreamEvent): string {
   return String(event.payload.tool_call_id ?? "");
+}
+
+function withDuration(step: ToolStep): ToolStep {
+  const durationSec = computeDurationSec(step.startedAt, step.endedAt);
+  if (durationSec === undefined) {
+    return step;
+  }
+  return {
+    ...step,
+    durationSec
+  };
+}
+
+function computeDurationSec(startedAt?: string, endedAt?: string): number | undefined {
+  const startMs = parseIsoToMs(startedAt);
+  const endMs = parseIsoToMs(endedAt);
+  if (startMs === undefined || endMs === undefined || endMs < startMs) {
+    return undefined;
+  }
+  return Math.floor((endMs - startMs) / 1000);
+}
+
+function parseIsoToMs(value?: string): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? undefined : ms;
 }
 
 function mergeAssistantDraft(
