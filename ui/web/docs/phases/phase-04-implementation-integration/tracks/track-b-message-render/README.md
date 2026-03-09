@@ -18,3 +18,9 @@
 ## 交付物
 - 渲染分支规则说明。
 - 回退逻辑说明。
+
+## 已实施行为（2026-03-09）
+- `MessageList` 已按 `message.kind` 分支渲染：`text` 走文本气泡，`tool_steps` 走结构化步骤容器。
+- 渲染层不再处理同消息 mixed 排序问题，tool 与 content 已在模型层拆分为不同消息。
+- 当前保留旧 `role=tool` 文本消息渲染路径，作为 Track C 前的过渡兼容。
+- 旧 `assistant + toolSteps` 结构不再兼容，按断点式策略处理。

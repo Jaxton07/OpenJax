@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage } from "../types/chat";
+import ToolStepList from "./tool-steps/ToolStepList";
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -26,7 +27,13 @@ export default function MessageList({ messages }: MessageListProps) {
       {messages.map((message) => (
         <div key={message.id} className={`message-row role-${message.role}`}>
           <div className="message-bubble">
-            <pre>{message.content}</pre>
+            {message.kind === "tool_steps" ? (
+              Array.isArray(message.toolSteps) && message.toolSteps.length > 0 ? (
+                <ToolStepList steps={message.toolSteps} />
+              ) : null
+            ) : (
+              <pre>{message.content}</pre>
+            )}
           </div>
         </div>
       ))}

@@ -378,6 +378,82 @@ textarea {
   word-break: break-word;
 }
 
+.tool-step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-step-item {
+  border: 1px solid #e4e4e0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fcfcfb;
+}
+
+.tool-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tool-step-title {
+  font-size: 13px;
+  color: #31312f;
+}
+
+.tool-step-status {
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid;
+  padding: 1px 8px;
+  text-transform: lowercase;
+}
+
+.step-status--running {
+  color: #2d4f7a;
+  border-color: #a9bfd9;
+  background: #eff5fc;
+}
+
+.step-status--success {
+  color: #2f5d45;
+  border-color: #a8c9b5;
+  background: #eff8f2;
+}
+
+.step-status--waiting {
+  color: #755e30;
+  border-color: #d6c08f;
+  background: #fcf8ef;
+}
+
+.step-status--failed {
+  color: #7e3737;
+  border-color: #dfb4b4;
+  background: #fdf1f1;
+}
+
+.tool-step-meta,
+.tool-step-subtitle,
+.tool-step-description {
+  margin: 6px 0 0;
+  color: #666662;
+  font-size: 12px;
+}
+
+.tool-step-code,
+.tool-step-output {
+  margin: 8px 0 0;
+  border-radius: 8px;
+  border: 1px solid #ecece8;
+  background: #f8f8f6;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .composer-wrap {
   position: fixed;
   bottom: 16px;

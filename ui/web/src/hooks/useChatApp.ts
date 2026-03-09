@@ -180,6 +180,7 @@ export function useChatApp() {
       const sessionId = await ensureSession();
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
+        kind: "text",
         role: "user",
         content: message,
         timestamp: new Date().toISOString()
@@ -210,6 +211,7 @@ export function useChatApp() {
                 ...session.messages,
                 {
                   id: crypto.randomUUID(),
+                  kind: "text",
                   role: "assistant",
                   content: result.assistant_message ?? "",
                   timestamp: result.timestamp,
@@ -225,6 +227,7 @@ export function useChatApp() {
                 ...session.messages,
                 {
                   id: crypto.randomUUID(),
+                  kind: "text",
                   role: "error",
                   content: result.error?.message ?? "回合失败",
                   timestamp: result.timestamp,

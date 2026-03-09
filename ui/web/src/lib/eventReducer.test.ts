@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyStreamEvent } from "./eventReducer";
-import type { ChatSession, ToolStep } from "../types/chat";
+import type { ChatSession } from "../types/chat";
 
 function baseSession(): ChatSession {
   return {
@@ -35,7 +35,7 @@ describe("applyStreamEvent", () => {
     expect(second.messages).toHaveLength(1);
   });
 
-  it("merges assistant deltas", () => {
+  it("merges assistant deltas into text messages only", () => {
     const session = baseSession();
     const delta1 = applyStreamEvent(session, {
       request_id: "req",
@@ -56,10 +56,59 @@ describe("applyStreamEvent", () => {
       payload: { content_delta: "lo" }
     });
 
+    expect(delta2.messages).toHaveLength(1);
+    expect(delta2.messages[0].kind).toBe("text");
     expect(delta2.messages[0].content).toBe("hello");
   });
 
-  it("tracks approvals lifecycle", () => {
+  it("creates a tool_steps message for each tool event and keeps legacy tool text messages", () => {
+    const session = baseSession();
+    const started = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_1",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "tool_call_started",
+      payload: { tool_call_id: "call_1", tool_name: "shell", target: "pwd" }
+    });
+    const completed = applyStreamEvent(started, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_1",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "tool_call_completed",
+      payload: { tool_call_id: "call_1", tool_name: "shell", output: "ok" }
+    });
+
+    const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
+    const legacyToolMessages = completed.messages.filter(
+      (message) => message.kind === "text" && message.role === "tool"
+    );
+    expect(stepMessages).toHaveLength(2);
+    expect(legacyToolMessages).toHaveLength(2);
+    expect(stepMessages[0].toolSteps?.[0].status).toBe("running");
+    expect(stepMessages[1].toolSteps?.[0].status).toBe("success");
+  });
+
+  it("falls back to synthetic ids when tool_call_id is missing", () => {
+    const session = baseSession();
+    const next = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_1",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "tool_call_started",
+      payload: { tool_name: "shell" }
+    });
+
+    const step = next.messages.find((message) => message.kind === "tool_steps")?.toolSteps?.[0];
+    expect(step?.id).toContain("tool_call_started:turn_1:1");
+  });
+
+  it("tracks approvals lifecycle and emits tool_steps entries", () => {
     const session = baseSession();
     const requested = applyStreamEvent(session, {
       request_id: "req",
@@ -81,11 +130,18 @@ describe("applyStreamEvent", () => {
       payload: { approval_id: "approval_1", approved: true }
     });
 
+    const steps = resolved.messages
+      .filter((message) => message.kind === "tool_steps")
+      .map((message) => message.toolSteps?.[0])
+      .filter(Boolean);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]?.status).toBe("waiting");
+    expect(steps[1]?.status).toBe("success");
     expect(requested.pendingApprovals).toHaveLength(1);
     expect(resolved.pendingApprovals).toHaveLength(0);
   });
 
-  it("creates running tool step and keeps legacy tool message", () => {
+  it("emits failed summary tool_steps message on error and keeps error text", () => {
     const session = baseSession();
     const next = applyStreamEvent(session, {
       request_id: "req",
@@ -93,146 +149,18 @@ describe("applyStreamEvent", () => {
       turn_id: "turn_1",
       event_seq: 1,
       timestamp: "2026-01-01T00:00:01Z",
-      type: "tool_call_started",
-      payload: { tool_call_id: "call_1", tool_name: "shell", target: "zsh -lc \"ls\"" }
-    });
-
-    expect(next.messages.some((message) => message.role === "tool")).toBe(true);
-    const steps = getToolSteps(next);
-    expect(steps).toHaveLength(1);
-    expect(steps[0]).toMatchObject({
-      id: "call_1",
-      type: "tool",
-      title: "shell",
-      status: "running"
-    });
-  });
-
-  it("updates existing step from started to completed", () => {
-    const session = baseSession();
-    const started = applyStreamEvent(session, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 1,
-      timestamp: "2026-01-01T00:00:01Z",
-      type: "tool_call_started",
-      payload: { tool_call_id: "call_1", tool_name: "shell" }
-    });
-    const completed = applyStreamEvent(started, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 2,
-      timestamp: "2026-01-01T00:00:02Z",
-      type: "tool_call_completed",
-      payload: { tool_call_id: "call_1", tool_name: "shell", output: "done" }
-    });
-
-    const steps = getToolSteps(completed);
-    expect(steps).toHaveLength(1);
-    expect(steps[0].status).toBe("success");
-    expect(steps[0].output).toBe("done");
-  });
-
-  it("falls back when tool_call_id is missing and still updates completion", () => {
-    const session = baseSession();
-    const started = applyStreamEvent(session, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 1,
-      timestamp: "2026-01-01T00:00:01Z",
-      type: "tool_call_started",
-      payload: { tool_name: "shell", target: "pwd" }
-    });
-    const completed = applyStreamEvent(started, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 2,
-      timestamp: "2026-01-01T00:00:02Z",
-      type: "tool_call_completed",
-      payload: { tool_name: "shell", output: "ok" }
-    });
-
-    const steps = getToolSteps(completed);
-    expect(steps).toHaveLength(1);
-    expect(steps[0].status).toBe("success");
-    expect(steps[0].output).toBe("ok");
-  });
-
-  it("writes approval step and resolves it", () => {
-    const session = baseSession();
-    const requested = applyStreamEvent(session, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 1,
-      timestamp: "2026-01-01T00:00:01Z",
-      type: "approval_requested",
-      payload: { approval_id: "approval_1", reason: "need write", target: "/tmp/a.txt" }
-    });
-    const resolved = applyStreamEvent(requested, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 2,
-      timestamp: "2026-01-01T00:00:02Z",
-      type: "approval_resolved",
-      payload: { approval_id: "approval_1", approved: true }
-    });
-
-    const steps = getToolSteps(resolved);
-    expect(steps.find((step) => step.id === "approval_1")?.status).toBe("success");
-    expect(resolved.pendingApprovals).toHaveLength(0);
-  });
-
-  it("marks latest running step failed on error", () => {
-    const session = baseSession();
-    const started = applyStreamEvent(session, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 1,
-      timestamp: "2026-01-01T00:00:01Z",
-      type: "tool_call_started",
-      payload: { tool_call_id: "call_1", tool_name: "shell" }
-    });
-    const errored = applyStreamEvent(started, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 2,
-      timestamp: "2026-01-01T00:00:02Z",
       type: "error",
       payload: { message: "boom" }
     });
 
-    const steps = getToolSteps(errored);
-    expect(steps[0].status).toBe("failed");
-    expect(steps[0].output).toBe("boom");
+    const step = next.messages.find((message) => message.kind === "tool_steps")?.toolSteps?.[0];
+    const err = next.messages.find((message) => message.kind === "text" && message.role === "error");
+    expect(step?.type).toBe("summary");
+    expect(step?.status).toBe("failed");
+    expect(err?.content).toBe("boom");
   });
 
-  it("creates failed summary step when no running step exists", () => {
-    const session = baseSession();
-    const errored = applyStreamEvent(session, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 1,
-      timestamp: "2026-01-01T00:00:02Z",
-      type: "error",
-      payload: { message: "turn failed" }
-    });
-
-    const steps = getToolSteps(errored);
-    expect(steps).toHaveLength(1);
-    expect(steps[0].type).toBe("summary");
-    expect(steps[0].status).toBe("failed");
-  });
-
-  it("ignores incomplete payload without throwing", () => {
+  it("handles incomplete payload without throwing", () => {
     const session = baseSession();
     const next = applyStreamEvent(session, {
       request_id: "req",
@@ -244,12 +172,8 @@ describe("applyStreamEvent", () => {
       payload: {}
     });
 
-    const steps = getToolSteps(next);
-    expect(steps[0].title).toBe("tool");
-    expect(steps[0].status).toBe("running");
+    const step = next.messages.find((message) => message.kind === "tool_steps")?.toolSteps?.[0];
+    expect(step?.title).toBe("tool");
+    expect(step?.status).toBe("running");
   });
 });
-
-function getToolSteps(session: ChatSession): ToolStep[] {
-  return session.messages.find((message) => Array.isArray(message.toolSteps))?.toolSteps ?? [];
-}
