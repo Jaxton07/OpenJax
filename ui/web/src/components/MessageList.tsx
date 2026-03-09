@@ -12,7 +12,15 @@ export default function MessageList({ messages, pendingApprovals, onResolveAppro
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const anchor = endRef.current;
+    if (!anchor) {
+      return;
+    }
+    const container = anchor.closest(".chat-scroll-region");
+    if (!(container instanceof HTMLElement)) {
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
   }, [messages]);
 
   if (messages.length === 0) {

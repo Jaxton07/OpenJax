@@ -135,11 +135,18 @@ describe("MessageList", () => {
   });
 
   it("scrolls message container to bottom on new messages", () => {
-    const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
-    const scrollSpy = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollSpy
+    const originalClosest = HTMLElement.prototype.closest;
+    const scrollContainer = document.createElement("section");
+    Object.defineProperty(scrollContainer, "scrollHeight", { value: 999, configurable: true });
+    scrollContainer.scrollTop = 0;
+    const closestSpy = vi.spyOn(HTMLElement.prototype, "closest").mockImplementation(function (
+      this: HTMLElement,
+      selector
+    ) {
+      if (selector === ".chat-scroll-region") {
+        return scrollContainer;
+      }
+      return originalClosest.call(this, selector);
     });
     const { rerender } = render(
       <MessageList
@@ -180,11 +187,7 @@ describe("MessageList", () => {
       />
     );
 
-    expect(scrollSpy).toHaveBeenCalled();
-    if (originalDescriptor) {
-      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalDescriptor);
-    } else {
-      Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
-    }
+    expect(scrollContainer.scrollTop).toBe(999);
+    closestSpy.mockRestore();
   });
 });
