@@ -19,3 +19,9 @@
 ## 交付物
 - 组件实现说明。
 - 样式命名与 token 使用说明。
+
+## 已实施行为（2026-03-09）
+- 工具步骤渲染已拆分为 `ToolStepList / ToolStepCard / StepStatusBadge / StepBody`，组件职责按 Phase 03 边界执行。
+- 卡片支持默认折叠与轻量展开动画（body 过渡 + chevron 旋转）。
+- a11y 已落地：头部使用 `button`，包含 `aria-expanded`、`aria-controls`，详情容器使用 `role=region` + `aria-labelledby`。
+- 状态样式统一为 `step-card--{status}` 与 `step-status--{status}`；v1 不渲染动作按钮。

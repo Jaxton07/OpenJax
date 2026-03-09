@@ -7,6 +7,7 @@
 - 提供多会话聊天 UI（侧边栏、消息区、输入区）。
 - 对接 gateway API：会话创建、turn 提交、状态轮询、SSE 订阅。
 - 支持审批交互（approve/reject）。
+- 支持结构化 Tool Step 卡片渲染（`message.kind=tool_steps`）。
 - 本地持久化设置与会话（`localStorage`）。
 - 提供 SSE 与 polling 两种输出模式。
 
@@ -27,9 +28,16 @@ ui/web/
     ├── components
     │   ├── ApprovalPanel.tsx
     │   ├── Composer.tsx
+    │   ├── MessageList.test.tsx
     │   ├── MessageList.tsx
     │   ├── SettingsModal.tsx
-    │   └── Sidebar.tsx
+    │   ├── Sidebar.tsx
+    │   └── tool-steps
+    │       ├── StepBody.tsx
+    │       ├── StepStatusBadge.tsx
+    │       ├── ToolStepCard.test.tsx
+    │       ├── ToolStepCard.tsx
+    │       └── ToolStepList.tsx
     ├── hooks
     │   └── useChatApp.ts
     ├── lib
@@ -53,10 +61,21 @@ ui/web/
 
 - `src/hooks/useChatApp.ts`：应用状态机、会话管理、SSE 重连与 polling 流程。
 - `src/lib/gatewayClient.ts`：gateway HTTP/SSE 客户端封装。
-- `src/lib/eventReducer.ts`：将流式事件折叠为本地会话状态与消息列表。
+- `src/lib/eventReducer.ts`：将流式事件折叠为本地会话状态与消息列表（含 `message.kind` 分流）。
 - `src/lib/storage.ts`：设置与会话本地存储（`openjax:web:*`）。
-- `src/components/*`：侧边栏、审批面板、消息列表、输入框、设置弹窗。
+- `src/components/MessageList.tsx`：按 `message.kind` 分支渲染文本消息与 tool_steps。
+- `src/components/tool-steps/*`：Tool 卡片组件层（列表/卡片/状态徽标/详情体）。
 - `src/types/gateway.ts`：网关协议类型定义（请求/响应/事件）。
+- `src/types/chat.ts`：本地会话与消息模型（`ChatMessage.kind`、`ToolStep` 等）。
+
+## 消息模型（当前）
+
+- `ChatMessage.kind = "text" | "tool_steps"`。
+- `kind=text`：渲染传统文本气泡。
+- `kind=tool_steps`：渲染结构化步骤卡片（可折叠、状态徽标、详情区）。
+- 目前 reducer 保留 `role=tool` 文本双写路径（过渡用）。
+- 旧 `assistant + toolSteps` 结构不再兼容，渲染按 `kind` 判定。
+
 
 ## 运行与测试
 
@@ -68,6 +87,7 @@ zsh -lc "cd ui/web && pnpm install"
 zsh -lc "cd ui/web && pnpm dev"
 zsh -lc "cd ui/web && pnpm build"
 zsh -lc "cd ui/web && pnpm test"
+zsh -lc "cd ui/web && pnpm test -- src/lib/eventReducer.test.ts src/components/MessageList.test.tsx src/components/tool-steps/ToolStepCard.test.tsx"
 ```
 
 默认开发地址：`http://127.0.0.1:5173`。
