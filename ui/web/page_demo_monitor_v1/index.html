@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenJax Web Demo - Timeline Stream</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-bg"></div>
+    <main class="demo-shell">
+      <header class="demo-header">
+        <div>
+          <p class="eyebrow">OpenJax · Web Timeline Prototype</p>
+          <h1>Tool / Shell 事件流展示</h1>
+        </div>
+        <div class="header-actions">
+          <button id="btn-next" class="btn primary">推送下一条事件</button>
+          <button id="btn-reset" class="btn ghost">重置</button>
+        </div>
+      </header>
+
+      <section class="stream-panel">
+        <div class="stream-meta">
+          <span class="chip ok">SSE Active</span>
+          <span class="chip muted">session: sess_demo_7f13</span>
+          <span class="chip muted" id="event-counter">events: 0</span>
+        </div>
+        <ol id="timeline" class="timeline"></ol>
+      </section>
+    </main>
+
+    <template id="event-template">
+      <li class="timeline-item">
+        <div class="time-col">
+          <span class="dot"></span>
+          <span class="line"></span>
+        </div>
+        <article class="event-card">
+          <div class="event-head">
+            <div>
+              <p class="event-time"></p>
+              <h3 class="event-title"></h3>
+            </div>
+            <span class="status-badge"></span>
+          </div>
+          <p class="event-summary"></p>
+          <pre class="event-code"></pre>
+          <div class="event-output-wrap">
+            <p class="output-label">输出</p>
+            <pre class="event-output"></pre>
+          </div>
+        </article>
+      </li>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -63,6 +63,7 @@ ui/web/
 从仓库根目录执行：
 
 ```bash
+zsh -lc "make run-web-dev"
 zsh -lc "cd ui/web && pnpm install"
 zsh -lc "cd ui/web && pnpm dev"
 zsh -lc "cd ui/web && pnpm build"
@@ -70,6 +71,7 @@ zsh -lc "cd ui/web && pnpm test"
 ```
 
 默认开发地址：`http://127.0.0.1:5173`。
+若使用 `make run-web-dev`，会同时启动 gateway（默认 `127.0.0.1:8765`）和前端开发服务，`Ctrl+C` 可一起停止。
 
 ## 设置项
 
@@ -78,6 +80,11 @@ zsh -lc "cd ui/web && pnpm test"
 - `Gateway Base URL`（默认 `http://127.0.0.1:8765`）
 - `API Key`
 - `Output Mode`（`sse` 或 `polling`）
+
+### SSE 重连策略
+
+- 网络抖动或临时网关错误会自动重连（指数退避，最多 6 次）。
+- 如果是鉴权失败（如 `401/UNAUTHENTICATED`、`403/FORBIDDEN`，常见于 API Key 与 gateway 启动配置不匹配），前端会直接在页面显示错误并停止重连，避免无效重试。
 
 ## 网关接口兼容性
 

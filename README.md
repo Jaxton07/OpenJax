@@ -147,11 +147,14 @@ openjax-protocol (shared types/events)
 Run from repository root:
 
 ```bash
+make run-web-dev
 zsh -lc "cargo build"
 zsh -lc "cargo fmt -- --check"
 zsh -lc "cargo clippy --workspace --all-targets -- -D warnings"
 zsh -lc "cargo test --workspace"
 ```
+
+`make run-web-dev` starts `openjax-gateway` and `ui/web` together for local web development.
 
 For integration tests in `tests/`, use explicit test target form:
 

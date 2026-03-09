@@ -11,7 +11,7 @@ export CARGO_HTTP_MULTIPLEXING ?= false
 
 .PHONY: \
 	help doctor prefetch \
-	run-tui build-release-mac package-mac build-release-linux package-linux package-windows install-local uninstall-local install-source \
+	run-tui run-web-dev build-release-mac package-mac build-release-linux package-linux package-windows install-local uninstall-local install-source \
 	build-all test-rust clean-dist \
 	python-setup python-dev python-test clean-python \
 	setup setup-new dev dev-new test test-new lint format clean
@@ -23,6 +23,7 @@ help:
 	@echo "    make doctor            - 检查 cargo/rustup/zsh"
 	@echo "    make prefetch          - 预拉取 Rust 依赖 (Cargo.lock)"
 	@echo "    make run-tui           - 运行 Rust TUI (tui_next)"
+	@echo "    make run-web-dev       - 同时启动 gateway + web 前端开发服务"
 	@echo "    make build-release-mac - 构建 macOS ARM release 二进制"
 	@echo "    make package-mac       - 打包预编译安装包"
 	@echo "    make build-release-linux - 构建 Linux x86_64 release 二进制"
@@ -56,6 +57,9 @@ prefetch:
 
 run-tui:
 	$(CARGO) run -q -p tui_next
+
+run-web-dev:
+	bash scripts/dev/start_gateway_web.sh
 
 build-release-mac:
 	$(CARGO) build --release --locked -p tui_next -p openjax-cli -p openjaxd

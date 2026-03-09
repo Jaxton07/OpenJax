@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GatewayClient } from "../lib/gatewayClient";
 import { applyStreamEvent } from "../lib/eventReducer";
-import { humanizeError } from "../lib/errors";
+import { humanizeError, isAuthenticationError } from "../lib/errors";
 import { loadSettings, loadSessions, saveSessions, saveSettings } from "../lib/storage";
 import type { ChatMessage, ChatSession, ChatState, PendingApproval } from "../types/chat";
 import type { AppSettings, GatewayError } from "../types/gateway";
@@ -110,6 +110,14 @@ export function useChatApp() {
             retry = 0;
           } catch (error) {
             if (abort.signal.aborted) {
+              return;
+            }
+            if (isAuthenticationError(error)) {
+              updateSession(sessionId, (session) => ({ ...session, connection: "closed" }));
+              setState((prev) => ({
+                ...prev,
+                globalError: "SSE 鉴权失败：API Key 与 Gateway 配置不匹配，请在设置中更新后重试。"
+              }));
               return;
             }
             if (isSessionNotFoundError(error)) {

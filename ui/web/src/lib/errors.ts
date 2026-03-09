@@ -47,3 +47,12 @@ export function humanizeError(error: unknown): string {
 
   return "发生未知错误";
 }
+
+export function isAuthenticationError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const gateway = error as Partial<GatewayError>;
+  return gateway.code === "UNAUTHENTICATED" || gateway.code === "FORBIDDEN" || gateway.status === 401 || gateway.status === 403;
+}
