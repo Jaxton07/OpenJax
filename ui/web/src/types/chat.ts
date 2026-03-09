@@ -3,6 +3,24 @@ import type { AppSettings, StreamEvent } from "./gateway";
 export type SessionConnection = "idle" | "connecting" | "active" | "closing" | "closed";
 export type TurnPhase = "draft" | "submitting" | "streaming" | "completed" | "failed";
 export type MessageRole = "user" | "assistant" | "tool" | "error" | "system";
+export type ToolStepStatus = "running" | "success" | "waiting" | "failed";
+export type ToolStepType = "think" | "tool" | "shell" | "approval" | "summary";
+
+export interface ToolStep {
+  id: string;
+  type: ToolStepType;
+  title: string;
+  status: ToolStepStatus;
+  time: string;
+  subtitle?: string;
+  description?: string;
+  code?: string;
+  output?: string;
+  delta?: string;
+  approvalId?: string;
+  toolCallId?: string;
+  meta?: Record<string, unknown>;
+}
 
 export interface ChatMessage {
   id: string;
@@ -11,6 +29,7 @@ export interface ChatMessage {
   timestamp: string;
   turnId?: string;
   isDraft?: boolean;
+  toolSteps?: ToolStep[];
 }
 
 export interface PendingApproval {

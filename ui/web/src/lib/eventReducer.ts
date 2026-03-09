@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatSession } from "../types/chat";
+import type { ChatMessage, ChatSession, ToolStep } from "../types/chat";
 import type { StreamEvent } from "../types/gateway";
 
 export function applyStreamEvent(session: ChatSession, event: StreamEvent): ChatSession {
@@ -31,6 +31,8 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   if (event.type === "tool_call_started") {
     const toolName = String(event.payload.tool_name ?? "tool");
     const target = String(event.payload.target ?? "");
+    applyToolEventToSteps(next.messages, event);
+    // TODO(track-b): remove legacy tool text message path after structured toolSteps renderer ships.
     next.messages.push({
       id: crypto.randomUUID(),
       role: "tool",
@@ -43,6 +45,8 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   if (event.type === "tool_call_completed") {
     const toolName = String(event.payload.tool_name ?? "tool");
     const output = String(event.payload.output ?? "");
+    applyToolEventToSteps(next.messages, event);
+    // TODO(track-b): remove legacy tool text message path after structured toolSteps renderer ships.
     next.messages.push({
       id: crypto.randomUUID(),
       role: "tool",
@@ -53,6 +57,7 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   if (event.type === "approval_requested") {
+    applyToolEventToSteps(next.messages, event);
     next.pendingApprovals.push({
       approvalId: String(event.payload.approval_id ?? ""),
       turnId,
@@ -63,6 +68,7 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   if (event.type === "approval_resolved") {
+    applyToolEventToSteps(next.messages, event);
     const approvalId = String(event.payload.approval_id ?? "");
     next.pendingApprovals = next.pendingApprovals.filter((item) => item.approvalId !== approvalId);
   }
@@ -75,6 +81,7 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   if (event.type === "error") {
     next.turnPhase = "failed";
     const message = String(event.payload.message ?? "turn failed");
+    markLatestRunningStepFailed(next.messages, event, message);
     next.messages.push({
       id: crypto.randomUUID(),
       role: "error",
@@ -85,6 +92,208 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   return next;
+}
+
+function applyToolEventToSteps(messages: ChatMessage[], event: StreamEvent): void {
+  if (
+    event.type !== "tool_call_started" &&
+    event.type !== "tool_call_completed" &&
+    event.type !== "approval_requested" &&
+    event.type !== "approval_resolved"
+  ) {
+    return;
+  }
+
+  const turnId = event.turn_id;
+  const toolMessage = ensureAssistantToolMessage(messages, turnId, event.timestamp);
+  if (!toolMessage.toolSteps) {
+    toolMessage.toolSteps = [];
+  }
+  const steps = toolMessage.toolSteps;
+
+  if (event.type === "tool_call_started") {
+    const stepId = resolveStepId(event);
+    const toolName = String(event.payload.tool_name ?? "tool");
+    upsertToolStep(steps, {
+      id: stepId,
+      type: "tool",
+      title: toolName || "tool",
+      subtitle: String(event.payload.target ?? ""),
+      status: "running",
+      time: event.timestamp,
+      toolCallId: toolCallIdFromPayload(event),
+      meta: event.payload
+    });
+    return;
+  }
+
+  if (event.type === "tool_call_completed") {
+    const toolName = String(event.payload.tool_name ?? "tool");
+    const output = String(event.payload.output ?? "");
+    const toolCallId = toolCallIdFromPayload(event);
+    const runningIdx =
+      toolCallId.length > 0
+        ? steps.findIndex((step) => step.id === toolCallId)
+        : findLatestRunningToolStepIndex(steps);
+    const stepId =
+      runningIdx >= 0 ? steps[runningIdx].id : resolveStepId(event, "tool_call_completed");
+    upsertToolStep(steps, {
+      id: stepId,
+      type: "tool",
+      title: toolName || "tool",
+      status: "success",
+      output,
+      time: event.timestamp,
+      toolCallId,
+      meta: event.payload
+    });
+    return;
+  }
+
+  if (event.type === "approval_requested") {
+    const approvalId = String(event.payload.approval_id ?? "");
+    const stepId = resolveStepId(event);
+    const reason = String(event.payload.reason ?? "");
+    const target = String(event.payload.target ?? "");
+    const description =
+      reason.length > 0 && target.length > 0
+        ? `${reason} (${target})`
+        : reason.length > 0
+          ? reason
+          : target;
+    upsertToolStep(steps, {
+      id: stepId,
+      type: "approval",
+      title: String(event.payload.tool_name ?? "approval"),
+      status: "waiting",
+      description,
+      time: event.timestamp,
+      approvalId,
+      toolCallId: toolCallIdFromPayload(event),
+      meta: event.payload
+    });
+    return;
+  }
+
+  const approvalId = String(event.payload.approval_id ?? "");
+  const stepId = resolveStepId(event);
+  upsertToolStep(steps, {
+    id: stepId,
+    type: "approval",
+    title: String(event.payload.tool_name ?? "approval"),
+    status: "success",
+    time: event.timestamp,
+    approvalId,
+    toolCallId: toolCallIdFromPayload(event),
+    meta: event.payload
+  });
+}
+
+function ensureAssistantToolMessage(
+  messages: ChatMessage[],
+  turnId: string | undefined,
+  timestamp: string
+): ChatMessage {
+  const idx = messages.findIndex((message) => message.role === "assistant" && message.turnId === turnId);
+  if (idx >= 0) {
+    if (!messages[idx].toolSteps) {
+      messages[idx] = {
+        ...messages[idx],
+        toolSteps: []
+      };
+    }
+    return messages[idx];
+  }
+
+  const created: ChatMessage = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: "",
+    timestamp,
+    turnId,
+    isDraft: false,
+    toolSteps: []
+  };
+  messages.push(created);
+  return created;
+}
+
+function resolveStepId(event: StreamEvent, fallbackPrefix = "tool"): string {
+  if (event.type === "approval_requested" || event.type === "approval_resolved") {
+    const approvalId = String(event.payload.approval_id ?? "");
+    if (approvalId.length > 0) {
+      return approvalId;
+    }
+    return `${fallbackPrefix}:approval:${event.turn_id ?? "unknown"}:${event.event_seq}`;
+  }
+  const toolCallId = toolCallIdFromPayload(event);
+  if (toolCallId.length > 0) {
+    return toolCallId;
+  }
+  return `${fallbackPrefix}:${event.turn_id ?? "unknown"}:${event.event_seq}`;
+}
+
+function toolCallIdFromPayload(event: StreamEvent): string {
+  return String(event.payload.tool_call_id ?? "");
+}
+
+function upsertToolStep(steps: ToolStep[], patch: ToolStep): void {
+  const idx = steps.findIndex((step) => step.id === patch.id);
+  if (idx >= 0) {
+    steps[idx] = {
+      ...steps[idx],
+      ...patch
+    };
+    return;
+  }
+  steps.push(patch);
+}
+
+function markLatestRunningStepFailed(
+  messages: ChatMessage[],
+  event: StreamEvent,
+  errorMessage: string
+): void {
+  const turnId = event.turn_id;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.turnId !== turnId || !message.toolSteps || message.toolSteps.length === 0) {
+      continue;
+    }
+    const runningIdx = findLatestRunningToolStepIndex(message.toolSteps);
+    if (runningIdx >= 0) {
+      message.toolSteps[runningIdx] = {
+        ...message.toolSteps[runningIdx],
+        status: "failed",
+        output: errorMessage,
+        time: event.timestamp
+      };
+      return;
+    }
+  }
+
+  const toolMessage = ensureAssistantToolMessage(messages, turnId, event.timestamp);
+  if (!toolMessage.toolSteps) {
+    toolMessage.toolSteps = [];
+  }
+  upsertToolStep(toolMessage.toolSteps, {
+    id: `error:${turnId ?? "unknown"}:${event.event_seq}`,
+    type: "summary",
+    title: "error",
+    status: "failed",
+    output: errorMessage,
+    time: event.timestamp,
+    meta: event.payload
+  });
+}
+
+function findLatestRunningToolStepIndex(steps: ToolStep[]): number {
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    if (steps[i].type === "tool" && steps[i].status === "running") {
+      return i;
+    }
+  }
+  return -1;
 }
 
 function mergeAssistantDraft(

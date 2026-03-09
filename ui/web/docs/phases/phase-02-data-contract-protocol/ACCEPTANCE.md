@@ -1,18 +1,18 @@
 # Phase 02 验收
 
 ## 验收项
-- [ ] ToolStep 契约字段定义完整且无冲突
-  - 结果: Pending
-  - 证据:
+- [x] ToolStep 契约字段定义完整且无冲突
+  - 结果: Pass
+  - 证据: `artifacts/message-model.md`
 
-- [ ] 所有关键 StreamEvent 都有映射规则
-  - 结果: Pending
-  - 证据:
+- [x] 所有关键 StreamEvent 都有映射规则
+  - 结果: Pass
+  - 证据: `artifacts/gateway-event-mapping.md`
 
-- [ ] 兼容策略覆盖降级渲染与异常事件
-  - 结果: Pending
-  - 证据:
+- [x] 兼容策略覆盖降级渲染与异常事件
+  - 结果: Pass
+  - 证据: `artifacts/backward-compat.md`
 
 ## 阶段结论
-- 状态: Not Ready
-- 结论说明: 契约冻结后进入 Phase 03。
+- 状态: Ready
+- 结论说明: Phase 02 契约与映射已冻结，可进入 Phase 03 组件与交互设计。

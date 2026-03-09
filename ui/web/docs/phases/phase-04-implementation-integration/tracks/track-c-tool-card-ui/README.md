@@ -3,6 +3,14 @@
 ## 目标
 - 将 demo 的 step 卡片 UI 迁移为可复用 React 组件并满足 a11y。
 
+## 上游文档（编码前必读）
+- [page_demo/app.js](../../../../../page_demo/app.js)
+- [page_demo/styles.css](../../../../../page_demo/styles.css)
+- [Phase 03 - Component Boundary](../../../phase-03-ui-architecture-components/artifacts/component-boundary.md)
+- [Phase 03 - Interaction & A11y](../../../phase-03-ui-architecture-components/artifacts/interaction-a11y.md)
+- [Phase 03 - Style & Token Plan](../../../phase-03-ui-architecture-components/artifacts/style-token-plan.md)
+- [Phase 03 - Decisions](../../../phase-03-ui-architecture-components/DECISIONS.md)
+
 ## 任务范围
 - 落地 ToolStepList/ToolStepCard/StepStatusBadge/StepBody。
 - 实现展开/收起及状态视觉。
