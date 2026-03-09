@@ -122,6 +122,31 @@ describe("applyStreamEvent", () => {
     expect(stepMessages[1].toolSteps?.[0].toolCallId).toBe("call_2");
   });
 
+  it("does not merge when started/completed have different tool_call_id", () => {
+    const session = baseSession();
+    const started = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_1",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "tool_call_started",
+      payload: { tool_call_id: "call_1", tool_name: "read_file", target: "a.txt" }
+    });
+    const completed = applyStreamEvent(started, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_1",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "tool_call_completed",
+      payload: { tool_call_id: "call_2", tool_name: "read_file", output: "ok" }
+    });
+
+    const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
+    expect(stepMessages).toHaveLength(2);
+  });
+
   it("falls back to synthetic ids when tool_call_id is missing", () => {
     const session = baseSession();
     const next = applyStreamEvent(session, {
@@ -200,7 +225,7 @@ describe("applyStreamEvent", () => {
     expect(steps[0]?.status).toBe("success");
   });
 
-  it("falls back to merge by turn + tool name when tool_call_id is missing", () => {
+  it("does not merge tool events when tool_call_id is missing", () => {
     const session = baseSession();
     const started = applyStreamEvent(session, {
       request_id: "req",
@@ -222,11 +247,10 @@ describe("applyStreamEvent", () => {
     });
 
     const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
-    expect(stepMessages).toHaveLength(1);
-    expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
+    expect(stepMessages).toHaveLength(2);
   });
 
-  it("does not fallback-merge missing tool_call_id entries with different tool names", () => {
+  it("does not merge missing-tool_call_id entries even when tool names match", () => {
     const session = baseSession();
     const started = applyStreamEvent(session, {
       request_id: "req",
@@ -244,38 +268,11 @@ describe("applyStreamEvent", () => {
       event_seq: 2,
       timestamp: "2026-01-01T00:00:02Z",
       type: "tool_call_completed",
-      payload: { tool_name: "shell", output: "ok" }
+      payload: { tool_name: "read_file", output: "ok" }
     });
 
     const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
     expect(stepMessages).toHaveLength(2);
-  });
-
-  it("falls back by tool name when completed key does not match started key", () => {
-    const session = baseSession();
-    const started = applyStreamEvent(session, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 1,
-      timestamp: "2026-01-01T00:00:01Z",
-      type: "tool_call_started",
-      payload: { tool_name: "read_file", target: "test.txt" }
-    });
-    const completed = applyStreamEvent(started, {
-      request_id: "req",
-      session_id: "sess_1",
-      turn_id: "turn_1",
-      event_seq: 2,
-      timestamp: "2026-01-01T00:00:02Z",
-      type: "tool_call_completed",
-      payload: { tool_call_id: "call_only_on_completed", tool_name: "read_file", output: "ok" }
-    });
-
-    const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
-    expect(stepMessages).toHaveLength(1);
-    expect(stepMessages[0].toolSteps?.[0].title).toBe("read_file");
-    expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
   });
 
   it("emits failed summary tool_steps message on error and keeps error text", () => {

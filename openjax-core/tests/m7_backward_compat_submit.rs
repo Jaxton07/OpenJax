@@ -44,6 +44,23 @@ async fn submit_still_returns_full_turn_event_sequence() {
     assert!(events
         .iter()
         .any(|event| matches!(event, Event::ToolCallCompleted { tool_name, ok, .. } if tool_name == "read_file" && *ok)));
+    let started_id = events.iter().find_map(|event| match event {
+        Event::ToolCallStarted {
+            tool_name,
+            tool_call_id,
+            ..
+        } if tool_name == "read_file" => Some(tool_call_id.as_str()),
+        _ => None,
+    });
+    let completed_id = events.iter().find_map(|event| match event {
+        Event::ToolCallCompleted {
+            tool_name,
+            tool_call_id,
+            ..
+        } if tool_name == "read_file" => Some(tool_call_id.as_str()),
+        _ => None,
+    });
+    assert_eq!(started_id, completed_id);
 
     let _ = fs::remove_dir_all(workspace);
 }

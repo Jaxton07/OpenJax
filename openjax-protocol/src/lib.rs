@@ -73,11 +73,17 @@ pub enum Event {
     },
     ToolCallStarted {
         turn_id: u64,
+        /// Stable identifier for one full tool invocation lifecycle.
+        /// The matching ToolCallCompleted event MUST carry the same id.
+        tool_call_id: String,
         tool_name: String,
         target: Option<String>,
     },
     ToolCallCompleted {
         turn_id: u64,
+        /// Stable identifier for one full tool invocation lifecycle.
+        /// Must be identical to the corresponding ToolCallStarted id.
+        tool_call_id: String,
         tool_name: String,
         ok: bool,
         output: String,

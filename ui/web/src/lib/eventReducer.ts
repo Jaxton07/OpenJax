@@ -79,6 +79,7 @@ function isToolStepEvent(event: StreamEvent): boolean {
 }
 
 function upsertToolStepMessage(messages: ChatMessage[], event: StreamEvent): void {
+  maybeWarnMissingToolCallId(event);
   const nextStep = createStepFromEvent(event);
   const messageIdx = findToolStepMessageIndex(messages, event);
   if (messageIdx < 0) {
@@ -112,9 +113,6 @@ function findToolStepMessageIndex(messages: ChatMessage[], event: StreamEvent): 
   // 3) approval events fallback to approval_id when tool_call_id is missing
   // 4) no key means no cross-event merge (safe fallback)
   if (!key) {
-    if (event.type === "tool_call_completed") {
-      return findFallbackToolMatch(messages, event);
-    }
     return -1;
   }
 
@@ -130,11 +128,6 @@ function findToolStepMessageIndex(messages: ChatMessage[], event: StreamEvent): 
     if (key.type === "approval_id" && step.approvalId === key.value) {
       return i;
     }
-  }
-  // Some backends emit partial identifiers (e.g. completed has tool_call_id but started does not).
-  // For completed events, fallback to turn + running tool name to avoid split cards.
-  if (event.type === "tool_call_completed") {
-    return findFallbackToolMatch(messages, event);
   }
   return -1;
 }
@@ -174,29 +167,19 @@ function resolveAggregationKey(event: StreamEvent): AggregateKey {
   return null;
 }
 
-function findFallbackToolMatch(messages: ChatMessage[], event: StreamEvent): number {
-  const toolName = String(event.payload.tool_name ?? "");
-  if (toolName.length === 0) {
-    return -1;
+function maybeWarnMissingToolCallId(event: StreamEvent): void {
+  if (event.type !== "tool_call_started" && event.type !== "tool_call_completed") {
+    return;
   }
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    const step = message.toolSteps?.[0];
-    if (message.kind !== "tool_steps" || message.turnId !== event.turn_id || !step) {
-      continue;
-    }
-    if (step.type !== "tool" || step.status !== "running") {
-      continue;
-    }
-    if (String(step.title ?? "") !== toolName) {
-      continue;
-    }
-    if (String(step.toolCallId ?? "").length > 0) {
-      continue;
-    }
-    return i;
+  if (toolCallIdFromPayload(event).length > 0) {
+    return;
   }
-  return -1;
+  console.debug("[tool_steps] missing tool_call_id; event will not be merged", {
+    type: event.type,
+    turn_id: event.turn_id,
+    event_seq: event.event_seq,
+    tool_name: event.payload.tool_name
+  });
 }
 
 function createStepFromEvent(event: StreamEvent): ToolStep {

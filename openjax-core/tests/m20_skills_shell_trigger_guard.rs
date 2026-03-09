@@ -30,6 +30,7 @@ async fn shell_guard_blocks_skill_trigger_like_command() {
     let outcome = router
         .execute(
             1,
+            "test-call-1".to_string(),
             &call,
             &cwd,
             ToolRuntimeConfig {

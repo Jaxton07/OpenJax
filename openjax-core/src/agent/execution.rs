@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use openjax_protocol::Event;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::{Agent, tools};
 
@@ -31,9 +32,11 @@ impl Agent {
     ) {
         let retry_config = RetryConfig::default();
         let start_time = Instant::now();
+        let tool_call_id = Uuid::new_v4().to_string();
 
         info!(
             turn_id = turn_id,
+            tool_call_id = %tool_call_id,
             tool_name = %call.name,
             args = ?call.args,
             "tool_call started"
@@ -43,6 +46,7 @@ impl Agent {
             events,
             Event::ToolCallStarted {
                 turn_id,
+                tool_call_id: tool_call_id.clone(),
                 tool_name: call.name.clone(),
                 target: extract_tool_target_hint(&call.name, &call.args),
             },
@@ -67,6 +71,7 @@ impl Agent {
                 );
                 warn!(
                     turn_id = turn_id,
+                    tool_call_id = %tool_call_id,
                     tool_name = %call.name,
                     attempt = attempt,
                     "tool_call retry"
@@ -74,7 +79,7 @@ impl Agent {
             }
 
             match self
-                .execute_tool_with_live_events(turn_id, &call, events)
+                .execute_tool_with_live_events(turn_id, &tool_call_id, &call, events)
                 .await
             {
                 Ok(outcome) => {
@@ -83,6 +88,7 @@ impl Agent {
                     let duration_ms = start_time.elapsed().as_millis();
                     info!(
                         turn_id = turn_id,
+                        tool_call_id = %tool_call_id,
                         tool_name = %call.name,
                         ok = ok,
                         duration_ms = duration_ms,
@@ -102,6 +108,7 @@ impl Agent {
                         events,
                         Event::ToolCallCompleted {
                             turn_id,
+                            tool_call_id: tool_call_id.clone(),
                             tool_name: call.name.clone(),
                             ok,
                             output,
@@ -142,6 +149,7 @@ impl Agent {
             let duration_ms = start_time.elapsed().as_millis();
             info!(
                 turn_id = turn_id,
+                tool_call_id = %tool_call_id,
                 tool_name = %call.name,
                 ok = false,
                 duration_ms = duration_ms,
@@ -152,6 +160,7 @@ impl Agent {
                 events,
                 Event::ToolCallCompleted {
                     turn_id,
+                    tool_call_id: tool_call_id.clone(),
                     tool_name: call.name.clone(),
                     ok: false,
                     output: err.to_string(),
@@ -182,12 +191,14 @@ impl Agent {
     pub(crate) async fn execute_tool_with_live_events(
         &self,
         turn_id: u64,
+        tool_call_id: &str,
         call: &tools::ToolCall,
         events: &mut Vec<Event>,
     ) -> anyhow::Result<tools::ToolExecOutcome> {
         let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
         let execute_fut = self.tools.execute(
             turn_id,
+            tool_call_id.to_string(),
             call,
             self.cwd.as_path(),
             self.tool_runtime_config,

@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use openjax_protocol::Event;
 use tracing::{debug, info, warn};
+use uuid::Uuid;
 
 use crate::agent::decision::{normalize_model_decision, parse_model_decision};
 use crate::agent::prompt::{
@@ -302,8 +303,10 @@ impl Agent {
                 if let Some(message) =
                     apply_patch_read_guard.block_user_message_for_tool(&tool_name)
                 {
+                    let tool_call_id = Uuid::new_v4().to_string();
                     warn!(
                         turn_id = turn_id,
+                        tool_call_id = %tool_call_id,
                         reason = apply_patch_read_guard
                             .block_log_reason_for_tool(&tool_name)
                             .unwrap_or("unknown"),
@@ -314,6 +317,7 @@ impl Agent {
                         events,
                         Event::ToolCallStarted {
                             turn_id,
+                            tool_call_id: tool_call_id.clone(),
                             tool_name: tool_name.clone(),
                             target: extract_tool_target_hint(&tool_name, &args),
                         },
@@ -331,6 +335,7 @@ impl Agent {
                         events,
                         Event::ToolCallCompleted {
                             turn_id,
+                            tool_call_id: tool_call_id.clone(),
                             tool_name: tool_name.to_string(),
                             ok: false,
                             output: message.to_string(),
@@ -385,10 +390,12 @@ impl Agent {
                     name: tool_name.clone(),
                     args: args.clone(),
                 };
+                let tool_call_id = Uuid::new_v4().to_string();
 
                 let start_time = Instant::now();
                 info!(
                     turn_id = turn_id,
+                    tool_call_id = %tool_call_id,
                     tool_name = %call.name,
                     args = ?call.args,
                     "tool_call started"
@@ -398,13 +405,14 @@ impl Agent {
                     events,
                     Event::ToolCallStarted {
                         turn_id,
+                        tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
                         target: extract_tool_target_hint(&tool_name, &args),
                     },
                 );
 
                 match self
-                    .execute_tool_with_live_events(turn_id, &call, events)
+                    .execute_tool_with_live_events(turn_id, &tool_call_id, &call, events)
                     .await
                 {
                     Ok(outcome) => {
@@ -421,6 +429,7 @@ impl Agent {
                         let duration_ms = start_time.elapsed().as_millis();
                         info!(
                             turn_id = turn_id,
+                            tool_call_id = %tool_call_id,
                             tool_name = %tool_name,
                             ok = ok,
                             duration_ms = duration_ms,
@@ -442,6 +451,7 @@ impl Agent {
                             events,
                             Event::ToolCallCompleted {
                                 turn_id,
+                                tool_call_id: tool_call_id.clone(),
                                 tool_name: tool_name.to_string(),
                                 ok,
                                 output: output.to_string(),
@@ -456,6 +466,7 @@ impl Agent {
                         apply_patch_read_guard.on_tool_failure(&tool_name, &err_text);
                         info!(
                             turn_id = turn_id,
+                            tool_call_id = %tool_call_id,
                             tool_name = %tool_name,
                             ok = false,
                             duration_ms = duration_ms,
@@ -477,6 +488,7 @@ impl Agent {
                             events,
                             Event::ToolCallCompleted {
                                 turn_id,
+                                tool_call_id: tool_call_id.clone(),
                                 tool_name: tool_name.to_string(),
                                 ok: false,
                                 output: err_text.to_string(),

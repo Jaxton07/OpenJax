@@ -49,6 +49,7 @@ async fn process_snapshot_dispatch_returns_json() {
     let outcome = router
         .execute(
             1,
+            "test-call-1".to_string(),
             &call("process_snapshot", &[("limit", "5"), ("sort_by", "cpu")]),
             &cwd,
             ToolRuntimeConfig {
@@ -77,6 +78,7 @@ async fn system_load_does_not_trigger_approval_under_on_request() {
     let outcome = router
         .execute(
             1,
+            "test-call-2".to_string(),
             &call(
                 "system_load",
                 &[("include_cpu", "true"), ("include_memory", "false")],

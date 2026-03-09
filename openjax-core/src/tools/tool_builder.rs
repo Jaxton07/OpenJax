@@ -90,6 +90,7 @@ pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
 /// 创建工具调用上下文
 pub fn create_tool_invocation(
     turn_id: u64,
+    call_id: String,
     tool_name: String,
     arguments: String,
     cwd: std::path::PathBuf,
@@ -101,7 +102,7 @@ pub fn create_tool_invocation(
 ) -> crate::tools::context::ToolInvocation {
     crate::tools::context::ToolInvocation {
         tool_name,
-        call_id: uuid::Uuid::new_v4().to_string(),
+        call_id,
         payload: crate::tools::context::ToolPayload::Function { arguments },
         turn: crate::tools::context::ToolTurnContext {
             turn_id,

@@ -60,6 +60,12 @@ let op = Op::UserTurn {
 let evt = Event::TurnStarted { turn_id: 1 };
 ```
 
+### `tool_call_id` 语义约束（Tool 事件）
+
+- `ToolCallStarted.tool_call_id` 与对应 `ToolCallCompleted.tool_call_id` 必须完全一致。
+- 同一个 `tool_call_id` 代表一次完整工具调用生命周期（开始到结束）。
+- 不同工具调用必须使用不同 `tool_call_id`，即使在同一 turn 内工具名相同。
+
 ## 测试
 
 当前 crate 未单独提供 `tests/` 目录；通常通过依赖它的 crate（如 `openjax-core`、`openjaxd`、`tui_next`）进行集成验证。

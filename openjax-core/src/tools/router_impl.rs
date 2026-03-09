@@ -52,6 +52,7 @@ impl ToolRouter {
     pub async fn execute(
         &self,
         turn_id: u64,
+        tool_call_id: String,
         call: &ToolCall,
         cwd: &std::path::Path,
         config: ToolRuntimeConfig,
@@ -81,6 +82,7 @@ impl ToolRouter {
 
         let invocation = create_tool_invocation(
             turn_id,
+            tool_call_id,
             call.name.clone(),
             serde_json::to_string(&call.args)
                 .map_err(|e| anyhow!("failed to serialize args: {}", e))?,

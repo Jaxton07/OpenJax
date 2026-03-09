@@ -373,22 +373,24 @@ fn map_core_event(
         ),
         Event::ToolCallStarted {
             turn_id,
+            tool_call_id,
             tool_name,
             target,
         } => (
             Some(turn_id),
             "tool_call_started",
-            json!({ "tool_name": tool_name, "target": target }),
+            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "target": target }),
         ),
         Event::ToolCallCompleted {
             turn_id,
+            tool_call_id,
             tool_name,
             ok,
             output,
         } => (
             Some(turn_id),
             "tool_call_completed",
-            json!({ "tool_name": tool_name, "ok": ok, "output": output }),
+            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "ok": ok, "output": output }),
         ),
         Event::ApprovalRequested {
             turn_id,
@@ -461,6 +463,16 @@ fn map_core_event(
         event_type,
         payload,
     );
+    if (event_type == "tool_call_started" || event_type == "tool_call_completed")
+        && envelope.payload.get("tool_call_id").is_some()
+    {
+        info!(
+            event_type = event_type,
+            turn_id = ?public_turn_id,
+            tool_call_id = ?envelope.payload.get("tool_call_id").and_then(|v| v.as_str()),
+            "tool event mapped"
+        );
+    }
     session.publish_event(envelope);
 
     public_turn_id
