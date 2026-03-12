@@ -28,6 +28,7 @@
 
 - [Highlights](#highlights)
 - [Quick Start](#quick-start)
+- [Web UI Screenshots](#web-ui-screenshots)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
@@ -68,6 +69,11 @@ If you prefer terminal interaction after install:
 ```bash
 tui_next
 ```
+
+## Web UI Screenshots
+
+![Web UI Home](docs/assets/screenshots/web-ui/chat_page_01.png)
+![Web UI Session](docs/assets/screenshots/web-ui/chat_page_02.png)
 
 ## Installation
 

@@ -28,6 +28,7 @@
 
 - [核心能力](#核心能力)
 - [快速开始](#快速开始)
+- [Web UI 截图](#web-ui-截图)
 - [安装方式](#安装方式)
 - [配置项](#配置项)
 - [架构概览](#架构概览)
@@ -68,6 +69,11 @@ openjax-gateway
 ```bash
 tui_next
 ```
+
+## Web UI 截图
+
+![Web UI 首页](docs/assets/screenshots/web-ui/chat_page_01.png)
+![Web UI 会话页](docs/assets/screenshots/web-ui/chat_page_02.png)
 
 ## 安装方式
 
@@ -129,8 +135,7 @@ Linux/macOS 的打包命令与完整部署说明见 [docs/deployment.zh-CN.md](d
 | `OPENJAX_SANDBOX_MODE` | 沙箱模式 | `workspace_write` |
 
 若不存在配置文件，启动时会自动生成模板：
-- `./.openjax/config/config.toml`（项目内）
-- 回退到 `~/.openjax/config.toml`
+- `~/.openjax/config.toml`
 
 ## 架构概览
 
