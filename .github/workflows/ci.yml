@@ -102,5 +102,18 @@ jobs:
           test -x "$PREFIX/bin/openjax-gateway"
           test -f "$PREFIX/web/index.html"
           "$PREFIX/bin/openjaxd" --help >/dev/null
-          "$PREFIX/bin/openjax-gateway" --help >/dev/null
+          GATEWAY_BIND="127.0.0.1:18765"
+          OPENJAX_GATEWAY_BIND="$GATEWAY_BIND" "$PREFIX/bin/openjax-gateway" >/tmp/openjax-gateway.log 2>&1 &
+          GATEWAY_PID=$!
+          trap 'kill "$GATEWAY_PID" 2>/dev/null || true' EXIT
+          for _ in {1..30}; do
+            if curl -fsS "http://${GATEWAY_BIND}/healthz" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS "http://${GATEWAY_BIND}/healthz" >/dev/null
+          kill "$GATEWAY_PID" 2>/dev/null || true
+          wait "$GATEWAY_PID" 2>/dev/null || true
+          trap - EXIT
           bash "dist/$PKG_DIR/uninstall.sh" --prefix "$PREFIX" --yes
