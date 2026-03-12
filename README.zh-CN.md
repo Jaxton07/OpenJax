@@ -57,8 +57,8 @@ openjax-gateway
 ```
 
 然后在浏览器打开 `http://127.0.0.1:8765`。
-如果未配置 API Key 环境变量，gateway 启动时会在终端打印一个随机 Access Key。
-在 `/login` 页面填写该 key 后再进入对话页面。
+如果未配置 API Key 环境变量，gateway 启动时会在终端打印一个随机 Owner Key。
+在 `/login` 页面填写该 key 后，Web 会换取 access/refresh token，且不会在本地持久化 owner key。
 本地开发模式（`make run-web-dev`）前端地址仍是 `http://127.0.0.1:5173`。
 
 ### 可选：Rust TUI

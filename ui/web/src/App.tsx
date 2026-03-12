@@ -40,6 +40,9 @@ export default function App() {
     compactConversation,
     updateSettings,
     testConnection,
+    listAuthSessions,
+    revokeAuthSession,
+    revokeAllAuthSessions,
     dismissGlobalError,
     dismissToast
   } = useChatApp();
@@ -69,8 +72,8 @@ export default function App() {
     [route, state.globalError]
   );
 
-  const handleLogin = async (baseUrl: string, apiKey: string) => {
-    const ok = await authenticate(baseUrl, apiKey);
+  const handleLogin = async (baseUrl: string, ownerKey: string) => {
+    const ok = await authenticate(baseUrl, ownerKey);
     if (ok) {
       navigate("/chat");
     }
@@ -87,8 +90,39 @@ export default function App() {
     );
   }
 
-  const testSettingsConnection = async (settings: AppSettings, apiKey: string) => {
-    return testConnection(settings, apiKey);
+  const testSettingsConnection = async (settings: AppSettings) => {
+    return testConnection(settings);
+  };
+
+  const manageAuthSessions = async () => {
+    const sessions = await listAuthSessions();
+    if (sessions.length === 0) {
+      window.alert("当前没有可管理会话。");
+      return;
+    }
+    const summary = sessions
+      .map((item, index) => {
+        const name = item.device_name ?? item.platform ?? "unknown";
+        return `${index + 1}. ${name} (${item.status}) ${item.session_id}`;
+      })
+      .join("\n");
+    const input = window.prompt(
+      `会话管理：\n${summary}\n\n输入序号踢下线，输入 all 踢下线全部会话，留空取消。`
+    );
+    if (!input) {
+      return;
+    }
+    if (input.trim().toLowerCase() === "all") {
+      await revokeAllAuthSessions();
+      return;
+    }
+    const index = Number(input.trim()) - 1;
+    if (Number.isNaN(index) || index < 0 || index >= sessions.length) {
+      window.alert("输入无效。");
+      return;
+    }
+    await revokeAuthSession(sessions[index].session_id);
+    window.alert("已撤销该会话。");
   };
 
   return (
@@ -100,8 +134,9 @@ export default function App() {
         onSelectSession={switchSession}
         onDeleteSession={deleteSession}
         onOpenSettings={() => setSettingsOpen(true)}
+        onManageSessions={() => void manageAuthSessions()}
         onLogout={() => {
-          logout();
+          void logout();
           navigate("/login");
         }}
       />
@@ -156,7 +191,6 @@ export default function App() {
       <SettingsModal
         open={settingsOpen}
         initialSettings={state.settings}
-        initialApiKey={state.auth.apiKey}
         onClose={() => setSettingsOpen(false)}
         onSave={updateSettings}
         onTest={testSettingsConnection}

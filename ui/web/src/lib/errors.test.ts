@@ -10,7 +10,7 @@ describe("humanizeError", () => {
       retryable: false
     });
 
-    expect(text).toContain("API Key");
+    expect(text).toContain("Owner Key");
   });
 
   it("falls back to generic error", () => {

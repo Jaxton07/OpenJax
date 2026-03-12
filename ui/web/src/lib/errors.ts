@@ -26,7 +26,7 @@ export function humanizeError(error: unknown): string {
     const gateway = error as GatewayError;
     switch (gateway.code) {
       case "UNAUTHENTICATED":
-        return "认证失败，请检查 API Key。";
+        return "认证失败，请重新登录或检查 Owner Key。";
       case "FORBIDDEN":
         return "权限不足，请更换 API Key。";
       case "RATE_LIMITED":

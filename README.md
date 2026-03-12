@@ -57,8 +57,8 @@ openjax-gateway
 ```
 
 Then open `http://127.0.0.1:8765` in your browser.
-If no API key env is configured, gateway will print a generated access key in the terminal.
-Use that key on the `/login` page before entering chat.
+If no API key env is configured, gateway will print a generated owner key in the terminal.
+Use that key on the `/login` page. Web exchanges owner key for access/refresh tokens and does not persist owner key locally.
 For local web development (`make run-web-dev`), the frontend runs at `http://127.0.0.1:5173`.
 
 ### Optional: Rust TUI

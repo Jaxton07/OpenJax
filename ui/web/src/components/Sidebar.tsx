@@ -8,6 +8,7 @@ interface SidebarProps {
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => Promise<void> | void;
   onOpenSettings: () => void;
+  onManageSessions: () => void;
   onLogout: () => void;
 }
 
@@ -73,6 +74,9 @@ export default function Sidebar(props: SidebarProps) {
             </svg>
           </span>
           <span>设置</span>
+        </button>
+        <button className="settings-btn" onClick={props.onManageSessions}>
+          <span>会话管理</span>
         </button>
         <button className="logout-btn" onClick={props.onLogout}>
           <span>退出登录</span>

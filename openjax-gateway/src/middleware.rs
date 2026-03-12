@@ -58,7 +58,7 @@ pub async fn request_context_middleware(
         .await
 }
 
-pub async fn auth_middleware(
+pub async fn owner_key_middleware(
     State(state): State<AppState>,
     mut req: Request,
     next: Next,
@@ -76,6 +76,33 @@ pub async fn auth_middleware(
     }
 
     let actor = format!("api_key:{}", &token.chars().take(6).collect::<String>());
+    if let Some(ctx) = req.extensions_mut().get_mut::<RequestContext>() {
+        ctx.actor = actor;
+    }
+
+    Ok(next.run(req).await)
+}
+
+pub async fn access_token_middleware(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let header_value = req
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| ApiError::unauthenticated("missing Authorization header"))?;
+
+    let token = crate::auth::parse_bearer_token(header_value)
+        .ok_or_else(|| ApiError::unauthenticated("invalid bearer token"))?;
+
+    let session = state
+        .auth_service()
+        .validate_access_token(token)
+        .ok_or_else(|| ApiError::unauthenticated("access token is invalid or expired"))?;
+
+    let actor = format!("auth_session:{}", session.session_id);
     if let Some(ctx) = req.extensions_mut().get_mut::<RequestContext>() {
         ctx.actor = actor;
     }

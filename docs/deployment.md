@@ -50,7 +50,8 @@ export PATH="$HOME/.local/openjax/bin:$PATH"
 openjax-gateway
 ```
 
-Open `http://127.0.0.1:8765/login` and enter the access key shown in the gateway terminal output.
+Open `http://127.0.0.1:8765/login` and enter the owner key shown in the gateway terminal output.
+Web will call `/api/v1/auth/login` to obtain access/refresh tokens. Refresh token is stored in HttpOnly cookie.
 
 ## B. Online Install from GitHub Release (Optional)
 

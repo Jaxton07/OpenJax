@@ -25,7 +25,7 @@ fn resolve_static_dir() -> Option<PathBuf> {
 async fn main() -> Result<()> {
     init_logger_with_file("openjax-gateway.log");
     let api_key_config = load_api_keys();
-    let state = AppState::new_with_api_keys(api_key_config.keys.clone());
+    let state = AppState::try_new_with_api_keys(api_key_config.keys.clone())?;
     let static_dir = resolve_static_dir();
     let app = openjax_gateway::build_app(state, static_dir.clone());
     let bind_addr =

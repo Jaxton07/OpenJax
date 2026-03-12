@@ -4,24 +4,21 @@ import type { AppSettings, OutputMode } from "../types/gateway";
 interface SettingsModalProps {
   open: boolean;
   initialSettings: AppSettings;
-  initialApiKey: string;
   onClose: () => void;
-  onSave: (settings: AppSettings, apiKey: string) => void;
-  onTest: (settings: AppSettings, apiKey: string) => Promise<boolean>;
+  onSave: (settings: AppSettings) => void;
+  onTest: (settings: AppSettings) => Promise<boolean>;
 }
 
 export default function SettingsModal(props: SettingsModalProps) {
   const [draft, setDraft] = useState<AppSettings>(props.initialSettings);
-  const [apiKey, setApiKey] = useState(props.initialApiKey);
   const [status, setStatus] = useState<string>("");
 
   useEffect(() => {
     if (props.open) {
       setDraft(props.initialSettings);
-      setApiKey(props.initialApiKey);
       setStatus("");
     }
-  }, [props.initialApiKey, props.initialSettings, props.open]);
+  }, [props.initialSettings, props.open]);
 
   if (!props.open) {
     return null;
@@ -47,15 +44,6 @@ export default function SettingsModal(props: SettingsModalProps) {
           />
         </label>
 
-        <label>
-          Access Key
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-          />
-        </label>
-
         <div className="output-mode-group">
           <span>输出模式</span>
           <div>
@@ -77,7 +65,7 @@ export default function SettingsModal(props: SettingsModalProps) {
         <div className="modal-actions">
           <button
             onClick={async () => {
-              const ok = await props.onTest(draft, apiKey);
+              const ok = await props.onTest(draft);
               setStatus(ok ? "连接测试成功" : "连接测试失败");
             }}
           >
@@ -86,7 +74,7 @@ export default function SettingsModal(props: SettingsModalProps) {
           <button
             className="primary"
             onClick={() => {
-              props.onSave(draft, apiKey);
+              props.onSave(draft);
               props.onClose();
             }}
           >

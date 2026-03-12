@@ -10,13 +10,13 @@ use tower::ServiceExt;
 fn app_with_api_key(api_key: &str) -> (axum::Router, AppState) {
     let mut keys = HashSet::new();
     keys.insert(api_key.to_string());
-    let state = AppState::new_with_api_keys(keys);
+    let state = AppState::new_with_api_keys_for_test(keys);
     let app = build_app(state.clone(), None);
     (app, state)
 }
 
-fn auth_header(api_key: &str) -> String {
-    format!("Bearer {}", api_key)
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -24,6 +24,36 @@ async fn response_json(response: axum::response::Response) -> Value {
         .await
         .expect("read response body");
     serde_json::from_slice(&bytes).expect("parse response json")
+}
+
+async fn login(app: &axum::Router, owner_key: &str) -> (String, String, String) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header("Authorization", auth_header(owner_key))
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("login request"),
+        )
+        .await
+        .expect("login response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let set_cookie = response
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .expect("set-cookie header")
+        .to_string();
+    let body = response_json(response).await;
+    let access = body["access_token"]
+        .as_str()
+        .expect("access token")
+        .to_string();
+    let session_id = body["session_id"].as_str().expect("session id").to_string();
+    (access, set_cookie, session_id)
 }
 
 #[tokio::test]
@@ -45,9 +75,11 @@ async fn create_session_requires_auth() {
 }
 
 #[tokio::test]
-async fn clear_command_submit_and_polling_flow() {
+async fn login_refresh_logout_flow() {
     let api_key = "test-key";
     let (app, _state) = app_with_api_key(api_key);
+
+    let (access_token, set_cookie, session_id) = login(&app, api_key).await;
 
     let create_response = app
         .clone()
@@ -55,7 +87,135 @@ async fn clear_command_submit_and_polling_flow() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/sessions")
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("create request"),
+        )
+        .await
+        .expect("create response");
+    assert_eq!(create_response.status(), StatusCode::OK);
+
+    let refresh_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/refresh")
+                .header("Cookie", set_cookie)
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("refresh request"),
+        )
+        .await
+        .expect("refresh response");
+    assert_eq!(refresh_response.status(), StatusCode::OK);
+
+    let logout_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/logout")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "session_id": session_id }).to_string(),
+                ))
+                .expect("logout request"),
+        )
+        .await
+        .expect("logout response");
+    assert_eq!(logout_response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn refresh_reuse_conflict_returns_conflict() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (_access_token, old_cookie, _session_id) = login(&app, api_key).await;
+
+    let first_refresh = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/refresh")
+                .header("Cookie", old_cookie.clone())
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("refresh request"),
+        )
+        .await
+        .expect("first refresh response");
+    assert_eq!(first_refresh.status(), StatusCode::OK);
+
+    let second_refresh = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/refresh")
+                .header("Cookie", old_cookie)
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("second refresh request"),
+        )
+        .await
+        .expect("second refresh response");
+    assert_eq!(second_refresh.status(), StatusCode::CONFLICT);
+    let body = response_json(second_refresh).await;
+    assert_eq!(body["error"]["code"], "CONFLICT");
+}
+
+#[tokio::test]
+async fn revoke_session_invalidates_access_token() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _cookie, session_id) = login(&app, api_key).await;
+
+    let revoke_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/revoke")
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "session_id": session_id }).to_string(),
+                ))
+                .expect("revoke request"),
+        )
+        .await
+        .expect("revoke response");
+    assert_eq!(revoke_response.status(), StatusCode::OK);
+
+    let create_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/sessions")
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("create request"),
+        )
+        .await
+        .expect("create response");
+    assert_eq!(create_response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn clear_command_submit_and_polling_flow() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/sessions")
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from("{}"))
                 .expect("create request"),
@@ -72,7 +232,7 @@ async fn clear_command_submit_and_polling_flow() {
             Request::builder()
                 .method("POST")
                 .uri(format!("/api/v1/sessions/{}/turns", session_id))
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from(r#"{"input":"/clear"}"#))
                 .expect("submit request"),
@@ -88,7 +248,7 @@ async fn clear_command_submit_and_polling_flow() {
             Request::builder()
                 .method("GET")
                 .uri(format!("/api/v1/sessions/{}/turns/{}", session_id, turn_id))
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .body(Body::empty())
                 .expect("turn request"),
         )
@@ -104,6 +264,7 @@ async fn clear_command_submit_and_polling_flow() {
 async fn compact_endpoint_returns_not_implemented() {
     let api_key = "test-key";
     let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
 
     let create_response = app
         .clone()
@@ -111,7 +272,7 @@ async fn compact_endpoint_returns_not_implemented() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/sessions")
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from("{}"))
                 .expect("create request"),
@@ -126,7 +287,7 @@ async fn compact_endpoint_returns_not_implemented() {
             Request::builder()
                 .method("POST")
                 .uri(format!("/api/v1/sessions/{}:compact", session_id))
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from(r#"{"strategy":"default"}"#))
                 .expect("compact request"),
@@ -142,6 +303,7 @@ async fn compact_endpoint_returns_not_implemented() {
 async fn approval_resolve_second_call_returns_conflict() {
     let api_key = "test-key";
     let (app, state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
 
     let create_response = app
         .clone()
@@ -149,7 +311,7 @@ async fn approval_resolve_second_call_returns_conflict() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/sessions")
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from("{}"))
                 .expect("create request"),
@@ -193,7 +355,7 @@ async fn approval_resolve_second_call_returns_conflict() {
             Request::builder()
                 .method("POST")
                 .uri(&resolve_uri)
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from(r#"{"approved":true}"#))
                 .expect("first resolve request"),
@@ -207,7 +369,7 @@ async fn approval_resolve_second_call_returns_conflict() {
             Request::builder()
                 .method("POST")
                 .uri(&resolve_uri)
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from(r#"{"approved":true}"#))
                 .expect("second resolve request"),
@@ -226,6 +388,7 @@ async fn approval_resolve_second_call_returns_conflict() {
 async fn sse_replay_out_of_window_returns_invalid_argument() {
     let api_key = "test-key";
     let (app, state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
 
     let create_response = app
         .clone()
@@ -233,7 +396,7 @@ async fn sse_replay_out_of_window_returns_invalid_argument() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/sessions")
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from("{}"))
                 .expect("create request"),
@@ -272,7 +435,7 @@ async fn sse_replay_out_of_window_returns_invalid_argument() {
                     "/api/v1/sessions/{}/events?after_event_seq=1",
                     session_id
                 ))
-                .header("Authorization", auth_header(api_key))
+                .header("Authorization", auth_header(&access_token))
                 .body(Body::empty())
                 .expect("events request"),
         )

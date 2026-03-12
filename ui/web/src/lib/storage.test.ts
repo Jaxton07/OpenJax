@@ -30,18 +30,21 @@ describe("auth storage", () => {
 
   it("returns defaults when empty", () => {
     const auth = loadAuth();
-    expect(auth.apiKey).toBe("");
     expect(auth.authenticated).toBe(false);
+    expect(auth.accessToken).toBe("");
   });
 
   it("persists auth state", () => {
     saveAuth({
-      apiKey: "ojx_test",
-      authenticated: true
+      authenticated: true,
+      accessToken: "atk_test",
+      sessionId: "authsess_1",
+      scope: "owner"
     });
 
     const auth = loadAuth();
-    expect(auth.apiKey).toBe("ojx_test");
     expect(auth.authenticated).toBe(true);
+    expect(auth.accessToken).toBe("");
+    expect(auth.sessionId).toBeNull();
   });
 });

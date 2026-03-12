@@ -2,6 +2,16 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
+pub mod cookie;
+pub mod rate_limit;
+pub mod service;
+pub mod store;
+pub mod token;
+pub mod types;
+
+pub use service::{AuthConfig, AuthService, RefreshError};
+pub use types::{NewSessionInput, SessionView};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiKeySource {
     GatewayEnv,

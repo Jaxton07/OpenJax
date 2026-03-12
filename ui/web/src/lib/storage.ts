@@ -11,8 +11,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const DEFAULT_AUTH: AuthState = {
-  apiKey: "",
-  authenticated: false
+  authenticated: false,
+  accessToken: "",
+  sessionId: null,
+  scope: null
 };
 
 export function loadSettings(): AppSettings {
@@ -49,12 +51,14 @@ export function loadAuth(): AuthState {
       return DEFAULT_AUTH;
     }
     const parsed = JSON.parse(raw) as Partial<AuthState>;
-    if (!parsed.apiKey || !parsed.authenticated) {
+    if (!parsed.authenticated) {
       return DEFAULT_AUTH;
     }
     return {
-      apiKey: parsed.apiKey,
-      authenticated: parsed.authenticated
+      authenticated: true,
+      accessToken: "",
+      sessionId: null,
+      scope: null
     };
   } catch {
     return DEFAULT_AUTH;
@@ -62,7 +66,12 @@ export function loadAuth(): AuthState {
 }
 
 export function saveAuth(auth: AuthState): void {
-  localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+  localStorage.setItem(
+    AUTH_KEY,
+    JSON.stringify({
+      authenticated: auth.authenticated
+    })
+  );
 }
 
 export function loadSessions(): ChatSession[] {

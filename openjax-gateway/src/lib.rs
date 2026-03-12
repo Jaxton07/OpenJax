@@ -1,4 +1,5 @@
 mod auth;
+mod auth_handlers;
 mod error;
 mod handlers;
 mod middleware;
@@ -11,9 +12,10 @@ use std::path::PathBuf;
 
 use axum::Router;
 use axum::http::Method;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
@@ -23,7 +25,32 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             "http://127.0.0.1:5173".parse().expect("valid origin"),
         ])
         .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
-        .allow_headers(Any);
+        .allow_headers([
+            AUTHORIZATION,
+            CONTENT_TYPE,
+            COOKIE,
+            "x-request-id".parse().expect("header"),
+        ])
+        .allow_credentials(true);
+
+    let login_auth = Router::new()
+        .route("/api/v1/auth/login", post(auth_handlers::login))
+        .layer(from_fn_with_state(
+            state.clone(),
+            middleware::owner_key_middleware,
+        ));
+
+    let auth_protected = Router::new()
+        .route("/api/v1/auth/sessions", get(auth_handlers::list_sessions))
+        .route("/api/v1/auth/revoke", post(auth_handlers::revoke))
+        .layer(from_fn_with_state(
+            state.clone(),
+            middleware::access_token_middleware,
+        ));
+
+    let auth_public = Router::new()
+        .route("/api/v1/auth/refresh", post(auth_handlers::refresh))
+        .route("/api/v1/auth/logout", post(auth_handlers::logout));
 
     let protected = Router::new()
         .route("/api/v1/sessions", post(handlers::create_session))
@@ -49,12 +76,15 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         )
         .layer(from_fn_with_state(
             state.clone(),
-            middleware::auth_middleware,
+            middleware::access_token_middleware,
         ));
 
     let mut app = Router::new()
         .route("/healthz", get(handlers::healthz))
         .route("/readyz", get(handlers::readyz))
+        .merge(login_auth)
+        .merge(auth_protected)
+        .merge(auth_public)
         .merge(protected)
         .layer(from_fn_with_state(
             state.clone(),

@@ -6,13 +6,15 @@ export interface AppSettings {
 }
 
 export interface AuthState {
-  apiKey: string;
   authenticated: boolean;
+  accessToken: string;
+  sessionId: string | null;
+  scope: string | null;
 }
 
 export interface GatewayConnection {
   baseUrl: string;
-  apiKey: string;
+  accessToken: string;
 }
 
 export interface GatewayErrorBody {
@@ -62,6 +64,40 @@ export interface SessionActionResponse {
   session_id: string;
   status: "cleared" | "shutdown" | "resolved";
   approval_id?: string;
+  timestamp: string;
+}
+
+export interface AuthLoginResponse {
+  request_id: string;
+  access_token: string;
+  access_expires_in: number;
+  session_id: string;
+  scope: string;
+  timestamp: string;
+}
+
+export interface AuthRevokeResponse {
+  request_id: string;
+  revoked: number;
+  timestamp: string;
+}
+
+export interface AuthSessionItem {
+  session_id: string;
+  device_id: string;
+  scope: string;
+  device_name?: string;
+  platform?: string;
+  user_agent?: string;
+  status: string;
+  created_at: string;
+  last_seen_at: string;
+  revoked_at?: string | null;
+}
+
+export interface AuthSessionsResponse {
+  request_id: string;
+  sessions: AuthSessionItem[];
   timestamp: string;
 }
 

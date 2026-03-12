@@ -12,6 +12,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::auth::load_api_keys_from_env;
+use crate::auth::{AuthConfig, AuthService};
 use crate::error::{ApiError, now_rfc3339};
 
 const EVENT_REPLAY_LIMIT: usize = 1024;
@@ -20,6 +21,7 @@ const EVENT_REPLAY_LIMIT: usize = 1024;
 pub struct AppState {
     sessions: Arc<RwLock<HashMap<String, Arc<Mutex<SessionRuntime>>>>>,
     api_keys: Arc<HashSet<String>>,
+    auth_service: Arc<AuthService>,
 }
 
 impl AppState {
@@ -28,14 +30,38 @@ impl AppState {
     }
 
     pub fn new_with_api_keys(api_keys: HashSet<String>) -> Self {
+        Self::try_new_with_api_keys(api_keys).expect("initialize gateway auth service")
+    }
+
+    pub fn try_new_with_api_keys(api_keys: HashSet<String>) -> anyhow::Result<Self> {
+        let auth_config = AuthConfig::from_env();
+        let auth_service = if auth_config.db_path.as_os_str() == ":memory:" {
+            AuthService::for_test()?
+        } else {
+            AuthService::from_config(auth_config.clone())?
+        };
+        Ok(Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            api_keys: Arc::new(api_keys),
+            auth_service: Arc::new(auth_service),
+        })
+    }
+
+    pub fn new_with_api_keys_for_test(api_keys: HashSet<String>) -> Self {
+        let auth_service = AuthService::for_test().expect("initialize test auth service");
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
+            auth_service: Arc::new(auth_service),
         }
     }
 
     pub fn is_api_key_allowed(&self, key: &str) -> bool {
         self.api_keys.contains(key)
+    }
+
+    pub fn auth_service(&self) -> Arc<AuthService> {
+        self.auth_service.clone()
     }
 
     pub async fn create_session(&self) -> String {

@@ -1,5 +1,8 @@
 import { parseGatewayError } from "./errors";
 import type {
+  AuthLoginResponse,
+  AuthRevokeResponse,
+  AuthSessionsResponse,
   GatewayConnection,
   SessionActionResponse,
   SessionCreated,
@@ -25,6 +28,55 @@ export class GatewayClient {
 
   constructor(settings: GatewayConnection) {
     this.settings = settings;
+  }
+
+  async login(ownerKey: string): Promise<AuthLoginResponse> {
+    return this.request("/api/v1/auth/login", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerKey.trim()}`
+      },
+      body: JSON.stringify({
+        device_name: "openjax-web",
+        platform: "web",
+        user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown"
+      })
+    });
+  }
+
+  async refresh(refreshToken?: string): Promise<AuthLoginResponse> {
+    return this.request("/api/v1/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {})
+    });
+  }
+
+  async logout(sessionId: string): Promise<{ status: string }> {
+    return this.request("/api/v1/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId })
+    });
+  }
+
+  async revoke(payload: {
+    sessionId?: string;
+    deviceId?: string;
+    revokeAll?: boolean;
+  }): Promise<AuthRevokeResponse> {
+    return this.request("/api/v1/auth/revoke", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: payload.sessionId,
+        device_id: payload.deviceId,
+        revoke_all: payload.revokeAll ?? false
+      })
+    });
+  }
+
+  async listSessions(): Promise<AuthSessionsResponse> {
+    return this.request("/api/v1/auth/sessions", {
+      method: "GET"
+    });
   }
 
   async startSession(): Promise<SessionCreated> {
@@ -110,6 +162,7 @@ export class GatewayClient {
       `${normalizeBaseUrl(this.settings.baseUrl)}/api/v1/sessions/${options.sessionId}/events${query}`,
       {
         method: "GET",
+        credentials: "include",
         headers: this.headers(),
         signal: options.signal
       }
@@ -155,6 +208,7 @@ export class GatewayClient {
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const response = await fetch(`${normalizeBaseUrl(this.settings.baseUrl)}${path}`, {
       ...init,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...this.headers(),
@@ -170,10 +224,8 @@ export class GatewayClient {
   }
 
   private headers(): Record<string, string> {
-    const apiKey = this.settings.apiKey.trim();
-    return apiKey
-      ? { Authorization: `Bearer ${apiKey}` }
-      : {};
+    const accessToken = this.settings.accessToken.trim();
+    return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
   }
 }
 

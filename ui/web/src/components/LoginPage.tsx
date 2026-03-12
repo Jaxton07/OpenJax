@@ -2,17 +2,17 @@ import { useState } from "react";
 
 interface LoginPageProps {
   initialBaseUrl: string;
-  onLogin: (baseUrl: string, apiKey: string) => Promise<boolean>;
+  onLogin: (baseUrl: string, ownerKey: string) => Promise<boolean>;
   errorMessage?: string | null;
 }
 
 export default function LoginPage(props: LoginPageProps) {
   const [baseUrl, setBaseUrl] = useState(props.initialBaseUrl);
-  const [apiKey, setApiKey] = useState("");
+  const [ownerKey, setOwnerKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const formReady = baseUrl.trim().length > 0 && apiKey.trim().length > 0;
+  const formReady = baseUrl.trim().length > 0 && ownerKey.trim().length > 0;
 
   const submit = async () => {
     if (submitting) {
@@ -21,9 +21,9 @@ export default function LoginPage(props: LoginPageProps) {
     setSubmitting(true);
     setStatus(null);
     try {
-      const ok = await props.onLogin(baseUrl, apiKey);
+      const ok = await props.onLogin(baseUrl, ownerKey);
       if (!ok) {
-        setStatus("连接失败，请检查地址和 Access Key。");
+        setStatus("连接失败，请检查地址和 Owner Key。");
       }
     } finally {
       setSubmitting(false);
@@ -38,12 +38,12 @@ export default function LoginPage(props: LoginPageProps) {
           <div className="login-sub-badge">Owner Key</div>
         </div>
         <h1>登录控制台</h1>
-        <p>请填写网关地址与 Access Key。</p>
+        <p>请填写网关地址与 Owner Key。</p>
 
         <div className="login-tip">
           <strong>快速步骤</strong>
           <span>1. 启动 `openjax-gateway`</span>
-          <span>2. 复制终端输出的 `ojx_...` access key 并输入</span>
+          <span>2. 复制终端输出的 `ojx_...` owner key 并输入</span>
         </div>
 
         <label>
@@ -56,12 +56,12 @@ export default function LoginPage(props: LoginPageProps) {
         </label>
 
         <label>
-          Access Key
+          Owner Key
           <div className="login-key-row">
             <input
               type={showKey ? "text" : "password"}
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
+              value={ownerKey}
+              onChange={(event) => setOwnerKey(event.target.value)}
               placeholder="ojx_xxxxxxxxxxxxxxxxx"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && formReady) {
@@ -73,8 +73,8 @@ export default function LoginPage(props: LoginPageProps) {
               type="button"
               className="key-visibility-btn"
               onClick={() => setShowKey((prev) => !prev)}
-              aria-label={showKey ? "隐藏 Access Key" : "显示 Access Key"}
-              title={showKey ? "隐藏 Access Key" : "显示 Access Key"}
+              aria-label={showKey ? "隐藏 Owner Key" : "显示 Owner Key"}
+              title={showKey ? "隐藏 Owner Key" : "显示 Owner Key"}
             >
               {showKey ? (
                 <svg viewBox="0 0 24 24" aria-hidden="true">

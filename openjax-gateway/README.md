@@ -16,7 +16,15 @@
 openjax-gateway/
 ├── Cargo.toml
 ├── src
-│   ├── auth.rs
+│   ├── auth/
+│   │   ├── mod.rs
+│   │   ├── cookie.rs
+│   │   ├── rate_limit.rs
+│   │   ├── service.rs
+│   │   ├── store.rs
+│   │   ├── token.rs
+│   │   └── types.rs
+│   ├── auth_handlers.rs
 │   ├── error.rs
 │   ├── handlers.rs
 │   ├── lib.rs
@@ -40,8 +48,13 @@ openjax-gateway/
 - `DELETE /api/v1/sessions/:session_id`
 - `POST /api/v1/sessions/:session_id/approvals/*approval_action`
 - `GET /api/v1/sessions/:session_id/events`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/revoke`
+- `GET /api/v1/auth/sessions`
 
-受保护路由需 `Authorization: Bearer <api_key>`。
+受保护业务路由需 `Authorization: Bearer <access_token>`。`/api/v1/auth/login` 使用 owner key。
 
 ## 关键实现映射
 
@@ -49,9 +62,10 @@ openjax-gateway/
 - `src/main.rs`：网关启动入口，读取 `OPENJAX_GATEWAY_BIND`（默认 `127.0.0.1:8765`）。
 - `src/state.rs`：`AppState`/`SessionRuntime`、事件缓存回放、turn 与审批状态管理。
 - `src/handlers.rs`：HTTP 处理函数与 core 事件映射到网关事件。
+- `src/auth_handlers.rs`：登录、刷新、登出、撤销、会话查询接口。
 - `src/middleware.rs`：请求 ID、鉴权、访问日志。
 - `src/error.rs`：统一错误响应结构（`code/message/retryable/details`）。
-- `src/auth.rs`：API Key 环境变量加载与 Bearer Token 解析。
+- `src/auth/`：owner key 加载、token 生成哈希、SQLite 持久化、限流与 cookie 逻辑。
 - `tests/gateway_api.rs`：鉴权、`/clear`、审批幂等、SSE 回放窗口等集成测试。
 
 ## 环境变量
@@ -59,10 +73,17 @@ openjax-gateway/
 - `OPENJAX_GATEWAY_BIND`：监听地址，默认 `127.0.0.1:8765`。
 - `OPENJAX_GATEWAY_API_KEYS`：逗号分隔 API keys（优先）。
 - `OPENJAX_API_KEYS`：兼容 API keys 变量（后备）。
+- `OPENJAX_GATEWAY_AUTH_DB_PATH`：auth SQLite 路径（默认 `./.openjax/auth.db`）。
+- `OPENJAX_GATEWAY_ACCESS_TTL_MINUTES`：access token TTL（默认 15）。
+- `OPENJAX_GATEWAY_REFRESH_TTL_DAYS`：refresh token TTL（默认 30）。
+- `OPENJAX_GATEWAY_COOKIE_SECURE`：refresh cookie 是否设置 `Secure`（默认 true）。
+- `OPENJAX_GATEWAY_AUTH_RATE_LIMIT_LOGIN_PER_MIN`：登录限流（默认 30）。
+- `OPENJAX_GATEWAY_AUTH_RATE_LIMIT_REFRESH_PER_MIN`：刷新限流（默认 120）。
+- `OPENJAX_GATEWAY_AUTH_TOKEN_PEPPER`：token 哈希 pepper。
 - `OPENJAX_GATEWAY_WEB_DIR`：可选，web 静态目录（默认自动尝试 `<bin>/../web`）。
 - `OPENJAX_APPROVAL_TIMEOUT_MS`：审批超时毫秒（由 core 读取）。
 
-若上述 API Key 变量都未设置，gateway 会在启动时自动生成随机 key（仅当前进程有效）并打印到终端。
+若上述 API Key 变量都未设置，gateway 会在启动时自动生成随机 owner key（仅当前进程有效）并打印到终端。
 
 ## 本地开发
 
