@@ -50,7 +50,7 @@
 ### Prerequisites
 
 - Rust toolchain (`cargo`, `rustup`)
-- `zsh`
+- `bash` (`zsh` optional)
 - `OPENAI_API_KEY` (or another provider key supported by your configuration)
 
 ### Run from source

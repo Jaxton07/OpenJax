@@ -50,7 +50,7 @@
 ### 前置条件
 
 - Rust 工具链（`cargo`、`rustup`）
-- `zsh`
+- `bash`（`zsh` 可选）
 - `OPENAI_API_KEY`（或你配置中支持的其他模型 Key）
 
 ### 源码运行

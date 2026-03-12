@@ -1,4 +1,4 @@
-SHELL := /bin/zsh
+SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 CARGO ?= cargo
@@ -18,7 +18,7 @@ help:
 	@echo "OpenJax Deployment Commands:"
 	@echo ""
 	@echo "  Rust 主线（推荐）:"
-	@echo "    make doctor            - 检查 cargo/rustup/zsh"
+	@echo "    make doctor            - 检查 cargo/rustup/bash (zsh 可选)"
 	@echo "    make prefetch          - 预拉取 Rust 依赖 (Cargo.lock)"
 	@echo "    make run-tui           - 运行 Rust TUI (tui_next)"
 	@echo "    make run-web-dev       - 同时启动 gateway + web 前端开发服务"
@@ -40,10 +40,11 @@ help:
 	@echo "    make test-rust         - 运行 Rust workspace 测试"
 	@echo "    make clean-dist        - 清理 dist 目录"
 doctor:
-	@command -v zsh >/dev/null || (echo "[doctor] missing zsh" && exit 1)
+	@command -v bash >/dev/null || (echo "[doctor] missing bash" && exit 1)
 	@command -v $(CARGO) >/dev/null || (echo "[doctor] missing cargo" && exit 1)
 	@command -v rustup >/dev/null || (echo "[doctor] missing rustup" && exit 1)
-	@echo "[doctor] OK: zsh cargo rustup"
+	@command -v zsh >/dev/null || echo "[doctor] note: zsh not found (optional)"
+	@echo "[doctor] OK: bash cargo rustup"
 
 prefetch:
 	$(CARGO) fetch --locked
