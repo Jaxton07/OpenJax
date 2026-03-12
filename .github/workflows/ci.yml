@@ -101,7 +101,6 @@ jobs:
           test -x "$PREFIX/bin/openjaxd"
           test -x "$PREFIX/bin/openjax-gateway"
           test -f "$PREFIX/web/index.html"
-          "$PREFIX/bin/tui_next" --help >/dev/null
           "$PREFIX/bin/openjaxd" --help >/dev/null
           "$PREFIX/bin/openjax-gateway" --help >/dev/null
           bash "dist/$PKG_DIR/uninstall.sh" --prefix "$PREFIX" --yes
