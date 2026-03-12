@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GatewayClient } from "../lib/gatewayClient";
 import { applyStreamEvent } from "../lib/eventReducer";
 import { humanizeError, isAuthenticationError } from "../lib/errors";
-import { loadSettings, loadSessions, saveSessions, saveSettings } from "../lib/storage";
+import { loadAuth, loadSessions, loadSettings, saveAuth, saveSessions, saveSettings } from "../lib/storage";
 import type { ChatMessage, ChatSession, ChatState, PendingApproval } from "../types/chat";
-import type { AppSettings, GatewayError } from "../types/gateway";
+import type { AppSettings, GatewayConnection, GatewayError } from "../types/gateway";
 
 const MAX_RECONNECT_RETRY = 6;
 
@@ -22,10 +22,12 @@ function createLocalSession(sessionId: string): ChatSession {
 }
 
 export function useChatApp() {
+  const initialSessions = loadSessions();
   const [state, setState] = useState<ChatState>(() => ({
     settings: loadSettings(),
-    sessions: loadSessions(),
-    activeSessionId: loadSessions()[0]?.id ?? null,
+    auth: loadAuth(),
+    sessions: initialSessions,
+    activeSessionId: initialSessions[0]?.id ?? null,
     globalError: null,
     infoToast: null,
     loading: false
@@ -43,12 +45,32 @@ export function useChatApp() {
     saveSessions(state.sessions);
   }, [state.sessions]);
 
-  const client = useMemo(() => new GatewayClient(state.settings), [state.settings]);
+  const connection = useMemo<GatewayConnection>(
+    () => ({
+      baseUrl: state.settings.baseUrl,
+      apiKey: state.auth.apiKey
+    }),
+    [state.auth.apiKey, state.settings.baseUrl]
+  );
+  const client = useMemo(() => new GatewayClient(connection), [connection]);
 
   const activeSession = useMemo(
     () => state.sessions.find((session) => session.id === state.activeSessionId) ?? null,
     [state.activeSessionId, state.sessions]
   );
+
+  const clearAuthState = useCallback((message: string) => {
+    reconnectAbortRef.current?.abort();
+    pollingAbortRef.current?.abort();
+    saveAuth({ apiKey: "", authenticated: false });
+    setState((prev) => ({
+      ...prev,
+      auth: { apiKey: "", authenticated: false },
+      sessions: [],
+      activeSessionId: null,
+      globalError: message
+    }));
+  }, []);
 
   const updateSession = useCallback((sessionId: string, updater: (session: ChatSession) => ChatSession) => {
     setState((prev) => ({
@@ -74,10 +96,14 @@ export function useChatApp() {
       }));
       return session.id;
     } catch (error) {
-      setState((prev) => ({ ...prev, loading: false, globalError: humanizeError(error) }));
+      if (isAuthenticationError(error)) {
+        clearAuthState("认证失效，请重新登录。");
+      } else {
+        setState((prev) => ({ ...prev, loading: false, globalError: humanizeError(error) }));
+      }
       throw error;
     }
-  }, [client, state.activeSessionId]);
+  }, [clearAuthState, client, state.activeSessionId]);
 
   const startSseLoop = useCallback(
     (sessionId: string) => {
@@ -114,10 +140,7 @@ export function useChatApp() {
             }
             if (isAuthenticationError(error)) {
               updateSession(sessionId, (session) => ({ ...session, connection: "closed" }));
-              setState((prev) => ({
-                ...prev,
-                globalError: "SSE 鉴权失败：API Key 与 Gateway 配置不匹配，请在设置中更新后重试。"
-              }));
+              clearAuthState("SSE 鉴权失败，请重新登录。");
               return;
             }
             if (isSessionNotFoundError(error)) {
@@ -158,17 +181,68 @@ export function useChatApp() {
 
       void run();
     },
-    [client, updateSession]
+    [clearAuthState, client, updateSession]
   );
 
   useEffect(() => {
-    if (!activeSession || state.settings.outputMode !== "sse") {
+    if (!state.auth.authenticated || !activeSession || state.settings.outputMode !== "sse") {
       reconnectAbortRef.current?.abort();
       return;
     }
     startSseLoop(activeSession.id);
     return () => reconnectAbortRef.current?.abort();
-  }, [activeSession?.id, startSseLoop, state.settings.outputMode]);
+  }, [activeSession?.id, startSseLoop, state.auth.authenticated, state.settings.outputMode]);
+
+  const authenticate = useCallback(
+    async (baseUrlInput: string, apiKeyInput: string) => {
+      const baseUrl = baseUrlInput.trim();
+      const apiKey = apiKeyInput.trim();
+      if (!baseUrl || !apiKey) {
+        setState((prev) => ({ ...prev, globalError: "请填写 Gateway 地址和 Access Key。" }));
+        return false;
+      }
+
+      const tempClient = new GatewayClient({ baseUrl, apiKey });
+      try {
+        await tempClient.healthCheck();
+        const created = await tempClient.startSession();
+        await tempClient.shutdownSession(created.session_id);
+
+        const settings = {
+          ...state.settings,
+          baseUrl
+        };
+        saveSettings(settings);
+        saveAuth({ apiKey, authenticated: true });
+        setState((prev) => ({
+          ...prev,
+          settings,
+          auth: { apiKey, authenticated: true },
+          globalError: null,
+          infoToast: "登录成功"
+        }));
+        return true;
+      } catch (error) {
+        setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
+        return false;
+      }
+    },
+    [state.settings]
+  );
+
+  const logout = useCallback(() => {
+    reconnectAbortRef.current?.abort();
+    pollingAbortRef.current?.abort();
+    saveAuth({ apiKey: "", authenticated: false });
+    setState((prev) => ({
+      ...prev,
+      auth: { apiKey: "", authenticated: false },
+      sessions: [],
+      activeSessionId: null,
+      globalError: null,
+      infoToast: null
+    }));
+  }, []);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -239,10 +313,14 @@ export function useChatApp() {
         }
       } catch (error) {
         updateSession(sessionId, (session) => ({ ...session, turnPhase: "failed" }));
+        if (isAuthenticationError(error)) {
+          clearAuthState("登录态已失效，请重新登录。");
+          return;
+        }
         setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
       }
     },
-    [client, ensureSession, state.settings.outputMode, updateSession]
+    [clearAuthState, client, ensureSession, state.settings.outputMode, updateSession]
   );
 
   const newChat = useCallback(async () => {
@@ -256,9 +334,13 @@ export function useChatApp() {
         globalError: null
       }));
     } catch (error) {
+      if (isAuthenticationError(error)) {
+        clearAuthState("登录态已失效，请重新登录。");
+        return;
+      }
       setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
     }
-  }, [client]);
+  }, [clearAuthState, client]);
 
   const switchSession = useCallback((sessionId: string) => {
     setState((prev) => ({ ...prev, activeSessionId: sessionId, globalError: null }));
@@ -299,10 +381,14 @@ export function useChatApp() {
           };
         });
       } catch (error) {
+        if (isAuthenticationError(error)) {
+          clearAuthState("登录态已失效，请重新登录。");
+          return;
+        }
         setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
       }
     },
-    [client, state.activeSessionId]
+    [clearAuthState, client, state.activeSessionId]
   );
 
   const resolveApproval = useCallback(
@@ -321,10 +407,14 @@ export function useChatApp() {
           )
         }));
       } catch (error) {
+        if (isAuthenticationError(error)) {
+          clearAuthState("登录态已失效，请重新登录。");
+          return;
+        }
         setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
       }
     },
-    [client, state.activeSessionId, updateSession]
+    [clearAuthState, client, state.activeSessionId, updateSession]
   );
 
   const clearConversation = useCallback(async () => {
@@ -341,9 +431,13 @@ export function useChatApp() {
       }));
       setState((prev) => ({ ...prev, infoToast: "会话已清空" }));
     } catch (error) {
+      if (isAuthenticationError(error)) {
+        clearAuthState("登录态已失效，请重新登录。");
+        return;
+      }
       setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
     }
-  }, [client, state.activeSessionId, updateSession]);
+  }, [clearAuthState, client, state.activeSessionId, updateSession]);
 
   const compactConversation = useCallback(async () => {
     if (!state.activeSessionId) {
@@ -353,27 +447,40 @@ export function useChatApp() {
       await client.compactSession(state.activeSessionId);
       setState((prev) => ({ ...prev, infoToast: "会话已压缩" }));
     } catch (error) {
+      if (isAuthenticationError(error)) {
+        clearAuthState("登录态已失效，请重新登录。");
+        return;
+      }
       setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
     }
-  }, [client, state.activeSessionId]);
+  }, [clearAuthState, client, state.activeSessionId]);
 
-  const updateSettings = useCallback((next: AppSettings) => {
-    const normalized: AppSettings = {
+  const updateSettings = useCallback((next: AppSettings, apiKeyInput: string) => {
+    const normalizedSettings: AppSettings = {
       ...next,
-      apiKey: next.apiKey.trim(),
       baseUrl: next.baseUrl.trim()
     };
-    saveSettings(normalized);
+    const apiKey = apiKeyInput.trim();
+    const auth = {
+      apiKey,
+      authenticated: apiKey.length > 0
+    };
+    saveSettings(normalizedSettings);
+    saveAuth(auth);
     setState((prev) => ({
       ...prev,
-      settings: normalized,
+      settings: normalizedSettings,
+      auth,
       globalError: null,
       infoToast: "设置已保存"
     }));
   }, []);
 
-  const testConnection = useCallback(async () => {
-    const tempClient = new GatewayClient(state.settings);
+  const testConnection = useCallback(async (nextSettings: AppSettings, apiKeyInput: string) => {
+    const tempClient = new GatewayClient({
+      baseUrl: nextSettings.baseUrl,
+      apiKey: apiKeyInput.trim()
+    });
     try {
       const result = await tempClient.healthCheck();
       setState((prev) => ({ ...prev, infoToast: `连接成功: ${result.status}` }));
@@ -382,7 +489,7 @@ export function useChatApp() {
       setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
       return false;
     }
-  }, [state.settings]);
+  }, []);
 
   const dismissGlobalError = useCallback(() => {
     setState((prev) => ({ ...prev, globalError: null }));
@@ -395,6 +502,9 @@ export function useChatApp() {
   return {
     state,
     activeSession,
+    isAuthenticated: state.auth.authenticated,
+    authenticate,
+    logout,
     newChat,
     switchSession,
     deleteSession,

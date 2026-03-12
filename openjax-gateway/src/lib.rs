@@ -4,6 +4,7 @@ mod handlers;
 mod middleware;
 pub mod state;
 
+pub use auth::{ApiKeyConfig, ApiKeySource, load_api_keys};
 pub use state::AppState;
 
 use std::path::PathBuf;
@@ -72,6 +73,8 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         if index.is_file() {
             app = app
                 .route_service("/", ServeFile::new(index))
+                .route_service("/login", ServeFile::new(static_dir.join("index.html")))
+                .route_service("/chat", ServeFile::new(static_dir.join("index.html")))
                 .nest_service("/assets", ServeDir::new(static_dir.join("assets")));
         }
     }

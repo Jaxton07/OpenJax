@@ -47,8 +47,10 @@ cd openjax-v<version>-<platform>
 
 ```bash
 export PATH="$HOME/.local/openjax/bin:$PATH"
-tui_next
+openjax-gateway
 ```
+
+Open `http://127.0.0.1:8765/login` and enter the access key shown in the gateway terminal output.
 
 ## B. Online Install from GitHub Release (Optional)
 

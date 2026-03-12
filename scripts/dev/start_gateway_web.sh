@@ -20,11 +20,15 @@ if [ ! -d "ui/web/node_modules" ]; then
 fi
 
 GATEWAY_BIND="${OPENJAX_GATEWAY_BIND:-127.0.0.1:8765}"
-API_KEYS="${OPENJAX_GATEWAY_API_KEYS:-${OPENJAX_API_KEYS:-dev-key}}"
+API_KEYS="${OPENJAX_GATEWAY_API_KEYS:-${OPENJAX_API_KEYS:-}}"
 
 echo "[run-web-dev] starting gateway on ${GATEWAY_BIND}"
-OPENJAX_GATEWAY_BIND="$GATEWAY_BIND" OPENJAX_GATEWAY_API_KEYS="$API_KEYS" \
-  cargo run -p openjax-gateway &
+if [ -n "$API_KEYS" ]; then
+  OPENJAX_GATEWAY_BIND="$GATEWAY_BIND" OPENJAX_GATEWAY_API_KEYS="$API_KEYS" \
+    cargo run -p openjax-gateway &
+else
+  OPENJAX_GATEWAY_BIND="$GATEWAY_BIND" cargo run -p openjax-gateway &
+fi
 gateway_pid=$!
 
 echo "[run-web-dev] starting web dev server on http://127.0.0.1:5173"

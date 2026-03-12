@@ -1,9 +1,18 @@
 export type OutputMode = "sse" | "polling";
 
 export interface AppSettings {
-  apiKey: string;
   baseUrl: string;
   outputMode: OutputMode;
+}
+
+export interface AuthState {
+  apiKey: string;
+  authenticated: boolean;
+}
+
+export interface GatewayConnection {
+  baseUrl: string;
+  apiKey: string;
 }
 
 export interface GatewayErrorBody {

@@ -1,6 +1,6 @@
 import { parseGatewayError } from "./errors";
 import type {
-  AppSettings,
+  GatewayConnection,
   SessionActionResponse,
   SessionCreated,
   StreamEvent,
@@ -21,9 +21,9 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 export class GatewayClient {
-  private readonly settings: AppSettings;
+  private readonly settings: GatewayConnection;
 
-  constructor(settings: AppSettings) {
+  constructor(settings: GatewayConnection) {
     this.settings = settings;
   }
 

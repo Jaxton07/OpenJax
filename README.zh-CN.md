@@ -32,7 +32,7 @@
 - [配置项](#配置项)
 - [架构概览](#架构概览)
 - [仓库结构](#仓库结构)
-- [开发与测试](#开发与测试)
+- [开发者入口](#开发者入口)
 - [文档导航](#文档导航)
 - [安全](#安全)
 - [贡献](#贡献)
@@ -42,39 +42,40 @@
 - 面向编码、自动化与日常任务的通用助理循环
 - 文件读取/搜索、Shell 执行、补丁应用等工具能力
 - 沙箱模式与审批策略
-- Rust TUI（`tui_next`）作为主交互界面
+- Web UI 作为默认上手入口，Rust TUI（`tui_next`）作为可选交互方式
 - 可扩展的多模型 Provider 配置
 
 ## 快速开始
 
-### 前置条件
-
-- Rust 工具链（`cargo`、`rustup`）
-- `bash`（`zsh` 可选）
-- `OPENAI_API_KEY`（或你配置中支持的其他模型 Key）
-
-### 源码运行
+### 推荐新用户：Web UI
 
 ```bash
-make doctor
-make run-tui
+curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
+export PATH="$HOME/.local/openjax/bin:$PATH"
+export OPENAI_API_KEY="<your_api_key>"
+openjax-gateway
 ```
 
-等价命令：
+然后在浏览器打开 `http://127.0.0.1:8765`。
+如果未配置 API Key 环境变量，gateway 启动时会在终端打印一个随机 Access Key。
+在 `/login` 页面填写该 key 后再进入对话页面。
+本地开发模式（`make run-web-dev`）前端地址仍是 `http://127.0.0.1:5173`。
+
+### 可选：Rust TUI
+
+若你偏好终端交互：
 
 ```bash
-cargo run -q -p tui_next
+tui_next
 ```
 
 ## 安装方式
 
-### 方式 A：源码安装（本地仓库，一键命令）
+### 方式 A：从 GitHub Release 在线安装（推荐）
 
 ```bash
-make install-source
+curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
 ```
-
-适用于你已经 `git clone` 到本地并进入仓库目录的场景。
 
 ### 方式 B：预编译包安装（macOS ARM / Linux x86_64）
 
@@ -157,22 +158,9 @@ openjax-protocol (shared types/events)
 - `python/openjax_sdk/`：Python 异步 SDK
 - `smoke_test/`：冒烟脚本
 
-## 开发与测试
+## 开发者入口
 
-在仓库根目录执行：
-
-```bash
-zsh -lc "cargo build"
-zsh -lc "cargo fmt -- --check"
-zsh -lc "cargo clippy --workspace --all-targets -- -D warnings"
-zsh -lc "cargo test --workspace"
-```
-
-对 `tests/` 下集成测试，建议使用明确的 `--test` 形式：
-
-```bash
-zsh -lc "cargo test -p openjax-core --test m3_sandbox"
-```
+开发前置依赖、构建/格式化/测试命令，以及源码开发流程请查看 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 文档导航
 
@@ -188,7 +176,7 @@ zsh -lc "cargo test -p openjax-core --test m3_sandbox"
 
 ## 贡献
 
-请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+开发者请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 

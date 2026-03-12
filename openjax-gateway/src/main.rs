@@ -1,5 +1,6 @@
 use anyhow::Result;
 use openjax_core::init_logger_with_file;
+use openjax_gateway::{ApiKeySource, AppState, load_api_keys};
 use std::path::PathBuf;
 use tracing::info;
 
@@ -23,7 +24,8 @@ fn resolve_static_dir() -> Option<PathBuf> {
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logger_with_file("openjax-gateway.log");
-    let state = openjax_gateway::AppState::new();
+    let api_key_config = load_api_keys();
+    let state = AppState::new_with_api_keys(api_key_config.keys.clone());
     let static_dir = resolve_static_dir();
     let app = openjax_gateway::build_app(state, static_dir.clone());
     let bind_addr =
@@ -35,8 +37,16 @@ async fn main() -> Result<()> {
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "<none>".to_string()),
+        key_source = ?api_key_config.source,
         "openjax-gateway listening"
     );
+    println!("[openjax-gateway] listening on http://{bind_addr}");
+    if api_key_config.source == ApiKeySource::Generated {
+        if let Some(generated_key) = api_key_config.generated_key.as_deref() {
+            println!("[openjax-gateway] generated access key: {generated_key}");
+            println!("[openjax-gateway] copy this key into the Web login page to continue");
+        }
+    }
     axum::serve(listener, app).await?;
     Ok(())
 }

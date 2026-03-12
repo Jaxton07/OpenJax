@@ -1,41 +1,94 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Composer from "./components/Composer";
+import LoginPage from "./components/LoginPage";
 import MessageList from "./components/MessageList";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
 import { useChatApp } from "./hooks/useChatApp";
-import { GatewayClient } from "./lib/gatewayClient";
 import type { AppSettings } from "./types/gateway";
+
+type AppRoute = "/login" | "/chat";
+
+function resolveRoute(pathname: string): AppRoute {
+  return pathname === "/chat" ? "/chat" : "/login";
+}
+
+function navigate(to: AppRoute, replace = false): void {
+  if (window.location.pathname === to) {
+    return;
+  }
+  if (replace) {
+    window.history.replaceState(null, "", to);
+  } else {
+    window.history.pushState(null, "", to);
+  }
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
 
 export default function App() {
   const {
     state,
     activeSession,
+    isAuthenticated,
+    authenticate,
+    logout,
     newChat,
     switchSession,
     deleteSession,
     sendMessage,
     resolveApproval,
-    clearConversation,
     compactConversation,
     updateSettings,
+    testConnection,
     dismissGlobalError,
     dismissToast
   } = useChatApp();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [route, setRoute] = useState<AppRoute>(() => resolveRoute(window.location.pathname));
 
-  const testConnection = async (settings: AppSettings) => {
-    const client = new GatewayClient(settings);
-    try {
-      await client.healthCheck();
-      const created = await client.startSession();
-      await client.shutdownSession(created.session_id);
-      return true;
-    } catch {
-      return false;
+  useEffect(() => {
+    const onPopState = () => setRoute(resolveRoute(window.location.pathname));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && route !== "/chat") {
+      navigate("/chat", true);
+      return;
     }
+    if (!isAuthenticated && route !== "/login") {
+      navigate("/login", true);
+    }
+  }, [isAuthenticated, route]);
+
+  const loginError = useMemo(
+    () => (route === "/login" ? state.globalError : null),
+    [route, state.globalError]
+  );
+
+  const handleLogin = async (baseUrl: string, apiKey: string) => {
+    const ok = await authenticate(baseUrl, apiKey);
+    if (ok) {
+      navigate("/chat");
+    }
+    return ok;
+  };
+
+  if (!isAuthenticated || route === "/login") {
+    return (
+      <LoginPage
+        initialBaseUrl={state.settings.baseUrl}
+        onLogin={handleLogin}
+        errorMessage={loginError}
+      />
+    );
+  }
+
+  const testSettingsConnection = async (settings: AppSettings, apiKey: string) => {
+    return testConnection(settings, apiKey);
   };
 
   return (
@@ -47,6 +100,10 @@ export default function App() {
         onSelectSession={switchSession}
         onDeleteSession={deleteSession}
         onOpenSettings={() => setSettingsOpen(true)}
+        onLogout={() => {
+          logout();
+          navigate("/login");
+        }}
       />
 
       <main className="chat-main">
@@ -98,10 +155,11 @@ export default function App() {
 
       <SettingsModal
         open={settingsOpen}
-        initial={state.settings}
+        initialSettings={state.settings}
+        initialApiKey={state.auth.apiKey}
         onClose={() => setSettingsOpen(false)}
         onSave={updateSettings}
-        onTest={testConnection}
+        onTest={testSettingsConnection}
       />
     </div>
   );

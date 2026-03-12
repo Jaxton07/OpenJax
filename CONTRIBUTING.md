@@ -4,13 +4,30 @@ Thanks for contributing. This repository is Rust-first with Python MVP component
 
 ## Development Setup
 - Use Rust stable (workspace edition is 2024).
-- Use Python 3.10+ for SDK/TUI related changes.
+- Use Node.js + `pnpm` for Web UI related changes.
+- Use Python 3.10+ for SDK related changes.
 - Run commands from repository root.
+
+### Prerequisites Checklist
+- Rust toolchain (`rustup`, `cargo`)
+- `bash` (`zsh` recommended in this repo)
+- Node.js + `pnpm` (for `ui/web`)
+- Python 3.10+ (for `python/openjax_sdk`)
+- Model provider credentials (for example `OPENAI_API_KEY`)
 
 ## Build
 ```bash
 zsh -lc "cargo build"
 ```
+
+## Run (Contributor Workflows)
+```bash
+zsh -lc "make run-web-dev"
+zsh -lc "make run-tui"
+```
+
+- `make run-web-dev` starts `openjax-gateway` and `ui/web` together.
+- `make run-tui` starts the Rust TUI directly.
 
 ## Format and Lint
 ```bash

@@ -49,8 +49,10 @@ cd openjax-v<version>-<platform>
 
 ```bash
 export PATH="$HOME/.local/openjax/bin:$PATH"
-tui_next
+openjax-gateway
 ```
+
+在浏览器打开 `http://127.0.0.1:8765/login`，并填入 gateway 终端输出的 Access Key。
 
 ## B. 从 GitHub Release 在线安装（可选）
 

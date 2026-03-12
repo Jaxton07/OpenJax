@@ -62,6 +62,8 @@ openjax-gateway/
 - `OPENJAX_GATEWAY_WEB_DIR`：可选，web 静态目录（默认自动尝试 `<bin>/../web`）。
 - `OPENJAX_APPROVAL_TIMEOUT_MS`：审批超时毫秒（由 core 读取）。
 
+若上述 API Key 变量都未设置，gateway 会在启动时自动生成随机 key（仅当前进程有效）并打印到终端。
+
 ## 本地开发
 
 从仓库根目录执行：
@@ -69,5 +71,5 @@ openjax-gateway/
 ```bash
 zsh -lc "cargo build -p openjax-gateway"
 zsh -lc "cargo test -p openjax-gateway"
-zsh -lc "OPENJAX_GATEWAY_API_KEYS=dev-key cargo run -p openjax-gateway"
+zsh -lc "cargo run -p openjax-gateway"
 ```

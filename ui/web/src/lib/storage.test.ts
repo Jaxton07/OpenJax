@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { loadSettings, saveSettings } from "./storage";
+import { loadAuth, loadSettings, saveAuth, saveSettings } from "./storage";
 
 describe("settings storage", () => {
   beforeEach(() => {
@@ -14,13 +14,34 @@ describe("settings storage", () => {
 
   it("persists settings", () => {
     saveSettings({
-      apiKey: "abc",
       baseUrl: "http://localhost:8080",
       outputMode: "polling"
     });
 
     const settings = loadSettings();
-    expect(settings.apiKey).toBe("abc");
     expect(settings.outputMode).toBe("polling");
+  });
+});
+
+describe("auth storage", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns defaults when empty", () => {
+    const auth = loadAuth();
+    expect(auth.apiKey).toBe("");
+    expect(auth.authenticated).toBe(false);
+  });
+
+  it("persists auth state", () => {
+    saveAuth({
+      apiKey: "ojx_test",
+      authenticated: true
+    });
+
+    const auth = loadAuth();
+    expect(auth.apiKey).toBe("ojx_test");
+    expect(auth.authenticated).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import type { AppSettings, StreamEvent } from "./gateway";
+import type { AppSettings, AuthState, StreamEvent } from "./gateway";
 
 export type SessionConnection = "idle" | "connecting" | "active" | "closing" | "closed";
 export type TurnPhase = "draft" | "submitting" | "streaming" | "completed" | "failed";
@@ -59,6 +59,7 @@ export interface ChatSession {
 
 export interface ChatState {
   settings: AppSettings;
+  auth: AuthState;
   sessions: ChatSession[];
   activeSessionId: string | null;
   globalError: string | null;

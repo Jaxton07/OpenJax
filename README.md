@@ -32,7 +32,7 @@
 - [Configuration](#configuration)
 - [Architecture](#architecture)
 - [Repository Layout](#repository-layout)
-- [Development](#development)
+- [For Contributors](#for-contributors)
 - [Documentation](#documentation)
 - [Security](#security)
 - [Contributing](#contributing)
@@ -42,39 +42,40 @@
 - General-purpose assistant loop for coding, automation, and everyday workflows
 - Tooling for file read/search, shell execution, and patch application
 - Sandbox modes and approval policies
-- Rust TUI runtime (`tui_next`) as the primary interactive interface
+- Web UI as the default onboarding experience, with Rust TUI (`tui_next`) available as an alternative
 - Multi-model support through pluggable provider configuration
 
 ## Quick Start
 
-### Prerequisites
-
-- Rust toolchain (`cargo`, `rustup`)
-- `bash` (`zsh` optional)
-- `OPENAI_API_KEY` (or another provider key supported by your configuration)
-
-### Run from source
+### Recommended for new users: Web UI
 
 ```bash
-make doctor
-make run-tui
+curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
+export PATH="$HOME/.local/openjax/bin:$PATH"
+export OPENAI_API_KEY="<your_api_key>"
+openjax-gateway
 ```
 
-Equivalent direct command:
+Then open `http://127.0.0.1:8765` in your browser.
+If no API key env is configured, gateway will print a generated access key in the terminal.
+Use that key on the `/login` page before entering chat.
+For local web development (`make run-web-dev`), the frontend runs at `http://127.0.0.1:5173`.
+
+### Optional: Rust TUI
+
+If you prefer terminal interaction after install:
 
 ```bash
-cargo run -q -p tui_next
+tui_next
 ```
 
 ## Installation
 
-### Option A: Source install (local repo, one command)
+### Option A: Online install from GitHub Release (recommended)
 
 ```bash
-make install-source
+curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
 ```
-
-Use this if you are already in a cloned OpenJax repository.
 
 ### Option B: Prebuilt package (macOS ARM / Linux x86_64)
 
@@ -156,25 +157,9 @@ openjax-protocol (shared types/events)
 - `python/openjax_sdk/`: async Python SDK
 - `smoke_test/`: smoke scripts
 
-## Development
+## For Contributors
 
-Run from repository root:
-
-```bash
-make run-web-dev
-zsh -lc "cargo build"
-zsh -lc "cargo fmt -- --check"
-zsh -lc "cargo clippy --workspace --all-targets -- -D warnings"
-zsh -lc "cargo test --workspace"
-```
-
-`make run-web-dev` starts `openjax-gateway` and `ui/web` together for local web development.
-
-For integration tests in `tests/`, use explicit test target form:
-
-```bash
-zsh -lc "cargo test -p openjax-core --test m3_sandbox"
-```
+Development setup, prerequisites, build/lint/test commands, and source workflows are maintained in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
@@ -190,7 +175,7 @@ Please read [SECURITY.md](SECURITY.md) before reporting vulnerabilities.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributors should start from [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

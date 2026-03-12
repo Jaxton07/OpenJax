@@ -8,6 +8,7 @@ interface SidebarProps {
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => Promise<void> | void;
   onOpenSettings: () => void;
+  onLogout: () => void;
 }
 
 export default function Sidebar(props: SidebarProps) {
@@ -72,6 +73,9 @@ export default function Sidebar(props: SidebarProps) {
             </svg>
           </span>
           <span>设置</span>
+        </button>
+        <button className="logout-btn" onClick={props.onLogout}>
+          <span>退出登录</span>
         </button>
       </div>
     </aside>
