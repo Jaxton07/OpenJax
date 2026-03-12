@@ -1,8 +1,8 @@
 # OpenJax
 
 <p align="center">
-  <strong>A Rust-first, general-purpose AI assistant runtime for local and cloud workflows.</strong><br/>
-  Built around tool calling, sandboxing, and approval control.
+  <strong>A safety-first, Rust-native AI assistant runtime for real-world automation.</strong><br/>
+  Built for controllable tool execution with sandbox isolation, strict approvals, and low-friction deployment.
 </p>
 
 <p align="center">
@@ -24,9 +24,20 @@
   <a href="docs/deployment.md">Deployment</a>
 </p>
 
+## Why OpenJax
+
+- Safer sandbox boundaries reduce risky file-system and environment side effects
+- Stricter approval gates prevent high-impact actions from running silently
+- Rust-first prebuilt delivery keeps environment requirements low and avoids heavy dependency setup
+- Claude Code/OpenClaw-style `SKILL.md` compatibility (public subset), so existing skills can be reused with minimal migration
+- Clear gateway/daemon/core boundaries improve auditability and operational control
+
+OpenJax prioritizes secure, controllable, and lightweight automation, not just aggressive autonomy.
+
 ## Contents
 
 - [Highlights](#highlights)
+- [Why OpenJax](#why-openjax)
 - [Quick Start](#quick-start)
 - [Web UI Screenshots](#web-ui-screenshots)
 - [Installation](#installation)
@@ -42,9 +53,11 @@
 
 - General-purpose assistant loop for coding, automation, and everyday workflows
 - Tooling for file read/search, shell execution, and patch application
-- Sandbox modes and approval policies
+- Security-first sandboxing and strict approval policies
 - Web UI as the default onboarding experience, with Rust TUI (`tui_next`) available as an alternative
 - Multi-model support through pluggable provider configuration
+- Rust-first architecture with low deployment friction and minimal runtime dependencies
+- Compatible with Claude Code/OpenClaw `SKILL.md` conventions (public subset)
 
 ## Quick Start
 

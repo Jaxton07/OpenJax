@@ -1,8 +1,8 @@
 # OpenJax
 
 <p align="center">
-  <strong>一个以 Rust 为主的全能 AI 助理运行时，支持本地与云端多场景工作流。</strong><br/>
-  基于 tool calling、sandbox 和 approval 控制机制构建。
+  <strong>一个安全优先、Rust 原生的 AI 助理运行时，面向真实生产自动化场景。</strong><br/>
+  以可控执行为核心，强调沙箱隔离、严格审批和低依赖部署。
 </p>
 
 <p align="center">
@@ -24,9 +24,20 @@
   <a href="docs/deployment.zh-CN.md">部署文档</a>
 </p>
 
+## 为什么选择 OpenJax
+
+- 更安全的沙箱边界，降低高风险文件系统和环境副作用
+- 更严格的权限审批，避免高影响操作被静默执行
+- Rust-first 预编译交付，环境要求低，不需要安装一大堆额外依赖
+- 兼容 Claude Code/OpenClaw 风格 `SKILL.md`（公共子集），已有 skill 可低成本复用
+- 网关、守护进程、核心执行层边界清晰，更易审计与运维
+
+OpenJax 追求的是安全可控、轻量易部署的自动化，而不是放任式自动执行。
+
 ## 目录
 
 - [核心能力](#核心能力)
+- [为什么选择 OpenJax](#为什么选择-openjax)
 - [快速开始](#快速开始)
 - [Web UI 截图](#web-ui-截图)
 - [安装方式](#安装方式)
@@ -42,9 +53,11 @@
 
 - 面向编码、自动化与日常任务的通用助理循环
 - 文件读取/搜索、Shell 执行、补丁应用等工具能力
-- 沙箱模式与审批策略
+- 安全优先的沙箱机制与更严格的审批策略
 - Web UI 作为默认上手入口，Rust TUI（`tui_next`）作为可选交互方式
 - 可扩展的多模型 Provider 配置
+- Rust-first 架构，部署依赖更轻、环境要求更低
+- 兼容 Claude Code/OpenClaw 的 `SKILL.md` 约定（公共子集）
 
 ## 快速开始
 
