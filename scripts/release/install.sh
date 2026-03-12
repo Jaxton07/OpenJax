@@ -61,9 +61,8 @@ fi
 
 mkdir -p "${PREFIX}/bin"
 cp "${BIN_SRC_DIR}/tui_next" "${PREFIX}/bin/tui_next"
-cp "${BIN_SRC_DIR}/openjax-cli" "${PREFIX}/bin/openjax-cli"
 cp "${BIN_SRC_DIR}/openjaxd" "${PREFIX}/bin/openjaxd"
-chmod +x "${PREFIX}/bin/tui_next" "${PREFIX}/bin/openjax-cli" "${PREFIX}/bin/openjaxd"
+chmod +x "${PREFIX}/bin/tui_next" "${PREFIX}/bin/openjaxd"
 
 echo "[install] done: ${PREFIX}/bin"
 

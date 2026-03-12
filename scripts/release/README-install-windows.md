@@ -17,7 +17,6 @@ Custom prefix:
 ## Verify
 
 ```powershell
-.\bin\openjax-cli.exe --help
 .\bin\openjaxd.exe --help
 ```
 

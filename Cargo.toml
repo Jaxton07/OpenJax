@@ -3,8 +3,8 @@ members = [
   "openjax-protocol",
   "openjax-core",
   "openjaxd",
-  "openjax-cli",
-  "ui/tui", "openjax-gateway",
+  "ui/tui",
+  "openjax-gateway",
 ]
 resolver = "2"
 

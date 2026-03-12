@@ -28,11 +28,11 @@ if ($tagVersion) {
     $version = $versionLine.Matches[0].Groups[1].Value
 }
 
-$bins = @("tui_next.exe", "openjax-cli.exe", "openjaxd.exe")
+$bins = @("tui_next.exe", "openjaxd.exe")
 foreach ($bin in $bins) {
     $binPath = Join-Path $targetDir $bin
     if (-not (Test-Path $binPath)) {
-        throw "[package] error: missing binary $binPath. run: cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd"
+        throw "[package] error: missing binary $binPath. run: cargo build --release --locked -p tui_next -p openjaxd"
     }
 }
 
@@ -44,7 +44,6 @@ if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
 New-Item -ItemType Directory -Force -Path (Join-Path $stageDir "bin") | Out-Null
 
 Copy-Item (Join-Path $targetDir "tui_next.exe") (Join-Path $stageDir "bin\tui_next.exe") -Force
-Copy-Item (Join-Path $targetDir "openjax-cli.exe") (Join-Path $stageDir "bin\openjax-cli.exe") -Force
 Copy-Item (Join-Path $targetDir "openjaxd.exe") (Join-Path $stageDir "bin\openjaxd.exe") -Force
 Copy-Item (Join-Path $scriptDir "install_windows.ps1") (Join-Path $stageDir "install.ps1") -Force
 Copy-Item (Join-Path $scriptDir "uninstall_windows.ps1") (Join-Path $stageDir "uninstall.ps1") -Force

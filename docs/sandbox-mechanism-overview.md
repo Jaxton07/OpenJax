@@ -110,9 +110,8 @@
   - 风险标签
   - 沙箱后端与降级原因
 
-## 5.3 CLI / daemon 透传
+## 5.3 daemon 透传
 - 文件：
-  - `openjax-cli/src/main.rs`
   - `openjaxd/src/main.rs`
 - 能输出扩展审批字段，便于排查“看不到命令”或“为何审批”问题。
 

@@ -23,7 +23,7 @@ if [[ -z "${VERSION}" ]]; then
   exit 1
 fi
 
-for bin in tui_next openjax-cli openjaxd; do
+for bin in tui_next openjaxd; do
   if [[ ! -f "${TARGET_DIR}/${bin}" ]]; then
     echo "[package] error: missing binary ${TARGET_DIR}/${bin}. run: make build-release-linux"
     exit 1
@@ -38,13 +38,12 @@ rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}/bin"
 
 cp "${TARGET_DIR}/tui_next" "${STAGE_DIR}/bin/tui_next"
-cp "${TARGET_DIR}/openjax-cli" "${STAGE_DIR}/bin/openjax-cli"
 cp "${TARGET_DIR}/openjaxd" "${STAGE_DIR}/bin/openjaxd"
 cp "${SCRIPT_DIR}/install_linux.sh" "${STAGE_DIR}/install.sh"
 cp "${SCRIPT_DIR}/uninstall_linux.sh" "${STAGE_DIR}/uninstall.sh"
 cp "${SCRIPT_DIR}/README-install-linux.md" "${STAGE_DIR}/README-install.md"
 
-chmod +x "${STAGE_DIR}/bin/tui_next" "${STAGE_DIR}/bin/openjax-cli" "${STAGE_DIR}/bin/openjaxd"
+chmod +x "${STAGE_DIR}/bin/tui_next" "${STAGE_DIR}/bin/openjaxd"
 chmod +x "${STAGE_DIR}/install.sh" "${STAGE_DIR}/uninstall.sh"
 
 mkdir -p "${DIST_DIR}"

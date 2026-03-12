@@ -18,6 +18,7 @@ impl DaemonHarness {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .env("OPENJAX_APPROVAL_POLICY", "never")
+            .env("OPENJAX_LOG", "off")
             .spawn()
             .expect("failed to start openjaxd");
 

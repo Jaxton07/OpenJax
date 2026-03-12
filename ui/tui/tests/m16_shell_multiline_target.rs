@@ -6,6 +6,7 @@ fn multiline_shell_target_is_sanitized_to_single_line() {
     let mut app = App::default();
     app.apply_core_event(Event::ToolCallStarted {
         turn_id: 1,
+        tool_call_id: "tc_1".to_string(),
         tool_name: "shell".to_string(),
         target: Some("git commit -m \"title\"\n\n- body line 1\n- body line 2".to_string()),
     });

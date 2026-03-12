@@ -29,7 +29,6 @@ $destBin = Join-Path $Prefix "bin"
 New-Item -ItemType Directory -Force -Path $destBin | Out-Null
 
 Copy-Item (Join-Path $binSrcDir "tui_next.exe") (Join-Path $destBin "tui_next.exe") -Force
-Copy-Item (Join-Path $binSrcDir "openjax-cli.exe") (Join-Path $destBin "openjax-cli.exe") -Force
 Copy-Item (Join-Path $binSrcDir "openjaxd.exe") (Join-Path $destBin "openjaxd.exe") -Force
 
 Write-Host "[install] done: $destBin"

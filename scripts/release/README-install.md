@@ -18,7 +18,6 @@ Custom prefix:
 
 ```bash
 test -x "$HOME/.local/openjax/bin/tui_next"
-openjax-cli --help
 openjaxd --help
 ```
 

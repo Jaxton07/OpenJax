@@ -6,6 +6,7 @@ fn tool_completed_renders_partial_status() {
     let mut app = App::default();
     app.apply_core_event(Event::ToolCallCompleted {
         turn_id: 1,
+        tool_call_id: "tc_1".to_string(),
         tool_name: "shell".to_string(),
         ok: true,
         output: "result_class=partial_success\ncommand=yes | head -n 1\nexit_code=141\nbackend=macos_seatbelt".to_string(),

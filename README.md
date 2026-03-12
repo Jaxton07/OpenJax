@@ -119,7 +119,7 @@ If no config file exists, OpenJax auto-generates a template at:
 ## Architecture
 
 ```text
-User (CLI / Rust TUI / Python TUI MVP)
+User (Rust TUI / Web UI)
         |
         v
 openjaxd (daemon)
@@ -136,10 +136,10 @@ openjax-protocol (shared types/events)
 - `openjax-core/`: agent loop, tools, sandbox, approvals
 - `openjax-protocol/`: protocol/event/data types
 - `openjaxd/`: daemon runtime
-- `openjax-cli/`: CLI entrypoint
 - `ui/tui/`: Rust TUI (`tui_next`)
+- `openjax-gateway/`: HTTP/SSE gateway for Web clients
+- `ui/web/`: React Web UI
 - `python/openjax_sdk/`: async Python SDK
-- `python/tui/`: Python TUI (fallback MVP)
 - `smoke_test/`: smoke scripts
 
 ## Development

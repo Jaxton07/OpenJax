@@ -113,6 +113,7 @@ fn log_core_event(event: &Event) {
             turn_id,
             tool_name,
             target,
+            ..
         } => info!(
             turn_id = *turn_id,
             tool_name = %tool_name,

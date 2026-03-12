@@ -75,7 +75,6 @@ For persistent PATH, add the `export` line to your shell profile (for example `~
 
 ```bash
 test -x "$HOME/.local/openjax/bin/tui_next"
-openjax-cli --help
 openjaxd --help
 ```
 
@@ -104,7 +103,7 @@ cd "$DIR_NAME"
 Build package in PowerShell:
 
 ```powershell
-cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd
+cargo build --release --locked -p tui_next -p openjaxd
 powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1
 ```
 
@@ -131,12 +130,11 @@ make install-source
 ```bash
 git clone <your-repo-url> openJax
 cd openJax
-cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd
+cargo build --release --locked -p tui_next -p openjaxd
 mkdir -p "$HOME/.local/openjax/bin"
 cp target/release/tui_next "$HOME/.local/openjax/bin/tui_next"
-cp target/release/openjax-cli "$HOME/.local/openjax/bin/openjax-cli"
 cp target/release/openjaxd "$HOME/.local/openjax/bin/openjaxd"
-chmod +x "$HOME/.local/openjax/bin/tui_next" "$HOME/.local/openjax/bin/openjax-cli" "$HOME/.local/openjax/bin/openjaxd"
+chmod +x "$HOME/.local/openjax/bin/tui_next" "$HOME/.local/openjax/bin/openjaxd"
 ```
 
 ### Windows (PowerShell)
@@ -144,11 +142,10 @@ chmod +x "$HOME/.local/openjax/bin/tui_next" "$HOME/.local/openjax/bin/openjax-c
 ```powershell
 git clone <your-repo-url> openJax
 cd openJax
-cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd
+cargo build --release --locked -p tui_next -p openjaxd
 $prefix = Join-Path $HOME ".local/openjax/bin"
 New-Item -ItemType Directory -Force -Path $prefix | Out-Null
 Copy-Item "target/release/tui_next.exe" (Join-Path $prefix "tui_next.exe") -Force
-Copy-Item "target/release/openjax-cli.exe" (Join-Path $prefix "openjax-cli.exe") -Force
 Copy-Item "target/release/openjaxd.exe" (Join-Path $prefix "openjaxd.exe") -Force
 ```
 
@@ -202,10 +199,10 @@ cargo fetch --locked
 2. build one target:
 - macOS ARM: `make build-release-mac && make package-mac`
 - Linux x86_64: `make build-release-linux && make package-linux`
-- Windows x86_64: `cargo build --release --locked -p tui_next -p openjax-cli -p openjaxd` then `powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1`
+- Windows x86_64: `cargo build --release --locked -p tui_next -p openjaxd` then `powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1`
 3. Fresh-folder validation:
 - unpack package
 - run install script (`install.sh` or `install.ps1`)
-- verify `tui_next` exists and `--help` for `openjax-cli/openjaxd`
+- verify `tui_next` exists and `--help` for `openjaxd`
 - run uninstall script (`uninstall.sh` or `uninstall.ps1`)
 4. Upload package (`.tar.gz`/`.zip`) + `SHA256SUMS`

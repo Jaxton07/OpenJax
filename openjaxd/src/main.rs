@@ -741,6 +741,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             turn_id,
             tool_name,
             target,
+            ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -754,6 +755,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             tool_name,
             ok,
             output,
+            ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -977,11 +979,13 @@ mod tests {
             },
             Event::ToolCallStarted {
                 turn_id: 1,
+                tool_call_id: "tc_1".to_string(),
                 tool_name: "read_file".to_string(),
                 target: None,
             },
             Event::ToolCallCompleted {
                 turn_id: 1,
+                tool_call_id: "tc_1".to_string(),
                 tool_name: "read_file".to_string(),
                 ok: true,
                 output: "ok".to_string(),

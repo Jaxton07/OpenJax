@@ -7,9 +7,9 @@
 OpenJax 是一个以 Rust 为内核、同时提供外层能力的 Agent 框架。  
 当前仓库同时维护：
 
-- Rust workspace 核心模块（协议、内核、daemon、CLI、Rust TUI）
+- Rust workspace 核心模块（协议、内核、daemon、Rust TUI、gateway）
 - Web 前端模块（React + Vite）
-- Python MVP 模块（SDK、Python TUI）
+- Python SDK 模块（连接 daemon）
 - 协议、工具与重构计划文档
 
 ## 2. Workspace 与子模块
@@ -21,7 +21,6 @@ Rust workspace（`Cargo.toml`）成员：
 | `openjax-protocol` | 协议类型与共享数据结构（`Op/Event`） | [openjax-protocol/README.md](openjax-protocol/README.md) |
 | `openjax-core` | Agent 主循环、工具系统、模型客户端、沙箱与审批 | 暂无独立 README（可先看 [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)） |
 | `openjaxd` | Rust daemon（JSONL 协议入口） | [openjaxd/README.md](openjaxd/README.md) |
-| `openjax-cli` | CLI 入口与 REPL 交互 | 暂无独立 README |
 | `openjax-gateway` | HTTP/SSE 网关（会话、turn、审批、事件流） | [openjax-gateway/README.md](openjax-gateway/README.md) |
 | `tui_next` | Rust TUI 交互层（事件渲染、审批弹层） | [ui/tui/README.md](ui/tui/README.md) |
 
@@ -30,7 +29,6 @@ Rust workspace（`Cargo.toml`）成员：
 | 模块 | 职责 | README |
 |------|------|--------|
 | `python/openjax_sdk` | Python 异步 SDK（连接 `openjaxd`） | [python/openjax_sdk/README.md](python/openjax_sdk/README.md) |
-| `python/tui` | Python TUI MVP（备用） | [python/tui/README.md](python/tui/README.md) |
 
 仓库内 Web 模块：
 
@@ -44,13 +42,11 @@ Rust workspace（`Cargo.toml`）成员：
 openjax-protocol/
 openjax-core/
 openjaxd/
-openjax-cli/
 openjax-gateway/
 ui/tui/
 ui/web/
 python/
   openjax_sdk/
-  tui/
 smoke_test/
 docs/
 ```
@@ -59,20 +55,15 @@ docs/
 
 ```text
 User
- ├─ openjax-cli (Rust)
  ├─ tui_next (Rust)
  ├─ ui/web (React)
- └─ python/tui (Python MVP)
+ └─ openjax-gateway (HTTP + SSE)
           │
-          └───────────────┐
-                          ▼
-                 openjax-gateway (HTTP + SSE)
-                          │
-                          ▼
-                     openjax-core
-                          │
-                          ▼
-                 openjax-protocol
+          ▼
+     openjax-core
+          │
+          ▼
+     openjax-protocol
 
 Web/SDK
  └─ openjax-gateway (HTTP + SSE gateway)
@@ -99,7 +90,6 @@ Daemon/SDK
 - [ui/tui/README.md](ui/tui/README.md)
 - [ui/web/README.md](ui/web/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
-- [python/tui/README.md](python/tui/README.md)
 - [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
 
 ## 6. 相关文档入口
@@ -120,6 +110,6 @@ zsh -lc "cargo test -p openjax-core"
 zsh -lc "cargo test -p openjaxd"
 zsh -lc "cargo test -p openjax-gateway"
 zsh -lc "cargo test -p tui_next"
-zsh -lc "PYTHONPATH=python/openjax_sdk/src:python/tui/src python3 -m unittest discover -s python/tui/tests -v"
+zsh -lc "PYTHONPATH=python/openjax_sdk/src python3 -m unittest discover -s python/openjax_sdk/tests -v"
 zsh -lc "cd ui/web && pnpm test"
 ```

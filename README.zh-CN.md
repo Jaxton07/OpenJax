@@ -120,7 +120,7 @@ Linux/Windows 的打包命令与完整部署说明见 [docs/deployment.zh-CN.md]
 ## 架构概览
 
 ```text
-用户 (CLI / Rust TUI / Python TUI MVP)
+用户 (Rust TUI / Web UI)
           |
           v
 openjaxd (daemon)
@@ -137,10 +137,10 @@ openjax-protocol (shared types/events)
 - `openjax-core/`：agent loop、tools、sandbox、approval
 - `openjax-protocol/`：协议/事件/数据类型
 - `openjaxd/`：守护进程
-- `openjax-cli/`：CLI 入口
 - `ui/tui/`：Rust TUI（`tui_next`）
+- `openjax-gateway/`：面向 Web 的 HTTP/SSE 网关
+- `ui/web/`：React Web UI
 - `python/openjax_sdk/`：Python 异步 SDK
-- `python/tui/`：Python TUI（备用 MVP）
 - `smoke_test/`：冒烟脚本
 
 ## 开发与测试

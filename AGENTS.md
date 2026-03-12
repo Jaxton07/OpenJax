@@ -4,33 +4,29 @@
 
 
 ## 项目概述
-OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型能够与代码库交互。它提供模块化架构，支持工具执行、沙箱环境和多模型支持, 参考codex 的实现。
+OpenJax 是一个基于 Rust 实现的代理框架，使 AI 模型能够与代码库交互。它提供模块化架构，支持工具执行、沙箱环境和多模型支持, 参考codex 的实现。
 本项目是想基于codex 的实现原理打造一个定制化的个人助理，而codex 的tool 工具调用，shell 执行，agent loop, 沙箱机制，等等基本能力是我们的助理agent 也需要的
 
 ## 1) 项目概览
-- OpenJax 是一个以 Rust 为主、包含 Python MVP 组件的代理框架。
+- OpenJax 是一个以 Rust 为主、保留 Python SDK 的代理框架。
 - Rust 工作区成员（`Cargo.toml`）：
   - `openjax-protocol`
   - `openjax-core`
   - `openjaxd`
-  - `openjax-cli`
   - `openjax-gateway`
   - `ui/tui`
 - Python 包：
   - `python/openjax_sdk`
-  - `python/tui`
 - 架构索引：
 
 ## 2) 关键路径
 - `openjax-core/`：代理循环、工具、沙箱、审批。
 - `openjax-protocol/`：协议/事件/数据类型。
 - `openjaxd/`：守护进程。
-- `openjax-cli/`：CLI 体验。
 - `openjax-gateway/`：HTTP/SSE 网关（会话、turn、审批、事件流）。
 - `ui/tui/`：Rust TUI（最新版）。
 - `ui/web/`：React Web 前端（通过 gateway 访问会话与流式事件）。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
-- `python/tui/`：Textual 重构版 Python TUI（python 版本仅作备用）。
 - `smoke_test/`：冒烟测试脚本。
 
 ### 子模块 README 导航
@@ -44,7 +40,6 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - [ui/web/README.md](ui/web/README.md)
 - [openjaxd/README.md](openjaxd/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
-- [python/tui/README.md](python/tui/README.md)
 
 
 
@@ -55,7 +50,6 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 ## 4) 构建命令
 - `zsh -lc "cargo build"`
 - `zsh -lc "cargo build -p openjax-core"`
-- `zsh -lc "cargo build -p openjax-cli"`
 - `zsh -lc "cargo build -p openjax-gateway"`
 - `zsh -lc "cargo build -p tui_next"`
 - `zsh -lc "cargo build -p openjaxd"`
@@ -70,7 +64,6 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `zsh -lc "cargo test"`
 - `zsh -lc "cargo test --workspace"`
 - `zsh -lc "cargo test -p openjax-core"`
-- `zsh -lc "cargo test -p openjax-cli"`
 - `zsh -lc "cargo test -p openjax-gateway"`
 - `zsh -lc "cargo test -p tui_next"`
 - `zsh -lc "cd ui/web && pnpm test"`
@@ -106,7 +99,7 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - 使用 4 空格缩进和 PEP 8 命名。
 - 为公共与内部函数保留类型注解（测试中也包含 `-> None`）。
 - 使用 `str | None` 联合类型语法。
-- 将 `python/tui` 保持为 UI/编排层；不要复制 `openjax-core` 的业务逻辑。
+- 将 `python/openjax_sdk` 保持为 SDK 层；不要复制 `openjax-core` 的业务逻辑。
 
 ## 9) 导入顺序
 ### Rust
@@ -171,14 +164,10 @@ OpenJax 是一个基于 Rust 实现的内核的 CLI 代理框架，使 AI 模型
 - `.github/copilot-instructions.md`：未找到
 如果这些文件后续出现，请将其视为更高优先级并合并到本指南。
 
-## 17) Python TUI 日志与调试
-- Python TUI 日志文件：`.openjax/logs/openjax_tui.log`。
-- 日志轮转：单文件超过大小阈值后自动轮转，最多保留 5 个备份（`openjax_tui.log.1` ... `.5`）。
-- 默认单文件大小：`2 MiB`；可通过 `OPENJAX_TUI_LOG_MAX_BYTES` 覆盖。
-- 可通过 `OPENJAX_TUI_LOG_DIR` 覆盖日志目录（默认 `.openjax/logs`）。
-- 打开 Python TUI 调试日志写入（仅写入日志文件，不在 TUI 界面回显）：设置 `OPENJAX_TUI_DEBUG=1`。
-- 推荐调试启动命令：
-  - `zsh -lc "OPENJAX_TUI_DEBUG=1 PYTHONPATH=python/openjax_sdk/src:python/tui/src python3 -m openjax_tui"`
+## 17) Python SDK 调试
+- 推荐在仓库根目录执行并设置 `PYTHONPATH=python/openjax_sdk/src`。
+- SDK 测试命令：
+  - `zsh -lc "PYTHONPATH=python/openjax_sdk/src python3 -m unittest discover -s python/openjax_sdk/tests -v"`
 
 
 ## 项目级工作规则

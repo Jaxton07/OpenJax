@@ -1,4 +1,5 @@
 import unittest
+import os
 from pathlib import Path
 
 from openjax_sdk import OpenJaxAsyncClient
@@ -15,6 +16,8 @@ def _daemon_cmd() -> list[str]:
 
 class OpenJaxSdkIntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        self._prev_openjax_log = os.environ.get("OPENJAX_LOG")
+        os.environ["OPENJAX_LOG"] = "off"
         self.client = OpenJaxAsyncClient(daemon_cmd=_daemon_cmd())
         await self.client.start()
         await self.client.start_session()
@@ -24,6 +27,10 @@ class OpenJaxSdkIntegrationTest(unittest.IsolatedAsyncioTestCase):
         if self.client.session_id:
             await self.client.shutdown_session()
         await self.client.stop()
+        if self._prev_openjax_log is None:
+            os.environ.pop("OPENJAX_LOG", None)
+        else:
+            os.environ["OPENJAX_LOG"] = self._prev_openjax_log
 
     async def test_submit_turn_and_receive_events(self) -> None:
         turn_id = await self.client.submit_turn("tool:list_dir dir_path=.")
