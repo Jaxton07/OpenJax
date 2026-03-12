@@ -241,7 +241,7 @@ mod tests {
     fn display_rel_path_relative() {
         let cwd = Path::new("/workspace");
         let path = Path::new("/workspace/src/file.txt");
-        let result = display_rel_path(cwd, &path);
+        let result = display_rel_path(cwd, path);
         assert_eq!(result, "src/file.txt");
     }
 
@@ -249,7 +249,7 @@ mod tests {
     fn display_rel_path_absolute() {
         let cwd = Path::new("/workspace");
         let path = Path::new("/other/file.txt");
-        let result = display_rel_path(cwd, &path);
+        let result = display_rel_path(cwd, path);
         assert_eq!(result, "/other/file.txt");
     }
 }

@@ -147,7 +147,7 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 fn collapse_whitespace(text: &str) -> String {
     let mut out = String::new();
     let mut prev_space = false;
-    for ch in text.replace('\r', " ").replace('\n', " ").chars() {
+    for ch in text.replace(['\r', '\n'], " ").chars() {
         if ch.is_whitespace() {
             if !prev_space {
                 out.push(' ');

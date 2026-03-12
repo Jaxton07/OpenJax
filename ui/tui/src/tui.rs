@@ -16,6 +16,17 @@ pub struct Tui {
     last_bottom_chrome_height: u16,
 }
 
+pub struct DrawRequest {
+    pub desired_height: u16,
+    pub bottom_layout: BottomLayout,
+    pub reset_sticky_height: bool,
+    pub status_line: Option<Line<'static>>,
+    pub input_line: Line<'static>,
+    pub input_cursor: u16,
+    pub transient_panel: Option<TransientPanel>,
+    pub footer_text: String,
+}
+
 impl Tui {
     pub fn new() -> anyhow::Result<Self> {
         let viewport = std::env::var("OPENJAX_TUI_INLINE_HEIGHT")
@@ -53,21 +64,20 @@ impl Tui {
         self.terminal.area()
     }
 
-    pub fn draw<F>(
-        &mut self,
-        desired_height: u16,
-        bottom_layout: BottomLayout,
-        reset_sticky_height: bool,
-        status_line: Option<Line<'static>>,
-        input_line: Line<'static>,
-        input_cursor: u16,
-        transient_panel: Option<TransientPanel>,
-        footer_text: String,
-        mut render_live: F,
-    ) -> anyhow::Result<()>
+    pub fn draw<F>(&mut self, request: DrawRequest, mut render_live: F) -> anyhow::Result<()>
     where
         F: FnMut(Rect, &mut ratatui::buffer::Buffer),
     {
+        let DrawRequest {
+            desired_height,
+            bottom_layout,
+            reset_sticky_height,
+            status_line,
+            input_line,
+            input_cursor,
+            transient_panel,
+            footer_text,
+        } = request;
         let screen = self.terminal.size()?;
         let current_area = self.terminal.area();
         let _ = reset_sticky_height;

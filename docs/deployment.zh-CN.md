@@ -1,31 +1,112 @@
-# OpenJax 部署指南（短期）
+# OpenJax 部署指南（运行态优先）
 
 英文版请见：[deployment.md](deployment.md)
 
-当前部署标准：
+开发者发布 SOP 请见：[release-workflow.zh-CN.md](release-workflow.zh-CN.md)
 
-1. 预编译安装：支持 **macOS ARM / Linux x86_64 / Windows x86_64**
-2. 源码安装：支持 **macOS / Linux / Windows**
-3. 一键卸载：支持 `--keep-user-data`
+本指南面向运行态用户，当前支持：
 
-## 约束与决策
+- macOS arm64（Apple Silicon）
+- Linux x86_64
 
-- 预编译目标：
-  - `macOS arm64 (Apple Silicon)`
-  - `Linux x86_64`
-  - `Windows x86_64`
-- 默认安装目录：`~/.local/openjax`
-- 分发方式：手工打包 + 手工上传
-- 默认卸载策略：删除 `~/.local/openjax` 下所有文件
-- 向前兼容参数：`--keep-user-data`
+运行态安装不依赖 Rust、Node、Python 开发环境。
 
-## A. 预编译安装（macOS ARM）
+## 包内容
 
-预编译包中自带 `install.sh`，用于实际安装。
+每个 release 包默认包含：
 
-### Step A：获取预编译包
+- `bin/tui_next`
+- `bin/openjaxd`
+- `bin/openjax-gateway`
+- `web/`（预构建前端静态资源）
+- `install.sh`
+- `uninstall.sh`
+- `README-install.md`
 
-方式 1：在仓库本地打包
+`openjax-gateway` 默认从 `<install_prefix>/web` 托管前端页面。
+
+## A. 离线安装（推荐）
+
+1. 从 GitHub Releases 下载对应包：
+- `openjax-v<version>-macos-aarch64.tar.gz`
+- `openjax-v<version>-linux-x86_64.tar.gz`
+
+2. 校验摘要（可选但推荐）：
+
+```bash
+shasum -a 256 openjax-v<version>-<platform>.tar.gz
+```
+
+3. 解压并安装：
+
+```bash
+tar -xzf openjax-v<version>-<platform>.tar.gz
+cd openjax-v<version>-<platform>
+./install.sh --prefix "$HOME/.local/openjax"
+```
+
+4. 配置 PATH 并运行：
+
+```bash
+export PATH="$HOME/.local/openjax/bin:$PATH"
+tui_next
+```
+
+## B. 从 GitHub Release 在线安装（可选）
+
+一行命令：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
+```
+
+在仓库目录执行：
+
+```bash
+bash scripts/release/install_from_github.sh --yes
+```
+
+常用参数：
+
+- `--version 0.2.6` 安装指定版本（对应 tag `v0.2.6`）
+- `--prefix <path>` 指定安装目录
+- `--repo owner/name` 指定仓库
+
+脚本会下载包与 `SHA256SUMS`，完成校验后调用包内 `install.sh`。
+
+## C. 卸载
+
+在包目录执行：
+
+```bash
+./uninstall.sh
+```
+
+保留用户数据目录（若存在）：
+
+```bash
+./uninstall.sh --keep-user-data
+```
+
+## D. 升级
+
+在线升级（最新版本）：
+
+```bash
+bash scripts/release/upgrade.sh --yes
+```
+
+使用本地安装包离线升级：
+
+```bash
+bash scripts/release/upgrade.sh --from-package /path/to/openjax-v<version>-<platform>.tar.gz --yes
+```
+
+升级脚本默认会先停止 `openjax-gateway` / `openjaxd` / `tui_next`，再执行安装与可执行检查。
+
+## E. 本地构建与打包（维护者）
+
+macOS arm64：
 
 ```bash
 make doctor
@@ -33,176 +114,29 @@ make build-release-mac
 make package-mac
 ```
 
-产物：
-
-- `dist/openjax-v<version>-macos-aarch64.tar.gz`
-- `dist/SHA256SUMS`
-
-方式 2：从发布渠道下载 `openjax-v<version>-macos-aarch64.tar.gz`。
-
-### Step B：解压并进入目录
+Linux x86_64：
 
 ```bash
-cd dist
-TAR_FILE=$(ls openjax-v*-macos-aarch64.tar.gz | head -n1)
-tar -xzf "$TAR_FILE"
-DIR_NAME=$(basename "$TAR_FILE" .tar.gz)
-cd "$DIR_NAME"
-```
-
-### Step C：执行安装脚本
-
-```bash
-./install.sh
-```
-
-可选：自定义安装前缀
-
-```bash
-./install.sh --prefix "$HOME/.local/openjax"
-```
-
-### Step D：配置 PATH 并启动
-
-```bash
-export PATH="$HOME/.local/openjax/bin:$PATH"
-tui_next
-```
-
-如果要长期生效，把上面的 `export` 写入 `~/.zshrc` 等 shell 配置文件。
-
-### 校验
-
-```bash
-test -x "$HOME/.local/openjax/bin/tui_next"
-openjaxd --help
-```
-
-## B. 预编译安装（Linux x86_64）
-
-本地打包：
-
-```bash
+make doctor
 make build-release-linux
 make package-linux
 ```
 
-从包目录安装：
+## F. CI/CD 发布流程
+
+- CI（`.github/workflows/ci.yml`）校验 Rust、Web、以及 Linux 包安装/卸载冒烟测试。
+- Release（`.github/workflows/release.yml`）在 `v*` tag 触发，构建 macOS/Linux 包、执行安装验收并上传到 GitHub Release。
+
+## G. 开发环境说明（运行态用户可忽略）
+
+只有开发者需要 Rust/Node。中国大陆网络下可选镜像示例：
 
 ```bash
-cd dist
-TAR_FILE=$(ls openjax-v*-linux-x86_64.tar.gz | head -n1)
-tar -xzf "$TAR_FILE"
-DIR_NAME=$(basename "$TAR_FILE" .tar.gz)
-cd "$DIR_NAME"
-./install.sh
-```
-
-## C. 预编译安装（Windows x86_64）
-
-在 PowerShell 打包：
-
-```powershell
-cargo build --release --locked -p tui_next -p openjaxd
-powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1
-```
-
-从包目录安装：
-
-```powershell
-Expand-Archive .\dist\openjax-v<version>-windows-x86_64.zip -DestinationPath .\dist -Force
-cd .\dist\openjax-v<version>-windows-x86_64
-.\install.ps1
-```
-
-## D. 源码安装（本地仓库，一键命令）
-
-适用于已经在本地仓库目录中开发的场景：
-
-```bash
-make install-source
-```
-
-## E. 源码安装（从 Git 克隆，手工步骤）
-
-### macOS / Linux (bash/zsh)
-
-```bash
-git clone <your-repo-url> openJax
-cd openJax
-cargo build --release --locked -p tui_next -p openjaxd
-mkdir -p "$HOME/.local/openjax/bin"
-cp target/release/tui_next "$HOME/.local/openjax/bin/tui_next"
-cp target/release/openjaxd "$HOME/.local/openjax/bin/openjaxd"
-chmod +x "$HOME/.local/openjax/bin/tui_next" "$HOME/.local/openjax/bin/openjaxd"
-```
-
-### Windows (PowerShell)
-
-```powershell
-git clone <your-repo-url> openJax
-cd openJax
-cargo build --release --locked -p tui_next -p openjaxd
-$prefix = Join-Path $HOME ".local/openjax/bin"
-New-Item -ItemType Directory -Force -Path $prefix | Out-Null
-Copy-Item "target/release/tui_next.exe" (Join-Path $prefix "tui_next.exe") -Force
-Copy-Item "target/release/openjaxd.exe" (Join-Path $prefix "openjaxd.exe") -Force
-```
-
-## F. 卸载
-
-### 默认全清理
-
-```bash
-./uninstall.sh
-```
-
-或在仓库中：
-
-```bash
-make uninstall-local
-```
-
-通过 Makefile 保留用户数据目录：
-
-```bash
-make uninstall-local KEEP_USER_DATA=1
-```
-
-### 保留用户数据（未来兼容）
-
-```bash
-./uninstall.sh --keep-user-data
-```
-
-当前行为：
-
-- 若 `<prefix>/userdata` 存在，则保留该目录。
-- 若不存在，则行为等价于全清理。
-
-## G. 弱网建议
-
-```bash
+# cargo
 export CARGO_NET_RETRY=5
 export CARGO_HTTP_MULTIPLEXING=false
+
+# npm/pnpm 示例
+npm config set registry https://registry.npmmirror.com
+pnpm config set registry https://registry.npmmirror.com
 ```
-
-可选预热：
-
-```bash
-cargo fetch --locked
-```
-
-## H. 手工发布 SOP
-
-1. `make doctor`
-2. 选择目标平台打包：
-- macOS ARM：`make build-release-mac && make package-mac`
-- Linux x86_64：`make build-release-linux && make package-linux`
-- Windows x86_64：`cargo build --release --locked -p tui_next -p openjaxd` 后执行 `powershell -ExecutionPolicy Bypass -File scripts/release/package_windows.ps1`
-3. 在干净目录验证：
-- 解压包
-- 执行安装脚本（`install.sh` 或 `install.ps1`）
-- 校验 `tui_next` 可执行，`openjaxd --help` 正常
-- 执行卸载脚本（`uninstall.sh` 或 `uninstall.ps1`）
-4. 上传安装包（`.tar.gz`/`.zip`）与 `SHA256SUMS`

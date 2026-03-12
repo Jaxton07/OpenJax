@@ -31,6 +31,8 @@ openjax-gateway/
 
 - `GET /healthz`
 - `GET /readyz`
+- `GET /`（可选：托管 web 静态首页，需存在 `index.html`）
+- `GET /assets/*path`（可选：托管 web 构建产物资源）
 - `POST /api/v1/sessions`
 - `POST /api/v1/sessions/:session_id/turns`
 - `GET /api/v1/sessions/:session_id/turns/:turn_id`
@@ -57,6 +59,7 @@ openjax-gateway/
 - `OPENJAX_GATEWAY_BIND`：监听地址，默认 `127.0.0.1:8765`。
 - `OPENJAX_GATEWAY_API_KEYS`：逗号分隔 API keys（优先）。
 - `OPENJAX_API_KEYS`：兼容 API keys 变量（后备）。
+- `OPENJAX_GATEWAY_WEB_DIR`：可选，web 静态目录（默认自动尝试 `<bin>/../web`）。
 - `OPENJAX_APPROVAL_TIMEOUT_MS`：审批超时毫秒（由 core 读取）。
 
 ## 本地开发
@@ -68,4 +71,3 @@ zsh -lc "cargo build -p openjax-gateway"
 zsh -lc "cargo test -p openjax-gateway"
 zsh -lc "OPENJAX_GATEWAY_API_KEYS=dev-key cargo run -p openjax-gateway"
 ```
-

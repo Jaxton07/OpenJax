@@ -1,8 +1,8 @@
 use openjax_core::skills::SkillRegistry;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
-fn write_skill(root: &PathBuf, dir_name: &str, name: &str, description: &str) {
+fn write_skill(root: &Path, dir_name: &str, name: &str, description: &str) {
     let dir = root.join(dir_name);
     fs::create_dir_all(&dir).expect("create skill dir");
     fs::write(

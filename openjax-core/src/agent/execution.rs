@@ -196,15 +196,15 @@ impl Agent {
         events: &mut Vec<Event>,
     ) -> anyhow::Result<tools::ToolExecOutcome> {
         let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
-        let execute_fut = self.tools.execute(
+        let execute_fut = self.tools.execute(tools::ToolExecutionRequest {
             turn_id,
-            tool_call_id.to_string(),
+            tool_call_id: tool_call_id.to_string(),
             call,
-            self.cwd.as_path(),
-            self.tool_runtime_config,
-            self.approval_handler.clone(),
-            Some(tool_event_tx),
-        );
+            cwd: self.cwd.as_path(),
+            config: self.tool_runtime_config,
+            approval_handler: self.approval_handler.clone(),
+            event_sink: Some(tool_event_tx),
+        });
         tokio::pin!(execute_fut);
 
         loop {

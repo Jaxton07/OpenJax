@@ -38,26 +38,28 @@ fn approval_text_field(value: Option<&str>) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join("_")
 }
 
-fn log_approval_event(
-    action: &str,
-    request_id: Option<&str>,
-    turn_id: Option<&str>,
-    target: Option<&str>,
+struct ApprovalLogEvent<'a> {
+    action: &'a str,
+    request_id: Option<&'a str>,
+    turn_id: Option<&'a str>,
+    target: Option<&'a str>,
     approved: Option<bool>,
     resolved: Option<bool>,
-    session_id: Option<&str>,
-    detail: Option<&str>,
-) {
+    session_id: Option<&'a str>,
+    detail: Option<&'a str>,
+}
+
+fn log_approval_event(event: ApprovalLogEvent<'_>) {
     info!(
         "approval_event action={} request_id={} turn_id={} target={} approved={} resolved={} session_id={} detail={}",
-        approval_text_field(Some(action)),
-        approval_text_field(request_id),
-        approval_text_field(turn_id),
-        approval_text_field(target),
-        approval_bool_field(approved),
-        approval_bool_field(resolved),
-        approval_text_field(session_id),
-        approval_text_field(detail),
+        approval_text_field(Some(event.action)),
+        approval_text_field(event.request_id),
+        approval_text_field(event.turn_id),
+        approval_text_field(event.target),
+        approval_bool_field(event.approved),
+        approval_bool_field(event.resolved),
+        approval_text_field(event.session_id),
+        approval_text_field(event.detail),
     );
 }
 
@@ -125,16 +127,16 @@ impl DaemonApprovalHandler {
             Some(tx) => tx.send(approved).is_ok(),
             None => {
                 warn!(approval_request_id = %request_id, "approval request not found");
-                log_approval_event(
-                    "resolve_missing",
-                    Some(request_id),
-                    None,
-                    None,
-                    Some(approved),
-                    Some(false),
-                    None,
-                    Some("request_not_found"),
-                );
+                log_approval_event(ApprovalLogEvent {
+                    action: "resolve_missing",
+                    request_id: Some(request_id),
+                    turn_id: None,
+                    target: None,
+                    approved: Some(approved),
+                    resolved: Some(false),
+                    session_id: None,
+                    detail: Some("request_not_found"),
+                });
                 false
             }
         }
@@ -154,16 +156,16 @@ impl ApprovalHandler for DaemonApprovalHandler {
             pending.insert(request_id.clone(), tx);
         }
         info!(approval_request_id = %request_id, "approval requested");
-        log_approval_event(
-            "requested",
-            Some(&request_id),
-            None,
-            Some(&request.target),
-            None,
-            None,
-            None,
-            Some("handler_waiting"),
-        );
+        log_approval_event(ApprovalLogEvent {
+            action: "requested",
+            request_id: Some(&request_id),
+            turn_id: None,
+            target: Some(&request.target),
+            approved: None,
+            resolved: None,
+            session_id: None,
+            detail: Some("handler_waiting"),
+        });
 
         let decision = timeout(Duration::from_millis(APPROVAL_TIMEOUT_MS), rx).await;
         let mut pending = self.pending.lock().await;
@@ -171,44 +173,44 @@ impl ApprovalHandler for DaemonApprovalHandler {
 
         match decision {
             Ok(Ok(approved)) => {
-                log_approval_event(
-                    "handler_decided",
-                    Some(&request_id),
-                    None,
-                    Some(&request.target),
-                    Some(approved),
-                    Some(true),
-                    None,
-                    Some("decision_received"),
-                );
+                log_approval_event(ApprovalLogEvent {
+                    action: "handler_decided",
+                    request_id: Some(&request_id),
+                    turn_id: None,
+                    target: Some(&request.target),
+                    approved: Some(approved),
+                    resolved: Some(true),
+                    session_id: None,
+                    detail: Some("decision_received"),
+                });
                 Ok(approved)
             }
             Ok(Err(_)) => {
                 warn!(approval_request_id = %request_id, "approval channel closed");
-                log_approval_event(
-                    "handler_error",
-                    Some(&request_id),
-                    None,
-                    Some(&request.target),
-                    None,
-                    Some(false),
-                    None,
-                    Some("channel_closed"),
-                );
+                log_approval_event(ApprovalLogEvent {
+                    action: "handler_error",
+                    request_id: Some(&request_id),
+                    turn_id: None,
+                    target: Some(&request.target),
+                    approved: None,
+                    resolved: Some(false),
+                    session_id: None,
+                    detail: Some("channel_closed"),
+                });
                 Err("approval channel closed".to_string())
             }
             Err(_) => {
                 warn!(approval_request_id = %request_id, timeout_ms = APPROVAL_TIMEOUT_MS, "approval timed out");
-                log_approval_event(
-                    "handler_timeout",
-                    Some(&request_id),
-                    None,
-                    Some(&request.target),
-                    None,
-                    Some(false),
-                    None,
-                    Some("timeout"),
-                );
+                log_approval_event(ApprovalLogEvent {
+                    action: "handler_timeout",
+                    request_id: Some(&request_id),
+                    turn_id: None,
+                    target: Some(&request.target),
+                    approved: None,
+                    resolved: Some(false),
+                    session_id: None,
+                    detail: Some("timeout"),
+                });
                 Err("approval timed out".to_string())
             }
         }
@@ -447,27 +449,25 @@ async fn handle_line(
                 let mut response_turn_id: Option<String> = None;
 
                 while let Some(event) = event_rx.recv().await {
-                    if !response_sent {
-                        if let Some(tid) = turn_id_from_event(&event) {
-                            let tid_str = tid.to_string();
-                            let response = send_ok(
-                                writer_for_events.clone(),
-                                request_id.clone(),
-                                json!({"turn_id": tid_str, "accepted": true}),
-                            )
-                            .await;
-                            if response.is_err() {
-                                return;
-                            }
-                            response_sent = true;
-                            response_turn_id = Some(tid.to_string());
+                    if !response_sent && let Some(tid) = turn_id_from_event(&event) {
+                        let tid_str = tid.to_string();
+                        let response = send_ok(
+                            writer_for_events.clone(),
+                            request_id.clone(),
+                            json!({"turn_id": tid_str, "accepted": true}),
+                        )
+                        .await;
+                        if response.is_err() {
+                            return;
                         }
+                        response_sent = true;
+                        response_turn_id = Some(tid.to_string());
                     }
 
-                    if streaming_enabled.load(Ordering::Relaxed) {
-                        if let Some(envelope) = map_event(&session_id_for_events, event) {
-                            let _ = send_event(writer_for_events.clone(), envelope).await;
-                        }
+                    if streaming_enabled.load(Ordering::Relaxed)
+                        && let Some(envelope) = map_event(&session_id_for_events, event)
+                    {
+                        let _ = send_event(writer_for_events.clone(), envelope).await;
                     }
                 }
 
@@ -607,16 +607,16 @@ async fn handle_line(
                 resolved = resolved,
                 "approval request processed"
             );
-            log_approval_event(
-                "resolved_submit",
-                Some(request_id_to_resolve),
-                turn_id_param,
-                target_param,
-                Some(approved),
-                Some(resolved),
-                Some(&session_id),
-                Some("rpc_resolve_approval"),
-            );
+            log_approval_event(ApprovalLogEvent {
+                action: "resolved_submit",
+                request_id: Some(request_id_to_resolve),
+                turn_id: turn_id_param,
+                target: target_param,
+                approved: Some(approved),
+                resolved: Some(resolved),
+                session_id: Some(&session_id),
+                detail: Some("rpc_resolve_approval"),
+            });
 
             if resolved {
                 let _ = send_ok(writer, req.request_id, json!({ "resolved": true })).await;

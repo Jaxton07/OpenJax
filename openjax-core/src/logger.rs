@@ -42,10 +42,10 @@ impl LoggerConfig {
     }
 
     fn resolve_log_dir() -> PathBuf {
-        if let Some(paths) = OpenJaxPaths::detect() {
-            if paths.ensure_runtime_dirs().is_ok() {
-                return paths.logs_dir;
-            }
+        if let Some(paths) = OpenJaxPaths::detect()
+            && paths.ensure_runtime_dirs().is_ok()
+        {
+            return paths.logs_dir;
         }
 
         PathBuf::from(".openjax/logs")
@@ -54,18 +54,17 @@ impl LoggerConfig {
     pub fn from_env() -> Self {
         let mut config = Self::new();
 
-        if let Ok(val) = std::env::var("OPENJAX_LOG_MAX_LINES") {
-            if let Ok(lines) = val.parse::<usize>() {
-                if lines > 0 {
-                    config.max_lines = lines;
-                }
-            }
+        if let Ok(val) = std::env::var("OPENJAX_LOG_MAX_LINES")
+            && let Ok(lines) = val.parse::<usize>()
+            && lines > 0
+        {
+            config.max_lines = lines;
         }
 
-        if let Ok(val) = std::env::var("OPENJAX_LOG_MAX_ARCHIVES") {
-            if let Ok(archives) = val.parse::<usize>() {
-                config.max_archives = archives;
-            }
+        if let Ok(val) = std::env::var("OPENJAX_LOG_MAX_ARCHIVES")
+            && let Ok(archives) = val.parse::<usize>()
+        {
+            config.max_archives = archives;
         }
         if let Ok(val) = std::env::var("OPENJAX_LOG_FILE") {
             let trimmed = val.trim();

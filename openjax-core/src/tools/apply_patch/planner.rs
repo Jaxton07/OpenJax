@@ -97,7 +97,7 @@ pub async fn plan_patch_actions(
 
                 if let Some(move_to_path) = move_to {
                     let move_to_resolved =
-                        crate::tools::resolve_workspace_path_for_write(cwd, &move_to_path)?;
+                        crate::tools::resolve_workspace_path_for_write(cwd, move_to_path)?;
                     if !seen_paths.insert(move_to_resolved.clone()) {
                         return Err(anyhow!(
                             "invalid patch: duplicated file operation target `{}`",
@@ -109,7 +109,7 @@ pub async fn plan_patch_actions(
                         to: move_to_resolved,
                     });
                     actions.push(PlannedAction::Update {
-                        path: crate::tools::resolve_workspace_path_for_write(cwd, &move_to_path)?,
+                        path: crate::tools::resolve_workspace_path_for_write(cwd, move_to_path)?,
                         content,
                     });
                 } else {

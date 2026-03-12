@@ -76,7 +76,7 @@ make install-source
 
 Use this if you are already in a cloned OpenJax repository.
 
-### Option B: Prebuilt package (macOS ARM / Linux x86_64 / Windows x86_64)
+### Option B: Prebuilt package (macOS ARM / Linux x86_64)
 
 Build package locally (example: macOS ARM):
 
@@ -92,6 +92,12 @@ Then install from package directory:
 ./install.sh --prefix "$HOME/.local/openjax"
 ```
 
+Or install directly from GitHub Release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
+```
+
 Add to `PATH` and launch:
 
 ```bash
@@ -99,7 +105,15 @@ export PATH="$HOME/.local/openjax/bin:$PATH"
 tui_next
 ```
 
-For Linux/Windows package commands and full deployment flow, see [docs/deployment.md](docs/deployment.md).
+Web runtime is included in the package (`~/.local/openjax/web`) and served by `openjax-gateway` by default.
+
+Upgrade to the latest release:
+
+```bash
+bash scripts/release/upgrade.sh --yes
+```
+
+For Linux/macOS package commands and full deployment flow, see [docs/deployment.md](docs/deployment.md).
 
 ## Configuration
 
@@ -167,6 +181,7 @@ zsh -lc "cargo test -p openjax-core --test m3_sandbox"
 - Overview: [OVERVIEW.md](OVERVIEW.md)
 - Deployment: [docs/deployment.md](docs/deployment.md)
 - Chinese Deployment Guide: [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)
+- Developer Release Workflow (ZH): [docs/release-workflow.zh-CN.md](docs/release-workflow.zh-CN.md)
 - Security model: [docs/security.md](docs/security.md)
 
 ## Security

@@ -44,9 +44,14 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_SRC_DIR="${SCRIPT_DIR}/bin"
+WEB_SRC_DIR="${SCRIPT_DIR}/web"
 
 if [[ ! -d "${BIN_SRC_DIR}" ]]; then
   echo "[install] error: missing bin directory beside install.sh"
+  exit 1
+fi
+if [[ ! -d "${WEB_SRC_DIR}" ]]; then
+  echo "[install] error: missing web directory beside install.sh"
   exit 1
 fi
 
@@ -60,9 +65,12 @@ if [[ ${ASSUME_YES} -ne 1 ]]; then
 fi
 
 mkdir -p "${PREFIX}/bin"
+mkdir -p "${PREFIX}/web"
 cp "${BIN_SRC_DIR}/tui_next" "${PREFIX}/bin/tui_next"
 cp "${BIN_SRC_DIR}/openjaxd" "${PREFIX}/bin/openjaxd"
-chmod +x "${PREFIX}/bin/tui_next" "${PREFIX}/bin/openjaxd"
+cp "${BIN_SRC_DIR}/openjax-gateway" "${PREFIX}/bin/openjax-gateway"
+cp -R "${WEB_SRC_DIR}/." "${PREFIX}/web/"
+chmod +x "${PREFIX}/bin/tui_next" "${PREFIX}/bin/openjaxd" "${PREFIX}/bin/openjax-gateway"
 
 echo "[install] done: ${PREFIX}/bin"
 
@@ -75,3 +83,9 @@ case ":${PATH}:" in
     echo "  export PATH=\"${PREFIX}/bin:\$PATH\""
     ;;
 esac
+
+echo "[install] run checks:"
+echo "  ${PREFIX}/bin/tui_next --help"
+echo "  ${PREFIX}/bin/openjaxd --help"
+echo "  ${PREFIX}/bin/openjax-gateway --help"
+echo "[install] gateway serves web from: ${PREFIX}/web"

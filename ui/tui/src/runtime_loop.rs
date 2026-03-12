@@ -9,7 +9,7 @@ use tracing::info;
 
 use crate::app::{App, SubmitAction};
 use crate::approval::TuiApprovalHandler;
-use crate::tui::Tui;
+use crate::tui::{DrawRequest, Tui};
 
 pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &TuiApprovalHandler) {
     let mut drained = 0usize;
@@ -94,14 +94,16 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
     }
     tui.queue_history_cells(cells);
     tui.draw(
-        desired,
-        bottom_layout,
-        reset_viewport,
-        status_line,
-        app.input_line(),
-        app.input_cursor_offset(term_width),
-        transient_panel,
-        app.footer_text(),
+        DrawRequest {
+            desired_height: desired,
+            bottom_layout,
+            reset_sticky_height: reset_viewport,
+            status_line,
+            input_line: app.input_line(),
+            input_cursor: app.input_cursor_offset(term_width),
+            transient_panel,
+            footer_text: app.footer_text(),
+        },
         |area, buf| app.render_live(area, buf),
     )?;
     Ok(())

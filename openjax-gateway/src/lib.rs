@@ -6,24 +6,22 @@ pub mod state;
 
 pub use state::AppState;
 
+use std::path::PathBuf;
+
 use axum::Router;
 use axum::http::Method;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 
-pub fn build_app(state: AppState) -> Router {
+pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin([
             "http://localhost:5173".parse().expect("valid origin"),
             "http://127.0.0.1:5173".parse().expect("valid origin"),
         ])
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers(Any);
 
     let protected = Router::new()
@@ -53,7 +51,7 @@ pub fn build_app(state: AppState) -> Router {
             middleware::auth_middleware,
         ));
 
-    Router::new()
+    let mut app = Router::new()
         .route("/healthz", get(handlers::healthz))
         .route("/readyz", get(handlers::readyz))
         .merge(protected)
@@ -67,5 +65,16 @@ pub fn build_app(state: AppState) -> Router {
         ))
         .layer(from_fn(error::error_catch_middleware))
         .layer(cors)
-        .with_state(state)
+        .with_state(state);
+
+    if let Some(static_dir) = static_dir {
+        let index = static_dir.join("index.html");
+        if index.is_file() {
+            app = app
+                .route_service("/", ServeFile::new(index))
+                .nest_service("/assets", ServeDir::new(static_dir.join("assets")));
+        }
+    }
+
+    app
 }

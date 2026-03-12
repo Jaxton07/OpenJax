@@ -323,11 +323,11 @@ impl Agent {
                         },
                     );
 
-                    self.record_tool_call(&tool_name, &args, false, &message);
+                    self.record_tool_call(&tool_name, &args, false, message);
                     tool_traces.push(format!(
                         "tool={tool_name}; ok=false; output={}",
                         truncate_for_prompt(
-                            &message,
+                            message,
                             self.skill_runtime_config.max_diff_chars_for_planner
                         )
                     ));

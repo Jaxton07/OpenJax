@@ -2,11 +2,13 @@ use anyhow::{Result, anyhow};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use super::context::{ApprovalPolicy, SandboxPolicy};
+use super::context::SandboxPolicy;
 use super::orchestrator::ToolOrchestrator;
 use super::registry::ToolHandler;
 use super::router::{ToolCall, ToolRuntimeConfig};
-use super::tool_builder::{build_default_tool_registry, create_tool_invocation};
+use super::tool_builder::{
+    CreateToolInvocationParams, build_default_tool_registry, create_tool_invocation,
+};
 use crate::approval::ApprovalHandler;
 
 #[derive(Debug, Clone)]
@@ -17,6 +19,16 @@ pub struct ToolExecOutcome {
 
 pub struct ToolRouter {
     orchestrator: Arc<ToolOrchestrator>,
+}
+
+pub struct ToolExecutionRequest<'a> {
+    pub turn_id: u64,
+    pub tool_call_id: String,
+    pub call: &'a ToolCall,
+    pub cwd: &'a std::path::Path,
+    pub config: ToolRuntimeConfig,
+    pub approval_handler: Arc<dyn ApprovalHandler>,
+    pub event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
 }
 
 impl ToolRouter {
@@ -42,23 +54,22 @@ impl ToolRouter {
     }
 
     pub fn register_tool(&self, name: String, handler: Arc<dyn ToolHandler>) {
-        let orchestrator =
-            Arc::as_ptr(&self.orchestrator) as *const ToolOrchestrator as *mut ToolOrchestrator;
+        let orchestrator = Arc::as_ptr(&self.orchestrator) as *mut ToolOrchestrator;
         unsafe {
             (*orchestrator).register_tool(name, handler);
         }
     }
 
-    pub async fn execute(
-        &self,
-        turn_id: u64,
-        tool_call_id: String,
-        call: &ToolCall,
-        cwd: &std::path::Path,
-        config: ToolRuntimeConfig,
-        approval_handler: Arc<dyn ApprovalHandler>,
-        event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
-    ) -> Result<ToolExecOutcome> {
+    pub async fn execute(&self, request: ToolExecutionRequest<'_>) -> Result<ToolExecOutcome> {
+        let ToolExecutionRequest {
+            turn_id,
+            tool_call_id,
+            call,
+            cwd,
+            config,
+            approval_handler,
+            event_sink,
+        } = request;
         debug!(
             tool_name = %call.name,
             args = ?call.args,
@@ -74,25 +85,21 @@ impl ToolRouter {
             super::router::SandboxMode::DangerFullAccess => SandboxPolicy::DangerFullAccess,
         };
 
-        let approval_policy = match config.approval_policy {
-            ApprovalPolicy::AlwaysAsk => ApprovalPolicy::AlwaysAsk,
-            ApprovalPolicy::OnRequest => ApprovalPolicy::OnRequest,
-            ApprovalPolicy::Never => ApprovalPolicy::Never,
-        };
+        let approval_policy = config.approval_policy;
 
-        let invocation = create_tool_invocation(
+        let invocation = create_tool_invocation(CreateToolInvocationParams {
             turn_id,
-            tool_call_id,
-            call.name.clone(),
-            serde_json::to_string(&call.args)
+            call_id: tool_call_id,
+            tool_name: call.name.clone(),
+            arguments: serde_json::to_string(&call.args)
                 .map_err(|e| anyhow!("failed to serialize args: {}", e))?,
-            cwd.to_path_buf(),
+            cwd: cwd.to_path_buf(),
             sandbox_policy,
             approval_policy,
-            config.prevent_shell_skill_trigger,
+            prevent_shell_skill_trigger: config.prevent_shell_skill_trigger,
             approval_handler,
             event_sink,
-        );
+        });
 
         let result = self.orchestrator.run(invocation).await;
 
@@ -159,6 +166,12 @@ impl ToolRouter {
                 Err(anyhow!("error: {}", err))
             }
         }
+    }
+}
+
+impl Default for ToolRouter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

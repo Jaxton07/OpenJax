@@ -19,7 +19,10 @@ Custom prefix:
 ```bash
 test -x "$HOME/.local/openjax/bin/tui_next"
 openjaxd --help
+openjax-gateway --help
 ```
+
+Gateway serves web assets from `~/.local/openjax/web` by default.
 
 ## Uninstall
 

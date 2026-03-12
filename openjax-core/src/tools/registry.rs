@@ -80,3 +80,9 @@ impl ToolRegistry {
         handler.handle(invocation).await
     }
 }
+
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}

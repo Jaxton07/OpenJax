@@ -44,12 +44,11 @@ fn score_entry(entry: &SkillEntry, input_tokens: &HashSet<String>) -> u32 {
     let description_tokens = tokenize_to_set(&entry.manifest.description);
     let instruction_tokens = tokenize_to_set(&entry.manifest.instructions_markdown);
     let folder_tokens = tokenize_to_set(
-        &entry
+        entry
             .package_dir
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or_default()
-            .to_string(),
+            .unwrap_or_default(),
     );
 
     let mut score = 0u32;

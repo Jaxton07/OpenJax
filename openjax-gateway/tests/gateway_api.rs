@@ -11,7 +11,7 @@ fn app_with_api_key(api_key: &str) -> (axum::Router, AppState) {
     let mut keys = HashSet::new();
     keys.insert(api_key.to_string());
     let state = AppState::new_with_api_keys(keys);
-    let app = build_app(state.clone());
+    let app = build_app(state.clone(), None);
     (app, state)
 }
 
@@ -219,7 +219,7 @@ async fn approval_resolve_second_call_returns_conflict() {
     assert_eq!(second_body["error"]["code"], "CONFLICT");
 
     let waiter_result = waiter.await.expect("waiter task joined");
-    assert_eq!(waiter_result.expect("approval resolved"), true);
+    assert!(waiter_result.expect("approval resolved"));
 }
 
 #[tokio::test]

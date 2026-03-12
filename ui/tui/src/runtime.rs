@@ -76,10 +76,11 @@ pub async fn run() -> anyhow::Result<()> {
                     app.set_live_status("Busy: previous turn still running");
                     continue;
                 }
-                if app.state.pending_approval.is_none() && app.is_slash_palette_active() {
-                    if app.complete_slash_selection() != crate::app::SlashAcceptResult::None {
-                        continue;
-                    }
+                if app.state.pending_approval.is_none()
+                    && app.is_slash_palette_active()
+                    && app.complete_slash_selection() != crate::app::SlashAcceptResult::None
+                {
+                    continue;
                 }
                 if let Some(action) = app.submit_input() {
                     handle_submit_action(

@@ -29,10 +29,10 @@ impl SandboxManager {
 
     /// 检查是否为变异操作
     pub fn is_mutating_operation(&self, tool_name: &str) -> bool {
-        match tool_name {
-            "shell" | "exec_command" | "apply_patch" | "edit_file_range" => true,
-            _ => false,
-        }
+        matches!(
+            tool_name,
+            "shell" | "exec_command" | "apply_patch" | "edit_file_range"
+        )
     }
 
     /// 获取沙箱描述

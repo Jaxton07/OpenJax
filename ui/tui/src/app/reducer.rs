@@ -87,32 +87,32 @@ impl App {
                 let now = Instant::now();
                 let timeout_ms = approval_timeout_ms_from_env();
                 let mut dedup_request_id: Option<String> = None;
-                if let Some(existing) = self.state.pending_approval.as_mut() {
-                    if existing.request_id == request_id {
-                        // Same request emitted from multiple channels: merge richer fields
-                        // without creating a second approval state transition.
-                        existing.target = target.clone();
-                        existing.reason = reason.clone();
-                        if existing.tool_name.is_none() {
-                            existing.tool_name = tool_name.clone();
-                        }
-                        if existing.command_preview.is_none() {
-                            existing.command_preview = command_preview.clone();
-                        }
-                        if existing.risk_tags.is_empty() {
-                            existing.risk_tags = risk_tags.clone();
-                        }
-                        if existing.sandbox_backend.is_none() {
-                            existing.sandbox_backend = sandbox_backend.clone();
-                        }
-                        if existing.degrade_reason.is_none() {
-                            existing.degrade_reason = degrade_reason.clone();
-                        }
-                        existing.requested_at = now;
-                        existing.timeout_ms = timeout_ms;
-                        self.state.approval_selection = ApprovalSelection::Approve;
-                        dedup_request_id = Some(existing.request_id.clone());
+                if let Some(existing) = self.state.pending_approval.as_mut()
+                    && existing.request_id == request_id
+                {
+                    // Same request emitted from multiple channels: merge richer fields
+                    // without creating a second approval state transition.
+                    existing.target = target.clone();
+                    existing.reason = reason.clone();
+                    if existing.tool_name.is_none() {
+                        existing.tool_name = tool_name.clone();
                     }
+                    if existing.command_preview.is_none() {
+                        existing.command_preview = command_preview.clone();
+                    }
+                    if existing.risk_tags.is_empty() {
+                        existing.risk_tags = risk_tags.clone();
+                    }
+                    if existing.sandbox_backend.is_none() {
+                        existing.sandbox_backend = sandbox_backend.clone();
+                    }
+                    if existing.degrade_reason.is_none() {
+                        existing.degrade_reason = degrade_reason.clone();
+                    }
+                    existing.requested_at = now;
+                    existing.timeout_ms = timeout_ms;
+                    self.state.approval_selection = ApprovalSelection::Approve;
+                    dedup_request_id = Some(existing.request_id.clone());
                 }
                 if let Some(request_id) = dedup_request_id {
                     self.refresh_approval_live_message();

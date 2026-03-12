@@ -17,15 +17,15 @@ pub fn extract_heredoc(raw: &str) -> Option<String> {
     }
 
     let rest = &trimmed[2..];
-    let (delimiter, content_start) = if rest.starts_with("'") {
-        let end_quote = rest[1..].find('\'')?;
-        let delimiter = &rest[1..=end_quote];
-        let content_start = &rest[end_quote + 2..];
+    let (delimiter, content_start) = if let Some(stripped) = rest.strip_prefix('\'') {
+        let end_quote = stripped.find('\'')?;
+        let delimiter = &stripped[..end_quote];
+        let content_start = &stripped[end_quote + 1..];
         (delimiter, content_start)
-    } else if rest.starts_with('"') {
-        let end_quote = rest[1..].find('"')?;
-        let delimiter = &rest[1..=end_quote];
-        let content_start = &rest[end_quote + 2..];
+    } else if let Some(stripped) = rest.strip_prefix('"') {
+        let end_quote = stripped.find('"')?;
+        let delimiter = &stripped[..end_quote];
+        let content_start = &stripped[end_quote + 1..];
         (delimiter, content_start)
     } else {
         let space_pos = rest.find(|c: char| c.is_whitespace())?;

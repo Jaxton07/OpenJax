@@ -76,7 +76,7 @@ make install-source
 
 适用于你已经 `git clone` 到本地并进入仓库目录的场景。
 
-### 方式 B：预编译包安装（macOS ARM / Linux x86_64 / Windows x86_64）
+### 方式 B：预编译包安装（macOS ARM / Linux x86_64）
 
 本地打包（以下示例为 macOS ARM）：
 
@@ -92,6 +92,12 @@ make package-mac
 ./install.sh --prefix "$HOME/.local/openjax"
 ```
 
+或直接从 GitHub Release 在线安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
+```
+
 添加到 `PATH` 并启动：
 
 ```bash
@@ -99,7 +105,15 @@ export PATH="$HOME/.local/openjax/bin:$PATH"
 tui_next
 ```
 
-Linux/Windows 的打包命令与完整部署说明见 [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)。
+预编译包默认包含 web 运行时（`~/.local/openjax/web`），`openjax-gateway` 会自动托管。
+
+升级到最新版本：
+
+```bash
+bash scripts/release/upgrade.sh --yes
+```
+
+Linux/macOS 的打包命令与完整部署说明见 [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)。
 
 ## 配置项
 
@@ -165,6 +179,7 @@ zsh -lc "cargo test -p openjax-core --test m3_sandbox"
 - 总览： [OVERVIEW.md](OVERVIEW.md)
 - 部署： [docs/deployment.md](docs/deployment.md)
 - 中文部署： [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)
+- 开发者发布流程： [docs/release-workflow.zh-CN.md](docs/release-workflow.zh-CN.md)
 - 安全模型： [docs/security.md](docs/security.md)
 
 ## 安全

@@ -346,7 +346,7 @@ impl App {
 }
 
 fn truncate_one_line(text: &str, max_chars: usize) -> String {
-    let single_line = text.replace('\n', " ").replace('\r', " ");
+    let single_line = text.replace(['\n', '\r'], " ");
     let total = single_line.chars().count();
     if total <= max_chars {
         return single_line;

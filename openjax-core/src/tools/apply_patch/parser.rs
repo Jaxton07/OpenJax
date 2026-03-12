@@ -123,7 +123,7 @@ pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
             let mut current_context = None;
             while index < lines.len() - 1 && !lines[index].starts_with("*** ") {
                 let raw = lines[index];
-                if raw.starts_with("@@") {
+                if let Some(stripped) = raw.strip_prefix("@@") {
                     if !current_lines.is_empty() {
                         hunks.push(PatchHunk {
                             context: current_context,
@@ -131,7 +131,7 @@ pub fn parse_apply_patch(patch: &str) -> Result<Vec<PatchOperation>> {
                         });
                         current_context = None;
                     }
-                    let context_part = raw[2..].trim();
+                    let context_part = stripped.trim();
                     if !context_part.is_empty() {
                         current_context = Some(context_part.to_string());
                     }

@@ -1,7 +1,7 @@
 use crate::{HistoryEntry, MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT};
 
 pub(crate) fn truncate_for_prompt(text: &str, max_chars: usize) -> String {
-    let limit = max_chars.max(256).min(MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT);
+    let limit = max_chars.clamp(256, MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT);
     if text.chars().count() <= limit {
         return text.to_string();
     }

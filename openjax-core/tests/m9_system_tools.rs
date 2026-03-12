@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use openjax_core::approval::{ApprovalHandler, ApprovalRequest};
-use openjax_core::tools::{self, ToolCall, ToolRouter, ToolRuntimeConfig};
+use openjax_core::tools::{self, ToolCall, ToolExecutionRequest, ToolRouter, ToolRuntimeConfig};
 use openjax_core::{ApprovalPolicy, SandboxMode};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -47,19 +47,19 @@ async fn process_snapshot_dispatch_returns_json() {
     let approval = Arc::new(CountingApprovalHandler::default());
 
     let outcome = router
-        .execute(
-            1,
-            "test-call-1".to_string(),
-            &call("process_snapshot", &[("limit", "5"), ("sort_by", "cpu")]),
-            &cwd,
-            ToolRuntimeConfig {
+        .execute(ToolExecutionRequest {
+            turn_id: 1,
+            tool_call_id: "test-call-1".to_string(),
+            call: &call("process_snapshot", &[("limit", "5"), ("sort_by", "cpu")]),
+            cwd: &cwd,
+            config: ToolRuntimeConfig {
                 approval_policy: ApprovalPolicy::OnRequest,
                 sandbox_mode: SandboxMode::WorkspaceWrite,
                 ..ToolRuntimeConfig::default()
             },
-            approval.clone(),
-            None,
-        )
+            approval_handler: approval.clone(),
+            event_sink: None,
+        })
         .await
         .expect("process_snapshot should execute");
 
@@ -76,22 +76,22 @@ async fn system_load_does_not_trigger_approval_under_on_request() {
     let approval = Arc::new(CountingApprovalHandler::default());
 
     let outcome = router
-        .execute(
-            1,
-            "test-call-2".to_string(),
-            &call(
+        .execute(ToolExecutionRequest {
+            turn_id: 1,
+            tool_call_id: "test-call-2".to_string(),
+            call: &call(
                 "system_load",
                 &[("include_cpu", "true"), ("include_memory", "false")],
             ),
-            &cwd,
-            ToolRuntimeConfig {
+            cwd: &cwd,
+            config: ToolRuntimeConfig {
                 approval_policy: ApprovalPolicy::OnRequest,
                 sandbox_mode: SandboxMode::WorkspaceWrite,
                 ..ToolRuntimeConfig::default()
             },
-            approval.clone(),
-            None,
-        )
+            approval_handler: approval.clone(),
+            event_sink: None,
+        })
         .await
         .expect("system_load should execute");
 

@@ -49,7 +49,7 @@ impl ModelRouter {
             for candidate in next {
                 if seen.insert(candidate.to_string()) {
                     out.push(candidate.to_string());
-                    if out.len() >= 1 + self.routing.max_fallback_chain {
+                    if out.len() > self.routing.max_fallback_chain {
                         return out;
                     }
                 }

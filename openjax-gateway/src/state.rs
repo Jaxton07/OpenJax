@@ -155,13 +155,13 @@ impl SessionRuntime {
             .map(|event| event.event_seq.saturating_sub(1))
             .unwrap_or(0);
 
-        if let Some(seq) = after_event_seq {
-            if seq < min_allowed {
-                return Err(ApiError::invalid_argument(
-                    "replay point is outside retention window",
-                    json!({ "after_event_seq": seq, "min_allowed": min_allowed }),
-                ));
-            }
+        if let Some(seq) = after_event_seq
+            && seq < min_allowed
+        {
+            return Err(ApiError::invalid_argument(
+                "replay point is outside retention window",
+                json!({ "after_event_seq": seq, "min_allowed": min_allowed }),
+            ));
         }
 
         let events = self
@@ -331,10 +331,8 @@ pub async fn run_turn_task(
                     if let Some(tx) = pending_turn_id_tx.take() {
                         let _ = tx.send(Ok(public_turn_id));
                     }
-                } else {
-                    if let Some(tx) = pending_turn_id_tx.take() {
-                        let _ = tx.send(Err(ApiError::internal("failed to infer turn id")));
-                    }
+                } else if let Some(tx) = pending_turn_id_tx.take() {
+                    let _ = tx.send(Err(ApiError::internal("failed to infer turn id")));
                 }
             }
         }
@@ -443,17 +441,17 @@ fn map_core_event(
             turn.status = TurnStatus::Running;
         } else if event_type == "turn_completed" {
             turn.status = TurnStatus::Completed;
-        } else if event_type == "assistant_message" {
-            if let Some(content) = payload.get("content").and_then(|value| value.as_str()) {
-                turn.assistant_message = Some(content.to_string());
-            }
+        } else if event_type == "assistant_message"
+            && let Some(content) = payload.get("content").and_then(|value| value.as_str())
+        {
+            turn.assistant_message = Some(content.to_string());
         }
     }
 
-    if let Some(turn_id) = public_turn_id.clone() {
-        if let Some(tx) = turn_id_tx.take() {
-            let _ = tx.send(Ok(turn_id));
-        }
+    if let Some(turn_id) = public_turn_id.clone()
+        && let Some(tx) = turn_id_tx.take()
+    {
+        let _ = tx.send(Ok(turn_id));
     }
 
     let envelope = session.create_gateway_event(

@@ -46,7 +46,7 @@ pub fn parse_tool_call(input: &str) -> Option<ToolCall> {
         let key = &rest[key_start..i];
 
         skip_spaces(rest, &mut i);
-        if i >= rest.len() || rest[i..].chars().next() != Some('=') {
+        if i >= rest.len() || !rest[i..].starts_with('=') {
             while i < rest.len()
                 && !rest[i..]
                     .chars()

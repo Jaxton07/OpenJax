@@ -27,3 +27,81 @@ jobs:
 
       - name: Test workspace
         run: cargo test --workspace --locked
+
+  web:
+    name: Web Build and Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test
+
+  package-linux:
+    name: Linux Package Install Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - name: Build release binaries
+        run: make build-release-linux
+
+      - name: Build web assets
+        run: make build-web-release
+
+      - name: Package linux tarball
+        run: make package-linux
+
+      - name: Install/uninstall smoke test
+        run: |
+          set -euo pipefail
+          TAR_FILE=$(ls dist/openjax-v*-linux-x86_64.tar.gz | head -n1)
+          tar -xzf "$TAR_FILE" -C dist
+          PKG_DIR=$(basename "$TAR_FILE" .tar.gz)
+          PREFIX="$RUNNER_TEMP/openjax-install"
+          bash "dist/$PKG_DIR/install.sh" --prefix "$PREFIX" --yes
+          test -x "$PREFIX/bin/tui_next"
+          test -x "$PREFIX/bin/openjaxd"
+          test -x "$PREFIX/bin/openjax-gateway"
+          test -f "$PREFIX/web/index.html"
+          "$PREFIX/bin/tui_next" --help >/dev/null
+          "$PREFIX/bin/openjaxd" --help >/dev/null
+          "$PREFIX/bin/openjax-gateway" --help >/dev/null
+          bash "dist/$PKG_DIR/uninstall.sh" --prefix "$PREFIX" --yes

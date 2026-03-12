@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn sorts_by_cpu_then_memory() {
-        let mut items = vec![rec(1, 5.0, 100), rec(2, 10.0, 50), rec(3, 10.0, 200)];
+        let mut items = [rec(1, 5.0, 100), rec(2, 10.0, 50), rec(3, 10.0, 200)];
         items.sort_by(|l, r| compare_records(l, r, ProcessSortBy::Cpu));
         assert_eq!(items[0].pid, 3);
         assert_eq!(items[1].pid, 2);
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn sorts_by_memory_then_cpu() {
-        let mut items = vec![rec(1, 5.0, 100), rec(2, 10.0, 50), rec(3, 10.0, 200)];
+        let mut items = [rec(1, 5.0, 100), rec(2, 10.0, 50), rec(3, 10.0, 200)];
         items.sort_by(|l, r| compare_records(l, r, ProcessSortBy::Memory));
         assert_eq!(items[0].pid, 3);
         assert_eq!(items[1].pid, 1);

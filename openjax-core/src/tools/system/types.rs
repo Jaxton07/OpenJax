@@ -1,16 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessSortBy {
+    #[default]
     Cpu,
     Memory,
-}
-
-impl Default for ProcessSortBy {
-    fn default() -> Self {
-        Self::Cpu
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

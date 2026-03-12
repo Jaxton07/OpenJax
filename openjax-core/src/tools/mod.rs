@@ -47,7 +47,7 @@ pub use policy::{
 pub use read_file::read_file;
 pub use registry::{ToolHandler, ToolKind, ToolRegistry};
 pub use router::{MAX_AGENT_DEPTH, SandboxMode, ToolCall, ToolRuntimeConfig, parse_tool_call};
-pub use router_impl::{ToolExecOutcome, ToolRouter};
+pub use router_impl::{ToolExecOutcome, ToolExecutionRequest, ToolRouter};
 pub use sandbox_runtime::{
     BackendUnavailable, SandboxBackendPreference, SandboxDegradePolicy, SandboxExecutionRequest,
     SandboxExecutionResult, SandboxRuntimeSettings, execute_in_sandbox, fnv1a64,

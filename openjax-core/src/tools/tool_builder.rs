@@ -87,31 +87,37 @@ pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
     builder.build()
 }
 
+pub struct CreateToolInvocationParams {
+    pub turn_id: u64,
+    pub call_id: String,
+    pub tool_name: String,
+    pub arguments: String,
+    pub cwd: std::path::PathBuf,
+    pub sandbox_policy: SandboxPolicy,
+    pub approval_policy: ApprovalPolicy,
+    pub prevent_shell_skill_trigger: bool,
+    pub approval_handler: Arc<dyn ApprovalHandler>,
+    pub event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
+}
+
 /// 创建工具调用上下文
 pub fn create_tool_invocation(
-    turn_id: u64,
-    call_id: String,
-    tool_name: String,
-    arguments: String,
-    cwd: std::path::PathBuf,
-    sandbox_policy: SandboxPolicy,
-    approval_policy: ApprovalPolicy,
-    prevent_shell_skill_trigger: bool,
-    approval_handler: Arc<dyn ApprovalHandler>,
-    event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
+    params: CreateToolInvocationParams,
 ) -> crate::tools::context::ToolInvocation {
     crate::tools::context::ToolInvocation {
-        tool_name,
-        call_id,
-        payload: crate::tools::context::ToolPayload::Function { arguments },
+        tool_name: params.tool_name,
+        call_id: params.call_id,
+        payload: crate::tools::context::ToolPayload::Function {
+            arguments: params.arguments,
+        },
         turn: crate::tools::context::ToolTurnContext {
-            turn_id,
-            cwd,
-            sandbox_policy,
-            approval_policy,
-            prevent_shell_skill_trigger,
-            approval_handler,
-            event_sink,
+            turn_id: params.turn_id,
+            cwd: params.cwd,
+            sandbox_policy: params.sandbox_policy,
+            approval_policy: params.approval_policy,
+            prevent_shell_skill_trigger: params.prevent_shell_skill_trigger,
+            approval_handler: params.approval_handler,
+            event_sink: params.event_sink,
             windows_sandbox_level: None,
         },
     }
