@@ -106,13 +106,20 @@ jobs:
           OPENJAX_GATEWAY_BIND="$GATEWAY_BIND" "$PREFIX/bin/openjax-gateway" >/tmp/openjax-gateway.log 2>&1 &
           GATEWAY_PID=$!
           trap 'kill "$GATEWAY_PID" 2>/dev/null || true' EXIT
+          HEALTH_OK=0
           for _ in {1..30}; do
             if curl -fsS "http://${GATEWAY_BIND}/healthz" >/dev/null; then
+              HEALTH_OK=1
               break
             fi
             sleep 1
           done
-          curl -fsS "http://${GATEWAY_BIND}/healthz" >/dev/null
+          if [[ "$HEALTH_OK" -ne 1 ]]; then
+            echo "[smoke] openjax-gateway failed to become healthy in time"
+            echo "[smoke] recent openjax-gateway.log:"
+            tail -n 200 /tmp/openjax-gateway.log || true
+            exit 1
+          fi
           kill "$GATEWAY_PID" 2>/dev/null || true
           wait "$GATEWAY_PID" 2>/dev/null || true
           trap - EXIT
