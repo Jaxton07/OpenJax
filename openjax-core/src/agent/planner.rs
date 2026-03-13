@@ -1,13 +1,19 @@
+use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
+use tokio::task::JoinSet;
 
 use openjax_protocol::Event;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::agent::decision::{normalize_model_decision, parse_model_decision};
+use crate::agent::decision::{
+    NormalizedToolCall, normalize_model_decision, normalize_tool_calls, parse_model_decision,
+    parse_model_decision_v2,
+};
 use crate::agent::prompt::{
     build_final_response_prompt, build_json_repair_prompt, build_planner_input, truncate_for_prompt,
 };
+use crate::agent::turn_engine::TurnEngine;
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::tool_policy::{
     approval_rejected_stop_message, approval_timed_out_stop_message, duplicate_skip_abort_message,
@@ -36,6 +42,7 @@ impl Agent {
         let mut saw_git_status_short = false;
         let mut saw_git_diff_stat = false;
         let mut diff_strategy = "none";
+        let mut turn_engine = TurnEngine::new();
 
         debug!(
             turn_id = turn_id,
@@ -112,6 +119,7 @@ impl Agent {
                             content: message.clone(),
                         },
                     );
+                    turn_engine.on_failed();
                     self.record_history("assistant", message);
                     return;
                 }
@@ -130,6 +138,64 @@ impl Agent {
                 raw_output = %model_output,
                 "model_raw_output"
             );
+
+            if self.tool_batch_v2_enabled
+                && let Some(v2) = parse_model_decision_v2(&model_output)
+                && v2.action.eq_ignore_ascii_case("tool_batch")
+            {
+                let mut normalized_calls = normalize_tool_calls(&v2.tool_calls);
+                if normalized_calls.is_empty() {
+                    let message = "[model error] tool_batch missing valid tool_calls".to_string();
+                    self.push_event(
+                        events,
+                        Event::AssistantMessage {
+                            turn_id,
+                            content: message.clone(),
+                        },
+                    );
+                    self.record_history("assistant", message);
+                    return;
+                }
+                if normalized_calls.len() > remaining {
+                    normalized_calls.truncate(remaining);
+                }
+                let proposals = normalized_calls
+                    .iter()
+                    .map(|call| openjax_protocol::ToolCallProposal {
+                        tool_call_id: call.tool_call_id.clone(),
+                        tool_name: call.tool_name.clone(),
+                        arguments: call
+                            .args
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect::<BTreeMap<_, _>>(),
+                        depends_on: call.depends_on.clone(),
+                        concurrency_group: call.concurrency_group.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                self.push_event(
+                    events,
+                    Event::ToolCallsProposed {
+                        turn_id,
+                        tool_calls: proposals,
+                    },
+                );
+                turn_engine.on_tool_batch_started();
+                let executed = self
+                    .execute_tool_batch_calls(
+                        turn_id,
+                        normalized_calls,
+                        events,
+                        &mut tool_traces,
+                        &mut apply_patch_read_guard,
+                        &mut turn_engine,
+                    )
+                    .await;
+                executed_count += executed;
+                consecutive_duplicate_skips = 0;
+                turn_engine.on_response_resumed();
+                continue;
+            }
 
             let decision = if let Some(parsed) = parse_model_decision(&model_output) {
                 normalize_model_decision(parsed)
@@ -161,6 +227,7 @@ impl Agent {
                                 content: message.clone(),
                             },
                         );
+                        turn_engine.on_failed();
                         self.record_history("assistant", message);
                         return;
                     }
@@ -191,6 +258,7 @@ impl Agent {
                             content: model_output.clone(),
                         },
                     );
+                    turn_engine.on_failed();
                     self.record_history("assistant", model_output);
                     return;
                 }
@@ -222,19 +290,86 @@ impl Agent {
                     "natural_language_turn completed"
                 );
                 let message = if self.final_response_mode == FinalResponseMode::FinalWriter {
-                    info!(
-                        turn_id = turn_id,
-                        mode = self.final_response_mode.as_str(),
-                        "final_writer_request started"
-                    );
-                    self.stream_final_assistant_reply(
-                        turn_id,
-                        user_input,
-                        &tool_traces,
-                        &seed_message,
-                        events,
-                    )
-                    .await
+                    if self.stream_engine_v2_enabled {
+                        turn_engine.on_response_started();
+                        let (streamed, live_streamed) = self
+                            .stream_final_assistant_reply(
+                                turn_id,
+                                user_input,
+                                &tool_traces,
+                                &seed_message,
+                                events,
+                            )
+                            .await;
+                        if live_streamed {
+                            streamed
+                        } else {
+                            self.push_event(
+                                events,
+                                Event::ResponseStarted {
+                                    turn_id,
+                                    stream_source: openjax_protocol::StreamSource::Synthetic,
+                                },
+                            );
+                            self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
+                            self.push_event(
+                                events,
+                                Event::ResponseCompleted {
+                                    turn_id,
+                                    content: seed_message.clone(),
+                                    stream_source: openjax_protocol::StreamSource::Synthetic,
+                                },
+                            );
+                            seed_message
+                        }
+                    } else {
+                        info!(
+                            turn_id = turn_id,
+                            mode = self.final_response_mode.as_str(),
+                            "final_writer_request started"
+                        );
+                        self.stream_final_assistant_reply(
+                            turn_id,
+                            user_input,
+                            &tool_traces,
+                            &seed_message,
+                            events,
+                        )
+                        .await
+                        .0
+                    }
+                } else if self.stream_engine_v2_enabled {
+                    turn_engine.on_response_started();
+                    let (streamed, live_streamed) = self
+                        .stream_final_assistant_reply(
+                            turn_id,
+                            user_input,
+                            &tool_traces,
+                            &seed_message,
+                            events,
+                        )
+                        .await;
+                    if live_streamed {
+                        streamed
+                    } else {
+                        self.push_event(
+                            events,
+                            Event::ResponseStarted {
+                                turn_id,
+                                stream_source: openjax_protocol::StreamSource::Synthetic,
+                            },
+                        );
+                        self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
+                        self.push_event(
+                            events,
+                            Event::ResponseCompleted {
+                                turn_id,
+                                content: seed_message.clone(),
+                                stream_source: openjax_protocol::StreamSource::Synthetic,
+                            },
+                        );
+                        seed_message
+                    }
                 } else {
                     info!(
                         turn_id = turn_id,
@@ -260,6 +395,7 @@ impl Agent {
                         content: message.clone(),
                     },
                 );
+                turn_engine.on_completed();
                 self.record_history("assistant", message);
                 return;
             }
@@ -277,6 +413,7 @@ impl Agent {
                                 content: message.clone(),
                             },
                         );
+                        turn_engine.on_failed();
                         self.record_history("assistant", message);
                         return;
                     }
@@ -380,6 +517,7 @@ impl Agent {
                                 content: loop_message.clone(),
                             },
                         );
+                        turn_engine.on_failed();
                         self.record_history("assistant", loop_message);
                         return;
                     }
@@ -510,6 +648,7 @@ impl Agent {
                                     content: stop_message.clone(),
                                 },
                             );
+                            turn_engine.on_failed();
                             self.record_history("assistant", stop_message);
                             return;
                         }
@@ -532,6 +671,7 @@ impl Agent {
                     content: message.clone(),
                 },
             );
+            turn_engine.on_failed();
             self.record_history("assistant", message);
             return;
         }
@@ -571,6 +711,9 @@ impl Agent {
                 content: message.clone(),
             },
         );
+        if matches!(turn_engine.phase(), crate::agent::turn_engine::TurnEnginePhase::Planning) {
+            turn_engine.on_failed();
+        }
         self.record_history("assistant", message);
     }
 
@@ -581,9 +724,20 @@ impl Agent {
         tool_traces: &[String],
         seed_message: &str,
         events: &mut Vec<Event>,
-    ) -> String {
+    ) -> (String, bool) {
         let prompt = build_final_response_prompt(user_input, tool_traces, seed_message);
         self.apply_rate_limit().await;
+        let stream_started_at = Instant::now();
+        let mut ttft_logged = false;
+        if self.stream_engine_v2_enabled {
+            self.push_event(
+                events,
+                Event::ResponseStarted {
+                    turn_id,
+                    stream_source: openjax_protocol::StreamSource::ModelLive,
+                },
+            );
+        }
 
         let (delta_tx, mut delta_rx) = tokio::sync::mpsc::unbounded_channel();
         let stream_request = ModelRequest::for_stage(ModelStage::FinalWriter, prompt);
@@ -598,7 +752,22 @@ impl Agent {
                 delta = delta_rx.recv() => {
                     if let Some(delta) = delta
                         && !delta.is_empty() {
+                        if !ttft_logged {
+                            ttft_logged = true;
+                            info!(
+                                turn_id = turn_id,
+                                ttft_ms = stream_started_at.elapsed().as_millis(),
+                                "final_stream_ttft"
+                            );
+                        }
                         streamed.push_str(&delta);
+                        if self.stream_engine_v2_enabled {
+                            self.push_event(events, Event::ResponseTextDelta {
+                                turn_id,
+                                content_delta: delta.clone(),
+                                stream_source: openjax_protocol::StreamSource::ModelLive,
+                            });
+                        }
                         self.push_event(events, Event::AssistantDelta {
                             turn_id,
                             content_delta: delta,
@@ -613,7 +782,25 @@ impl Agent {
 
         while let Ok(delta) = delta_rx.try_recv() {
             if !delta.is_empty() {
+                if !ttft_logged {
+                    ttft_logged = true;
+                    info!(
+                        turn_id = turn_id,
+                        ttft_ms = stream_started_at.elapsed().as_millis(),
+                        "final_stream_ttft"
+                    );
+                }
                 streamed.push_str(&delta);
+                if self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::ResponseTextDelta {
+                            turn_id,
+                            content_delta: delta.clone(),
+                            stream_source: openjax_protocol::StreamSource::ModelLive,
+                        },
+                    );
+                }
                 self.push_event(
                     events,
                     Event::AssistantDelta {
@@ -633,20 +820,39 @@ impl Agent {
                     streamed_len = streamed.len(),
                     "final_writer_request completed"
                 );
-                if streamed.is_empty() {
-                    return full_text;
+                let resolved = if streamed.is_empty() {
+                    full_text
+                } else if full_text.is_empty() || full_text == streamed {
+                    streamed
+                } else {
+                    full_text
+                };
+                if self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::ResponseCompleted {
+                            turn_id,
+                            content: resolved.clone(),
+                            stream_source: openjax_protocol::StreamSource::ModelLive,
+                        },
+                    );
                 }
-                if full_text.is_empty() {
-                    return streamed;
-                }
-                if full_text == streamed {
-                    return streamed;
-                }
-                full_text
+                (resolved, true)
             }
             Err(err) => {
                 warn!(turn_id = turn_id, error = %err, "final response streaming failed; fallback to planner message");
-                seed_message.to_string()
+                if self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::ResponseError {
+                            turn_id,
+                            code: "final_writer_stream_failed".to_string(),
+                            message: err.to_string(),
+                            retryable: true,
+                        },
+                    );
+                }
+                (seed_message.to_string(), false)
             }
         }
     }
@@ -689,6 +895,272 @@ impl Agent {
                 },
             );
         }
+    }
+
+    async fn execute_tool_batch_calls(
+        &mut self,
+        turn_id: u64,
+        mut calls: Vec<NormalizedToolCall>,
+        events: &mut Vec<Event>,
+        tool_traces: &mut Vec<String>,
+        apply_patch_read_guard: &mut ApplyPatchReadGuard,
+        turn_engine: &mut TurnEngine,
+    ) -> usize {
+        let mut executed = 0usize;
+        let mut succeeded = 0u32;
+        let mut failed = 0u32;
+        let total = calls.len() as u32;
+        let mut completed_ids: HashSet<String> = HashSet::new();
+        let batch_started_at = Instant::now();
+
+        while !calls.is_empty() {
+            let ready_indices = calls
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, call)| {
+                    if call.depends_on.iter().all(|dep| completed_ids.contains(dep)) {
+                        Some(idx)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            if !ready_indices.is_empty() {
+                let mut ready_calls = ready_indices
+                    .into_iter()
+                    .rev()
+                    .map(|idx| calls.remove(idx))
+                    .collect::<Vec<_>>();
+                ready_calls.reverse();
+
+                let mut join_set = JoinSet::new();
+                for call in ready_calls {
+                    if let Some(message) =
+                        apply_patch_read_guard.block_user_message_for_tool(&call.tool_name)
+                    {
+                        self.push_event(
+                            events,
+                            Event::ToolCallStarted {
+                                turn_id,
+                                tool_call_id: call.tool_call_id.clone(),
+                                tool_name: call.tool_name.clone(),
+                                target: extract_tool_target_hint(&call.tool_name, &call.args),
+                            },
+                        );
+                        self.record_tool_call(&call.tool_name, &call.args, false, message);
+                        tool_traces.push(format!(
+                            "tool={}; ok=false; output={}",
+                            call.tool_name,
+                            truncate_for_prompt(
+                                message,
+                                self.skill_runtime_config.max_diff_chars_for_planner
+                            )
+                        ));
+                        self.push_event(
+                            events,
+                            Event::ToolCallCompleted {
+                                turn_id,
+                                tool_call_id: call.tool_call_id.clone(),
+                                tool_name: call.tool_name.clone(),
+                                ok: false,
+                                output: message.to_string(),
+                            },
+                        );
+                        completed_ids.insert(call.tool_call_id);
+                        executed += 1;
+                        failed += 1;
+                        continue;
+                    }
+
+                    self.push_event(
+                        events,
+                        Event::ToolCallStarted {
+                            turn_id,
+                            tool_call_id: call.tool_call_id.clone(),
+                            tool_name: call.tool_name.clone(),
+                            target: extract_tool_target_hint(&call.tool_name, &call.args),
+                        },
+                    );
+                    let tools = self.tools.clone();
+                    let tool_runtime_config = self.tool_runtime_config;
+                    let approval_handler = self.approval_handler.clone();
+                    let cwd = self.cwd.clone();
+                    join_set.spawn(async move {
+                        let tool_call = tools::ToolCall {
+                            name: call.tool_name.clone(),
+                            args: call.args.clone(),
+                        };
+                        let result = tools
+                            .execute(tools::ToolExecutionRequest {
+                                turn_id,
+                                tool_call_id: call.tool_call_id.clone(),
+                                call: &tool_call,
+                                cwd: cwd.as_path(),
+                                config: tool_runtime_config,
+                                approval_handler,
+                                event_sink: None,
+                            })
+                            .await;
+                        (call, result)
+                    });
+                }
+
+                while let Some(result) = join_set.join_next().await {
+                    match result {
+                        Ok((call, Ok(outcome))) => {
+                            let ok = outcome.success;
+                            let output = outcome.output;
+                            apply_patch_read_guard.on_tool_success(&call.tool_name);
+                            if is_mutating_tool(&call.tool_name) {
+                                self.state_epoch = self.state_epoch.saturating_add(1);
+                            }
+                            tool_traces.push(format!(
+                                "tool={}; ok={}; output={}",
+                                call.tool_name,
+                                ok,
+                                truncate_for_prompt(
+                                    &output,
+                                    self.skill_runtime_config.max_diff_chars_for_planner
+                                )
+                            ));
+                            self.record_tool_call(&call.tool_name, &call.args, ok, &output);
+                            self.push_event(
+                                events,
+                                Event::ToolCallCompleted {
+                                    turn_id,
+                                    tool_call_id: call.tool_call_id.clone(),
+                                    tool_name: call.tool_name.clone(),
+                                    ok,
+                                    output,
+                                },
+                            );
+                            completed_ids.insert(call.tool_call_id);
+                            executed += 1;
+                            if ok {
+                                succeeded += 1;
+                            } else {
+                                failed += 1;
+                            }
+                        }
+                        Ok((call, Err(err))) => {
+                            let err_text = err.to_string();
+                            let err_text_lower = err_text.to_ascii_lowercase();
+                            apply_patch_read_guard.on_tool_failure(&call.tool_name, &err_text);
+                            tool_traces.push(format!(
+                                "tool={}; ok=false; output={}",
+                                call.tool_name,
+                                truncate_for_prompt(
+                                    &err_text,
+                                    self.skill_runtime_config.max_diff_chars_for_planner
+                                )
+                            ));
+                            self.record_tool_call(&call.tool_name, &call.args, false, &err_text);
+                            self.push_event(
+                                events,
+                                Event::ToolCallCompleted {
+                                    turn_id,
+                                    tool_call_id: call.tool_call_id.clone(),
+                                    tool_name: call.tool_name.clone(),
+                                    ok: false,
+                                    output: err_text.clone(),
+                                },
+                            );
+                            if is_approval_blocking_error(&err_text) {
+                                self.push_event(
+                                    events,
+                                    Event::ResponseError {
+                                        turn_id,
+                                        code: "approval_blocked".to_string(),
+                                        message: "tool batch interrupted by approval decision"
+                                            .to_string(),
+                                        retryable: false,
+                                    },
+                                );
+                                turn_engine.on_failed();
+                            } else if err_text_lower.contains("timed out") {
+                                self.push_event(
+                                    events,
+                                    Event::ResponseError {
+                                        turn_id,
+                                        code: "tool_timeout".to_string(),
+                                        message: "tool execution timed out".to_string(),
+                                        retryable: true,
+                                    },
+                                );
+                            } else if err_text_lower.contains("cancel") {
+                                self.push_event(
+                                    events,
+                                    Event::ResponseError {
+                                        turn_id,
+                                        code: "tool_canceled".to_string(),
+                                        message: "tool execution canceled".to_string(),
+                                        retryable: true,
+                                    },
+                                );
+                            }
+                            completed_ids.insert(call.tool_call_id);
+                            executed += 1;
+                            failed += 1;
+                        }
+                        Err(err) => {
+                            let output = format!("tool task join failed: {err}");
+                            self.push_event(
+                                events,
+                                Event::AssistantMessage {
+                                    turn_id,
+                                    content: output.clone(),
+                                },
+                            );
+                            self.record_history("assistant", output);
+                        }
+                    }
+                }
+                continue;
+            }
+
+            let unresolved = calls.split_off(0);
+            for call in unresolved {
+                let output = "tool call dependency unmet".to_string();
+                self.push_event(
+                    events,
+                    Event::ToolCallCompleted {
+                        turn_id,
+                        tool_call_id: call.tool_call_id.clone(),
+                        tool_name: call.tool_name.clone(),
+                        ok: false,
+                        output: output.clone(),
+                    },
+                );
+                tool_traces.push(format!(
+                    "tool={}; ok=false; output={}",
+                    call.tool_name,
+                    truncate_for_prompt(&output, self.skill_runtime_config.max_diff_chars_for_planner)
+                ));
+                self.record_tool_call(&call.tool_name, &call.args, false, &output);
+                completed_ids.insert(call.tool_call_id);
+                executed += 1;
+                failed += 1;
+            }
+        }
+
+        self.push_event(
+            events,
+            Event::ToolBatchCompleted {
+                turn_id,
+                total,
+                succeeded,
+                failed,
+            },
+        );
+        info!(
+            turn_id = turn_id,
+            total = total,
+            succeeded = succeeded,
+            failed = failed,
+            duration_ms = batch_started_at.elapsed().as_millis(),
+            "tool_batch_completed"
+        );
+        executed
     }
 }
 

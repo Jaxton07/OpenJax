@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::error::{ApiError, now_rfc3339};
@@ -80,6 +80,21 @@ pub struct ResolveApprovalRequest {
 #[derive(Debug, Deserialize)]
 pub struct EventsQuery {
     after_event_seq: Option<u64>,
+    protocol: Option<String>,
+}
+
+fn resolve_resume_seq(after_event_seq: Option<u64>, last_event_id: Option<&str>) -> Option<u64> {
+    after_event_seq.or_else(|| last_event_id.and_then(|value| value.parse::<u64>().ok()))
+}
+
+fn sse_protocol_v2_enabled() -> bool {
+    let raw = std::env::var("OPENJAX_SSE_PROTOCOL_V2")
+        .ok()
+        .unwrap_or_else(|| "1".to_string());
+    !matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "0" | "off" | "false" | "disabled"
+    )
 }
 
 pub async fn healthz() -> impl IntoResponse {
@@ -148,6 +163,7 @@ pub async fn submit_turn(
             Some(turn_id.clone()),
             "turn_started",
             json!({}),
+            None,
         );
         let message = session.create_gateway_event(
             &ctx.request_id,
@@ -155,6 +171,7 @@ pub async fn submit_turn(
             Some(turn_id.clone()),
             "assistant_message",
             json!({ "content": "session cleared" }),
+            None,
         );
         let completed = session.create_gateway_event(
             &ctx.request_id,
@@ -162,6 +179,7 @@ pub async fn submit_turn(
             Some(turn_id.clone()),
             "turn_completed",
             json!({}),
+            None,
         );
         session.publish_event(started);
         session.publish_event(message);
@@ -322,12 +340,19 @@ pub async fn shutdown_session(
     Path(session_id): Path<String>,
     Extension(ctx): Extension<RequestContext>,
 ) -> Result<Json<SessionActionResponse>, ApiError> {
-    let session_runtime = state.remove_session(&session_id).await.ok_or_else(|| {
-        ApiError::not_found("session not found", json!({ "session_id": session_id }))
-    })?;
+    let session_runtime = state.get_session(&session_id).await?;
 
     {
         let mut session = session_runtime.lock().await;
+        let event = session.create_gateway_event(
+            &ctx.request_id,
+            &session_id,
+            None,
+            "session_shutdown",
+            json!({ "reason": "shutdown_requested" }),
+            None,
+        );
+        session.publish_event(event);
         session.status = SessionStatus::Closing;
         let agent = session.agent.clone();
         drop(session);
@@ -336,6 +361,7 @@ pub async fn shutdown_session(
         let mut session = session_runtime.lock().await;
         session.status = SessionStatus::Closed;
     }
+    state.remove_session(&session_id).await;
 
     Ok(Json(SessionActionResponse {
         request_id: ctx.request_id,
@@ -356,23 +382,85 @@ pub async fn stream_events(
         let session = session_runtime.lock().await;
         let last_event_id = headers
             .get("Last-Event-ID")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok());
-        let after_event_seq = query.after_event_seq.or(last_event_id);
+            .and_then(|value| value.to_str().ok());
+        let after_event_seq = resolve_resume_seq(query.after_event_seq, last_event_id);
         (
             session.replay_from(after_event_seq)?,
             session.event_tx.subscribe(),
         )
     };
 
+    let requested_protocol = query.protocol.clone().unwrap_or_else(|| "v1".to_string());
+    let protocol = if requested_protocol.eq_ignore_ascii_case("v2") && sse_protocol_v2_enabled() {
+        "v2".to_string()
+    } else {
+        "v1".to_string()
+    };
+    let session_runtime_for_recovery = session_runtime.clone();
+    let request_id = headers
+        .get("X-Request-Id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("req_stream")
+        .to_string();
     let event_stream = stream! {
+        let mut last_sent_event_seq = replay.last().map(|event| event.event_seq).unwrap_or(0);
         for event in replay {
-            yield Ok(to_sse_event(event));
+            last_sent_event_seq = event.event_seq;
+            yield Ok(to_sse_event(event, &protocol));
         }
         loop {
             match rx.recv().await {
-                Ok(event) => yield Ok(to_sse_event(event)),
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Ok(event) => {
+                    last_sent_event_seq = event.event_seq;
+                    yield Ok(to_sse_event(event, &protocol));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    let recovered = {
+                        let session = session_runtime_for_recovery.lock().await;
+                        session.replay_from(Some(last_sent_event_seq))
+                    };
+                    match recovered {
+                        Ok(missed) if !missed.is_empty() => {
+                            info!(
+                                session_id = %session_id,
+                                recovered_count = missed.len(),
+                                last_sent_event_seq = last_sent_event_seq,
+                                "sse_lagged_recovered"
+                            );
+                            for event in missed {
+                                if event.event_seq <= last_sent_event_seq {
+                                    continue;
+                                }
+                                last_sent_event_seq = event.event_seq;
+                                yield Ok(to_sse_event(event, &protocol));
+                            }
+                        }
+                        _ => {
+                            warn!(
+                                session_id = %session_id,
+                                last_sent_event_seq = last_sent_event_seq,
+                                "sse_lagged_recovery_failed"
+                            );
+                            let recovery_error = StreamEventEnvelope {
+                                request_id: request_id.clone(),
+                                session_id: session_id.clone(),
+                                turn_id: None,
+                                event_seq: last_sent_event_seq.saturating_add(1),
+                                turn_seq: 0,
+                                timestamp: now_rfc3339(),
+                                event_type: "response_error".to_string(),
+                                stream_source: "replay".to_string(),
+                                payload: json!({
+                                    "code": "REPLAY_WINDOW_EXCEEDED",
+                                    "message": "event replay window exceeded; reconnect required",
+                                    "retryable": true
+                                }),
+                            };
+                            yield Ok(to_sse_event(recovery_error, &protocol));
+                            break;
+                        }
+                    }
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }
@@ -381,11 +469,70 @@ pub async fn stream_events(
     Ok(Sse::new(event_stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
-fn to_sse_event(event: StreamEventEnvelope) -> SseEvent {
+fn to_sse_event(event: StreamEventEnvelope, protocol: &str) -> SseEvent {
+    let adapted = if protocol.eq_ignore_ascii_case("v2") {
+        adapt_event_v2(event)
+    } else {
+        event
+    };
     SseEvent::default()
-        .event(event.event_type.clone())
-        .id(event.event_seq.to_string())
-        .data(serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()))
+        .event(adapted.event_type.clone())
+        .id(adapted.event_seq.to_string())
+        .data(serde_json::to_string(&adapted).unwrap_or_else(|_| "{}".to_string()))
+}
+
+fn adapt_event_v2(mut event: StreamEventEnvelope) -> StreamEventEnvelope {
+    let mapped = match event.event_type.as_str() {
+        "turn_started" => "response_started",
+        "assistant_delta" => "response_text_delta",
+        "assistant_message" | "turn_completed" => "response_completed",
+        other => other,
+    };
+    event.event_type = mapped.to_string();
+    event
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{adapt_event_v2, resolve_resume_seq};
+    use crate::state::StreamEventEnvelope;
+    use serde_json::json;
+
+    fn base_event(event_type: &str) -> StreamEventEnvelope {
+        StreamEventEnvelope {
+            request_id: "req_1".to_string(),
+            session_id: "sess_1".to_string(),
+            turn_id: Some("turn_1".to_string()),
+            event_seq: 1,
+            turn_seq: 1,
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            event_type: event_type.to_string(),
+            stream_source: "synthetic".to_string(),
+            payload: json!({}),
+        }
+    }
+
+    #[test]
+    fn adapt_event_v2_maps_assistant_delta_to_response_text_delta() {
+        let event = adapt_event_v2(base_event("assistant_delta"));
+        assert_eq!(event.event_type, "response_text_delta");
+    }
+
+    #[test]
+    fn adapt_event_v2_maps_turn_completed_to_response_completed() {
+        let event = adapt_event_v2(base_event("turn_completed"));
+        assert_eq!(event.event_type, "response_completed");
+    }
+
+    #[test]
+    fn resolve_resume_seq_prefers_after_event_seq() {
+        assert_eq!(resolve_resume_seq(Some(9), Some("3")), Some(9));
+    }
+
+    #[test]
+    fn resolve_resume_seq_uses_last_event_id_when_query_absent() {
+        assert_eq!(resolve_resume_seq(None, Some("7")), Some(7));
+    }
 }
 
 fn normalize_session_action(action: &str) -> String {

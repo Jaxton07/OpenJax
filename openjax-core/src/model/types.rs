@@ -46,6 +46,8 @@ pub struct ModelRequest {
     pub system_prompt: Option<String>,
     #[serde(default)]
     pub options: ModelRequestOptions,
+    #[serde(default)]
+    pub tool_results: Vec<ToolResult>,
 }
 
 impl ModelRequest {
@@ -55,8 +57,21 @@ impl ModelRequest {
             user_input: user_input.into(),
             system_prompt: None,
             options: ModelRequestOptions::default(),
+            tool_results: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ToolResult {
+    pub tool_call_id: String,
+    pub ok: bool,
+    #[serde(default)]
+    pub output_text: Option<String>,
+    #[serde(default)]
+    pub output_json: Option<String>,
+    #[serde(default)]
+    pub error_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]

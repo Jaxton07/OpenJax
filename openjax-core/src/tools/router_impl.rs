@@ -17,6 +17,7 @@ pub struct ToolExecOutcome {
     pub success: bool,
 }
 
+#[derive(Clone)]
 pub struct ToolRouter {
     orchestrator: Arc<ToolOrchestrator>,
 }

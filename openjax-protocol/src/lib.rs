@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 // ============== Agent Types ==============
 
@@ -96,6 +97,40 @@ pub enum Event {
         turn_id: u64,
         content_delta: String,
     },
+    ResponseStarted {
+        turn_id: u64,
+        stream_source: StreamSource,
+    },
+    ResponseTextDelta {
+        turn_id: u64,
+        content_delta: String,
+        stream_source: StreamSource,
+    },
+    ToolCallsProposed {
+        turn_id: u64,
+        tool_calls: Vec<ToolCallProposal>,
+    },
+    ToolBatchCompleted {
+        turn_id: u64,
+        total: u32,
+        succeeded: u32,
+        failed: u32,
+    },
+    ResponseResumed {
+        turn_id: u64,
+        stream_source: StreamSource,
+    },
+    ResponseCompleted {
+        turn_id: u64,
+        content: String,
+        stream_source: StreamSource,
+    },
+    ResponseError {
+        turn_id: u64,
+        code: String,
+        message: String,
+        retryable: bool,
+    },
     ApprovalRequested {
         turn_id: u64,
         request_id: String,
@@ -131,6 +166,33 @@ pub enum Event {
         turn_id: u64,
     },
     ShutdownComplete,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamSource {
+    ModelLive,
+    Synthetic,
+    Replay,
+    Unknown,
+}
+
+impl Default for StreamSource {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolCallProposal {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    #[serde(default)]
+    pub arguments: BTreeMap<String, String>,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    #[serde(default)]
+    pub concurrency_group: Option<String>,
 }
 
 /// Agent status (预留扩展)

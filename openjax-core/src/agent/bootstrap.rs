@@ -10,6 +10,26 @@ use crate::agent::runtime_policy::{
 use crate::agent::state::RateLimitConfig;
 use crate::{Agent, Config, FinalResponseMode, approval, model, skills, tools};
 
+fn stream_engine_v2_enabled_from_env() -> bool {
+    let raw = std::env::var("OPENJAX_STREAM_ENGINE_V2")
+        .ok()
+        .unwrap_or_else(|| "1".to_string());
+    !matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "0" | "off" | "false" | "disabled"
+    )
+}
+
+fn tool_batch_v2_enabled_from_env() -> bool {
+    let raw = std::env::var("OPENJAX_TOOL_BATCH_V2")
+        .ok()
+        .unwrap_or_else(|| "1".to_string());
+    !matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "0" | "off" | "false" | "disabled"
+    )
+}
+
 impl Agent {
     pub fn new() -> Self {
         let config = Config::load();
@@ -106,6 +126,8 @@ impl Agent {
             recent_tool_calls: Vec::new(),
             state_epoch: 0,
             final_response_mode: FinalResponseMode::from_env(),
+            stream_engine_v2_enabled: stream_engine_v2_enabled_from_env(),
+            tool_batch_v2_enabled: tool_batch_v2_enabled_from_env(),
             approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
             event_sink: None,
         }

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GatewayClient } from "../lib/gatewayClient";
-import { applyStreamEvent } from "../lib/eventReducer";
+import { applyStreamEvents } from "../lib/eventReducer";
 import { humanizeError, isAuthenticationError } from "../lib/errors";
 import { loadAuth, loadSessions, loadSettings, saveAuth, saveSessions, saveSettings } from "../lib/storage";
 import type { ChatMessage, ChatSession, ChatState, PendingApproval } from "../types/chat";
 import type { AppSettings, AuthSessionItem, GatewayConnection, GatewayError } from "../types/gateway";
 
 const MAX_RECONNECT_RETRY = 6;
+const WEB_RENDER_V2_ENABLED = resolveWebRenderV2Enabled();
 
 function createLocalSession(sessionId: string): ChatSession {
   return {
@@ -37,10 +38,90 @@ export function useChatApp() {
   const pollingAbortRef = useRef<AbortController | null>(null);
   const sessionsRef = useRef(state.sessions);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
+  const pendingEventsRef = useRef<Record<string, import("../types/gateway").StreamEvent[]>>({});
+  const flushTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     sessionsRef.current = state.sessions;
   }, [state.sessions]);
+
+  const flushBufferedEvents = useCallback((sessionId?: string) => {
+    const targetSessionIds = sessionId ? [sessionId] : Object.keys(pendingEventsRef.current);
+    if (targetSessionIds.length === 0) {
+      return;
+    }
+    setState((prev) => {
+      let changed = false;
+      const sessions = prev.sessions.map((session) => {
+        if (!targetSessionIds.includes(session.id)) {
+          return session;
+        }
+        const events = pendingEventsRef.current[session.id];
+        if (!events || events.length === 0) {
+          return session;
+        }
+        if (WEB_RENDER_V2_ENABLED) {
+          console.debug("[stream_metrics] web_batch_flush", {
+            sessionId: session.id,
+            count: events.length
+          });
+        }
+        pendingEventsRef.current[session.id] = [];
+        const beforeLastEventSeq = session.lastEventSeq;
+        const beforeMessageCount = session.messages.length;
+        const eventTypes = events.map((event) => event.type);
+        const next = applyStreamEvents(session, events);
+        if (WEB_RENDER_V2_ENABLED) {
+          const messageTail = next.messages.slice(-3).map((message) => ({
+            role: message.role,
+            kind: message.kind,
+            turnId: message.turnId,
+            isDraft: message.isDraft,
+            contentLen: message.content.length,
+            contentPreview: message.content.slice(0, 80)
+          }));
+          console.debug("[stream_metrics] web_batch_apply", {
+            sessionId: session.id,
+            eventTypes,
+            beforeLastEventSeq,
+            afterLastEventSeq: next.lastEventSeq,
+            beforeMessageCount,
+            afterMessageCount: next.messages.length,
+            turnPhase: next.turnPhase,
+            messageTail
+          });
+        }
+        changed = changed || next !== session;
+        const nextSession: ChatSession = { ...next, connection: "active" };
+        return nextSession;
+      });
+      if (!changed) {
+        return prev;
+      }
+      return { ...prev, sessions };
+    });
+  }, []);
+
+  const scheduleBufferedFlush = useCallback((sessionId: string) => {
+    if (flushTimerRef.current !== null) {
+      return;
+    }
+    flushTimerRef.current = window.setTimeout(() => {
+      flushTimerRef.current = null;
+      flushBufferedEvents(sessionId);
+    }, 24);
+  }, [flushBufferedEvents]);
+
+  const shouldFlushImmediately = useCallback(
+    (event: import("../types/gateway").StreamEvent) =>
+      event.type === "response_completed" ||
+      event.type === "assistant_message" ||
+      event.type === "response_error" ||
+      event.type === "error" ||
+      event.type === "turn_completed" ||
+      event.type === "session_shutdown",
+    []
+  );
 
   useEffect(() => {
     saveSessions(state.sessions);
@@ -187,10 +268,26 @@ export function useChatApp() {
               afterEventSeq: lastSeq,
               signal: abort.signal,
               onEvent: (event) => {
-                updateSession(sessionId, (session) => {
-                  const next = applyStreamEvent(session, event);
-                  return { ...next, connection: "active" };
-                });
+                if (!WEB_RENDER_V2_ENABLED) {
+                  updateSession(sessionId, (session) => {
+                    const next = applyStreamEvents(session, [event]);
+                    return { ...next, connection: "active" };
+                  });
+                  return;
+                }
+                if (!pendingEventsRef.current[sessionId]) {
+                  pendingEventsRef.current[sessionId] = [];
+                }
+                pendingEventsRef.current[sessionId].push(event);
+                if (shouldFlushImmediately(event)) {
+                  if (flushTimerRef.current !== null) {
+                    window.clearTimeout(flushTimerRef.current);
+                    flushTimerRef.current = null;
+                  }
+                  flushBufferedEvents(sessionId);
+                } else {
+                  scheduleBufferedFlush(sessionId);
+                }
               },
               onError: (error) => {
                 setState((prev) => ({ ...prev, globalError: `SSE 事件解析失败: ${error.message}` }));
@@ -247,12 +344,16 @@ export function useChatApp() {
 
       void run();
     },
-    [client, refreshAccessToken, updateSession]
+    [client, flushBufferedEvents, refreshAccessToken, scheduleBufferedFlush, shouldFlushImmediately, updateSession]
   );
 
   useEffect(() => {
     if (!state.auth.authenticated || !state.auth.accessToken || !activeSession || state.settings.outputMode !== "sse") {
       reconnectAbortRef.current?.abort();
+      if (flushTimerRef.current !== null) {
+        window.clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
       return;
     }
     startSseLoop(activeSession.id);
@@ -625,4 +726,20 @@ function isSessionNotFoundError(error: unknown): boolean {
   }
   const gateway = error as Partial<GatewayError>;
   return gateway.code === "NOT_FOUND" || gateway.status === 404;
+}
+
+function resolveWebRenderV2Enabled(): boolean {
+  const globals =
+    typeof globalThis !== "undefined"
+      ? (globalThis as {
+          OPENJAX_WEB_STREAM_RENDER_V2?: string | boolean;
+          VITE_OPENJAX_WEB_STREAM_RENDER_V2?: string | boolean;
+        })
+      : {};
+  const raw = String(
+    globals.OPENJAX_WEB_STREAM_RENDER_V2 ?? globals.VITE_OPENJAX_WEB_STREAM_RENDER_V2 ?? "0"
+  )
+    .trim()
+    .toLowerCase();
+  return !(raw === "0" || raw === "off" || raw === "false" || raw === "disabled");
 }

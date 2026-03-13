@@ -106,11 +106,20 @@ export interface StreamEvent {
   session_id: string;
   turn_id?: string;
   event_seq: number;
+  turn_seq?: number;
   timestamp: string;
+  stream_source?: "model_live" | "synthetic" | "replay" | "unknown";
   type:
     | "turn_started"
     | "assistant_delta"
     | "assistant_message"
+    | "response_started"
+    | "response_text_delta"
+    | "tool_calls_proposed"
+    | "tool_batch_completed"
+    | "response_resumed"
+    | "response_completed"
+    | "response_error"
     | "tool_call_started"
     | "tool_call_completed"
     | "approval_requested"

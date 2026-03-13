@@ -153,10 +153,12 @@ export class GatewayClient {
   }
 
   async streamEvents(options: StreamOptions): Promise<void> {
-    const query =
-      options.afterEventSeq && options.afterEventSeq > 0
-        ? `?after_event_seq=${options.afterEventSeq}`
-        : "";
+    const params = new URLSearchParams();
+    if (options.afterEventSeq && options.afterEventSeq > 0) {
+      params.set("after_event_seq", String(options.afterEventSeq));
+    }
+    params.set("protocol", "v2");
+    const query = params.toString().length > 0 ? `?${params.toString()}` : "";
 
     const response = await fetch(
       `${normalizeBaseUrl(this.settings.baseUrl)}/api/v1/sessions/${options.sessionId}/events${query}`,
@@ -187,10 +189,10 @@ export class GatewayClient {
         break;
       }
       buffer += decoder.decode(result.value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop() ?? "";
+      const split = splitSseBuffer(buffer);
+      buffer = split.remainder;
 
-      for (const chunk of chunks) {
+      for (const chunk of split.chunks) {
         const parsed = parseSseChunk(chunk);
         if (!parsed?.data) {
           continue;
@@ -229,9 +231,18 @@ export class GatewayClient {
   }
 }
 
+export function splitSseBuffer(buffer: string): { chunks: string[]; remainder: string } {
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const chunks = normalized.split("\n\n");
+  return {
+    chunks: chunks.slice(0, -1),
+    remainder: chunks.at(-1) ?? ""
+  };
+}
+
 function parseSseChunk(chunk: string): { event?: string; data?: string } | null {
   const lines = chunk
-    .split("\n")
+    .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
 

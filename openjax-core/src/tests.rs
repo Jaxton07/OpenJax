@@ -27,6 +27,48 @@ struct ScriptedStreamingModel {
     stream_calls: Arc<Mutex<usize>>,
 }
 
+#[derive(Clone)]
+struct ScriptedToolBatchModel {
+    complete_calls: Arc<Mutex<usize>>,
+}
+
+impl ScriptedToolBatchModel {
+    fn new() -> Self {
+        Self {
+            complete_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+}
+
+#[async_trait]
+impl ModelClient for ScriptedToolBatchModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        let mut calls = self.complete_calls.lock().expect("complete_calls lock");
+        *calls += 1;
+        let text = if *calls == 1 {
+            r#"{"action":"tool_batch","tool_calls":[{"tool_call_id":"call_1","tool_name":"list_dir","arguments":{"path":"."}},{"tool_call_id":"call_2","tool_name":"system_load","arguments":{}}]}"#
+        } else {
+            r#"{"action":"final","message":"batch done"}"#
+        };
+        Ok(ModelResponse {
+            text: text.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    async fn complete_stream(
+        &self,
+        _request: &ModelRequest,
+        _delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<ModelResponse> {
+        Ok(ModelResponse::default())
+    }
+
+    fn name(&self) -> &'static str {
+        "scripted-tool-batch"
+    }
+}
+
 impl ScriptedStreamingModel {
     fn new() -> Self {
         Self {
@@ -320,6 +362,7 @@ async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
         PathBuf::from("."),
     );
     agent.final_response_mode = FinalResponseMode::PlannerOnly;
+    agent.stream_engine_v2_enabled = false;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -360,4 +403,52 @@ async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
     );
     assert_eq!(model_probe.complete_call_count(), 1);
     assert_eq!(model_probe.stream_call_count(), 0);
+}
+
+#[tokio::test]
+async fn tool_batch_emits_proposal_and_batch_completed_events() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    agent.final_response_mode = FinalResponseMode::PlannerOnly;
+    agent.stream_engine_v2_enabled = false;
+    agent.model_client = Box::new(ScriptedToolBatchModel::new());
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "run batch".to_string(),
+        })
+        .await;
+
+    let mut saw_proposal = false;
+    let mut saw_batch_completed = false;
+    let mut started_calls = 0usize;
+    let mut completed_calls = 0usize;
+    let mut final_message = String::new();
+    for event in &events {
+        match event {
+            Event::ToolCallsProposed { tool_calls, .. } => {
+                saw_proposal = true;
+                assert_eq!(tool_calls.len(), 2);
+            }
+            Event::ToolCallStarted { .. } => started_calls += 1,
+            Event::ToolCallCompleted { .. } => completed_calls += 1,
+            Event::ToolBatchCompleted { total, .. } => {
+                saw_batch_completed = true;
+                assert_eq!(*total, 2);
+            }
+            Event::AssistantMessage { content, .. } => {
+                final_message = content.clone();
+            }
+            _ => {}
+        }
+    }
+
+    assert!(saw_proposal);
+    assert!(saw_batch_completed);
+    assert_eq!(started_calls, 2);
+    assert_eq!(completed_calls, 2);
+    assert_eq!(final_message, "batch done");
 }

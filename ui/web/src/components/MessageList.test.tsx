@@ -138,6 +138,7 @@ describe("MessageList", () => {
     const originalClosest = HTMLElement.prototype.closest;
     const scrollContainer = document.createElement("section");
     Object.defineProperty(scrollContainer, "scrollHeight", { value: 999, configurable: true });
+    Object.defineProperty(scrollContainer, "clientHeight", { value: 999, configurable: true });
     scrollContainer.scrollTop = 0;
     const closestSpy = vi.spyOn(HTMLElement.prototype, "closest").mockImplementation(function (
       this: HTMLElement,

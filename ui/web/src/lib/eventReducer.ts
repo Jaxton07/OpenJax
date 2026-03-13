@@ -2,8 +2,22 @@ import type { ChatMessage, ChatSession, ToolStep } from "../types/chat";
 import type { StreamEvent } from "../types/gateway";
 
 export function applyStreamEvent(session: ChatSession, event: StreamEvent): ChatSession {
+  return applyStreamEvents(session, [event]);
+}
+
+export function applyStreamEvents(session: ChatSession, events: StreamEvent[]): ChatSession {
+  let current = session;
+  for (const event of events) {
+    current = applySingleStreamEvent(current, event);
+  }
+  return current;
+}
+
+function applySingleStreamEvent(session: ChatSession, event: StreamEvent): ChatSession {
   if (event.event_seq <= session.lastEventSeq) {
-    return session;
+    if (!looksLikeSequenceReset(session, event)) {
+      return session;
+    }
   }
 
   const next: ChatSession = {
@@ -14,18 +28,30 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   };
 
   const turnId = event.turn_id;
-  if (event.type === "turn_started") {
+  if (event.type === "turn_started" || event.type === "response_started" || event.type === "response_resumed") {
     next.turnPhase = "streaming";
   }
 
-  if (event.type === "assistant_delta" && turnId) {
+  if ((event.type === "assistant_delta" || event.type === "response_text_delta") && turnId) {
     const contentDelta = String(event.payload.content_delta ?? "");
     mergeAssistantDraft(next.messages, turnId, contentDelta, event.timestamp);
   }
 
-  if (event.type === "assistant_message" && turnId) {
+  if (
+    (event.type === "assistant_message" || event.type === "response_completed") &&
+    turnId &&
+    event.payload.content
+  ) {
     const content = String(event.payload.content ?? "");
     finalizeAssistantMessage(next.messages, turnId, content, event.timestamp);
+  }
+
+  if (event.type === "tool_calls_proposed") {
+    upsertToolBatchSummary(next.messages, event, "running");
+  }
+
+  if (event.type === "tool_batch_completed") {
+    upsertToolBatchSummary(next.messages, event, batchStatusFromPayload(event.payload));
   }
 
   if (isToolStepEvent(event)) {
@@ -48,12 +74,20 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
     next.pendingApprovals = next.pendingApprovals.filter((item) => item.approvalId !== approvalId);
   }
 
-  if (event.type === "turn_completed") {
+  if (event.type === "turn_completed" || event.type === "response_completed") {
     next.turnPhase = "completed";
     markTurnDraftFinal(next.messages, turnId);
   }
 
-  if (event.type === "error") {
+  if (event.type === "session_shutdown") {
+    next.connection = "closed";
+    if (next.turnPhase === "streaming") {
+      next.turnPhase = "completed";
+    }
+    markTurnDraftFinal(next.messages, turnId);
+  }
+
+  if (event.type === "error" || event.type === "response_error") {
     next.turnPhase = "failed";
     const message = String(event.payload.message ?? "turn failed");
     next.messages.push({
@@ -67,6 +101,19 @@ export function applyStreamEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   return next;
+}
+
+function looksLikeSequenceReset(session: ChatSession, event: StreamEvent): boolean {
+  if (session.lastEventSeq <= 0) {
+    return false;
+  }
+  if (event.event_seq === 1) {
+    return true;
+  }
+  if (event.turn_seq === 1 && (event.type === "turn_started" || event.type === "response_started")) {
+    return true;
+  }
+  return false;
 }
 
 function isToolStepEvent(event: StreamEvent): boolean {
@@ -332,6 +379,59 @@ function mergeAssistantDraft(
     timestamp,
     turnId,
     isDraft: true
+  });
+}
+
+function batchStatusFromPayload(payload: Record<string, unknown>): ToolStep["status"] {
+  const failed = Number(payload.failed ?? 0);
+  return failed > 0 ? "failed" : "success";
+}
+
+function upsertToolBatchSummary(
+  messages: ChatMessage[],
+  event: StreamEvent,
+  status: ToolStep["status"]
+): void {
+  const turnId = event.turn_id;
+  const summaryId = `tool_batch:${turnId ?? "unknown"}`;
+  const output =
+    event.type === "tool_batch_completed"
+      ? `total=${String(event.payload.total ?? 0)}, succeeded=${String(event.payload.succeeded ?? 0)}, failed=${String(event.payload.failed ?? 0)}`
+      : JSON.stringify(event.payload.tool_calls ?? []);
+  const idx = messages.findIndex(
+    (message) =>
+      message.kind === "tool_steps" &&
+      message.turnId === turnId &&
+      message.toolSteps?.[0]?.id === summaryId
+  );
+  const step: ToolStep = {
+    id: summaryId,
+    type: "summary",
+    title: "tool_batch",
+    status,
+    output,
+    time: event.timestamp,
+    startedAt: event.type === "tool_calls_proposed" ? event.timestamp : undefined,
+    endedAt: event.type === "tool_batch_completed" ? event.timestamp : undefined,
+    meta: event.payload
+  };
+  if (idx >= 0) {
+    messages[idx] = {
+      ...messages[idx],
+      timestamp: event.timestamp,
+      toolSteps: [withDuration({ ...(messages[idx].toolSteps?.[0] ?? step), ...step })]
+    };
+    return;
+  }
+  messages.push({
+    id: crypto.randomUUID(),
+    kind: "tool_steps",
+    role: "assistant",
+    content: "",
+    timestamp: event.timestamp,
+    turnId,
+    isDraft: false,
+    toolSteps: [step]
   });
 }
 

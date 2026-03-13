@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyStreamEvent } from "./eventReducer";
+import { applyStreamEvent, applyStreamEvents } from "./eventReducer";
 import type { ChatSession } from "../types/chat";
 
 function baseSession(): ChatSession {
@@ -59,6 +59,84 @@ describe("applyStreamEvent", () => {
     expect(delta2.messages).toHaveLength(1);
     expect(delta2.messages[0].kind).toBe("text");
     expect(delta2.messages[0].content).toBe("hello");
+  });
+
+  it("supports v2 response_text_delta and response_completed aliases", () => {
+    const session = baseSession();
+    const delta = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_2",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "response_text_delta",
+      payload: { content_delta: "hi" }
+    });
+    const done = applyStreamEvent(delta, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_2",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "response_completed",
+      payload: { content: "hi there" }
+    });
+    expect(done.turnPhase).toBe("completed");
+    expect(done.messages.find((message) => message.turnId === "turn_2")?.content).toBe("hi there");
+  });
+
+  it("applies batched events and keeps seq monotonic", () => {
+    const session = baseSession();
+    const next = applyStreamEvents(session, [
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_3",
+        event_seq: 1,
+        timestamp: "2026-01-01T00:00:01Z",
+        type: "response_text_delta",
+        payload: { content_delta: "a" }
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_3",
+        event_seq: 2,
+        timestamp: "2026-01-01T00:00:02Z",
+        type: "response_text_delta",
+        payload: { content_delta: "b" }
+      }
+    ]);
+    expect(next.lastEventSeq).toBe(2);
+    expect(next.messages.find((message) => message.turnId === "turn_3")?.content).toBe("ab");
+  });
+
+  it("accepts sequence reset when server event_seq restarts at 1", () => {
+    const session: ChatSession = { ...baseSession(), lastEventSeq: 999 };
+    const next = applyStreamEvents(session, [
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_4",
+        event_seq: 1,
+        turn_seq: 1,
+        timestamp: "2026-01-01T00:00:01Z",
+        type: "response_text_delta",
+        payload: { content_delta: "你" }
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_4",
+        event_seq: 2,
+        turn_seq: 2,
+        timestamp: "2026-01-01T00:00:02Z",
+        type: "response_completed",
+        payload: { content: "你好" }
+      }
+    ]);
+    expect(next.lastEventSeq).toBe(2);
+    expect(next.messages.find((message) => message.turnId === "turn_4")?.content).toBe("你好");
   });
 
   it("upserts tool events with the same tool_call_id into one tool card", () => {
@@ -295,6 +373,46 @@ describe("applyStreamEvent", () => {
     expect(step?.type).toBe("summary");
     expect(step?.status).toBe("failed");
     expect(err?.content).toBe("boom");
+  });
+
+  it("tracks tool batch proposed/completed in one summary card", () => {
+    const session = baseSession();
+    const proposed = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_9",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "tool_calls_proposed",
+      payload: { tool_calls: [{ tool_call_id: "call_1" }] }
+    });
+    const completed = applyStreamEvent(proposed, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_9",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "tool_batch_completed",
+      payload: { total: 1, succeeded: 1, failed: 0 }
+    });
+    const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
+    expect(stepMessages).toHaveLength(1);
+    expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
+    expect(stepMessages[0].toolSteps?.[0].output).toContain("succeeded=1");
+  });
+
+  it("marks connection closed on session_shutdown", () => {
+    const session = { ...baseSession(), turnPhase: "streaming" as const };
+    const next = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "session_shutdown",
+      payload: {}
+    });
+    expect(next.connection).toBe("closed");
+    expect(next.turnPhase).toBe("completed");
   });
 
   it("handles incomplete payload without throwing", () => {

@@ -392,10 +392,15 @@ textarea {
   border-color: #dbd2f5;
 }
 
-.message-bubble pre {
+.message-text {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  color: #1f1f1f;
+}
+
+.message-row.role-assistant .message-text {
+  color: #161616;
 }
 
 .tool-step-list {

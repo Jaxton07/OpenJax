@@ -422,6 +422,7 @@ async fn sse_replay_out_of_window_returns_invalid_argument() {
                 Some("turn_1".to_string()),
                 "assistant_delta",
                 serde_json::json!({ "idx": i }),
+                None,
             );
             session.publish_event(event);
         }
@@ -444,4 +445,108 @@ async fn sse_replay_out_of_window_returns_invalid_argument() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = response_json(response).await;
     assert_eq!(body["error"]["code"], "INVALID_ARGUMENT");
+    assert_eq!(body["error"]["details"]["min_allowed"], 76);
+}
+
+#[tokio::test]
+async fn sse_resume_query_takes_precedence_over_last_event_id() {
+    let api_key = "test-key";
+    let (app, state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/sessions")
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("create request"),
+        )
+        .await
+        .expect("create response");
+    let create_body = response_json(create_response).await;
+    let session_id = create_body["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+    {
+        let mut session = session_runtime.lock().await;
+        for i in 0..1100 {
+            let event = session.create_gateway_event(
+                "req_test",
+                &session_id,
+                Some("turn_1".to_string()),
+                "assistant_delta",
+                serde_json::json!({ "idx": i }),
+                None,
+            );
+            session.publish_event(event);
+        }
+    }
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/api/v1/sessions/{}/events?after_event_seq=1",
+                    session_id
+                ))
+                .header("Authorization", auth_header(&access_token))
+                .header("Last-Event-ID", "1099")
+                .body(Body::empty())
+                .expect("events request"),
+        )
+        .await
+        .expect("events response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "INVALID_ARGUMENT");
+}
+
+#[tokio::test]
+async fn shutdown_session_endpoint_returns_shutdown_status() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/sessions")
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("create request"),
+        )
+        .await
+        .expect("create response");
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = response_json(create_response).await;
+    let session_id = create_body["session_id"].as_str().expect("session_id");
+
+    let shutdown_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/sessions/{}", session_id))
+                .header("Authorization", auth_header(&access_token))
+                .body(Body::empty())
+                .expect("shutdown request"),
+        )
+        .await
+        .expect("shutdown response");
+    assert_eq!(shutdown_response.status(), StatusCode::OK);
+    let shutdown_body = response_json(shutdown_response).await;
+    assert_eq!(shutdown_body["status"], "shutdown");
 }

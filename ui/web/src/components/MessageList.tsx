@@ -10,6 +10,7 @@ interface MessageListProps {
 
 export default function MessageList({ messages, pendingApprovals, onResolveApproval }: MessageListProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
 
   useEffect(() => {
     const anchor = endRef.current;
@@ -20,7 +21,12 @@ export default function MessageList({ messages, pendingApprovals, onResolveAppro
     if (!(container instanceof HTMLElement)) {
       return;
     }
-    container.scrollTop = container.scrollHeight;
+    const threshold = 64;
+    const distanceToBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+    shouldStickToBottomRef.current = distanceToBottom <= threshold;
+    if (shouldStickToBottomRef.current) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, [messages]);
 
   if (messages.length === 0) {
@@ -46,7 +52,7 @@ export default function MessageList({ messages, pendingApprovals, onResolveAppro
                 />
               ) : null
             ) : (
-              <pre>{message.content}</pre>
+              <div className="message-text">{message.content}</div>
             )}
           </div>
         </div>
