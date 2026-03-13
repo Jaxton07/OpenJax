@@ -1129,7 +1129,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "openjax-core"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "openjax-gateway"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1183,14 +1183,14 @@ dependencies = [
 
 [[package]]
 name = "openjax-protocol"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "openjaxd"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2302,7 +2302,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tui_next"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "anyhow",
  "async-trait",
