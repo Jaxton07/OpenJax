@@ -323,14 +323,13 @@ fn summarize_user_input_adds_ellipsis_when_truncated() {
 }
 
 #[tokio::test]
-async fn final_action_emits_assistant_delta_before_message() {
+async fn final_action_emits_response_text_delta_before_message() {
     let mut agent = Agent::with_runtime(
         ApprovalPolicy::Never,
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
     agent.final_response_mode = FinalResponseMode::FinalWriter;
-    agent.stream_engine_v2_enabled = false;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -345,14 +344,18 @@ async fn final_action_emits_assistant_delta_before_message() {
     let mut first_delta_index: Option<usize> = None;
     let mut assistant_message_index: Option<usize> = None;
     let mut assistant_message_text = String::new();
+    let mut saw_assistant_delta = false;
 
     for (idx, event) in events.iter().enumerate() {
         match event {
-            Event::AssistantDelta { content_delta, .. } => {
+            Event::ResponseTextDelta { content_delta, .. } => {
                 if first_delta_index.is_none() {
                     first_delta_index = Some(idx);
                 }
                 delta_text.push_str(content_delta);
+            }
+            Event::AssistantDelta { .. } => {
+                saw_assistant_delta = true;
             }
             Event::AssistantMessage { content, .. } => {
                 assistant_message_index = Some(idx);
@@ -366,7 +369,7 @@ async fn final_action_emits_assistant_delta_before_message() {
     assert_eq!(assistant_message_text, "你好");
     assert!(
         first_delta_index.is_some(),
-        "expected assistant delta events"
+        "expected response text delta events"
     );
     assert!(
         assistant_message_index.is_some(),
@@ -375,21 +378,24 @@ async fn final_action_emits_assistant_delta_before_message() {
     assert!(
         first_delta_index.expect("first delta")
             < assistant_message_index.expect("assistant message index"),
-        "assistant delta should be emitted before final assistant message"
+        "response text delta should be emitted before final assistant message"
+    );
+    assert!(
+        !saw_assistant_delta,
+        "assistant_delta should not be emitted"
     );
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 2);
 }
 
 #[tokio::test]
-async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
+async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() {
     let mut agent = Agent::with_runtime(
         ApprovalPolicy::Never,
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
     agent.final_response_mode = FinalResponseMode::PlannerOnly;
-    agent.stream_engine_v2_enabled = false;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -404,14 +410,18 @@ async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
     let mut first_delta_index: Option<usize> = None;
     let mut assistant_message_index: Option<usize> = None;
     let mut assistant_message_text = String::new();
+    let mut saw_assistant_delta = false;
 
     for (idx, event) in events.iter().enumerate() {
         match event {
-            Event::AssistantDelta { content_delta, .. } => {
+            Event::ResponseTextDelta { content_delta, .. } => {
                 if first_delta_index.is_none() {
                     first_delta_index = Some(idx);
                 }
                 delta_text.push_str(content_delta);
+            }
+            Event::AssistantDelta { .. } => {
+                saw_assistant_delta = true;
             }
             Event::AssistantMessage { content, .. } => {
                 assistant_message_index = Some(idx);
@@ -426,7 +436,11 @@ async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
     assert!(
         first_delta_index.expect("first delta")
             < assistant_message_index.expect("assistant message index"),
-        "assistant delta should be emitted before final assistant message"
+        "response text delta should be emitted before final assistant message"
+    );
+    assert!(
+        !saw_assistant_delta,
+        "assistant_delta should not be emitted"
     );
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 1);
@@ -440,7 +454,6 @@ async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
         PathBuf::from("."),
     );
     agent.final_response_mode = FinalResponseMode::PlannerOnly;
-    agent.stream_engine_v2_enabled = true;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -484,7 +497,6 @@ async fn tool_batch_emits_proposal_and_batch_completed_events() {
         PathBuf::from("."),
     );
     agent.final_response_mode = FinalResponseMode::PlannerOnly;
-    agent.stream_engine_v2_enabled = false;
     agent.model_client = Box::new(ScriptedToolBatchModel::new());
 
     let events = agent

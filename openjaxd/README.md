@@ -23,7 +23,7 @@ openjaxd/
 | `src/main.rs` | 解析 request envelope、校验协议版本、分发方法（`start_session`、`stream_events`、`submit_turn`、`resolve_approval`、`shutdown_session`） |
 | `SessionState` | 每个会话维护 `Agent`、`streaming_enabled` 状态与审批处理器 |
 | `DaemonApprovalHandler` | 守护进程内审批桥接器，缓存待决审批请求并接收 `resolve_approval` 回传 |
-| `map_event(...)` | 将 `openjax_protocol::Event` 映射为对外 JSON 事件（`assistant_delta`、`tool_call_completed` 等） |
+| `map_event(...)` | 将 `openjax_protocol::Event` 映射为对外 JSON 事件（`response_text_delta`、`tool_call_completed` 等） |
 | `send_ok/send_error/send_event` | 统一响应/事件编码与 stdout 写出 |
 
 ### 测试模块

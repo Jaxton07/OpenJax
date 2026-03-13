@@ -81,6 +81,52 @@ class ClientIoTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(evt.event_type, "approval_requested")
             await client.stop()
 
+    async def test_response_text_delta_buffer_builds_turn_text(self) -> None:
+        lines = [
+            b'{"protocol_version":"v1","kind":"event","session_id":"s1","turn_id":"1","event_type":"response_text_delta","payload":{"content_delta":"he"}}\n',
+            b'{"protocol_version":"v1","kind":"event","session_id":"s1","turn_id":"1","event_type":"response_text_delta","payload":{"content_delta":"llo"}}\n',
+            b'{"protocol_version":"v1","kind":"event","session_id":"s1","turn_id":"1","event_type":"response_completed","payload":{"content":"hello"}}\n',
+            b"",
+        ]
+        fake_proc = _FakeProc(stdout_lines=lines)
+        client = OpenJaxAsyncClient(daemon_cmd=["true"])
+
+        async def _fake_exec(*args: object, **kwargs: object) -> _FakeProc:
+            _ = args
+            _ = kwargs
+            return fake_proc
+
+        with patch("asyncio.create_subprocess_exec", new=_fake_exec):
+            await client.start()
+            await client.next_event(timeout=1.0)
+            await client.next_event(timeout=1.0)
+            await client.next_event(timeout=1.0)
+            self.assertEqual(client.assistant_text_for_turn("1"), "hello")
+            await client.stop()
+
+    async def test_assistant_message_is_fallback_when_response_delta_exists(self) -> None:
+        lines = [
+            b'{"protocol_version":"v1","kind":"event","session_id":"s1","turn_id":"1","event_type":"response_text_delta","payload":{"content_delta":"hello"}}\n',
+            b'{"protocol_version":"v1","kind":"event","session_id":"s1","turn_id":"1","event_type":"assistant_message","payload":{"content":"hello"}}\n',
+            b'{"protocol_version":"v1","kind":"event","session_id":"s1","turn_id":"1","event_type":"turn_completed","payload":{}}\n',
+            b"",
+        ]
+        fake_proc = _FakeProc(stdout_lines=lines)
+        client = OpenJaxAsyncClient(daemon_cmd=["true"])
+
+        async def _fake_exec(*args: object, **kwargs: object) -> _FakeProc:
+            _ = args
+            _ = kwargs
+            return fake_proc
+
+        with patch("asyncio.create_subprocess_exec", new=_fake_exec):
+            await client.start()
+            await client.next_event(timeout=1.0)
+            await client.next_event(timeout=1.0)
+            await client.next_event(timeout=1.0)
+            self.assertEqual(client.assistant_text_for_turn("1"), "hello")
+            await client.stop()
+
 
 if __name__ == "__main__":
     unittest.main()

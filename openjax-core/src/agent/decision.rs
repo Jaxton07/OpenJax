@@ -218,7 +218,9 @@ impl DecisionJsonStreamParser {
                     if frame.pending_key.as_deref() == Some("action") {
                         self.action = Some(self.current_string.to_ascii_lowercase());
                         out.action = self.action.clone();
-                        if self.action.as_deref() == Some("final") && !self.pending_message.is_empty() {
+                        if self.action.as_deref() == Some("final")
+                            && !self.pending_message.is_empty()
+                        {
                             out.message_delta.push_str(&self.pending_message);
                             self.pending_message.clear();
                         }
@@ -333,7 +335,12 @@ pub(crate) fn parse_model_decision_v2(raw: &str) -> Option<ModelDecisionV2> {
 pub(crate) fn normalize_tool_calls(tool_calls: &[ToolCallSpec]) -> Vec<NormalizedToolCall> {
     let mut normalized = Vec::new();
     for (index, item) in tool_calls.iter().enumerate() {
-        let Some(tool_name) = item.tool_name.as_ref().map(|name| name.trim()).filter(|name| !name.is_empty()) else {
+        let Some(tool_name) = item
+            .tool_name
+            .as_ref()
+            .map(|name| name.trim())
+            .filter(|name| !name.is_empty())
+        else {
             continue;
         };
         let tool_name = tool_name.to_ascii_lowercase();
@@ -401,7 +408,10 @@ fn collapse_v2_to_v1(mut decision: ModelDecisionV2) -> ModelDecision {
             extra.insert("tool_call_id".to_string(), Value::String(tool_call_id));
         }
         if !first.depends_on.is_empty() {
-            extra.insert("depends_on".to_string(), Value::from(first.depends_on.clone()));
+            extra.insert(
+                "depends_on".to_string(),
+                Value::from(first.depends_on.clone()),
+            );
         }
         if let Some(concurrency_group) = first.concurrency_group.clone() {
             extra.insert(
@@ -430,7 +440,9 @@ fn collapse_v2_to_v1(mut decision: ModelDecisionV2) -> ModelDecision {
         .and_then(|value| value.as_object())
         .map(|obj| {
             obj.iter()
-                .filter_map(|(key, value)| stringify_json_value(value).map(|parsed| (key.clone(), parsed)))
+                .filter_map(|(key, value)| {
+                    stringify_json_value(value).map(|parsed| (key.clone(), parsed))
+                })
                 .collect::<HashMap<_, _>>()
         });
 
@@ -491,7 +503,10 @@ mod tests {
         let decision = parse_model_decision_v2(raw).expect("parse v2");
         assert_eq!(decision.action, "tool_batch");
         assert_eq!(decision.tool_calls.len(), 1);
-        assert_eq!(decision.tool_calls[0].tool_name.as_deref(), Some("read_file"));
+        assert_eq!(
+            decision.tool_calls[0].tool_name.as_deref(),
+            Some("read_file")
+        );
     }
 
     #[test]
@@ -506,7 +521,10 @@ mod tests {
         assert_eq!(decision.action, "tool");
         assert_eq!(decision.tool.as_deref(), Some("read_file"));
         assert_eq!(
-            decision.args.as_ref().and_then(|args| args.get("file_path")),
+            decision
+                .args
+                .as_ref()
+                .and_then(|args| args.get("file_path")),
             Some(&"/tmp/a".to_string())
         );
     }
@@ -537,7 +555,10 @@ mod tests {
         let mut parser = DecisionJsonStreamParser::new();
         let first = parser.push_chunk(r#"{"action":"final","message":"line1\"#);
         let second = parser.push_chunk(r#"nline2"}"#);
-        assert_eq!(format!("{}{}", first.message_delta, second.message_delta), "line1\nline2");
+        assert_eq!(
+            format!("{}{}", first.message_delta, second.message_delta),
+            "line1\nline2"
+        );
         assert_eq!(
             parser.final_message_from_raw().as_deref(),
             Some("line1\nline2")

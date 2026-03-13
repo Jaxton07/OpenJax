@@ -420,7 +420,7 @@ async fn sse_replay_out_of_window_returns_invalid_argument() {
                 "req_test",
                 &session_id,
                 Some("turn_1".to_string()),
-                "assistant_delta",
+                "response_text_delta",
                 serde_json::json!({ "idx": i }),
                 None,
             );
@@ -484,7 +484,7 @@ async fn sse_resume_query_takes_precedence_over_last_event_id() {
                 "req_test",
                 &session_id,
                 Some("turn_1".to_string()),
-                "assistant_delta",
+                "response_text_delta",
                 serde_json::json!({ "idx": i }),
                 None,
             );

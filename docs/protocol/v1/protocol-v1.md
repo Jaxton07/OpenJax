@@ -82,7 +82,7 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
   "kind": "event",
   "session_id": "sess_001",
   "turn_id": "turn_001",
-  "event_type": "assistant_delta",
+  "event_type": "response_text_delta",
   "payload": {}
 }
 ```
@@ -152,13 +152,19 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 1. `turn_started`
 2. `tool_call_started`
 3. `tool_call_completed`
-4. `assistant_delta`
-5. `assistant_message`
-6. `approval_requested`
-7. `approval_resolved`
-8. `turn_completed`
-9. `session_shutdown_complete`
-10. `error`
+4. `response_started`
+5. `response_text_delta`
+6. `response_completed`
+7. `assistant_message`
+8. `approval_requested`
+9. `approval_resolved`
+10. `turn_completed`
+11. `session_shutdown_complete`
+12. `error`
+
+兼容说明：
+1. `assistant_delta` 为 legacy 事件，已 deprecated，主链路不再产出。
+2. 客户端应以 `response_*` 事件作为流式正文来源。
 
 事件字段原则：
 1. `event_type` 固定字符串枚举。
@@ -172,7 +178,10 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 | `TurnStarted` | `turn_started` |
 | `ToolCallStarted` | `tool_call_started` |
 | `ToolCallCompleted` | `tool_call_completed` |
-| `AssistantDelta` | `assistant_delta` |
+| `ResponseStarted` | `response_started` |
+| `ResponseTextDelta` | `response_text_delta` |
+| `ResponseCompleted` | `response_completed` |
+| `AssistantDelta` | `assistant_delta`（deprecated/legacy） |
 | `AssistantMessage` | `assistant_message` |
 | `ApprovalRequested` | `approval_requested` |
 | `ApprovalResolved` | `approval_resolved` |
@@ -243,7 +252,9 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
    - `turn_started`
    - `tool_call_started` / `tool_call_completed`（可多次）
    - `approval_requested` -> 客户端 `resolve_approval` -> `approval_resolved`（可选）
-   - `assistant_delta`（可多次）
+   - `response_started`
+   - `response_text_delta`（可多次）
+   - `response_completed`
    - `assistant_message`
    - `turn_completed`
 5. `shutdown_session` -> `session_shutdown_complete`

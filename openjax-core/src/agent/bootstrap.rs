@@ -106,7 +106,6 @@ impl Agent {
             recent_tool_calls: Vec::new(),
             state_epoch: 0,
             final_response_mode: FinalResponseMode::from_env(),
-            stream_engine_v2_enabled: true,
             tool_batch_v2_enabled: true,
             approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
             event_sink: None,

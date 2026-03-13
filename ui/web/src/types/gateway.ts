@@ -111,6 +111,7 @@ export interface StreamEvent {
   stream_source?: "model_live" | "synthetic" | "replay" | "unknown";
   type:
     | "turn_started"
+    // Deprecated compatibility event. Prefer "response_text_delta".
     | "assistant_delta"
     | "assistant_message"
     | "response_started"

@@ -1,4 +1,4 @@
-use openjax_protocol::Event;
+use openjax_protocol::{Event, StreamSource};
 use tui_next::app::App;
 use tui_next::history_cell::CellRole;
 
@@ -9,9 +9,10 @@ fn assistant_final_message_is_committed_to_history_cells() {
     let _ = app.drain_history_cells();
 
     app.apply_core_event(Event::TurnStarted { turn_id: 7 });
-    app.apply_core_event(Event::AssistantDelta {
+    app.apply_core_event(Event::ResponseTextDelta {
         turn_id: 7,
         content_delta: "第一行".to_string(),
+        stream_source: StreamSource::ModelLive,
     });
 
     // Delta only updates live area and should not commit into history.

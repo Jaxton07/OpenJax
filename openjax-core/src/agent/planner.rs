@@ -13,13 +13,13 @@ use crate::agent::decision::{
 use crate::agent::prompt::{
     build_final_response_prompt, build_json_repair_prompt, build_planner_input, truncate_for_prompt,
 };
-use crate::agent::turn_engine::TurnEngine;
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::tool_policy::{
     approval_rejected_stop_message, approval_timed_out_stop_message, duplicate_skip_abort_message,
     duplicate_tool_call_warning, is_approval_blocking_error,
     should_abort_on_consecutive_duplicate_skips,
 };
+use crate::agent::turn_engine::TurnEngine;
 use crate::model::{ModelRequest, ModelStage};
 use crate::{
     Agent, FinalResponseMode, MAX_CONSECUTIVE_DUPLICATE_SKIPS,
@@ -302,53 +302,36 @@ impl Agent {
                     "natural_language_turn completed"
                 );
                 let message = if self.final_response_mode == FinalResponseMode::FinalWriter {
-                    if self.stream_engine_v2_enabled {
-                        turn_engine.on_response_started();
-                        let (streamed, live_streamed) = self
-                            .stream_final_assistant_reply(
-                                turn_id,
-                                user_input,
-                                &tool_traces,
-                                &seed_message,
-                                events,
-                            )
-                            .await;
-                        if live_streamed {
-                            streamed
-                        } else {
-                            self.push_event(
-                                events,
-                                Event::ResponseStarted {
-                                    turn_id,
-                                    stream_source: openjax_protocol::StreamSource::Synthetic,
-                                },
-                            );
-                            self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
-                            self.push_event(
-                                events,
-                                Event::ResponseCompleted {
-                                    turn_id,
-                                    content: seed_message.clone(),
-                                    stream_source: openjax_protocol::StreamSource::Synthetic,
-                                },
-                            );
-                            seed_message
-                        }
-                    } else {
-                        info!(
-                            turn_id = turn_id,
-                            mode = self.final_response_mode.as_str(),
-                            "final_writer_request started"
-                        );
-                        self.stream_final_assistant_reply(
+                    turn_engine.on_response_started();
+                    let (streamed, live_streamed) = self
+                        .stream_final_assistant_reply(
                             turn_id,
                             user_input,
                             &tool_traces,
                             &seed_message,
                             events,
                         )
-                        .await
-                        .0
+                        .await;
+                    if live_streamed {
+                        streamed
+                    } else {
+                        self.push_event(
+                            events,
+                            Event::ResponseStarted {
+                                turn_id,
+                                stream_source: openjax_protocol::StreamSource::Synthetic,
+                            },
+                        );
+                        self.emit_synthetic_response_deltas(turn_id, &seed_message, events);
+                        self.push_event(
+                            events,
+                            Event::ResponseCompleted {
+                                turn_id,
+                                content: seed_message.clone(),
+                                stream_source: openjax_protocol::StreamSource::Synthetic,
+                            },
+                        );
+                        seed_message
                     }
                 } else {
                     info!(
@@ -358,23 +341,20 @@ impl Agent {
                     );
                     if planner_stream.live_streamed {
                         turn_engine.on_response_started();
-                        if self.stream_engine_v2_enabled {
-                            self.push_event(
-                                events,
-                                Event::ResponseCompleted {
-                                    turn_id,
-                                    content: seed_message.clone(),
-                                    stream_source: openjax_protocol::StreamSource::ModelLive,
-                                },
-                            );
-                        }
+                        self.push_event(
+                            events,
+                            Event::ResponseCompleted {
+                                turn_id,
+                                content: seed_message.clone(),
+                                stream_source: openjax_protocol::StreamSource::ModelLive,
+                            },
+                        );
                         if planner_stream.streamed_message.is_empty() {
                             seed_message.clone()
                         } else {
                             planner_stream.streamed_message.clone()
                         }
                     } else {
-                        if self.stream_engine_v2_enabled {
                         turn_engine.on_response_started();
                         self.push_event(
                             events,
@@ -383,18 +363,15 @@ impl Agent {
                                 stream_source: openjax_protocol::StreamSource::Synthetic,
                             },
                         );
-                        }
-                        self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
-                        if self.stream_engine_v2_enabled {
-                            self.push_event(
-                                events,
-                                Event::ResponseCompleted {
-                                    turn_id,
-                                    content: seed_message.clone(),
-                                    stream_source: openjax_protocol::StreamSource::Synthetic,
-                                },
-                            );
-                        }
+                        self.emit_synthetic_response_deltas(turn_id, &seed_message, events);
+                        self.push_event(
+                            events,
+                            Event::ResponseCompleted {
+                                turn_id,
+                                content: seed_message.clone(),
+                                stream_source: openjax_protocol::StreamSource::Synthetic,
+                            },
+                        );
                         seed_message
                     }
                 };
@@ -730,7 +707,10 @@ impl Agent {
                 content: message.clone(),
             },
         );
-        if matches!(turn_engine.phase(), crate::agent::turn_engine::TurnEnginePhase::Planning) {
+        if matches!(
+            turn_engine.phase(),
+            crate::agent::turn_engine::TurnEnginePhase::Planning
+        ) {
             turn_engine.on_failed();
         }
         self.record_history("assistant", message);
@@ -770,15 +750,13 @@ impl Agent {
             }
             if !*response_started {
                 *response_started = true;
-                if self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::ResponseStarted {
-                            turn_id,
-                            stream_source: openjax_protocol::StreamSource::ModelLive,
-                        },
-                    );
-                }
+                self.push_event(
+                    events,
+                    Event::ResponseStarted {
+                        turn_id,
+                        stream_source: openjax_protocol::StreamSource::ModelLive,
+                    },
+                );
             }
             if !*ttft_logged {
                 *ttft_logged = true;
@@ -791,25 +769,14 @@ impl Agent {
             for ch in chunk.message_delta.chars() {
                 let delta = ch.to_string();
                 streamed_message.push(ch);
-                if self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::ResponseTextDelta {
-                            turn_id,
-                            content_delta: delta.clone(),
-                            stream_source: openjax_protocol::StreamSource::ModelLive,
-                        },
-                    );
-                }
-                if !self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::AssistantDelta {
-                            turn_id,
-                            content_delta: delta,
-                        },
-                    );
-                }
+                self.push_event(
+                    events,
+                    Event::ResponseTextDelta {
+                        turn_id,
+                        content_delta: delta,
+                        stream_source: openjax_protocol::StreamSource::ModelLive,
+                    },
+                );
             }
         };
 
@@ -856,7 +823,8 @@ impl Agent {
                 {
                     format!(
                         "{{\"action\":\"final\",\"message\":{}}}",
-                        serde_json::to_string(&streamed_message).unwrap_or_else(|_| "\"\"".to_string())
+                        serde_json::to_string(&streamed_message)
+                            .unwrap_or_else(|_| "\"\"".to_string())
                     )
                 } else {
                     fallback_reason = Some("parse_failed_after_stream");
@@ -877,7 +845,10 @@ impl Agent {
         let final_output = if parse_model_decision(&model_output).is_some() {
             model_output
         } else {
-            if matches!(fallback_reason, Some("parse_failed_after_stream") | Some("parse_failed")) {
+            if matches!(
+                fallback_reason,
+                Some("parse_failed_after_stream") | Some("parse_failed")
+            ) {
                 info!(
                     turn_id = turn_id,
                     planner_stream_parse_error_count = 1,
@@ -889,7 +860,11 @@ impl Agent {
                 fallback_reason = fallback_reason.unwrap_or("parse_failed"),
                 "planner_stream_fallback_to_complete"
             );
-            info!(turn_id = turn_id, planner_stream_fallback_count = 1, "planner_stream_metric");
+            info!(
+                turn_id = turn_id,
+                planner_stream_fallback_count = 1,
+                "planner_stream_metric"
+            );
             let fallback = self.model_client.complete(planner_request).await?;
             fallback.text
         };
@@ -921,15 +896,13 @@ impl Agent {
         self.apply_rate_limit().await;
         let stream_started_at = Instant::now();
         let mut ttft_logged = false;
-        if self.stream_engine_v2_enabled {
-            self.push_event(
-                events,
-                Event::ResponseStarted {
-                    turn_id,
-                    stream_source: openjax_protocol::StreamSource::ModelLive,
-                },
-            );
-        }
+        self.push_event(
+            events,
+            Event::ResponseStarted {
+                turn_id,
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+        );
 
         let (delta_tx, mut delta_rx) = tokio::sync::mpsc::unbounded_channel();
         let stream_request = ModelRequest::for_stage(ModelStage::FinalWriter, prompt);
@@ -953,19 +926,11 @@ impl Agent {
                             );
                         }
                         streamed.push_str(&delta);
-                        if self.stream_engine_v2_enabled {
-                            self.push_event(events, Event::ResponseTextDelta {
-                                turn_id,
-                                content_delta: delta.clone(),
-                                stream_source: openjax_protocol::StreamSource::ModelLive,
-                            });
-                        }
-                        if !self.stream_engine_v2_enabled {
-                            self.push_event(events, Event::AssistantDelta {
-                                turn_id,
-                                content_delta: delta,
-                            });
-                        }
+                        self.push_event(events, Event::ResponseTextDelta {
+                            turn_id,
+                            content_delta: delta,
+                            stream_source: openjax_protocol::StreamSource::ModelLive,
+                        });
                     }
                 }
                 result = &mut stream_future => {
@@ -985,25 +950,14 @@ impl Agent {
                     );
                 }
                 streamed.push_str(&delta);
-                if self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::ResponseTextDelta {
-                            turn_id,
-                            content_delta: delta.clone(),
-                            stream_source: openjax_protocol::StreamSource::ModelLive,
-                        },
-                    );
-                }
-                if !self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::AssistantDelta {
-                            turn_id,
-                            content_delta: delta,
-                        },
-                    );
-                }
+                self.push_event(
+                    events,
+                    Event::ResponseTextDelta {
+                        turn_id,
+                        content_delta: delta,
+                        stream_source: openjax_protocol::StreamSource::ModelLive,
+                    },
+                );
             }
         }
 
@@ -1023,37 +977,33 @@ impl Agent {
                 } else {
                     full_text
                 };
-                if self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::ResponseCompleted {
-                            turn_id,
-                            content: resolved.clone(),
-                            stream_source: openjax_protocol::StreamSource::ModelLive,
-                        },
-                    );
-                }
+                self.push_event(
+                    events,
+                    Event::ResponseCompleted {
+                        turn_id,
+                        content: resolved.clone(),
+                        stream_source: openjax_protocol::StreamSource::ModelLive,
+                    },
+                );
                 (resolved, true)
             }
             Err(err) => {
                 warn!(turn_id = turn_id, error = %err, "final response streaming failed; fallback to planner message");
-                if self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::ResponseError {
-                            turn_id,
-                            code: "final_writer_stream_failed".to_string(),
-                            message: err.to_string(),
-                            retryable: true,
-                        },
-                    );
-                }
+                self.push_event(
+                    events,
+                    Event::ResponseError {
+                        turn_id,
+                        code: "final_writer_stream_failed".to_string(),
+                        message: err.to_string(),
+                        retryable: true,
+                    },
+                );
                 (seed_message.to_string(), false)
             }
         }
     }
 
-    fn emit_synthetic_assistant_deltas(
+    fn emit_synthetic_response_deltas(
         &mut self,
         turn_id: u64,
         message: &str,
@@ -1070,48 +1020,28 @@ impl Agent {
             chunk.push(ch);
             chunk_len += 1;
             if chunk_len >= SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS {
-                if self.stream_engine_v2_enabled {
-                    self.push_event(
-                        events,
-                        Event::ResponseTextDelta {
-                            turn_id,
-                            content_delta: chunk.clone(),
-                            stream_source: openjax_protocol::StreamSource::Synthetic,
-                        },
-                    );
-                } else {
-                    self.push_event(
-                        events,
-                        Event::AssistantDelta {
-                            turn_id,
-                            content_delta: chunk.clone(),
-                        },
-                    );
-                }
+                self.push_event(
+                    events,
+                    Event::ResponseTextDelta {
+                        turn_id,
+                        content_delta: chunk.clone(),
+                        stream_source: openjax_protocol::StreamSource::Synthetic,
+                    },
+                );
                 chunk.clear();
                 chunk_len = 0;
             }
         }
 
         if !chunk.is_empty() {
-            if self.stream_engine_v2_enabled {
-                self.push_event(
-                    events,
-                    Event::ResponseTextDelta {
-                        turn_id,
-                        content_delta: chunk,
-                        stream_source: openjax_protocol::StreamSource::Synthetic,
-                    },
-                );
-            } else {
-                self.push_event(
-                    events,
-                    Event::AssistantDelta {
-                        turn_id,
-                        content_delta: chunk,
-                    },
-                );
-            }
+            self.push_event(
+                events,
+                Event::ResponseTextDelta {
+                    turn_id,
+                    content_delta: chunk,
+                    stream_source: openjax_protocol::StreamSource::Synthetic,
+                },
+            );
         }
     }
 
@@ -1136,7 +1066,11 @@ impl Agent {
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, call)| {
-                    if call.depends_on.iter().all(|dep| completed_ids.contains(dep)) {
+                    if call
+                        .depends_on
+                        .iter()
+                        .all(|dep| completed_ids.contains(dep))
+                    {
                         Some(idx)
                     } else {
                         None
@@ -1352,7 +1286,10 @@ impl Agent {
                 tool_traces.push(format!(
                     "tool={}; ok=false; output={}",
                     call.tool_name,
-                    truncate_for_prompt(&output, self.skill_runtime_config.max_diff_chars_for_planner)
+                    truncate_for_prompt(
+                        &output,
+                        self.skill_runtime_config.max_diff_chars_for_planner
+                    )
                 ));
                 self.record_tool_call(&call.tool_name, &call.args, false, &output);
                 completed_ids.insert(call.tool_call_id);

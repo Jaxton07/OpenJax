@@ -17,19 +17,33 @@ impl App {
                 self.state.stream_text.clear();
                 self.set_status_running("Working");
             }
-            Event::AssistantDelta {
-                turn_id,
-                content_delta,
-            } => {
+            Event::ResponseStarted { turn_id, .. } | Event::ResponseResumed { turn_id, .. } => {
+                self.state.active_turn_id = Some(turn_id);
                 if self.state.stream_turn_id != Some(turn_id) {
                     self.state.stream_turn_id = Some(turn_id);
                     self.state.stream_text.clear();
                 }
-                self.state.stream_text.push_str(&content_delta);
-                self.state.live_messages = vec![LiveMessage {
-                    role: "assistant",
-                    content: self.state.stream_text.clone(),
-                }];
+                self.set_status_running("Working");
+            }
+            Event::ResponseTextDelta {
+                turn_id,
+                content_delta,
+                ..
+            } => {
+                self.apply_stream_delta(turn_id, &content_delta);
+            }
+            Event::AssistantDelta {
+                turn_id,
+                content_delta,
+            } => {
+                self.apply_stream_delta(turn_id, &content_delta);
+            }
+            Event::ResponseCompleted {
+                turn_id, content, ..
+            } => {
+                self.state.stream_turn_id = Some(turn_id);
+                self.state.stream_text = content;
+                self.state.live_messages.clear();
             }
             Event::AssistantMessage { turn_id, content } => {
                 self.state.stream_turn_id = Some(turn_id);
@@ -184,8 +198,25 @@ impl App {
                 self.clear_status_bar();
                 self.set_live_status("Shutdown complete");
             }
+            Event::ToolCallsProposed { .. } | Event::ToolBatchCompleted { .. } => {}
+            Event::ResponseError { message, .. } => {
+                self.clear_status_bar();
+                self.set_live_status(format!("Response failed: {message}"));
+            }
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
         }
+    }
+
+    fn apply_stream_delta(&mut self, turn_id: u64, content_delta: &str) {
+        if self.state.stream_turn_id != Some(turn_id) {
+            self.state.stream_turn_id = Some(turn_id);
+            self.state.stream_text.clear();
+        }
+        self.state.stream_text.push_str(content_delta);
+        self.state.live_messages = vec![LiveMessage {
+            role: "assistant",
+            content: self.state.stream_text.clone(),
+        }];
     }
 
     fn refresh_approval_live_message(&mut self) {
@@ -201,7 +232,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use openjax_protocol::Event;
+    use openjax_protocol::{Event, StreamSource};
 
     use super::App;
 
@@ -211,9 +242,10 @@ mod tests {
 
         app.apply_core_event(Event::TurnStarted { turn_id: 1 });
         assert!(app.state.status_bar.is_some());
-        app.apply_core_event(Event::AssistantDelta {
+        app.apply_core_event(Event::ResponseTextDelta {
             turn_id: 1,
             content_delta: "hello".to_string(),
+            stream_source: StreamSource::ModelLive,
         });
         assert!(app.drain_history_cells().is_empty());
 

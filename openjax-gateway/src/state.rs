@@ -399,16 +399,10 @@ fn map_core_event(
 ) -> Option<String> {
     let (core_turn_id, event_type, payload, stream_source) = match event {
         Event::TurnStarted { turn_id } => (Some(turn_id), "turn_started", json!({}), None),
-        Event::AssistantDelta {
+        Event::ResponseStarted {
             turn_id,
-            content_delta,
+            stream_source,
         } => (
-            Some(turn_id),
-            "assistant_delta",
-            json!({ "content_delta": content_delta }),
-            None,
-        ),
-        Event::ResponseStarted { turn_id, stream_source } => (
             Some(turn_id),
             "response_started",
             json!({ "stream_source": stream_source }),
@@ -444,7 +438,10 @@ fn map_core_event(
             json!({ "total": total, "succeeded": succeeded, "failed": failed }),
             None,
         ),
-        Event::ResponseResumed { turn_id, stream_source } => (
+        Event::ResponseResumed {
+            turn_id,
+            stream_source,
+        } => (
             Some(turn_id),
             "response_resumed",
             json!({ "stream_source": stream_source }),
@@ -477,6 +474,7 @@ fn map_core_event(
             json!({ "content": content }),
             None,
         ),
+        Event::AssistantDelta { .. } => return None,
         Event::ToolCallStarted {
             turn_id,
             tool_call_id,

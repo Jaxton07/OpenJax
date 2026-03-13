@@ -31,6 +31,11 @@
         "turn_started",
         "tool_call_started",
         "tool_call_completed",
+        "response_started",
+        "response_text_delta",
+        "response_resumed",
+        "response_completed",
+        "response_error",
         "assistant_delta",
         "assistant_message",
         "approval_requested",
@@ -53,6 +58,11 @@
               "turn_started",
               "tool_call_started",
               "tool_call_completed",
+              "response_started",
+              "response_text_delta",
+              "response_resumed",
+              "response_completed",
+              "response_error",
               "assistant_delta",
               "assistant_message",
               "approval_requested",
@@ -69,6 +79,160 @@
         "required": [
           "turn_id"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "response_started"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "stream_source"
+            ],
+            "properties": {
+              "stream_source": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "response_text_delta"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "content_delta"
+            ],
+            "properties": {
+              "content_delta": {
+                "type": "string"
+              },
+              "stream_source": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "response_resumed"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "stream_source"
+            ],
+            "properties": {
+              "stream_source": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "response_completed"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "content"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "stream_source": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "response_error"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "retryable"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
       }
     },
     {

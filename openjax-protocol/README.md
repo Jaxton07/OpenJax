@@ -43,7 +43,8 @@ openjax-protocol/
 |------|------|
 | `TurnStarted` / `TurnCompleted` | turn 生命周期边界 |
 | `ToolCallStarted` / `ToolCallCompleted` | 工具调用开始/完成及执行结果 |
-| `AssistantDelta` / `AssistantMessage` | 助手流式增量与完整消息 |
+| `ResponseStarted` / `ResponseTextDelta` / `ResponseCompleted` | v2 主链路流式文本事件（推荐） |
+| `AssistantDelta` / `AssistantMessage` | 兼容事件；`AssistantDelta` 已 deprecated，仅保留兼容 |
 | `ApprovalRequested` / `ApprovalResolved` | 审批请求与决策结果 |
 | `AgentSpawned` / `AgentStatusChanged` | 多 agent 预留事件 |
 | `ShutdownComplete` | 关闭完成事件 |

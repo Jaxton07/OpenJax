@@ -33,6 +33,7 @@ class OpenJaxAsyncClient:
         self._event_queue: asyncio.Queue[EventEnvelope] = asyncio.Queue()
         self._session_id: str | None = None
         self._assistant_delta_buffer: dict[str, list[str]] = defaultdict(list)
+        self._response_delta_seen: dict[str, bool] = defaultdict(bool)
         self._stream_closed = False
         self._stream_closed_reason: Exception | None = None
 
@@ -255,12 +256,23 @@ class OpenJaxAsyncClient:
                         fut.set_result(resp)
                 elif kind == "event":
                     evt = EventEnvelope.from_dict(payload)
-                    if evt.turn_id and evt.event_type == "assistant_delta":
+                    if evt.turn_id and evt.event_type == "response_text_delta":
                         delta = str(evt.payload.get("content_delta", ""))
                         self._assistant_delta_buffer[evt.turn_id].append(delta)
+                        self._response_delta_seen[evt.turn_id] = True
+                    if evt.turn_id and evt.event_type == "assistant_delta":
+                        # Legacy compatibility: v2 path should no longer emit this.
+                        delta = str(evt.payload.get("content_delta", ""))
+                        self._assistant_delta_buffer[evt.turn_id].append(delta)
+                        self._response_delta_seen[evt.turn_id] = True
                     if evt.turn_id and evt.event_type == "assistant_message":
                         content = str(evt.payload.get("content", ""))
-                        self._assistant_delta_buffer[evt.turn_id].append(content)
+                        if not self._response_delta_seen[evt.turn_id]:
+                            self._assistant_delta_buffer[evt.turn_id].append(content)
+                    if evt.turn_id and evt.event_type == "response_completed":
+                        content = str(evt.payload.get("content", ""))
+                        if not self._response_delta_seen[evt.turn_id]:
+                            self._assistant_delta_buffer[evt.turn_id].append(content)
                     await self._event_queue.put(evt)
         except Exception as err:
             self._close_stream(OpenJaxProtocolError(f"daemon read loop failed: {err}"))

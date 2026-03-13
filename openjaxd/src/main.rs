@@ -517,14 +517,14 @@ async fn handle_line(
                 }
 
                 if let Some(tid) = response_turn_id.as_deref() {
-                    let (assistant_deltas, assistant_messages, tool_calls, approvals) =
+                    let (response_text_deltas, assistant_messages, tool_calls, approvals) =
                         summarize_turn_events(&events);
                     info!(
                         request_id = %request_id,
                         session_id = %session_id_for_events,
                         turn_id = %tid,
                         phase = "thinking_completed",
-                        assistant_delta_events = assistant_deltas,
+                        response_text_delta_events = response_text_deltas,
                         assistant_message_events = assistant_messages,
                         tool_call_events = tool_calls,
                         approval_events = approvals,
@@ -700,6 +700,13 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::ToolCallCompleted { turn_id, .. }
             | Event::AssistantMessage { turn_id, .. }
             | Event::AssistantDelta { turn_id, .. }
+            | Event::ResponseStarted { turn_id, .. }
+            | Event::ResponseTextDelta { turn_id, .. }
+            | Event::ResponseCompleted { turn_id, .. }
+            | Event::ResponseError { turn_id, .. }
+            | Event::ResponseResumed { turn_id, .. }
+            | Event::ToolCallsProposed { turn_id, .. }
+            | Event::ToolBatchCompleted { turn_id, .. }
             | Event::ApprovalRequested { turn_id, .. }
             | Event::ApprovalResolved { turn_id, .. }
             | Event::TurnCompleted { turn_id } => return Some(*turn_id),
@@ -718,6 +725,13 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
         | Event::ToolCallCompleted { turn_id, .. }
         | Event::AssistantMessage { turn_id, .. }
         | Event::AssistantDelta { turn_id, .. }
+        | Event::ResponseStarted { turn_id, .. }
+        | Event::ResponseTextDelta { turn_id, .. }
+        | Event::ResponseCompleted { turn_id, .. }
+        | Event::ResponseError { turn_id, .. }
+        | Event::ResponseResumed { turn_id, .. }
+        | Event::ToolCallsProposed { turn_id, .. }
+        | Event::ToolBatchCompleted { turn_id, .. }
         | Event::ApprovalRequested { turn_id, .. }
         | Event::ApprovalResolved { turn_id, .. }
         | Event::TurnCompleted { turn_id } => Some(*turn_id),
@@ -772,16 +786,89 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "assistant_message".to_string(),
             payload: json!({ "content": content }),
         }),
-        Event::AssistantDelta {
+        Event::AssistantDelta { .. } => None,
+        Event::ResponseStarted {
             turn_id,
-            content_delta,
+            stream_source,
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
-            event_type: "assistant_delta".to_string(),
-            payload: json!({ "content_delta": content_delta }),
+            event_type: "response_started".to_string(),
+            payload: json!({ "stream_source": stream_source }),
+        }),
+        Event::ResponseTextDelta {
+            turn_id,
+            content_delta,
+            stream_source,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "response_text_delta".to_string(),
+            payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
+        }),
+        Event::ResponseCompleted {
+            turn_id,
+            content,
+            stream_source,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "response_completed".to_string(),
+            payload: json!({ "content": content, "stream_source": stream_source }),
+        }),
+        Event::ResponseError {
+            turn_id,
+            code,
+            message,
+            retryable,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "response_error".to_string(),
+            payload: json!({ "code": code, "message": message, "retryable": retryable }),
+        }),
+        Event::ResponseResumed {
+            turn_id,
+            stream_source,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "response_resumed".to_string(),
+            payload: json!({ "stream_source": stream_source }),
+        }),
+        Event::ToolCallsProposed {
+            turn_id,
+            tool_calls,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "tool_calls_proposed".to_string(),
+            payload: json!({ "tool_calls": tool_calls }),
+        }),
+        Event::ToolBatchCompleted {
+            turn_id,
+            total,
+            succeeded,
+            failed,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "tool_batch_completed".to_string(),
+            payload: json!({ "total": total, "succeeded": succeeded, "failed": failed }),
         }),
         Event::ApprovalRequested {
             turn_id,
@@ -912,26 +999,38 @@ fn summarize_user_input(input: &str, preview_limit: usize) -> (String, bool) {
 }
 
 fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
-    let mut assistant_deltas = 0usize;
+    let mut response_text_deltas = 0usize;
     let mut assistant_messages = 0usize;
     let mut tool_calls = 0usize;
     let mut approvals = 0usize;
 
     for event in events {
         match event {
-            Event::AssistantDelta { .. } => assistant_deltas += 1,
+            Event::ResponseTextDelta { .. } => response_text_deltas += 1,
             Event::AssistantMessage { .. } => assistant_messages += 1,
             Event::ToolCallStarted { .. } | Event::ToolCallCompleted { .. } => tool_calls += 1,
             Event::ApprovalRequested { .. } | Event::ApprovalResolved { .. } => approvals += 1,
             Event::TurnStarted { .. }
             | Event::TurnCompleted { .. }
+            | Event::ResponseStarted { .. }
+            | Event::ResponseCompleted { .. }
+            | Event::ResponseError { .. }
+            | Event::ResponseResumed { .. }
+            | Event::ToolCallsProposed { .. }
+            | Event::ToolBatchCompleted { .. }
+            | Event::AssistantDelta { .. }
             | Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
             | Event::ShutdownComplete => {}
         }
     }
 
-    (assistant_deltas, assistant_messages, tool_calls, approvals)
+    (
+        response_text_deltas,
+        assistant_messages,
+        tool_calls,
+        approvals,
+    )
 }
 
 async fn cleanup_sessions(sessions: Arc<Mutex<HashMap<String, SessionState>>>) {
@@ -969,9 +1068,10 @@ mod tests {
     fn summarize_turn_events_counts_key_event_types() {
         let events = vec![
             Event::TurnStarted { turn_id: 1 },
-            Event::AssistantDelta {
+            Event::ResponseTextDelta {
                 turn_id: 1,
                 content_delta: "A".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
             },
             Event::AssistantMessage {
                 turn_id: 1,
@@ -1009,8 +1109,8 @@ mod tests {
             Event::TurnCompleted { turn_id: 1 },
         ];
 
-        let (deltas, messages, tools, approvals) = summarize_turn_events(&events);
-        assert_eq!(deltas, 1);
+        let (response_deltas, messages, tools, approvals) = summarize_turn_events(&events);
+        assert_eq!(response_deltas, 1);
         assert_eq!(messages, 1);
         assert_eq!(tools, 2);
         assert_eq!(approvals, 2);

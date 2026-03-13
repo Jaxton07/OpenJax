@@ -93,6 +93,8 @@ pub enum Event {
         turn_id: u64,
         content: String,
     },
+    /// Deprecated: legacy compatibility event.
+    /// Main streaming path MUST use `ResponseTextDelta`.
     AssistantDelta {
         turn_id: u64,
         content_delta: String,
