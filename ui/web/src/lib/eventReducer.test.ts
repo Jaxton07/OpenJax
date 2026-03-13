@@ -70,7 +70,7 @@ describe("applyStreamEvent", () => {
       event_seq: 1,
       timestamp: "2026-01-01T00:00:01Z",
       type: "response_text_delta",
-      payload: { content_delta: "hi" }
+      payload: { content_delta: "hi", stream_source: "model_live" }
     });
     const done = applyStreamEvent(delta, {
       request_id: "req",
@@ -82,7 +82,7 @@ describe("applyStreamEvent", () => {
       payload: { content: "hi there" }
     });
     expect(done.turnPhase).toBe("completed");
-    expect(done.messages.find((message) => message.turnId === "turn_2")?.content).toBe("hi there");
+    expect(done.messages.find((message) => message.turnId === "turn_2")?.content).toBe("hi");
   });
 
   it("applies batched events and keeps seq monotonic", () => {
@@ -95,7 +95,7 @@ describe("applyStreamEvent", () => {
         event_seq: 1,
         timestamp: "2026-01-01T00:00:01Z",
         type: "response_text_delta",
-        payload: { content_delta: "a" }
+        payload: { content_delta: "a", stream_source: "model_live" }
       },
       {
         request_id: "req",
@@ -104,7 +104,7 @@ describe("applyStreamEvent", () => {
         event_seq: 2,
         timestamp: "2026-01-01T00:00:02Z",
         type: "response_text_delta",
-        payload: { content_delta: "b" }
+        payload: { content_delta: "b", stream_source: "model_live" }
       }
     ]);
     expect(next.lastEventSeq).toBe(2);
@@ -122,7 +122,7 @@ describe("applyStreamEvent", () => {
         turn_seq: 1,
         timestamp: "2026-01-01T00:00:01Z",
         type: "response_text_delta",
-        payload: { content_delta: "你" }
+        payload: { content_delta: "你", stream_source: "model_live" }
       },
       {
         request_id: "req",
@@ -136,7 +136,55 @@ describe("applyStreamEvent", () => {
       }
     ]);
     expect(next.lastEventSeq).toBe(2);
-    expect(next.messages.find((message) => message.turnId === "turn_4")?.content).toBe("你好");
+    expect(next.messages.find((message) => message.turnId === "turn_4")?.content).toBe("你");
+  });
+
+  it("drops mapped legacy response_text_delta when canonical v2 delta already exists", () => {
+    const session = baseSession();
+    const first = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_dup",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "response_text_delta",
+      payload: { content_delta: "A", stream_source: "model_live" }
+    });
+    const second = applyStreamEvent(first, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_dup",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "response_text_delta",
+      payload: { content_delta: "A" }
+    });
+
+    expect(second.messages.find((message) => message.turnId === "turn_dup")?.content).toBe("A");
+  });
+
+  it("assistant_message does not overwrite existing draft content", () => {
+    const session = baseSession();
+    const draft = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_fallback",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "response_text_delta",
+      payload: { content_delta: "draft", stream_source: "model_live" }
+    });
+    const assistantMessage = applyStreamEvent(draft, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_fallback",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "assistant_message",
+      payload: { content: "final text from message" }
+    });
+
+    expect(assistantMessage.messages.find((message) => message.turnId === "turn_fallback")?.content).toBe("draft");
   });
 
   it("upserts tool events with the same tool_call_id into one tool card", () => {

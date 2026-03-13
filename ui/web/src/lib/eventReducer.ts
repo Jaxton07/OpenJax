@@ -34,16 +34,17 @@ function applySingleStreamEvent(session: ChatSession, event: StreamEvent): ChatS
 
   if ((event.type === "assistant_delta" || event.type === "response_text_delta") && turnId) {
     const contentDelta = String(event.payload.content_delta ?? "");
-    mergeAssistantDraft(next.messages, turnId, contentDelta, event.timestamp);
+    mergeAssistantDraft(next.messages, turnId, contentDelta, event.timestamp, isCanonicalDeltaEvent(event), event);
   }
 
-  if (
-    (event.type === "assistant_message" || event.type === "response_completed") &&
-    turnId &&
-    event.payload.content
-  ) {
+  if (event.type === "assistant_message" && turnId) {
     const content = String(event.payload.content ?? "");
-    finalizeAssistantMessage(next.messages, turnId, content, event.timestamp);
+    finalizeAssistantMessageFallback(next.messages, turnId, content, event.timestamp, event);
+  }
+
+  if (event.type === "response_completed" && turnId) {
+    const content = String(event.payload.content ?? "");
+    sealAssistantMessage(next.messages, turnId, content, event.timestamp, event);
   }
 
   if (event.type === "tool_calls_proposed") {
@@ -359,15 +360,27 @@ function mergeAssistantDraft(
   messages: ChatMessage[],
   turnId: string,
   delta: string,
-  timestamp: string
+  timestamp: string,
+  isCanonicalDelta: boolean,
+  event: StreamEvent
 ): void {
   const idx = messages.findIndex(
     (message) => message.turnId === turnId && message.kind === "text" && message.isDraft
   );
   if (idx >= 0) {
+    if (!isCanonicalDelta && messages[idx].hasCanonicalDelta) {
+      logStreamMetric("web_stream_duplicate_drop_count", {
+        sessionId: event.session_id,
+        turnId,
+        eventType: event.type,
+        eventSeq: event.event_seq
+      });
+      return;
+    }
     messages[idx] = {
       ...messages[idx],
-      content: `${messages[idx].content}${delta}`
+      content: `${messages[idx].content}${delta}`,
+      hasCanonicalDelta: messages[idx].hasCanonicalDelta || isCanonicalDelta
     };
     return;
   }
@@ -378,7 +391,8 @@ function mergeAssistantDraft(
     content: delta,
     timestamp,
     turnId,
-    isDraft: true
+    isDraft: true,
+    hasCanonicalDelta: isCanonicalDelta
   });
 }
 
@@ -435,24 +449,91 @@ function upsertToolBatchSummary(
   });
 }
 
-function finalizeAssistantMessage(
+function finalizeAssistantMessageFallback(
   messages: ChatMessage[],
   turnId: string,
   content: string,
-  timestamp: string
+  timestamp: string,
+  event: StreamEvent
 ): void {
-  const idx = messages.findIndex(
+  const draftIdx = messages.findIndex(
+    (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant" && message.isDraft
+  );
+  if (draftIdx >= 0) {
+    if (content && content !== messages[draftIdx].content) {
+      logStreamMetric("web_stream_content_mismatch_count", {
+        sessionId: event.session_id,
+        turnId,
+        eventType: event.type,
+        eventSeq: event.event_seq
+      });
+    }
+    return;
+  }
+  const existingIdx = messages.findIndex(
     (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant"
   );
-  if (idx >= 0) {
-    messages[idx] = {
-      ...messages[idx],
-      content,
-      timestamp,
-      isDraft: false
+  if (existingIdx >= 0) {
+    return;
+  }
+  if (!content) {
+    return;
+  }
+  messages.push({
+    id: crypto.randomUUID(),
+    kind: "text",
+    role: "assistant",
+    content,
+    timestamp,
+    turnId,
+    isDraft: false
+  });
+}
+
+function sealAssistantMessage(
+  messages: ChatMessage[],
+  turnId: string,
+  content: string,
+  timestamp: string,
+  event: StreamEvent
+): void {
+  const draftIdx = messages.findIndex(
+    (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant" && message.isDraft
+  );
+  if (draftIdx >= 0) {
+    if (content && content !== messages[draftIdx].content) {
+      logStreamMetric("web_stream_content_mismatch_count", {
+        sessionId: event.session_id,
+        turnId,
+        eventType: event.type,
+        eventSeq: event.event_seq
+      });
+    }
+    messages[draftIdx] = {
+      ...messages[draftIdx],
+      isDraft: false,
+      timestamp
     };
     return;
   }
+
+  const existingIdx = messages.findIndex(
+    (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant"
+  );
+  if (existingIdx >= 0) {
+    return;
+  }
+
+  if (!content) {
+    logStreamMetric("web_stream_completed_without_draft_count", {
+      sessionId: event.session_id,
+      turnId,
+      eventType: event.type,
+      eventSeq: event.event_seq
+    });
+    return;
+  }
+
   messages.push({
     id: crypto.randomUUID(),
     kind: "text",
@@ -474,4 +555,15 @@ function markTurnDraftFinal(messages: ChatMessage[], turnId?: string): void {
       messages[i] = { ...message, isDraft: false };
     }
   }
+}
+
+function isCanonicalDeltaEvent(event: StreamEvent): boolean {
+  if (event.type !== "response_text_delta") {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(event.payload, "stream_source");
+}
+
+function logStreamMetric(name: string, payload: Record<string, unknown>): void {
+  console.debug("[stream_metrics]", name, payload);
 }

@@ -54,7 +54,12 @@ export default function MessageList({ messages, pendingApprovals, onResolveAppro
               ) : null
             ) : message.role === "assistant" ? (
               <div className="assistant-markdown">
-                <MarkdownRender content={message.content} />
+                <MarkdownRender
+                  content={message.content}
+                  final={!message.isDraft}
+                  batchRendering={false}
+                  deferNodesUntilVisible={false}
+                />
               </div>
             ) : (
               <div className="message-text">{message.content}</div>

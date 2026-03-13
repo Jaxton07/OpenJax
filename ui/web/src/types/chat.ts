@@ -34,6 +34,7 @@ export interface ChatMessage {
   timestamp: string;
   turnId?: string;
   isDraft?: boolean;
+  hasCanonicalDelta?: boolean;
   toolSteps?: ToolStep[];
 }
 

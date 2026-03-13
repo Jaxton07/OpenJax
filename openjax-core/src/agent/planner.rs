@@ -7,8 +7,8 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::agent::decision::{
-    NormalizedToolCall, normalize_model_decision, normalize_tool_calls, parse_model_decision,
-    parse_model_decision_v2,
+    DecisionJsonStreamParser, NormalizedToolCall, normalize_model_decision, normalize_tool_calls,
+    parse_model_decision, parse_model_decision_v2,
 };
 use crate::agent::prompt::{
     build_final_response_prompt, build_json_repair_prompt, build_planner_input, truncate_for_prompt,
@@ -102,8 +102,16 @@ impl Agent {
             planner_rounds += 1;
 
             let planner_request = ModelRequest::for_stage(ModelStage::Planner, planner_input);
-            let model_output = match self.model_client.complete(&planner_request).await {
-                Ok(output) => output.text,
+            let planner_stream = match self
+                .request_planner_model_output(
+                    turn_id,
+                    &planner_request,
+                    self.final_response_mode == FinalResponseMode::PlannerOnly,
+                    events,
+                )
+                .await
+            {
+                Ok(streamed) => streamed,
                 Err(err) => {
                     warn!(
                         turn_id = turn_id,
@@ -124,12 +132,11 @@ impl Agent {
                     return;
                 }
             };
+            let model_output = planner_stream.model_output;
 
             info!(
                 turn_id = turn_id,
                 output_len = model_output.len(),
-                output_preview = %summarize_log_preview_json(&model_output, 400),
-                output_truncated = model_output.chars().count() > 400,
                 "model_request completed"
             );
 
@@ -270,9 +277,14 @@ impl Agent {
                 turn_id = turn_id,
                 action = %action,
                 tool = ?decision.tool,
+                "model_decision"
+            );
+
+            debug!(
+                turn_id = turn_id,
                 args = ?decision.args,
                 message = ?decision.message,
-                "model_decision"
+                "model_decision_payload"
             );
 
             if action == "final" {
@@ -344,7 +356,25 @@ impl Agent {
                         mode = self.final_response_mode.as_str(),
                         "final_writer_request skipped"
                     );
-                    if self.stream_engine_v2_enabled {
+                    if planner_stream.live_streamed {
+                        turn_engine.on_response_started();
+                        if self.stream_engine_v2_enabled {
+                            self.push_event(
+                                events,
+                                Event::ResponseCompleted {
+                                    turn_id,
+                                    content: seed_message.clone(),
+                                    stream_source: openjax_protocol::StreamSource::ModelLive,
+                                },
+                            );
+                        }
+                        if planner_stream.streamed_message.is_empty() {
+                            seed_message.clone()
+                        } else {
+                            planner_stream.streamed_message.clone()
+                        }
+                    } else {
+                        if self.stream_engine_v2_enabled {
                         turn_engine.on_response_started();
                         self.push_event(
                             events,
@@ -353,19 +383,20 @@ impl Agent {
                                 stream_source: openjax_protocol::StreamSource::Synthetic,
                             },
                         );
+                        }
+                        self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
+                        if self.stream_engine_v2_enabled {
+                            self.push_event(
+                                events,
+                                Event::ResponseCompleted {
+                                    turn_id,
+                                    content: seed_message.clone(),
+                                    stream_source: openjax_protocol::StreamSource::Synthetic,
+                                },
+                            );
+                        }
+                        seed_message
                     }
-                    self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
-                    if self.stream_engine_v2_enabled {
-                        self.push_event(
-                            events,
-                            Event::ResponseCompleted {
-                                turn_id,
-                                content: seed_message.clone(),
-                                stream_source: openjax_protocol::StreamSource::Synthetic,
-                            },
-                        );
-                    }
-                    seed_message
                 };
                 let (preview, preview_truncated) = summarize_log_preview(&message, 300);
                 let preview_json = serde_json::json!({ "final_response": preview }).to_string();
@@ -705,6 +736,179 @@ impl Agent {
         self.record_history("assistant", message);
     }
 
+    async fn request_planner_model_output(
+        &mut self,
+        turn_id: u64,
+        planner_request: &ModelRequest,
+        emit_live_final_deltas: bool,
+        events: &mut Vec<Event>,
+    ) -> anyhow::Result<PlannerStreamResult> {
+        let started_at = Instant::now();
+        let (delta_tx, mut delta_rx) = tokio::sync::mpsc::unbounded_channel();
+        let stream_future = self
+            .model_client
+            .complete_stream(planner_request, Some(delta_tx));
+        tokio::pin!(stream_future);
+
+        let mut parser = DecisionJsonStreamParser::new();
+        let mut streamed_message = String::new();
+        let mut response_started = false;
+        let mut ttft_logged = false;
+
+        let on_delta = |delta: String,
+                        parser: &mut DecisionJsonStreamParser,
+                        streamed_message: &mut String,
+                        response_started: &mut bool,
+                        ttft_logged: &mut bool,
+                        events: &mut Vec<Event>| {
+            if delta.is_empty() {
+                return;
+            }
+            let chunk = parser.push_chunk(&delta);
+            if !emit_live_final_deltas || chunk.message_delta.is_empty() {
+                return;
+            }
+            if !*response_started {
+                *response_started = true;
+                if self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::ResponseStarted {
+                            turn_id,
+                            stream_source: openjax_protocol::StreamSource::ModelLive,
+                        },
+                    );
+                }
+            }
+            if !*ttft_logged {
+                *ttft_logged = true;
+                info!(
+                    turn_id = turn_id,
+                    planner_stream_ttft_ms = started_at.elapsed().as_millis(),
+                    "planner_stream_ttft"
+                );
+            }
+            for ch in chunk.message_delta.chars() {
+                let delta = ch.to_string();
+                streamed_message.push(ch);
+                if self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::ResponseTextDelta {
+                            turn_id,
+                            content_delta: delta.clone(),
+                            stream_source: openjax_protocol::StreamSource::ModelLive,
+                        },
+                    );
+                }
+                if !self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::AssistantDelta {
+                            turn_id,
+                            content_delta: delta,
+                        },
+                    );
+                }
+            }
+        };
+
+        let stream_result = loop {
+            tokio::select! {
+                delta = delta_rx.recv() => {
+                    if let Some(delta) = delta {
+                        on_delta(
+                            delta,
+                            &mut parser,
+                            &mut streamed_message,
+                            &mut response_started,
+                            &mut ttft_logged,
+                            events,
+                        );
+                    }
+                }
+                result = &mut stream_future => {
+                    break result;
+                }
+            }
+        };
+
+        while let Ok(delta) = delta_rx.try_recv() {
+            on_delta(
+                delta,
+                &mut parser,
+                &mut streamed_message,
+                &mut response_started,
+                &mut ttft_logged,
+                events,
+            );
+        }
+
+        let mut fallback_reason: Option<&'static str> = None;
+        let model_output = match stream_result {
+            Ok(response) => {
+                let output = response.text;
+                if parse_model_decision(&output).is_some() {
+                    output
+                } else if emit_live_final_deltas
+                    && parser.action() == Some("final")
+                    && !streamed_message.is_empty()
+                {
+                    format!(
+                        "{{\"action\":\"final\",\"message\":{}}}",
+                        serde_json::to_string(&streamed_message).unwrap_or_else(|_| "\"\"".to_string())
+                    )
+                } else {
+                    fallback_reason = Some("parse_failed_after_stream");
+                    parser.raw_text().to_string()
+                }
+            }
+            Err(err) => {
+                warn!(
+                    turn_id = turn_id,
+                    error = %err,
+                    "planner_stream_failed"
+                );
+                fallback_reason = Some("stream_failed");
+                parser.raw_text().to_string()
+            }
+        };
+
+        let final_output = if parse_model_decision(&model_output).is_some() {
+            model_output
+        } else {
+            if matches!(fallback_reason, Some("parse_failed_after_stream") | Some("parse_failed")) {
+                info!(
+                    turn_id = turn_id,
+                    planner_stream_parse_error_count = 1,
+                    "planner_stream_metric"
+                );
+            }
+            info!(
+                turn_id = turn_id,
+                fallback_reason = fallback_reason.unwrap_or("parse_failed"),
+                "planner_stream_fallback_to_complete"
+            );
+            info!(turn_id = turn_id, planner_stream_fallback_count = 1, "planner_stream_metric");
+            let fallback = self.model_client.complete(planner_request).await?;
+            fallback.text
+        };
+
+        info!(
+            turn_id = turn_id,
+            planner_stream_total_ms = started_at.elapsed().as_millis(),
+            live_streamed = response_started,
+            delta_chars = streamed_message.chars().count(),
+            "planner_stream_completed"
+        );
+
+        Ok(PlannerStreamResult {
+            model_output: final_output,
+            streamed_message,
+            live_streamed: response_started,
+        })
+    }
+
     pub(crate) async fn stream_final_assistant_reply(
         &mut self,
         turn_id: u64,
@@ -756,10 +960,12 @@ impl Agent {
                                 stream_source: openjax_protocol::StreamSource::ModelLive,
                             });
                         }
-                        self.push_event(events, Event::AssistantDelta {
-                            turn_id,
-                            content_delta: delta,
-                        });
+                        if !self.stream_engine_v2_enabled {
+                            self.push_event(events, Event::AssistantDelta {
+                                turn_id,
+                                content_delta: delta,
+                            });
+                        }
                     }
                 }
                 result = &mut stream_future => {
@@ -789,13 +995,15 @@ impl Agent {
                         },
                     );
                 }
-                self.push_event(
-                    events,
-                    Event::AssistantDelta {
-                        turn_id,
-                        content_delta: delta,
-                    },
-                );
+                if !self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::AssistantDelta {
+                            turn_id,
+                            content_delta: delta,
+                        },
+                    );
+                }
             }
         }
 
@@ -862,26 +1070,48 @@ impl Agent {
             chunk.push(ch);
             chunk_len += 1;
             if chunk_len >= SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS {
-                self.push_event(
-                    events,
-                    Event::AssistantDelta {
-                        turn_id,
-                        content_delta: chunk.clone(),
-                    },
-                );
+                if self.stream_engine_v2_enabled {
+                    self.push_event(
+                        events,
+                        Event::ResponseTextDelta {
+                            turn_id,
+                            content_delta: chunk.clone(),
+                            stream_source: openjax_protocol::StreamSource::Synthetic,
+                        },
+                    );
+                } else {
+                    self.push_event(
+                        events,
+                        Event::AssistantDelta {
+                            turn_id,
+                            content_delta: chunk.clone(),
+                        },
+                    );
+                }
                 chunk.clear();
                 chunk_len = 0;
             }
         }
 
         if !chunk.is_empty() {
-            self.push_event(
-                events,
-                Event::AssistantDelta {
-                    turn_id,
-                    content_delta: chunk,
-                },
-            );
+            if self.stream_engine_v2_enabled {
+                self.push_event(
+                    events,
+                    Event::ResponseTextDelta {
+                        turn_id,
+                        content_delta: chunk,
+                        stream_source: openjax_protocol::StreamSource::Synthetic,
+                    },
+                );
+            } else {
+                self.push_event(
+                    events,
+                    Event::AssistantDelta {
+                        turn_id,
+                        content_delta: chunk,
+                    },
+                );
+            }
         }
     }
 
@@ -1150,6 +1380,13 @@ impl Agent {
         );
         executed
     }
+}
+
+#[derive(Debug, Default, Clone)]
+struct PlannerStreamResult {
+    model_output: String,
+    streamed_message: String,
+    live_streamed: bool,
 }
 
 fn extract_tool_target_hint(

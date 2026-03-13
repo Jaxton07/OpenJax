@@ -2,6 +2,235 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonStringRole {
+    Key,
+    StringValue,
+    Other,
+}
+
+impl Default for JsonStringRole {
+    fn default() -> Self {
+        Self::Other
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct ObjectFrame {
+    expecting_key: bool,
+    pending_key: Option<String>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct DecisionStreamChunk {
+    pub(crate) message_delta: String,
+    pub(crate) action: Option<String>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct DecisionJsonStreamParser {
+    raw: String,
+    object_stack: Vec<ObjectFrame>,
+    in_string: bool,
+    escape: bool,
+    unicode_mode: bool,
+    unicode_buf: String,
+    current_string: String,
+    current_string_role: JsonStringRole,
+    action: Option<String>,
+    pending_message: String,
+}
+
+impl DecisionJsonStreamParser {
+    pub(crate) fn new() -> Self {
+        Self {
+            current_string_role: JsonStringRole::Other,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn push_chunk(&mut self, chunk: &str) -> DecisionStreamChunk {
+        self.raw.push_str(chunk);
+        let mut out = DecisionStreamChunk::default();
+        for ch in chunk.chars() {
+            if self.in_string {
+                self.consume_string_char(ch, &mut out);
+                continue;
+            }
+
+            match ch {
+                '{' => {
+                    self.object_stack.push(ObjectFrame {
+                        expecting_key: true,
+                        pending_key: None,
+                    });
+                }
+                '}' => {
+                    let _ = self.object_stack.pop();
+                }
+                '"' => {
+                    self.in_string = true;
+                    self.escape = false;
+                    self.unicode_mode = false;
+                    self.unicode_buf.clear();
+                    self.current_string.clear();
+                    self.current_string_role = self.resolve_string_role();
+                }
+                ':' => {
+                    if let Some(frame) = self.object_stack.last_mut() {
+                        frame.expecting_key = false;
+                    }
+                }
+                ',' => {
+                    if let Some(frame) = self.object_stack.last_mut() {
+                        frame.expecting_key = true;
+                        frame.pending_key = None;
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    pub(crate) fn action(&self) -> Option<&str> {
+        self.action.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn final_message_from_raw(&self) -> Option<String> {
+        parse_model_decision(&self.raw).and_then(|decision| decision.message)
+    }
+
+    pub(crate) fn raw_text(&self) -> &str {
+        &self.raw
+    }
+
+    fn resolve_string_role(&self) -> JsonStringRole {
+        if let Some(frame) = self.object_stack.last() {
+            if frame.expecting_key {
+                return JsonStringRole::Key;
+            }
+            if frame.pending_key.is_some() {
+                return JsonStringRole::StringValue;
+            }
+        }
+        JsonStringRole::Other
+    }
+
+    fn consume_string_char(&mut self, ch: char, out: &mut DecisionStreamChunk) {
+        if self.unicode_mode {
+            if ch.is_ascii_hexdigit() {
+                self.unicode_buf.push(ch);
+                if self.unicode_buf.len() == 4 {
+                    if let Ok(code) = u16::from_str_radix(&self.unicode_buf, 16)
+                        && let Some(decoded) = char::from_u32(code as u32)
+                    {
+                        self.push_decoded_char(decoded, out);
+                    }
+                    self.unicode_mode = false;
+                    self.unicode_buf.clear();
+                }
+            } else {
+                // invalid unicode escape sequence; keep raw fallback semantics
+                self.unicode_mode = false;
+                self.unicode_buf.clear();
+            }
+            return;
+        }
+
+        if self.escape {
+            self.escape = false;
+            match ch {
+                '"' => self.push_decoded_char('"', out),
+                '\\' => self.push_decoded_char('\\', out),
+                '/' => self.push_decoded_char('/', out),
+                'b' => self.push_decoded_char('\u{0008}', out),
+                'f' => self.push_decoded_char('\u{000C}', out),
+                'n' => self.push_decoded_char('\n', out),
+                'r' => self.push_decoded_char('\r', out),
+                't' => self.push_decoded_char('\t', out),
+                'u' => {
+                    self.unicode_mode = true;
+                    self.unicode_buf.clear();
+                }
+                other => self.push_decoded_char(other, out),
+            }
+            return;
+        }
+
+        match ch {
+            '\\' => {
+                self.escape = true;
+            }
+            '"' => {
+                self.in_string = false;
+                self.finalize_string_token(out);
+                self.current_string.clear();
+                self.current_string_role = JsonStringRole::Other;
+            }
+            other => {
+                self.push_decoded_char(other, out);
+            }
+        }
+    }
+
+    fn push_decoded_char(&mut self, ch: char, out: &mut DecisionStreamChunk) {
+        self.current_string.push(ch);
+        if self.current_string_role != JsonStringRole::StringValue {
+            return;
+        }
+        let top_level_string_value = self.object_stack.len() == 1
+            && self
+                .object_stack
+                .last()
+                .and_then(|frame| frame.pending_key.as_deref())
+                .is_some();
+        if !top_level_string_value {
+            return;
+        }
+
+        if self
+            .object_stack
+            .last()
+            .and_then(|frame| frame.pending_key.as_deref())
+            == Some("message")
+        {
+            if self.action.as_deref() == Some("final") {
+                out.message_delta.push(ch);
+            } else {
+                self.pending_message.push(ch);
+            }
+        }
+    }
+
+    fn finalize_string_token(&mut self, out: &mut DecisionStreamChunk) {
+        match self.current_string_role {
+            JsonStringRole::Key => {
+                if let Some(frame) = self.object_stack.last_mut() {
+                    frame.pending_key = Some(self.current_string.clone());
+                }
+            }
+            JsonStringRole::StringValue => {
+                if self.object_stack.len() == 1
+                    && let Some(frame) = self.object_stack.last_mut()
+                {
+                    if frame.pending_key.as_deref() == Some("action") {
+                        self.action = Some(self.current_string.to_ascii_lowercase());
+                        out.action = self.action.clone();
+                        if self.action.as_deref() == Some("final") && !self.pending_message.is_empty() {
+                            out.message_delta.push_str(&self.pending_message);
+                            self.pending_message.clear();
+                        }
+                    }
+                    frame.pending_key = None;
+                }
+            }
+            JsonStringRole::Other => {}
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct ModelDecision {
     #[serde(alias = "type")]
@@ -249,7 +478,7 @@ pub(crate) fn normalize_model_decision(mut decision: ModelDecision) -> ModelDeci
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_model_decision, parse_model_decision_v2};
+    use super::{DecisionJsonStreamParser, parse_model_decision, parse_model_decision_v2};
 
     #[test]
     fn parses_v2_tool_batch_shape() {
@@ -279,6 +508,39 @@ mod tests {
         assert_eq!(
             decision.args.as_ref().and_then(|args| args.get("file_path")),
             Some(&"/tmp/a".to_string())
+        );
+    }
+
+    #[test]
+    fn parser_streams_message_delta_when_action_is_final() {
+        let mut parser = DecisionJsonStreamParser::new();
+        let first = parser.push_chunk("{\"action\":\"final\",\"message\":\"你");
+        assert_eq!(first.action.as_deref(), Some("final"));
+        assert_eq!(first.message_delta, "你");
+        let second = parser.push_chunk("好\"}");
+        assert_eq!(second.message_delta, "好");
+        assert_eq!(parser.final_message_from_raw().as_deref(), Some("你好"));
+    }
+
+    #[test]
+    fn parser_keeps_message_buffered_until_action_resolved() {
+        let mut parser = DecisionJsonStreamParser::new();
+        let first = parser.push_chunk("{\"message\":\"abc\",\"action\":\"f");
+        assert_eq!(first.message_delta, "");
+        let second = parser.push_chunk("inal\"}");
+        assert_eq!(second.action.as_deref(), Some("final"));
+        assert_eq!(second.message_delta, "abc");
+    }
+
+    #[test]
+    fn parser_decodes_escape_sequences_across_chunks() {
+        let mut parser = DecisionJsonStreamParser::new();
+        let first = parser.push_chunk(r#"{"action":"final","message":"line1\"#);
+        let second = parser.push_chunk(r#"nline2"}"#);
+        assert_eq!(format!("{}{}", first.message_delta, second.message_delta), "line1\nline2");
+        assert_eq!(
+            parser.final_message_from_raw().as_deref(),
+            Some("line1\nline2")
         );
     }
 }

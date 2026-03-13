@@ -8,6 +8,8 @@ import type { AppSettings, AuthSessionItem, GatewayConnection, GatewayError, Str
 
 const MAX_RECONNECT_RETRY = 6;
 const WEB_RENDER_V2_ENABLED = resolveWebRenderV2Enabled();
+const WEB_RENDER_V2_BATCH_SIZE = 6;
+const WEB_RENDER_V2_FLUSH_INTERVAL_MS = 12;
 
 function createLocalSession(sessionId: string): ChatSession {
   return {
@@ -92,7 +94,7 @@ export function useChatApp() {
   );
 
   const consumeQueuedEvents = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, drainAll = false) => {
       if (queueInFlightRef.current[sessionId]) {
         return;
       }
@@ -104,8 +106,14 @@ export function useChatApp() {
             break;
           }
           if (WEB_RENDER_V2_ENABLED) {
-            const batch = queue.splice(0, queue.length);
+            const batch = queue.splice(
+              0,
+              drainAll ? queue.length : Math.min(queue.length, WEB_RENDER_V2_BATCH_SIZE)
+            );
             applyQueuedEvents(sessionId, batch);
+            if (!drainAll) {
+              break;
+            }
             continue;
           }
           const next = queue.shift();
@@ -117,6 +125,15 @@ export function useChatApp() {
       } finally {
         queueInFlightRef.current[sessionId] = false;
         if ((queuedEventsRef.current[sessionId]?.length ?? 0) > 0) {
+          if (WEB_RENDER_V2_ENABLED) {
+            if (queueTimerRef.current[sessionId] === null || queueTimerRef.current[sessionId] === undefined) {
+              queueTimerRef.current[sessionId] = window.setTimeout(() => {
+                queueTimerRef.current[sessionId] = null;
+                consumeQueuedEvents(sessionId);
+              }, WEB_RENDER_V2_FLUSH_INTERVAL_MS);
+            }
+            return;
+          }
           consumeQueuedEvents(sessionId);
         }
       }
@@ -143,7 +160,7 @@ export function useChatApp() {
       queuedEventsRef.current[sessionId].push(event);
       if (!WEB_RENDER_V2_ENABLED || shouldFlushImmediately(event)) {
         clearSessionQueueTimer(sessionId);
-        consumeQueuedEvents(sessionId);
+        consumeQueuedEvents(sessionId, true);
         return;
       }
       if (queueTimerRef.current[sessionId] !== null && queueTimerRef.current[sessionId] !== undefined) {
@@ -152,7 +169,7 @@ export function useChatApp() {
       queueTimerRef.current[sessionId] = window.setTimeout(() => {
         queueTimerRef.current[sessionId] = null;
         consumeQueuedEvents(sessionId);
-      }, 24);
+      }, WEB_RENDER_V2_FLUSH_INTERVAL_MS);
     },
     [clearSessionQueueTimer, consumeQueuedEvents, shouldFlushImmediately]
   );

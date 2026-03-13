@@ -58,10 +58,25 @@ impl ModelClient for ScriptedToolBatchModel {
 
     async fn complete_stream(
         &self,
-        _request: &ModelRequest,
-        _delta_sender: Option<UnboundedSender<String>>,
+        request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<String>>,
     ) -> Result<ModelResponse> {
-        Ok(ModelResponse::default())
+        let mut calls = self.complete_calls.lock().expect("complete_calls lock");
+        *calls += 1;
+        let text = if *calls == 1 {
+            r#"{"action":"tool_batch","tool_calls":[{"tool_call_id":"call_1","tool_name":"list_dir","arguments":{"path":"."}},{"tool_call_id":"call_2","tool_name":"system_load","arguments":{}}]}"#
+        } else {
+            r#"{"action":"final","message":"batch done"}"#
+        };
+        if request.stage == super::model::ModelStage::Planner
+            && let Some(sender) = delta_sender
+        {
+            let _ = sender.send(text.to_string());
+        }
+        Ok(ModelResponse {
+            text: text.to_string(),
+            ..ModelResponse::default()
+        })
     }
 
     fn name(&self) -> &'static str {
@@ -99,11 +114,22 @@ impl ModelClient for ScriptedStreamingModel {
 
     async fn complete_stream(
         &self,
-        _request: &ModelRequest,
+        request: &ModelRequest,
         delta_sender: Option<UnboundedSender<String>>,
     ) -> Result<ModelResponse> {
         let mut stream_calls = self.stream_calls.lock().expect("stream_calls lock");
         *stream_calls += 1;
+        if request.stage == super::model::ModelStage::Planner {
+            let planner_text = r#"{"action":"final","message":"seed"}"#.to_string();
+            if let Some(sender) = delta_sender {
+                let _ = sender.send("{\"action\":\"final\",\"message\":\"se".to_string());
+                let _ = sender.send("ed\"}".to_string());
+            }
+            return Ok(ModelResponse {
+                text: planner_text,
+                ..ModelResponse::default()
+            });
+        }
         if let Some(sender) = delta_sender {
             let _ = sender.send("你".to_string());
             let _ = sender.send("好".to_string());
@@ -304,6 +330,7 @@ async fn final_action_emits_assistant_delta_before_message() {
         PathBuf::from("."),
     );
     agent.final_response_mode = FinalResponseMode::FinalWriter;
+    agent.stream_engine_v2_enabled = false;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -350,8 +377,8 @@ async fn final_action_emits_assistant_delta_before_message() {
             < assistant_message_index.expect("assistant message index"),
         "assistant delta should be emitted before final assistant message"
     );
-    assert_eq!(model_probe.complete_call_count(), 1);
-    assert_eq!(model_probe.stream_call_count(), 1);
+    assert_eq!(model_probe.complete_call_count(), 0);
+    assert_eq!(model_probe.stream_call_count(), 2);
 }
 
 #[tokio::test]
@@ -401,8 +428,8 @@ async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
             < assistant_message_index.expect("assistant message index"),
         "assistant delta should be emitted before final assistant message"
     );
-    assert_eq!(model_probe.complete_call_count(), 1);
-    assert_eq!(model_probe.stream_call_count(), 0);
+    assert_eq!(model_probe.complete_call_count(), 0);
+    assert_eq!(model_probe.stream_call_count(), 1);
 }
 
 #[tokio::test]
@@ -445,8 +472,8 @@ async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
     assert!(saw_response_started);
     assert!(saw_response_completed);
     assert_eq!(assistant_message_text, "seed");
-    assert_eq!(model_probe.complete_call_count(), 1);
-    assert_eq!(model_probe.stream_call_count(), 0);
+    assert_eq!(model_probe.complete_call_count(), 0);
+    assert_eq!(model_probe.stream_call_count(), 1);
 }
 
 #[tokio::test]
