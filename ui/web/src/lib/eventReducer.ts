@@ -32,7 +32,7 @@ function applySingleStreamEvent(session: ChatSession, event: StreamEvent): ChatS
     next.turnPhase = "streaming";
   }
 
-  if ((event.type === "assistant_delta" || event.type === "response_text_delta") && turnId) {
+  if (event.type === "response_text_delta" && turnId) {
     const contentDelta = String(event.payload.content_delta ?? "");
     mergeAssistantDraft(next.messages, turnId, contentDelta, event.timestamp, isCanonicalDeltaEvent(event), event);
   }

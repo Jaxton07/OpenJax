@@ -176,6 +176,7 @@ export default function App() {
           <MessageList
             messages={activeSession?.messages ?? []}
             pendingApprovals={activeSession?.pendingApprovals ?? []}
+            streaming={activeSession?.streaming}
             onResolveApproval={(approval, approved) => resolveApproval(approval, approved)}
           />
         </section>

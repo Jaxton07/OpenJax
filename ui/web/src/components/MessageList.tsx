@@ -1,15 +1,24 @@
 import { useEffect, useRef } from "react";
 import MarkdownRender from "markstream-react";
-import type { ChatMessage, PendingApproval } from "../types/chat";
+import type { ChatMessage, PendingApproval, SessionStreamingState } from "../types/chat";
 import ToolStepList from "./tool-steps/ToolStepList";
 
 interface MessageListProps {
   messages: ChatMessage[];
   pendingApprovals: PendingApproval[];
+  streaming?: SessionStreamingState;
   onResolveApproval: (approval: PendingApproval, approved: boolean) => Promise<void> | void;
 }
 
-export default function MessageList({ messages, pendingApprovals, onResolveApproval }: MessageListProps) {
+type AssistantRenderMode = "text" | "markdown";
+
+export default function MessageList({
+  messages,
+  pendingApprovals,
+  streaming,
+  onResolveApproval
+}: MessageListProps) {
+  const assistantRenderMode = resolveAssistantRenderMode();
   const endRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
 
@@ -41,33 +50,66 @@ export default function MessageList({ messages, pendingApprovals, onResolveAppro
 
   return (
     <div className="message-list">
-      {messages.map((message) => (
-        <div key={message.id} className={`message-row role-${message.role}`}>
-          <div className="message-bubble">
-            {message.kind === "tool_steps" ? (
-              Array.isArray(message.toolSteps) && message.toolSteps.length > 0 ? (
-                <ToolStepList
-                  steps={message.toolSteps}
-                  pendingApprovals={pendingApprovals}
-                  onResolveApproval={onResolveApproval}
-                />
-              ) : null
-            ) : message.role === "assistant" ? (
-              <div className="assistant-markdown">
-                <MarkdownRender
-                  content={message.content}
-                  final={!message.isDraft}
-                  batchRendering={false}
-                  deferNodesUntilVisible={false}
-                />
-              </div>
-            ) : (
-              <div className="message-text">{message.content}</div>
-            )}
+      {messages.map((message) => {
+        const resolvedContent =
+          message.role === "assistant" &&
+          message.kind === "text" &&
+          message.isDraft &&
+          message.turnId &&
+          streaming?.active &&
+          streaming.turnId === message.turnId
+            ? streaming.content
+            : message.content;
+        return (
+          <div key={message.id} className={`message-row role-${message.role}`}>
+            <div className="message-bubble">
+              {message.kind === "tool_steps" ? (
+                Array.isArray(message.toolSteps) && message.toolSteps.length > 0 ? (
+                  <ToolStepList
+                    steps={message.toolSteps}
+                    pendingApprovals={pendingApprovals}
+                    onResolveApproval={onResolveApproval}
+                  />
+                ) : null
+              ) : message.role === "assistant" ? (
+                assistantRenderMode === "markdown" ? (
+                  <div className="assistant-markdown">
+                    <MarkdownRender
+                      content={resolvedContent}
+                      final={!message.isDraft}
+                      batchRendering={false}
+                      deferNodesUntilVisible={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="message-text">{resolvedContent}</div>
+                )
+              ) : (
+                <div className="message-text">{resolvedContent}</div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       <div ref={endRef} />
     </div>
   );
+}
+
+function resolveAssistantRenderMode(): AssistantRenderMode {
+  const globals =
+    typeof globalThis !== "undefined"
+      ? (globalThis as {
+          OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string;
+          VITE_OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string;
+        })
+      : {};
+  const raw = String(
+    globals.OPENJAX_WEB_ASSISTANT_RENDER_MODE ??
+      globals.VITE_OPENJAX_WEB_ASSISTANT_RENDER_MODE ??
+      "text"
+  )
+    .trim()
+    .toLowerCase();
+  return raw === "markdown" ? "markdown" : "text";
 }

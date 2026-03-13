@@ -47,6 +47,14 @@ export interface PendingApproval {
   toolName?: string;
 }
 
+export interface SessionStreamingState {
+  turnId?: string;
+  assistantMessageId?: string;
+  content: string;
+  lastEventSeq: number;
+  active: boolean;
+}
+
 export interface ChatSession {
   id: string;
   title: string;
@@ -56,6 +64,7 @@ export interface ChatSession {
   lastEventSeq: number;
   messages: ChatMessage[];
   pendingApprovals: PendingApproval[];
+  streaming?: SessionStreamingState;
 }
 
 export interface ChatState {

@@ -19,6 +19,8 @@ interface StreamOptions {
   signal: AbortSignal;
 }
 
+const STREAM_DEBUG_ENABLED = resolveStreamDebugEnabled();
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 }
@@ -199,6 +201,19 @@ export class GatewayClient {
         }
         try {
           const event = JSON.parse(parsed.data) as StreamEvent;
+          if (STREAM_DEBUG_ENABLED) {
+            console.debug("[stream_debug][gateway_client][recv]", {
+              sessionId: options.sessionId,
+              eventType: event.type,
+              eventSeq: event.event_seq,
+              turnId: event.turn_id,
+              turnSeq: event.turn_seq,
+              deltaLen:
+                event.type === "response_text_delta"
+                  ? String(event.payload.content_delta ?? "").length
+                  : undefined
+            });
+          }
           options.onEvent(event);
         } catch (error) {
           options.onError(error as Error);
@@ -270,4 +285,22 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
       reject(new Error("aborted"));
     });
   });
+}
+
+function resolveStreamDebugEnabled(): boolean {
+  const globals =
+    typeof globalThis !== "undefined"
+      ? (globalThis as {
+          OPENJAX_WEB_STREAM_DEBUG?: string | boolean;
+          VITE_OPENJAX_WEB_STREAM_DEBUG?: string | boolean;
+        })
+      : {};
+  const raw = String(
+    globals.OPENJAX_WEB_STREAM_DEBUG ??
+      globals.VITE_OPENJAX_WEB_STREAM_DEBUG ??
+      "0"
+  )
+    .trim()
+    .toLowerCase();
+  return !(raw === "0" || raw === "off" || raw === "false" || raw === "disabled");
 }

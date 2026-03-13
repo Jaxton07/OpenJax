@@ -35,7 +35,7 @@ describe("applyStreamEvent", () => {
     expect(second.messages).toHaveLength(1);
   });
 
-  it("merges assistant deltas into text messages only", () => {
+  it("merges response text deltas into text messages only", () => {
     const session = baseSession();
     const delta1 = applyStreamEvent(session, {
       request_id: "req",
@@ -43,7 +43,7 @@ describe("applyStreamEvent", () => {
       turn_id: "turn_1",
       event_seq: 1,
       timestamp: "2026-01-01T00:00:01Z",
-      type: "assistant_delta",
+      type: "response_text_delta",
       payload: { content_delta: "hel" }
     });
     const delta2 = applyStreamEvent(delta1, {
@@ -52,7 +52,7 @@ describe("applyStreamEvent", () => {
       turn_id: "turn_1",
       event_seq: 2,
       timestamp: "2026-01-01T00:00:02Z",
-      type: "assistant_delta",
+      type: "response_text_delta",
       payload: { content_delta: "lo" }
     });
 

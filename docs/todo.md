@@ -51,7 +51,7 @@
 
 
 ## Web UI
-1. 添加markdown 支持
+<!-- 1. 添加markdown 支持 -->
 2. 添加tool 调用链和状态显示
 3. 连接状态的颜色显示
 4. /cmd 支持与匹配+ 候选面板
@@ -66,7 +66,7 @@
 6. 本地数据库
 7. 长期记忆存错与搜寻
 8. web search tool
-9.
+9. 更完整优化的provider 支持，针对不同provider 适配不同的api 模式，web UI 支持配置llm provider 和 api key, 并存储api key 到数据库
 
 
 ### skills

@@ -1,15 +1,21 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import MessageList from "./MessageList";
 import type { ChatMessage } from "../types/chat";
 
 describe("MessageList", () => {
+  afterEach(() => {
+    delete (globalThis as { OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string }).OPENJAX_WEB_ASSISTANT_RENDER_MODE;
+  });
+
   it("renders welcome state when empty", () => {
     render(<MessageList messages={[]} pendingApprovals={[]} onResolveApproval={() => {}} />);
     expect(screen.getByText("你好，准备好开始了吗？")).toBeInTheDocument();
   });
 
   it("renders assistant markdown content", () => {
+    (globalThis as { OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string }).OPENJAX_WEB_ASSISTANT_RENDER_MODE =
+      "markdown";
     const messages: ChatMessage[] = [
       {
         id: "m1",
@@ -23,6 +29,20 @@ describe("MessageList", () => {
     expect(screen.getByText("Hello")).toBeInTheDocument();
     expect(screen.getByText("bold")).toBeInTheDocument();
     expect(screen.getByText("const x = 1")).toBeInTheDocument();
+  });
+
+  it("renders assistant text mode by default", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m1",
+        kind: "text",
+        role: "assistant",
+        content: "## Hello\n\nThis is **bold**.",
+        timestamp: "2026-01-01T00:00:00Z"
+      }
+    ];
+    render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
+    expect(screen.getByText((content) => content.includes("## Hello") && content.includes("**bold**"))).toBeInTheDocument();
   });
 
   it("renders tool steps when kind is tool_steps", () => {
@@ -192,5 +212,34 @@ describe("MessageList", () => {
 
     expect(scrollContainer.scrollTop).toBe(999);
     closestSpy.mockRestore();
+  });
+
+  it("prefers runtime streaming content for assistant draft", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m1",
+        kind: "text",
+        role: "assistant",
+        content: "你有什",
+        timestamp: "2026-01-01T00:00:00Z",
+        turnId: "turn_1",
+        isDraft: true
+      }
+    ];
+    render(
+      <MessageList
+        messages={messages}
+        pendingApprovals={[]}
+        streaming={{
+          turnId: "turn_1",
+          assistantMessageId: "m1",
+          content: "你好！有什么我可以帮您的吗？",
+          lastEventSeq: 9,
+          active: true
+        }}
+        onResolveApproval={() => {}}
+      />
+    );
+    expect(screen.getByText("你好！有什么我可以帮您的吗？")).toBeInTheDocument();
   });
 });
