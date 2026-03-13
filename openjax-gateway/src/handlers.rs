@@ -80,21 +80,10 @@ pub struct ResolveApprovalRequest {
 #[derive(Debug, Deserialize)]
 pub struct EventsQuery {
     after_event_seq: Option<u64>,
-    protocol: Option<String>,
 }
 
 fn resolve_resume_seq(after_event_seq: Option<u64>, last_event_id: Option<&str>) -> Option<u64> {
     after_event_seq.or_else(|| last_event_id.and_then(|value| value.parse::<u64>().ok()))
-}
-
-fn sse_protocol_v2_enabled() -> bool {
-    let raw = std::env::var("OPENJAX_SSE_PROTOCOL_V2")
-        .ok()
-        .unwrap_or_else(|| "1".to_string());
-    !matches!(
-        raw.trim().to_ascii_lowercase().as_str(),
-        "0" | "off" | "false" | "disabled"
-    )
 }
 
 pub async fn healthz() -> impl IntoResponse {
@@ -390,12 +379,6 @@ pub async fn stream_events(
         )
     };
 
-    let requested_protocol = query.protocol.clone().unwrap_or_else(|| "v1".to_string());
-    let protocol = if requested_protocol.eq_ignore_ascii_case("v2") && sse_protocol_v2_enabled() {
-        "v2".to_string()
-    } else {
-        "v1".to_string()
-    };
     let session_runtime_for_recovery = session_runtime.clone();
     let request_id = headers
         .get("X-Request-Id")
@@ -406,13 +389,13 @@ pub async fn stream_events(
         let mut last_sent_event_seq = replay.last().map(|event| event.event_seq).unwrap_or(0);
         for event in replay {
             last_sent_event_seq = event.event_seq;
-            yield Ok(to_sse_event(event, &protocol));
+            yield Ok(to_sse_event(event));
         }
         loop {
             match rx.recv().await {
                 Ok(event) => {
                     last_sent_event_seq = event.event_seq;
-                    yield Ok(to_sse_event(event, &protocol));
+                    yield Ok(to_sse_event(event));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     let recovered = {
@@ -432,7 +415,7 @@ pub async fn stream_events(
                                     continue;
                                 }
                                 last_sent_event_seq = event.event_seq;
-                                yield Ok(to_sse_event(event, &protocol));
+                                yield Ok(to_sse_event(event));
                             }
                         }
                         _ => {
@@ -456,7 +439,7 @@ pub async fn stream_events(
                                     "retryable": true
                                 }),
                             };
-                            yield Ok(to_sse_event(recovery_error, &protocol));
+                            yield Ok(to_sse_event(recovery_error));
                             break;
                         }
                     }
@@ -469,60 +452,16 @@ pub async fn stream_events(
     Ok(Sse::new(event_stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
-fn to_sse_event(event: StreamEventEnvelope, protocol: &str) -> SseEvent {
-    let adapted = if protocol.eq_ignore_ascii_case("v2") {
-        adapt_event_v2(event)
-    } else {
-        event
-    };
+fn to_sse_event(event: StreamEventEnvelope) -> SseEvent {
     SseEvent::default()
-        .event(adapted.event_type.clone())
-        .id(adapted.event_seq.to_string())
-        .data(serde_json::to_string(&adapted).unwrap_or_else(|_| "{}".to_string()))
-}
-
-fn adapt_event_v2(mut event: StreamEventEnvelope) -> StreamEventEnvelope {
-    let mapped = match event.event_type.as_str() {
-        "turn_started" => "response_started",
-        "assistant_delta" => "response_text_delta",
-        "assistant_message" | "turn_completed" => "response_completed",
-        other => other,
-    };
-    event.event_type = mapped.to_string();
-    event
+        .event(event.event_type.clone())
+        .id(event.event_seq.to_string())
+        .data(serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{adapt_event_v2, resolve_resume_seq};
-    use crate::state::StreamEventEnvelope;
-    use serde_json::json;
-
-    fn base_event(event_type: &str) -> StreamEventEnvelope {
-        StreamEventEnvelope {
-            request_id: "req_1".to_string(),
-            session_id: "sess_1".to_string(),
-            turn_id: Some("turn_1".to_string()),
-            event_seq: 1,
-            turn_seq: 1,
-            timestamp: "2026-01-01T00:00:00Z".to_string(),
-            event_type: event_type.to_string(),
-            stream_source: "synthetic".to_string(),
-            payload: json!({}),
-        }
-    }
-
-    #[test]
-    fn adapt_event_v2_maps_assistant_delta_to_response_text_delta() {
-        let event = adapt_event_v2(base_event("assistant_delta"));
-        assert_eq!(event.event_type, "response_text_delta");
-    }
-
-    #[test]
-    fn adapt_event_v2_maps_turn_completed_to_response_completed() {
-        let event = adapt_event_v2(base_event("turn_completed"));
-        assert_eq!(event.event_type, "response_completed");
-    }
+    use super::resolve_resume_seq;
 
     #[test]
     fn resolve_resume_seq_prefers_after_event_seq() {
