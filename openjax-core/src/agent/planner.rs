@@ -338,20 +338,14 @@ impl Agent {
                         .await
                         .0
                     }
-                } else if self.stream_engine_v2_enabled {
-                    turn_engine.on_response_started();
-                    let (streamed, live_streamed) = self
-                        .stream_final_assistant_reply(
-                            turn_id,
-                            user_input,
-                            &tool_traces,
-                            &seed_message,
-                            events,
-                        )
-                        .await;
-                    if live_streamed {
-                        streamed
-                    } else {
+                } else {
+                    info!(
+                        turn_id = turn_id,
+                        mode = self.final_response_mode.as_str(),
+                        "final_writer_request skipped"
+                    );
+                    if self.stream_engine_v2_enabled {
+                        turn_engine.on_response_started();
                         self.push_event(
                             events,
                             Event::ResponseStarted {
@@ -359,7 +353,9 @@ impl Agent {
                                 stream_source: openjax_protocol::StreamSource::Synthetic,
                             },
                         );
-                        self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
+                    }
+                    self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
+                    if self.stream_engine_v2_enabled {
                         self.push_event(
                             events,
                             Event::ResponseCompleted {
@@ -368,15 +364,7 @@ impl Agent {
                                 stream_source: openjax_protocol::StreamSource::Synthetic,
                             },
                         );
-                        seed_message
                     }
-                } else {
-                    info!(
-                        turn_id = turn_id,
-                        mode = self.final_response_mode.as_str(),
-                        "final_writer_request skipped"
-                    );
-                    self.emit_synthetic_assistant_deltas(turn_id, &seed_message, events);
                     seed_message
                 };
                 let (preview, preview_truncated) = summarize_log_preview(&message, 300);

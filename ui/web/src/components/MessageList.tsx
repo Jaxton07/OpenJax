@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import MarkdownRender from "markstream-react";
 import type { ChatMessage, PendingApproval } from "../types/chat";
 import ToolStepList from "./tool-steps/ToolStepList";
 
@@ -51,6 +52,10 @@ export default function MessageList({ messages, pendingApprovals, onResolveAppro
                   onResolveApproval={onResolveApproval}
                 />
               ) : null
+            ) : message.role === "assistant" ? (
+              <div className="assistant-markdown">
+                <MarkdownRender content={message.content} />
+              </div>
             ) : (
               <div className="message-text">{message.content}</div>
             )}

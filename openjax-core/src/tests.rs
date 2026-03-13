@@ -406,6 +406,50 @@ async fn planner_only_mode_skips_final_writer_and_keeps_delta_events() {
 }
 
 #[tokio::test]
+async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    agent.final_response_mode = FinalResponseMode::PlannerOnly;
+    agent.stream_engine_v2_enabled = true;
+    let model = ScriptedStreamingModel::new();
+    let model_probe = model.clone();
+    agent.model_client = Box::new(model);
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "你好".to_string(),
+        })
+        .await;
+
+    let mut saw_response_started = false;
+    let mut saw_response_completed = false;
+    let mut assistant_message_text = String::new();
+
+    for event in &events {
+        match event {
+            Event::ResponseStarted { .. } => saw_response_started = true,
+            Event::ResponseCompleted { content, .. } => {
+                saw_response_completed = true;
+                assert_eq!(content, "seed");
+            }
+            Event::AssistantMessage { content, .. } => {
+                assistant_message_text = content.clone();
+            }
+            _ => {}
+        }
+    }
+
+    assert!(saw_response_started);
+    assert!(saw_response_completed);
+    assert_eq!(assistant_message_text, "seed");
+    assert_eq!(model_probe.complete_call_count(), 1);
+    assert_eq!(model_probe.stream_call_count(), 0);
+}
+
+#[tokio::test]
 async fn tool_batch_emits_proposal_and_batch_completed_events() {
     let mut agent = Agent::with_runtime(
         ApprovalPolicy::Never,

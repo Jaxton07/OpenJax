@@ -9,18 +9,20 @@ describe("MessageList", () => {
     expect(screen.getByText("你好，准备好开始了吗？")).toBeInTheDocument();
   });
 
-  it("renders text messages with legacy bubble path", () => {
+  it("renders assistant markdown content", () => {
     const messages: ChatMessage[] = [
       {
         id: "m1",
         kind: "text",
         role: "assistant",
-        content: "hello",
+        content: "## Hello\n\nThis is **bold**.\n\n```ts\nconst x = 1\n```",
         timestamp: "2026-01-01T00:00:00Z"
       }
     ];
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
-    expect(screen.getByText("hello")).toBeInTheDocument();
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    expect(screen.getByText("bold")).toBeInTheDocument();
+    expect(screen.getByText("const x = 1")).toBeInTheDocument();
   });
 
   it("renders tool steps when kind is tool_steps", () => {

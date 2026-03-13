@@ -4,7 +4,7 @@ import { applyStreamEvents } from "../lib/eventReducer";
 import { humanizeError, isAuthenticationError } from "../lib/errors";
 import { loadAuth, loadSessions, loadSettings, saveAuth, saveSessions, saveSettings } from "../lib/storage";
 import type { ChatMessage, ChatSession, ChatState, PendingApproval } from "../types/chat";
-import type { AppSettings, AuthSessionItem, GatewayConnection, GatewayError } from "../types/gateway";
+import type { AppSettings, AuthSessionItem, GatewayConnection, GatewayError, StreamEvent } from "../types/gateway";
 
 const MAX_RECONNECT_RETRY = 6;
 const WEB_RENDER_V2_ENABLED = resolveWebRenderV2Enabled();
@@ -38,82 +38,94 @@ export function useChatApp() {
   const pollingAbortRef = useRef<AbortController | null>(null);
   const sessionsRef = useRef(state.sessions);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
-  const pendingEventsRef = useRef<Record<string, import("../types/gateway").StreamEvent[]>>({});
-  const flushTimerRef = useRef<number | null>(null);
+  const queuedEventsRef = useRef<Record<string, StreamEvent[]>>({});
+  const queueInFlightRef = useRef<Record<string, boolean>>({});
+  const queueTimerRef = useRef<Record<string, number | null>>({});
+  const sseRunTokenRef = useRef<Record<string, number>>({});
+  const nextSseRunTokenRef = useRef(1);
+  const lastEventSeqRef = useRef<Record<string, number>>(
+    Object.fromEntries(initialSessions.map((session) => [session.id, session.lastEventSeq]))
+  );
 
   useEffect(() => {
     sessionsRef.current = state.sessions;
+    const nextLastSeq = { ...lastEventSeqRef.current };
+    for (const session of state.sessions) {
+      const prev = nextLastSeq[session.id] ?? 0;
+      nextLastSeq[session.id] = Math.max(prev, session.lastEventSeq);
+    }
+    lastEventSeqRef.current = nextLastSeq;
   }, [state.sessions]);
 
-  const flushBufferedEvents = useCallback((sessionId?: string) => {
-    const targetSessionIds = sessionId ? [sessionId] : Object.keys(pendingEventsRef.current);
-    if (targetSessionIds.length === 0) {
-      return;
+  const clearSessionQueueTimer = useCallback((sessionId: string) => {
+    const timerId = queueTimerRef.current[sessionId];
+    if (timerId !== null && timerId !== undefined) {
+      window.clearTimeout(timerId);
+      queueTimerRef.current[sessionId] = null;
     }
-    setState((prev) => {
-      let changed = false;
-      const sessions = prev.sessions.map((session) => {
-        if (!targetSessionIds.includes(session.id)) {
-          return session;
-        }
-        const events = pendingEventsRef.current[session.id];
-        if (!events || events.length === 0) {
-          return session;
-        }
-        if (WEB_RENDER_V2_ENABLED) {
-          console.debug("[stream_metrics] web_batch_flush", {
-            sessionId: session.id,
-            count: events.length
-          });
-        }
-        pendingEventsRef.current[session.id] = [];
-        const beforeLastEventSeq = session.lastEventSeq;
-        const beforeMessageCount = session.messages.length;
-        const eventTypes = events.map((event) => event.type);
-        const next = applyStreamEvents(session, events);
-        if (WEB_RENDER_V2_ENABLED) {
-          const messageTail = next.messages.slice(-3).map((message) => ({
-            role: message.role,
-            kind: message.kind,
-            turnId: message.turnId,
-            isDraft: message.isDraft,
-            contentLen: message.content.length,
-            contentPreview: message.content.slice(0, 80)
-          }));
-          console.debug("[stream_metrics] web_batch_apply", {
-            sessionId: session.id,
-            eventTypes,
-            beforeLastEventSeq,
-            afterLastEventSeq: next.lastEventSeq,
-            beforeMessageCount,
-            afterMessageCount: next.messages.length,
-            turnPhase: next.turnPhase,
-            messageTail
-          });
-        }
-        changed = changed || next !== session;
-        const nextSession: ChatSession = { ...next, connection: "active" };
-        return nextSession;
-      });
-      if (!changed) {
-        return prev;
-      }
-      return { ...prev, sessions };
-    });
   }, []);
 
-  const scheduleBufferedFlush = useCallback((sessionId: string) => {
-    if (flushTimerRef.current !== null) {
-      return;
-    }
-    flushTimerRef.current = window.setTimeout(() => {
-      flushTimerRef.current = null;
-      flushBufferedEvents(sessionId);
-    }, 24);
-  }, [flushBufferedEvents]);
+  const applyQueuedEvents = useCallback(
+    (sessionId: string, events: StreamEvent[]) => {
+      if (events.length === 0) {
+        return;
+      }
+      setState((prev) => {
+        let changed = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+          const next = applyStreamEvents(session, events);
+          const nextSeq = Math.max(lastEventSeqRef.current[sessionId] ?? 0, next.lastEventSeq);
+          lastEventSeqRef.current[sessionId] = nextSeq;
+          changed = changed || next !== session;
+          return { ...next, connection: "active" as const, lastEventSeq: nextSeq };
+        });
+        if (!changed) {
+          return prev;
+        }
+        return { ...prev, sessions };
+      });
+    },
+    []
+  );
+
+  const consumeQueuedEvents = useCallback(
+    (sessionId: string) => {
+      if (queueInFlightRef.current[sessionId]) {
+        return;
+      }
+      queueInFlightRef.current[sessionId] = true;
+      try {
+        while (true) {
+          const queue = queuedEventsRef.current[sessionId];
+          if (!queue || queue.length === 0) {
+            break;
+          }
+          if (WEB_RENDER_V2_ENABLED) {
+            const batch = queue.splice(0, queue.length);
+            applyQueuedEvents(sessionId, batch);
+            continue;
+          }
+          const next = queue.shift();
+          if (!next) {
+            break;
+          }
+          applyQueuedEvents(sessionId, [next]);
+        }
+      } finally {
+        queueInFlightRef.current[sessionId] = false;
+        if ((queuedEventsRef.current[sessionId]?.length ?? 0) > 0) {
+          consumeQueuedEvents(sessionId);
+        }
+      }
+    },
+    [applyQueuedEvents]
+  );
 
   const shouldFlushImmediately = useCallback(
-    (event: import("../types/gateway").StreamEvent) =>
+    (event: StreamEvent) =>
       event.type === "response_completed" ||
       event.type === "assistant_message" ||
       event.type === "response_error" ||
@@ -122,6 +134,56 @@ export function useChatApp() {
       event.type === "session_shutdown",
     []
   );
+
+  const enqueueSessionEvent = useCallback(
+    (sessionId: string, event: StreamEvent) => {
+      if (!queuedEventsRef.current[sessionId]) {
+        queuedEventsRef.current[sessionId] = [];
+      }
+      queuedEventsRef.current[sessionId].push(event);
+      if (!WEB_RENDER_V2_ENABLED || shouldFlushImmediately(event)) {
+        clearSessionQueueTimer(sessionId);
+        consumeQueuedEvents(sessionId);
+        return;
+      }
+      if (queueTimerRef.current[sessionId] !== null && queueTimerRef.current[sessionId] !== undefined) {
+        return;
+      }
+      queueTimerRef.current[sessionId] = window.setTimeout(() => {
+        queueTimerRef.current[sessionId] = null;
+        consumeQueuedEvents(sessionId);
+      }, 24);
+    },
+    [clearSessionQueueTimer, consumeQueuedEvents, shouldFlushImmediately]
+  );
+
+  const resetSessionQueue = useCallback((sessionId: string) => {
+    clearSessionQueueTimer(sessionId);
+    queuedEventsRef.current[sessionId] = [];
+    queueInFlightRef.current[sessionId] = false;
+  }, [clearSessionQueueTimer]);
+
+  const resetAllQueues = useCallback(() => {
+    for (const sessionId of Object.keys(queueTimerRef.current)) {
+      clearSessionQueueTimer(sessionId);
+    }
+    queuedEventsRef.current = {};
+    queueInFlightRef.current = {};
+    queueTimerRef.current = {};
+  }, [clearSessionQueueTimer]);
+
+  useEffect(() => {
+    return () => {
+      resetAllQueues();
+    };
+  }, [resetAllQueues]);
+
+  useEffect(() => {
+    if (state.settings.outputMode === "sse") {
+      return;
+    }
+    resetAllQueues();
+  }, [resetAllQueues, state.settings.outputMode]);
 
   useEffect(() => {
     saveSessions(state.sessions);
@@ -252,42 +314,34 @@ export function useChatApp() {
   const startSseLoop = useCallback(
     (sessionId: string) => {
       reconnectAbortRef.current?.abort();
+      resetSessionQueue(sessionId);
       const abort = new AbortController();
       reconnectAbortRef.current = abort;
+      const runToken = nextSseRunTokenRef.current++;
+      sseRunTokenRef.current[sessionId] = runToken;
 
       let retry = 0;
 
       const run = async () => {
         while (!abort.signal.aborted) {
+          if (sseRunTokenRef.current[sessionId] !== runToken) {
+            return;
+          }
           try {
             updateSession(sessionId, (session) => ({ ...session, connection: "connecting" }));
             const lastSeq =
-              sessionsRef.current.find((session) => session.id === sessionId)?.lastEventSeq ?? 0;
+              lastEventSeqRef.current[sessionId] ??
+              sessionsRef.current.find((session) => session.id === sessionId)?.lastEventSeq ??
+              0;
             await client.streamEvents({
               sessionId,
               afterEventSeq: lastSeq,
               signal: abort.signal,
               onEvent: (event) => {
-                if (!WEB_RENDER_V2_ENABLED) {
-                  updateSession(sessionId, (session) => {
-                    const next = applyStreamEvents(session, [event]);
-                    return { ...next, connection: "active" };
-                  });
+                if (sseRunTokenRef.current[sessionId] !== runToken) {
                   return;
                 }
-                if (!pendingEventsRef.current[sessionId]) {
-                  pendingEventsRef.current[sessionId] = [];
-                }
-                pendingEventsRef.current[sessionId].push(event);
-                if (shouldFlushImmediately(event)) {
-                  if (flushTimerRef.current !== null) {
-                    window.clearTimeout(flushTimerRef.current);
-                    flushTimerRef.current = null;
-                  }
-                  flushBufferedEvents(sessionId);
-                } else {
-                  scheduleBufferedFlush(sessionId);
-                }
+                enqueueSessionEvent(sessionId, event);
               },
               onError: (error) => {
                 setState((prev) => ({ ...prev, globalError: `SSE 事件解析失败: ${error.message}` }));
@@ -296,6 +350,9 @@ export function useChatApp() {
             retry = 0;
           } catch (error) {
             if (abort.signal.aborted) {
+              return;
+            }
+            if (sseRunTokenRef.current[sessionId] !== runToken) {
               return;
             }
             if (isAuthenticationError(error)) {
@@ -344,21 +401,29 @@ export function useChatApp() {
 
       void run();
     },
-    [client, flushBufferedEvents, refreshAccessToken, scheduleBufferedFlush, shouldFlushImmediately, updateSession]
+    [client, enqueueSessionEvent, refreshAccessToken, resetSessionQueue, updateSession]
   );
 
   useEffect(() => {
     if (!state.auth.authenticated || !state.auth.accessToken || !activeSession || state.settings.outputMode !== "sse") {
       reconnectAbortRef.current?.abort();
-      if (flushTimerRef.current !== null) {
-        window.clearTimeout(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
+      resetAllQueues();
       return;
     }
     startSseLoop(activeSession.id);
-    return () => reconnectAbortRef.current?.abort();
-  }, [activeSession?.id, startSseLoop, state.auth.accessToken, state.auth.authenticated, state.settings.outputMode]);
+    return () => {
+      reconnectAbortRef.current?.abort();
+      resetSessionQueue(activeSession.id);
+    };
+  }, [
+    activeSession?.id,
+    resetAllQueues,
+    resetSessionQueue,
+    startSseLoop,
+    state.auth.accessToken,
+    state.auth.authenticated,
+    state.settings.outputMode
+  ]);
 
   const authenticate = useCallback(
     async (baseUrlInput: string, ownerKeyInput: string) => {
@@ -737,7 +802,7 @@ function resolveWebRenderV2Enabled(): boolean {
         })
       : {};
   const raw = String(
-    globals.OPENJAX_WEB_STREAM_RENDER_V2 ?? globals.VITE_OPENJAX_WEB_STREAM_RENDER_V2 ?? "0"
+    globals.OPENJAX_WEB_STREAM_RENDER_V2 ?? globals.VITE_OPENJAX_WEB_STREAM_RENDER_V2 ?? "1"
   )
     .trim()
     .toLowerCase();

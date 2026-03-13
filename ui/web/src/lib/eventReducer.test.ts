@@ -401,6 +401,31 @@ describe("applyStreamEvent", () => {
     expect(stepMessages[0].toolSteps?.[0].output).toContain("succeeded=1");
   });
 
+  it("treats duplicate response_completed as idempotent update", () => {
+    const session = baseSession();
+    const first = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_10",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "response_completed",
+      payload: { content: "done once" }
+    });
+    const second = applyStreamEvent(first, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_10",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "response_completed",
+      payload: { content: "done once" }
+    });
+    expect(second.messages.filter((m) => m.turnId === "turn_10" && m.role === "assistant")).toHaveLength(1);
+    expect(second.messages.find((m) => m.turnId === "turn_10")?.content).toBe("done once");
+    expect(second.turnPhase).toBe("completed");
+  });
+
   it("marks connection closed on session_shutdown", () => {
     const session = { ...baseSession(), turnPhase: "streaming" as const };
     const next = applyStreamEvent(session, {

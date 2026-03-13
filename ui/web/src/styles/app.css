@@ -403,6 +403,21 @@ textarea {
   color: #161616;
 }
 
+.assistant-markdown {
+  color: #161616;
+}
+
+.assistant-markdown .markstream-react {
+  color: inherit;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.assistant-markdown .markstream-react pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .tool-step-list {
   display: grid;
   gap: 8px;
