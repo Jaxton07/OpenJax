@@ -21,6 +21,7 @@ use crate::agent::tool_policy::{
 };
 use crate::agent::turn_engine::TurnEngine;
 use crate::model::{ModelRequest, ModelStage};
+use crate::streaming::ResponseStreamOrchestrator;
 use crate::{
     Agent, FinalResponseMode, MAX_CONSECUTIVE_DUPLICATE_SKIPS,
     SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS, tools,
@@ -734,8 +735,10 @@ impl Agent {
         let mut streamed_message = String::new();
         let mut response_started = false;
         let mut ttft_logged = false;
+        let mut stream_orchestrator =
+            ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
 
-        let on_delta = |delta: String,
+        let mut on_delta = |delta: String,
                         parser: &mut DecisionJsonStreamParser,
                         streamed_message: &mut String,
                         response_started: &mut bool,
@@ -750,13 +753,6 @@ impl Agent {
             }
             if !*response_started {
                 *response_started = true;
-                self.push_event(
-                    events,
-                    Event::ResponseStarted {
-                        turn_id,
-                        stream_source: openjax_protocol::StreamSource::ModelLive,
-                    },
-                );
             }
             if !*ttft_logged {
                 *ttft_logged = true;
@@ -766,17 +762,9 @@ impl Agent {
                     "planner_stream_ttft"
                 );
             }
-            for ch in chunk.message_delta.chars() {
-                let delta = ch.to_string();
-                streamed_message.push(ch);
-                self.push_event(
-                    events,
-                    Event::ResponseTextDelta {
-                        turn_id,
-                        content_delta: delta,
-                        stream_source: openjax_protocol::StreamSource::ModelLive,
-                    },
-                );
+            streamed_message.push_str(&chunk.message_delta);
+            for event in stream_orchestrator.on_delta(&chunk.message_delta) {
+                self.push_event(events, event);
             }
         };
 
@@ -896,13 +884,8 @@ impl Agent {
         self.apply_rate_limit().await;
         let stream_started_at = Instant::now();
         let mut ttft_logged = false;
-        self.push_event(
-            events,
-            Event::ResponseStarted {
-                turn_id,
-                stream_source: openjax_protocol::StreamSource::ModelLive,
-            },
-        );
+        let mut stream_orchestrator =
+            ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
 
         let (delta_tx, mut delta_rx) = tokio::sync::mpsc::unbounded_channel();
         let stream_request = ModelRequest::for_stage(ModelStage::FinalWriter, prompt);
@@ -926,11 +909,9 @@ impl Agent {
                             );
                         }
                         streamed.push_str(&delta);
-                        self.push_event(events, Event::ResponseTextDelta {
-                            turn_id,
-                            content_delta: delta,
-                            stream_source: openjax_protocol::StreamSource::ModelLive,
-                        });
+                        for event in stream_orchestrator.on_delta(&delta) {
+                            self.push_event(events, event);
+                        }
                     }
                 }
                 result = &mut stream_future => {
@@ -950,14 +931,9 @@ impl Agent {
                     );
                 }
                 streamed.push_str(&delta);
-                self.push_event(
-                    events,
-                    Event::ResponseTextDelta {
-                        turn_id,
-                        content_delta: delta,
-                        stream_source: openjax_protocol::StreamSource::ModelLive,
-                    },
-                );
+                for event in stream_orchestrator.on_delta(&delta) {
+                    self.push_event(events, event);
+                }
             }
         }
 
@@ -970,33 +946,19 @@ impl Agent {
                     streamed_len = streamed.len(),
                     "final_writer_request completed"
                 );
-                let resolved = if streamed.is_empty() {
-                    full_text
-                } else if full_text.is_empty() || full_text == streamed {
-                    streamed
-                } else {
-                    full_text
-                };
-                self.push_event(
-                    events,
-                    Event::ResponseCompleted {
-                        turn_id,
-                        content: resolved.clone(),
-                        stream_source: openjax_protocol::StreamSource::ModelLive,
-                    },
-                );
+                let (resolved, completed_event) = stream_orchestrator.emit_completed(full_text);
+                self.push_event(events, completed_event);
                 (resolved, true)
             }
             Err(err) => {
                 warn!(turn_id = turn_id, error = %err, "final response streaming failed; fallback to planner message");
                 self.push_event(
                     events,
-                    Event::ResponseError {
-                        turn_id,
-                        code: "final_writer_stream_failed".to_string(),
-                        message: err.to_string(),
-                        retryable: true,
-                    },
+                    stream_orchestrator.emit_error(
+                        "final_writer_stream_failed",
+                        err.to_string(),
+                        true,
+                    ),
                 );
                 (seed_message.to_string(), false)
             }

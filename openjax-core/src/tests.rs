@@ -344,7 +344,6 @@ async fn final_action_emits_response_text_delta_before_message() {
     let mut first_delta_index: Option<usize> = None;
     let mut assistant_message_index: Option<usize> = None;
     let mut assistant_message_text = String::new();
-    let mut saw_assistant_delta = false;
 
     for (idx, event) in events.iter().enumerate() {
         match event {
@@ -353,9 +352,6 @@ async fn final_action_emits_response_text_delta_before_message() {
                     first_delta_index = Some(idx);
                 }
                 delta_text.push_str(content_delta);
-            }
-            Event::AssistantDelta { .. } => {
-                saw_assistant_delta = true;
             }
             Event::AssistantMessage { content, .. } => {
                 assistant_message_index = Some(idx);
@@ -379,10 +375,6 @@ async fn final_action_emits_response_text_delta_before_message() {
         first_delta_index.expect("first delta")
             < assistant_message_index.expect("assistant message index"),
         "response text delta should be emitted before final assistant message"
-    );
-    assert!(
-        !saw_assistant_delta,
-        "assistant_delta should not be emitted"
     );
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 2);
@@ -410,7 +402,6 @@ async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() 
     let mut first_delta_index: Option<usize> = None;
     let mut assistant_message_index: Option<usize> = None;
     let mut assistant_message_text = String::new();
-    let mut saw_assistant_delta = false;
 
     for (idx, event) in events.iter().enumerate() {
         match event {
@@ -419,9 +410,6 @@ async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() 
                     first_delta_index = Some(idx);
                 }
                 delta_text.push_str(content_delta);
-            }
-            Event::AssistantDelta { .. } => {
-                saw_assistant_delta = true;
             }
             Event::AssistantMessage { content, .. } => {
                 assistant_message_index = Some(idx);
@@ -437,10 +425,6 @@ async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() 
         first_delta_index.expect("first delta")
             < assistant_message_index.expect("assistant message index"),
         "response text delta should be emitted before final assistant message"
-    );
-    assert!(
-        !saw_assistant_delta,
-        "assistant_delta should not be emitted"
     );
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 1);

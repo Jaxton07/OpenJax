@@ -32,12 +32,6 @@ impl App {
             } => {
                 self.apply_stream_delta(turn_id, &content_delta);
             }
-            Event::AssistantDelta {
-                turn_id,
-                content_delta,
-            } => {
-                self.apply_stream_delta(turn_id, &content_delta);
-            }
             Event::ResponseCompleted {
                 turn_id, content, ..
             } => {
@@ -86,6 +80,13 @@ impl App {
                     pending_cells = self.state.pending_history_cells.len(),
                     "tui applied ToolCallCompleted"
                 );
+            }
+            Event::ToolCallArgsDelta { .. } | Event::ToolCallProgress { .. } => {}
+            Event::ToolCallFailed {
+                tool_name, message, ..
+            } => {
+                let cell = self.system_cell(format!("tool {} failed: {}", tool_name, message));
+                self.queue_history_cell(cell);
             }
             Event::ApprovalRequested {
                 request_id,

@@ -151,20 +151,22 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 
 1. `turn_started`
 2. `tool_call_started`
-3. `tool_call_completed`
-4. `response_started`
-5. `response_text_delta`
-6. `response_completed`
-7. `assistant_message`
-8. `approval_requested`
-9. `approval_resolved`
-10. `turn_completed`
-11. `session_shutdown_complete`
-12. `error`
+3. `tool_args_delta`
+4. `tool_call_progress`
+5. `tool_call_completed`
+6. `tool_call_failed`
+7. `response_started`
+8. `response_text_delta`
+9. `response_completed`
+10. `assistant_message`
+11. `approval_requested`
+12. `approval_resolved`
+13. `turn_completed`
+14. `session_shutdown_complete`
+15. `error`
 
-兼容说明：
-1. `assistant_delta` 为 legacy 事件，已 deprecated，主链路不再产出。
-2. 客户端应以 `response_*` 事件作为流式正文来源。
+说明：
+1. `assistant_delta` 已移除，客户端应仅使用 `response_*` 事件作为流式正文来源。
 
 事件字段原则：
 1. `event_type` 固定字符串枚举。
@@ -177,11 +179,13 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 |---|---|
 | `TurnStarted` | `turn_started` |
 | `ToolCallStarted` | `tool_call_started` |
+| `ToolCallArgsDelta` | `tool_args_delta` |
+| `ToolCallProgress` | `tool_call_progress` |
 | `ToolCallCompleted` | `tool_call_completed` |
+| `ToolCallFailed` | `tool_call_failed` |
 | `ResponseStarted` | `response_started` |
 | `ResponseTextDelta` | `response_text_delta` |
 | `ResponseCompleted` | `response_completed` |
-| `AssistantDelta` | `assistant_delta`（deprecated/legacy） |
 | `AssistantMessage` | `assistant_message` |
 | `ApprovalRequested` | `approval_requested` |
 | `ApprovalResolved` | `approval_resolved` |

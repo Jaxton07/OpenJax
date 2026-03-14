@@ -1,0 +1,12 @@
+{
+  "protocol_version": "v1",
+  "kind": "event",
+  "session_id": "sess_123",
+  "turn_id": "turn_1",
+  "event_type": "tool_args_delta",
+  "payload": {
+    "tool_call_id": "tc_1",
+    "tool_name": "shell",
+    "args_delta": "{\"cmd\":\"ls"
+  }
+}

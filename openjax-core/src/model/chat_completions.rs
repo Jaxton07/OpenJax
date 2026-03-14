@@ -8,6 +8,7 @@ use crate::config::ModelConfig;
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::RegisteredModel;
 use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage};
+use crate::streaming::parser::parse_sse_data_line;
 
 const SYSTEM_PROMPT_PERSONA: &str = "You are OpenJax, an all-purpose personal AI assistant in a terminal environment, similar in spirit to a reliable AI butler.";
 const SYSTEM_PROMPT_BEHAVIOR: &str = "Your job is to help the user get outcomes across many domains: system and environment checks, document and knowledge tasks, coding and debugging, shell workflows, planning, and everyday productivity. \
@@ -250,17 +251,6 @@ fn extract_delta_content_from_body(body: &serde_json::Value) -> Option<String> {
     }
 
     None
-}
-
-fn parse_sse_data_line(line: &str) -> Option<&str> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if !trimmed.starts_with("data:") {
-        return None;
-    }
-    Some(trimmed[5..].trim())
 }
 
 #[async_trait]
@@ -521,7 +511,8 @@ impl ProviderAdapter for ChatCompletionsClient {
 mod tests {
     use serde_json::json;
 
-    use super::{extract_content_from_body, extract_delta_content_from_body, parse_sse_data_line};
+    use super::{extract_content_from_body, extract_delta_content_from_body};
+    use crate::streaming::parser::parse_sse_data_line;
 
     #[test]
     fn extract_content_supports_block_array() {

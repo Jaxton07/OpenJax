@@ -698,8 +698,10 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             Event::TurnStarted { turn_id }
             | Event::ToolCallStarted { turn_id, .. }
             | Event::ToolCallCompleted { turn_id, .. }
+            | Event::ToolCallArgsDelta { turn_id, .. }
+            | Event::ToolCallProgress { turn_id, .. }
+            | Event::ToolCallFailed { turn_id, .. }
             | Event::AssistantMessage { turn_id, .. }
-            | Event::AssistantDelta { turn_id, .. }
             | Event::ResponseStarted { turn_id, .. }
             | Event::ResponseTextDelta { turn_id, .. }
             | Event::ResponseCompleted { turn_id, .. }
@@ -723,8 +725,10 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
         Event::TurnStarted { turn_id }
         | Event::ToolCallStarted { turn_id, .. }
         | Event::ToolCallCompleted { turn_id, .. }
+        | Event::ToolCallArgsDelta { turn_id, .. }
+        | Event::ToolCallProgress { turn_id, .. }
+        | Event::ToolCallFailed { turn_id, .. }
         | Event::AssistantMessage { turn_id, .. }
-        | Event::AssistantDelta { turn_id, .. }
         | Event::ResponseStarted { turn_id, .. }
         | Event::ResponseTextDelta { turn_id, .. }
         | Event::ResponseCompleted { turn_id, .. }
@@ -778,6 +782,47 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_completed".to_string(),
             payload: json!({ "tool_name": tool_name, "ok": ok, "output": output }),
         }),
+        Event::ToolCallArgsDelta {
+            turn_id,
+            tool_name,
+            args_delta,
+            ..
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "tool_args_delta".to_string(),
+            payload: json!({ "tool_name": tool_name, "args_delta": args_delta }),
+        }),
+        Event::ToolCallProgress {
+            turn_id,
+            tool_name,
+            progress_message,
+            ..
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "tool_call_progress".to_string(),
+            payload: json!({ "tool_name": tool_name, "progress_message": progress_message }),
+        }),
+        Event::ToolCallFailed {
+            turn_id,
+            tool_name,
+            code,
+            message,
+            retryable,
+            ..
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "tool_call_failed".to_string(),
+            payload: json!({ "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
+        }),
         Event::AssistantMessage { turn_id, content } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -786,7 +831,6 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "assistant_message".to_string(),
             payload: json!({ "content": content }),
         }),
-        Event::AssistantDelta { .. } => None,
         Event::ResponseStarted {
             turn_id,
             stream_source,
@@ -1006,10 +1050,14 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
 
     for event in events {
         match event {
-            Event::ResponseTextDelta { .. } => response_text_deltas += 1,
-            Event::AssistantMessage { .. } => assistant_messages += 1,
-            Event::ToolCallStarted { .. } | Event::ToolCallCompleted { .. } => tool_calls += 1,
-            Event::ApprovalRequested { .. } | Event::ApprovalResolved { .. } => approvals += 1,
+        Event::ResponseTextDelta { .. } => response_text_deltas += 1,
+        Event::AssistantMessage { .. } => assistant_messages += 1,
+        Event::ToolCallStarted { .. }
+        | Event::ToolCallCompleted { .. }
+        | Event::ToolCallArgsDelta { .. }
+        | Event::ToolCallProgress { .. }
+        | Event::ToolCallFailed { .. } => tool_calls += 1,
+        Event::ApprovalRequested { .. } | Event::ApprovalResolved { .. } => approvals += 1,
             Event::TurnStarted { .. }
             | Event::TurnCompleted { .. }
             | Event::ResponseStarted { .. }
@@ -1018,7 +1066,6 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
             | Event::ResponseResumed { .. }
             | Event::ToolCallsProposed { .. }
             | Event::ToolBatchCompleted { .. }
-            | Event::AssistantDelta { .. }
             | Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
             | Event::ShutdownComplete => {}

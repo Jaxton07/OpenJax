@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use openjax_core::streaming::ReplayBuffer;
 use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, Config, approval_timeout_ms_from_env};
 use openjax_protocol::Event;
 use serde::Serialize;
@@ -16,7 +17,8 @@ use crate::auth::load_api_keys_from_env;
 use crate::auth::{AuthConfig, AuthService};
 use crate::error::{ApiError, now_rfc3339};
 
-const EVENT_REPLAY_LIMIT: usize = 1024;
+const DEFAULT_EVENT_REPLAY_LIMIT: usize = 1024;
+const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1024;
 static STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
 
 fn gateway_stream_debug_enabled() -> bool {
@@ -131,9 +133,10 @@ pub struct SessionRuntime {
     pub core_turn_to_public: HashMap<u64, String>,
     pub next_event_seq: u64,
     pub turn_event_seq: HashMap<String, u64>,
-    pub event_log: VecDeque<StreamEventEnvelope>,
+    pub event_log: ReplayBuffer<StreamEventEnvelope>,
     pub event_tx: broadcast::Sender<StreamEventEnvelope>,
     pub resolved_approvals: HashSet<String>,
+    replay_capacity: usize,
 }
 
 impl SessionRuntime {
@@ -141,7 +144,9 @@ impl SessionRuntime {
         let mut agent = Agent::with_config(Config::load());
         let approval_handler = Arc::new(GatewayApprovalHandler::default());
         agent.set_approval_handler(approval_handler.clone());
-        let (event_tx, _) = broadcast::channel(1024);
+        let replay_capacity = event_replay_limit();
+        let channel_capacity = event_channel_capacity();
+        let (event_tx, _) = broadcast::channel(channel_capacity);
         Self {
             agent: Arc::new(Mutex::new(agent)),
             approval_handler,
@@ -150,9 +155,10 @@ impl SessionRuntime {
             core_turn_to_public: HashMap::new(),
             next_event_seq: 1,
             turn_event_seq: HashMap::new(),
-            event_log: VecDeque::new(),
+            event_log: ReplayBuffer::with_capacity(replay_capacity),
             event_tx,
             resolved_approvals: HashSet::new(),
+            replay_capacity,
         }
     }
 
@@ -167,6 +173,7 @@ impl SessionRuntime {
         self.core_turn_to_public.clear();
         self.resolved_approvals.clear();
         self.turn_event_seq.clear();
+        self.event_log = ReplayBuffer::with_capacity(self.replay_capacity);
     }
 
     pub fn create_gateway_event(
@@ -201,10 +208,7 @@ impl SessionRuntime {
     }
 
     pub fn publish_event(&mut self, event: StreamEventEnvelope) {
-        if self.event_log.len() >= EVENT_REPLAY_LIMIT {
-            self.event_log.pop_front();
-        }
-        self.event_log.push_back(event.clone());
+        let _ = self.event_log.push(event.clone());
         let _ = self.event_tx.send(event);
     }
 
@@ -212,28 +216,13 @@ impl SessionRuntime {
         &self,
         after_event_seq: Option<u64>,
     ) -> Result<Vec<StreamEventEnvelope>, ApiError> {
-        let min_allowed = self
-            .event_log
-            .front()
-            .map(|event| event.event_seq.saturating_sub(1))
-            .unwrap_or(0);
-
-        if let Some(seq) = after_event_seq
-            && seq < min_allowed
-        {
-            return Err(ApiError::invalid_argument(
+        let replay = self.event_log.replay_from(after_event_seq).map_err(|err| {
+            ApiError::invalid_argument(
                 "replay point is outside retention window",
-                json!({ "after_event_seq": seq, "min_allowed": min_allowed }),
-            ));
-        }
-
-        let events = self
-            .event_log
-            .iter()
-            .filter(|event| after_event_seq.is_none_or(|seq| event.event_seq > seq))
-            .cloned()
-            .collect();
-        Ok(events)
+                json!({ "after_event_seq": err.requested_after_seq, "min_allowed": err.min_allowed }),
+            )
+        })?;
+        Ok(replay.into_iter().map(|(_, event)| event).collect())
     }
 
     pub fn get_or_create_public_turn_id(&mut self, core_turn_id: u64) -> String {
@@ -245,6 +234,22 @@ impl SessionRuntime {
             .insert(core_turn_id, public_id.clone());
         public_id
     }
+}
+
+fn event_replay_limit() -> usize {
+    std::env::var("OPENJAX_GATEWAY_EVENT_REPLAY_LIMIT")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_EVENT_REPLAY_LIMIT)
+}
+
+fn event_channel_capacity() -> usize {
+    std::env::var("OPENJAX_GATEWAY_EVENT_CHANNEL_CAPACITY")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_EVENT_CHANNEL_CAPACITY)
 }
 
 impl Default for SessionRuntime {
@@ -498,7 +503,6 @@ fn map_core_event(
             json!({ "content": content }),
             None,
         ),
-        Event::AssistantDelta { .. } => return None,
         Event::ToolCallStarted {
             turn_id,
             tool_call_id,
@@ -520,6 +524,41 @@ fn map_core_event(
             Some(turn_id),
             "tool_call_completed",
             json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "ok": ok, "output": output }),
+            None,
+        ),
+        Event::ToolCallArgsDelta {
+            turn_id,
+            tool_call_id,
+            tool_name,
+            args_delta,
+        } => (
+            Some(turn_id),
+            "tool_args_delta",
+            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "args_delta": args_delta }),
+            None,
+        ),
+        Event::ToolCallProgress {
+            turn_id,
+            tool_call_id,
+            tool_name,
+            progress_message,
+        } => (
+            Some(turn_id),
+            "tool_call_progress",
+            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "progress_message": progress_message }),
+            None,
+        ),
+        Event::ToolCallFailed {
+            turn_id,
+            tool_call_id,
+            tool_name,
+            code,
+            message,
+            retryable,
+        } => (
+            Some(turn_id),
+            "tool_call_failed",
+            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
             None,
         ),
         Event::ApprovalRequested {
@@ -704,8 +743,10 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             Event::TurnStarted { turn_id }
             | Event::ToolCallStarted { turn_id, .. }
             | Event::ToolCallCompleted { turn_id, .. }
+            | Event::ToolCallArgsDelta { turn_id, .. }
+            | Event::ToolCallProgress { turn_id, .. }
+            | Event::ToolCallFailed { turn_id, .. }
             | Event::AssistantMessage { turn_id, .. }
-            | Event::AssistantDelta { turn_id, .. }
             | Event::ResponseStarted { turn_id, .. }
             | Event::ResponseTextDelta { turn_id, .. }
             | Event::ToolCallsProposed { turn_id, .. }

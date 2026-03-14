@@ -6,6 +6,7 @@ mod model;
 mod paths;
 pub mod sandbox;
 pub mod skills;
+pub mod streaming;
 pub mod tools;
 
 use agent::state::{RateLimitConfig, ToolCallRecord};

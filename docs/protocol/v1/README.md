@@ -21,7 +21,8 @@ jsonschema docs/protocol/v1/schema/response.schema.json \
   -i docs/protocol/v1/examples/response-error-invalid-params.json
 
 jsonschema docs/protocol/v1/schema/event.schema.json \
-  -i docs/protocol/v1/examples/event-assistant-delta.json \
+  -i docs/protocol/v1/examples/event-response-text-delta.json \
+  -i docs/protocol/v1/examples/event-tool-args-delta.json \
   -i docs/protocol/v1/examples/event-approval-requested.json
 ```
 

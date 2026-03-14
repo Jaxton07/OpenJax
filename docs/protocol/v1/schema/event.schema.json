@@ -3,40 +3,26 @@
   "$id": "https://openjax.dev/schemas/protocol/v1/event.schema.json",
   "title": "OpenJax Protocol v1 Event",
   "type": "object",
-  "required": [
-    "protocol_version",
-    "kind",
-    "session_id",
-    "event_type",
-    "payload"
-  ],
+  "required": ["protocol_version", "kind", "session_id", "event_type", "payload"],
   "properties": {
-    "protocol_version": {
-      "const": "v1"
-    },
-    "kind": {
-      "const": "event"
-    },
-    "session_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "turn_id": {
-      "type": "string",
-      "minLength": 1
-    },
+    "protocol_version": { "const": "v1" },
+    "kind": { "const": "event" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "turn_id": { "type": "string", "minLength": 1 },
     "event_type": {
       "type": "string",
       "enum": [
         "turn_started",
         "tool_call_started",
+        "tool_args_delta",
+        "tool_call_progress",
         "tool_call_completed",
+        "tool_call_failed",
         "response_started",
         "response_text_delta",
         "response_resumed",
         "response_completed",
         "response_error",
-        "assistant_delta",
         "assistant_message",
         "approval_requested",
         "approval_resolved",
@@ -45,9 +31,7 @@
         "error"
       ]
     },
-    "payload": {
-      "type": "object"
-    }
+    "payload": { "type": "object" }
   },
   "allOf": [
     {
@@ -57,13 +41,15 @@
             "enum": [
               "turn_started",
               "tool_call_started",
+              "tool_args_delta",
+              "tool_call_progress",
               "tool_call_completed",
+              "tool_call_failed",
               "response_started",
               "response_text_delta",
               "response_resumed",
               "response_completed",
               "response_error",
-              "assistant_delta",
               "assistant_message",
               "approval_requested",
               "approval_resolved",
@@ -71,40 +57,63 @@
             ]
           }
         },
-        "required": [
-          "event_type"
-        ]
+        "required": ["event_type"]
       },
       "then": {
-        "required": [
-          "turn_id"
-        ]
+        "required": ["turn_id"]
       }
     },
     {
       "if": {
-        "properties": {
-          "event_type": {
-            "const": "response_started"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
+        "properties": { "event_type": { "const": "response_text_delta" } },
+        "required": ["event_type"]
       },
       "then": {
         "properties": {
           "payload": {
             "type": "object",
-            "required": [
-              "stream_source"
-            ],
+            "required": ["content_delta"],
             "properties": {
-              "stream_source": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
+              "content_delta": { "type": "string" },
+              "stream_source": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "response_completed" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["content"],
+            "properties": {
+              "content": { "type": "string" },
+              "stream_source": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "response_error" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["code", "message", "retryable"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "retryable": { "type": "boolean" }
+            }
           }
         }
       }
@@ -113,343 +122,29 @@
       "if": {
         "properties": {
           "event_type": {
-            "const": "response_text_delta"
+            "enum": [
+              "tool_call_started",
+              "tool_args_delta",
+              "tool_call_progress",
+              "tool_call_completed",
+              "tool_call_failed"
+            ]
           }
         },
-        "required": [
-          "event_type"
-        ]
+        "required": ["event_type"]
       },
       "then": {
         "properties": {
           "payload": {
             "type": "object",
-            "required": [
-              "content_delta"
-            ],
+            "required": ["tool_call_id", "tool_name"],
             "properties": {
-              "content_delta": {
-                "type": "string"
-              },
-              "stream_source": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "response_resumed"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "stream_source"
-            ],
-            "properties": {
-              "stream_source": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "response_completed"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "content"
-            ],
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "stream_source": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "response_error"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "code",
-              "message",
-              "retryable"
-            ],
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "retryable": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "approval_requested"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "request_id",
-              "target",
-              "reason"
-            ],
-            "properties": {
-              "request_id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "target": {
-                "type": "string",
-                "minLength": 1
-              },
-              "reason": {
-                "type": "string",
-                "minLength": 1
-              },
-              "tool_name": {
-                "type": "string"
-              },
-              "command_preview": {
-                "type": "string"
-              },
-              "risk_tags": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "sandbox_backend": {
-                "type": "string"
-              },
-              "degrade_reason": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "approval_resolved"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "request_id",
-              "approved"
-            ],
-            "properties": {
-              "request_id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "approved": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "tool_call_started"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "tool_name"
-            ],
-            "properties": {
-              "tool_name": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "tool_call_completed"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "tool_name",
-              "ok",
-              "output"
-            ],
-            "properties": {
-              "tool_name": {
-                "type": "string",
-                "minLength": 1
-              },
-              "ok": {
-                "type": "boolean"
-              },
-              "output": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "assistant_delta"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "content_delta"
-            ],
-            "properties": {
-              "content_delta": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "event_type": {
-            "const": "assistant_message"
-          }
-        },
-        "required": [
-          "event_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "type": "object",
-            "required": [
-              "content"
-            ],
-            "properties": {
-              "content": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
+              "tool_call_id": { "type": "string" },
+              "tool_name": { "type": "string" }
+            }
           }
         }
       }
     }
-  ],
-  "additionalProperties": false
+  ]
 }

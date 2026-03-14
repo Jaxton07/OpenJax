@@ -81,6 +81,8 @@ openjax-gateway/
 - `OPENJAX_GATEWAY_AUTH_RATE_LIMIT_REFRESH_PER_MIN`：刷新限流（默认 120）。
 - `OPENJAX_GATEWAY_AUTH_TOKEN_PEPPER`：token 哈希 pepper。
 - `OPENJAX_GATEWAY_WEB_DIR`：可选，web 静态目录（默认自动尝试 `<bin>/../web`）。
+- `OPENJAX_GATEWAY_EVENT_REPLAY_LIMIT`：SSE 回放窗口大小（默认 1024）。
+- `OPENJAX_GATEWAY_EVENT_CHANNEL_CAPACITY`：SSE 广播通道容量（默认 1024）。
 - `OPENJAX_APPROVAL_TIMEOUT_MS`：审批超时毫秒（由 core 读取）。
 
 若上述 API Key 变量都未设置，gateway 会在启动时自动生成随机 owner key（仅当前进程有效）并打印到终端。

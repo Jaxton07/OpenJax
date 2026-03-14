@@ -1,0 +1,11 @@
+{
+  "protocol_version": "v1",
+  "kind": "event",
+  "session_id": "sess_123",
+  "turn_id": "turn_1",
+  "event_type": "response_text_delta",
+  "payload": {
+    "content_delta": "hello",
+    "stream_source": "model_live"
+  }
+}

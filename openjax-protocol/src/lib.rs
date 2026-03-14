@@ -89,15 +89,29 @@ pub enum Event {
         ok: bool,
         output: String,
     },
+    ToolCallArgsDelta {
+        turn_id: u64,
+        tool_call_id: String,
+        tool_name: String,
+        args_delta: String,
+    },
+    ToolCallProgress {
+        turn_id: u64,
+        tool_call_id: String,
+        tool_name: String,
+        progress_message: String,
+    },
+    ToolCallFailed {
+        turn_id: u64,
+        tool_call_id: String,
+        tool_name: String,
+        code: String,
+        message: String,
+        retryable: bool,
+    },
     AssistantMessage {
         turn_id: u64,
         content: String,
-    },
-    /// Deprecated: legacy compatibility event.
-    /// Main streaming path MUST use `ResponseTextDelta`.
-    AssistantDelta {
-        turn_id: u64,
-        content_delta: String,
     },
     ResponseStarted {
         turn_id: u64,
