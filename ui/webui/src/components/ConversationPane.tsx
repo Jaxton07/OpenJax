@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useStreamSnapshot } from "../hooks/useStreamSnapshot";
 import { recordAssistantPaneRender } from "../lib/devPerf";
 import type { AssistantMessage, UserMessage } from "../types/chat";
@@ -19,6 +19,13 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
   recordAssistantPaneRender(sessionId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
+  const lastAutoScrollTsRef = useRef(0);
+  const prevLiveTextRef = useRef("");
+  const [animatedDelta, setAnimatedDelta] = useState<{ stable: string; delta: string; key: number }>({
+    stable: "",
+    delta: "",
+    key: 0
+  });
 
   const timeline = useMemo<MessageItem[]>(() => {
     const mixed: MessageItem[] = [
@@ -51,8 +58,49 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
     if (!container || !stickToBottomRef.current) {
       return;
     }
+    const now = performance.now();
+    if (now - lastAutoScrollTsRef.current < 33) {
+      return;
+    }
+    lastAutoScrollTsRef.current = now;
     container.scrollTop = container.scrollHeight;
   }, [timeline, snapshot.version]);
+
+  useEffect(() => {
+    if (!snapshot.isActive) {
+      prevLiveTextRef.current = snapshot.content;
+      setAnimatedDelta((prev) => ({
+        stable: snapshot.content,
+        delta: "",
+        key: prev.key
+      }));
+      return;
+    }
+
+    const prevText = prevLiveTextRef.current;
+    const nextText = snapshot.content;
+    if (!nextText.startsWith(prevText)) {
+      prevLiveTextRef.current = nextText;
+      setAnimatedDelta((prev) => ({
+        stable: nextText,
+        delta: "",
+        key: prev.key
+      }));
+      return;
+    }
+
+    const delta = nextText.slice(prevText.length);
+    if (!delta.length) {
+      return;
+    }
+
+    prevLiveTextRef.current = nextText;
+    setAnimatedDelta((prev) => ({
+      stable: prevText,
+      delta,
+      key: prev.key + 1
+    }));
+  }, [snapshot.content, snapshot.isActive, snapshot.version]);
 
   return (
     <section className="panel conversation-panel">
@@ -83,7 +131,14 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
         {snapshot.version > 0 && snapshot.isActive ? (
           <div className="conversation-row assistant live-row">
             <div className="assistant-live-tag">Streaming</div>
-            <div className="assistant-text assistant-live-inline">{snapshot.content}</div>
+            <div className="assistant-text assistant-live-inline">
+              {animatedDelta.stable}
+              {animatedDelta.delta ? (
+                <span key={animatedDelta.key} className="stream-reveal">
+                  {animatedDelta.delta}
+                </span>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </div>

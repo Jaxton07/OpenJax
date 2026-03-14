@@ -194,6 +194,20 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.stream-reveal {
+  display: inline;
+  animation: streamReveal 120ms ease-out;
+}
+
+@keyframes streamReveal {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
 .composer-panel {
   display: grid;
   gap: 8px;
