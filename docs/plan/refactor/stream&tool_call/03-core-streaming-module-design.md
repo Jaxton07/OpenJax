@@ -1,6 +1,6 @@
 # 03 Core Streaming Module Design
 
-状态：`in_progress`
+状态：`done`
 
 ## 设计目标
 
@@ -27,7 +27,9 @@
 - `SseParser` trait
 - `openai` / `anthropic` 基础实现
 
-## 下一步实现
+## 本阶段完成项
 
-1. 将 chat-completions 与 anthropic 的 SSE 解析逐步切到 `SseParser` trait 实现（当前已先收敛 `parse_sse_data_line` 入口）。
-2. 将 tool 相关实时事件统一从 orchestrator/sink 发射。
+1. `chat_completions.rs` 与 `anthropic_messages.rs` 已改为 `SseParser::push_chunk/finish` 主路径。
+2. provider 层保留 provider-specific 字段提取；`streaming/parser` 仅负责 SSE 帧归一化。
+3. provider 内重复 `pending + line split + data parse` 逻辑已移除。
+4. parser/orchestrator/sink/replay 已补齐单测。

@@ -46,10 +46,13 @@
 常见顺序：
 
 1. `TurnStarted`
-2. `ToolCallStarted`（命中工具时）
-3. `ApprovalRequested` / `ApprovalResolved`（按策略触发）
-4. `ToolCallCompleted` 或 `AssistantMessage`
-5. `TurnCompleted`
+2. `ResponseStarted` / `ResponseTextDelta*`（模型直出场景）
+3. `ToolCallStarted`（命中工具时）
+4. `ToolCallArgsDelta` / `ToolCallProgress`（工具流式增量）
+5. `ApprovalRequested` / `ApprovalResolved`（按策略触发）
+6. `ToolCallCompleted` 或 `ToolCallFailed`
+7. `AssistantMessage` / `ResponseCompleted`
+8. `TurnCompleted`
 
 `submit_with_sink` 会在返回 `Vec<Event>` 的同时，将同样的事件流实时推送到外部 sink。
 

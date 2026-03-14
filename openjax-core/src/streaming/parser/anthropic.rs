@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 use super::{SseParser, parse_sse_data_line, take_complete_lines};
 
@@ -10,7 +10,7 @@ pub struct AnthropicSseParser {
 impl SseParser for AnthropicSseParser {
     fn push_chunk(&mut self, bytes: &[u8]) -> Result<Vec<String>> {
         self.pending.extend_from_slice(bytes);
-        let mut deltas = Vec::new();
+        let mut frames = Vec::new();
         for line in take_complete_lines(&mut self.pending) {
             let Some(data) = parse_sse_data_line(&line) else {
                 continue;
@@ -18,24 +18,9 @@ impl SseParser for AnthropicSseParser {
             if data == "[DONE]" {
                 continue;
             }
-            let payload: serde_json::Value = serde_json::from_str(data)
-                .map_err(|err| anyhow!("anthropic stream json parse failed: {err}"))?;
-            let content = payload
-                .get("delta")
-                .and_then(|v| v.get("text"))
-                .and_then(|v| v.as_str())
-                .or_else(|| {
-                    payload
-                        .get("delta")
-                        .and_then(|v| v.get("thinking"))
-                        .and_then(|v| v.as_str())
-                })
-                .unwrap_or("");
-            if !content.is_empty() {
-                deltas.push(content.to_string());
-            }
+            frames.push(data.to_string());
         }
-        Ok(deltas)
+        Ok(frames)
     }
 
     fn finish(&mut self) -> Result<Vec<String>> {
@@ -50,23 +35,28 @@ impl SseParser for AnthropicSseParser {
         if data == "[DONE]" {
             return Ok(Vec::new());
         }
-        let payload: serde_json::Value = serde_json::from_str(data)
-            .map_err(|err| anyhow!("anthropic trailing stream json parse failed: {err}"))?;
-        let content = payload
-            .get("delta")
-            .and_then(|v| v.get("text"))
-            .and_then(|v| v.as_str())
-            .or_else(|| {
-                payload
-                    .get("delta")
-                    .and_then(|v| v.get("thinking"))
-                    .and_then(|v| v.as_str())
-            })
-            .unwrap_or("");
-        if content.is_empty() {
-            Ok(Vec::new())
-        } else {
-            Ok(vec![content.to_string()])
-        }
+        Ok(vec![data.to_string()])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AnthropicSseParser, SseParser};
+
+    #[test]
+    fn parser_flushes_trailing_data_on_finish() {
+        let mut parser = AnthropicSseParser::default();
+        let frames = parser
+            .push_chunk(b"event: ping\ndata: {\"delta\":{\"text\":\"he\"}}\n")
+            .expect("push chunk");
+        assert_eq!(frames, vec!["{\"delta\":{\"text\":\"he\"}}".to_string()]);
+
+        let pending = parser
+            .push_chunk(b"data: {\"delta\":{\"text\":\"llo\"}}")
+            .expect("pending chunk");
+        assert!(pending.is_empty());
+
+        let trailing = parser.finish().expect("finish");
+        assert_eq!(trailing, vec!["{\"delta\":{\"text\":\"llo\"}}".to_string()]);
     }
 }

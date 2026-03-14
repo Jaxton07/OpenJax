@@ -456,6 +456,28 @@ impl Agent {
                             target: extract_tool_target_hint(&tool_name, &args),
                         },
                     );
+                    if let Some(args_delta) = tool_args_delta_payload(&args) {
+                        self.push_event(
+                            events,
+                            Event::ToolCallArgsDelta {
+                                turn_id,
+                                tool_call_id: tool_call_id.clone(),
+                                tool_name: tool_name.clone(),
+                                args_delta,
+                            },
+                        );
+                    }
+                    self.push_event(
+                        events,
+                        Event::ToolCallFailed {
+                            turn_id,
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: tool_name.clone(),
+                            code: "guard_blocked".to_string(),
+                            message: message.to_string(),
+                            retryable: false,
+                        },
+                    );
 
                     self.record_tool_call(&tool_name, &args, false, message);
                     tool_traces.push(format!(
@@ -545,6 +567,26 @@ impl Agent {
                         target: extract_tool_target_hint(&tool_name, &args),
                     },
                 );
+                if let Some(args_delta) = tool_args_delta_payload(&args) {
+                    self.push_event(
+                        events,
+                        Event::ToolCallArgsDelta {
+                            turn_id,
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: tool_name.clone(),
+                            args_delta,
+                        },
+                    );
+                }
+                self.push_event(
+                    events,
+                    Event::ToolCallProgress {
+                        turn_id,
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: tool_name.clone(),
+                        progress_message: "executing".to_string(),
+                    },
+                );
 
                 match self
                     .execute_tool_with_live_events(turn_id, &tool_call_id, &call, events)
@@ -618,6 +660,17 @@ impl Agent {
                         tool_traces.push(trace);
 
                         self.record_tool_call(&tool_name, &args, false, &err_text);
+                        self.push_event(
+                            events,
+                            Event::ToolCallFailed {
+                                turn_id,
+                                tool_call_id: tool_call_id.clone(),
+                                tool_name: tool_name.to_string(),
+                                code: tool_failure_code(&err_text).to_string(),
+                                message: err_text.to_string(),
+                                retryable: tool_failure_retryable(&err_text),
+                            },
+                        );
 
                         self.push_event(
                             events,
@@ -739,11 +792,11 @@ impl Agent {
             ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
 
         let mut on_delta = |delta: String,
-                        parser: &mut DecisionJsonStreamParser,
-                        streamed_message: &mut String,
-                        response_started: &mut bool,
-                        ttft_logged: &mut bool,
-                        events: &mut Vec<Event>| {
+                            parser: &mut DecisionJsonStreamParser,
+                            streamed_message: &mut String,
+                            response_started: &mut bool,
+                            ttft_logged: &mut bool,
+                            events: &mut Vec<Event>| {
             if delta.is_empty() {
                 return;
             }
@@ -1061,6 +1114,28 @@ impl Agent {
                                 target: extract_tool_target_hint(&call.tool_name, &call.args),
                             },
                         );
+                        if let Some(args_delta) = tool_args_delta_payload(&call.args) {
+                            self.push_event(
+                                events,
+                                Event::ToolCallArgsDelta {
+                                    turn_id,
+                                    tool_call_id: call.tool_call_id.clone(),
+                                    tool_name: call.tool_name.clone(),
+                                    args_delta,
+                                },
+                            );
+                        }
+                        self.push_event(
+                            events,
+                            Event::ToolCallFailed {
+                                turn_id,
+                                tool_call_id: call.tool_call_id.clone(),
+                                tool_name: call.tool_name.clone(),
+                                code: "guard_blocked".to_string(),
+                                message: message.to_string(),
+                                retryable: false,
+                            },
+                        );
                         self.record_tool_call(&call.tool_name, &call.args, false, message);
                         tool_traces.push(format!(
                             "tool={}; ok=false; output={}",
@@ -1093,6 +1168,26 @@ impl Agent {
                             tool_call_id: call.tool_call_id.clone(),
                             tool_name: call.tool_name.clone(),
                             target: extract_tool_target_hint(&call.tool_name, &call.args),
+                        },
+                    );
+                    if let Some(args_delta) = tool_args_delta_payload(&call.args) {
+                        self.push_event(
+                            events,
+                            Event::ToolCallArgsDelta {
+                                turn_id,
+                                tool_call_id: call.tool_call_id.clone(),
+                                tool_name: call.tool_name.clone(),
+                                args_delta,
+                            },
+                        );
+                    }
+                    self.push_event(
+                        events,
+                        Event::ToolCallProgress {
+                            turn_id,
+                            tool_call_id: call.tool_call_id.clone(),
+                            tool_name: call.tool_name.clone(),
+                            progress_message: "scheduled".to_string(),
                         },
                     );
                     let tools = self.tools.clone();
@@ -1171,6 +1266,17 @@ impl Agent {
                             self.record_tool_call(&call.tool_name, &call.args, false, &err_text);
                             self.push_event(
                                 events,
+                                Event::ToolCallFailed {
+                                    turn_id,
+                                    tool_call_id: call.tool_call_id.clone(),
+                                    tool_name: call.tool_name.clone(),
+                                    code: tool_failure_code(&err_text).to_string(),
+                                    message: err_text.clone(),
+                                    retryable: tool_failure_retryable(&err_text),
+                                },
+                            );
+                            self.push_event(
+                                events,
                                 Event::ToolCallCompleted {
                                     turn_id,
                                     tool_call_id: call.tool_call_id.clone(),
@@ -1237,6 +1343,17 @@ impl Agent {
                 let output = "tool call dependency unmet".to_string();
                 self.push_event(
                     events,
+                    Event::ToolCallFailed {
+                        turn_id,
+                        tool_call_id: call.tool_call_id.clone(),
+                        tool_name: call.tool_name.clone(),
+                        code: "dependency_unmet".to_string(),
+                        message: output.clone(),
+                        retryable: false,
+                    },
+                );
+                self.push_event(
+                    events,
                     Event::ToolCallCompleted {
                         turn_id,
                         tool_call_id: call.tool_call_id.clone(),
@@ -1301,6 +1418,33 @@ fn extract_tool_target_hint(
         _ => return None,
     };
     keys.iter().find_map(|k| args.get(*k).cloned())
+}
+
+fn tool_args_delta_payload(args: &std::collections::HashMap<String, String>) -> Option<String> {
+    if args.is_empty() {
+        return None;
+    }
+    serde_json::to_string(args).ok()
+}
+
+fn tool_failure_code(error_text: &str) -> &'static str {
+    let lower = error_text.to_ascii_lowercase();
+    if lower.contains("approval timed out") {
+        "approval_timeout"
+    } else if lower.contains("approval rejected") {
+        "approval_rejected"
+    } else if lower.contains("timed out") {
+        "tool_timeout"
+    } else if lower.contains("cancel") {
+        "tool_canceled"
+    } else {
+        "tool_execution_failed"
+    }
+}
+
+fn tool_failure_retryable(error_text: &str) -> bool {
+    let lower = error_text.to_ascii_lowercase();
+    lower.contains("timed out") || lower.contains("cancel")
 }
 
 fn is_mutating_tool(tool_name: &str) -> bool {

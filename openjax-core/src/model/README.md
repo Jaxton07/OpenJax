@@ -16,6 +16,7 @@
 - `router.rs`: `ModelRouter`，按 stage 选主模型并执行 fallback 链路。
 - `chat_completions.rs`: OpenAI 兼容协议适配器（OpenAI / MiniMax / GLM chat-completions）。
 - `anthropic_messages.rs`: Anthropic Messages 协议适配器（Anthropic / GLM anthropic 兼容）。
+- `../streaming/parser/`: provider 流式读取统一入口（`SseParser`）。
 - `echo.rs`: 回显模型，主要用于调试。
 - `missing_config.rs`: 当无可用模型配置时返回可读的缺省错误客户端。
 
@@ -65,3 +66,4 @@
 - 新增协议时优先实现 `ProviderAdapter`，再在 `factory.rs` 的 `build_adapter_for_registered_model` 挂载。
 - 新增能力位判断时，同步更新 `CapabilityFlags` 与 `router.rs` 过滤逻辑。
 - 若修改默认模型/URL/env 变量，需同步更新 `openjax-core/README.md` 的环境变量表。
+- provider 流式代码应复用 `streaming/parser`，避免在 provider 内重复 `pending + line split` 逻辑。

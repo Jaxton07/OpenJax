@@ -20,6 +20,17 @@
 - `spec.rs`: 工具 schema 定义
 - `tool_builder.rs`: 默认工具注册
 
+## 流式事件约定（与 gateway/webui 对齐）
+
+一次工具调用生命周期事件：
+
+1. `ToolCallStarted`
+2. `ToolCallArgsDelta`（可选，多次）
+3. `ToolCallProgress`（可选，多次）
+4. `ToolCallCompleted` 或 `ToolCallFailed`
+
+审批事件 `ApprovalRequested/ApprovalResolved` 与上述事件在同一 turn 时间线并流输出。
+
 ## 迁移说明
 
 工具文档统一维护在 `openjax-core/src/tools/docs/`。如与其他旧文档存在冲突，请以该目录内容为准。

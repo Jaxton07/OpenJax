@@ -1,28 +1,38 @@
 # 06 Migration Execution Plan
 
-状态：`planned`
+状态：`done`
 
-## PR 切分建议
+## PR 切分模板（PR-A ~ PR-E）
 
-1. PR-1（已完成）
-- 新增 streaming 模块骨架。
-- planner 接入 orchestrator，移除字符级 delta 发射。
-- protocol 增加 tool 流式事件。
+1. PR-A（阶段 1+2）
+- 变更范围：目标架构冻结、事件契约冻结、移除遗留事件分支。
+- 回归命令：`cargo check`
+- 风险点：事件契约变更导致消费者 match 缺失。
+- 回滚策略：整包回滚协议与消费者改动，恢复上个稳定 tag。
 
-2. PR-2
-- provider 层改为共用 parser（openai/anthropic）。
-- 删除 provider 内重复 SSE 行解析。
+2. PR-B（阶段 3）
+- 变更范围：provider 流读取切换到 `streaming/parser`，orchestrator 全链路接入。
+- 回归命令：`cargo check`，`cargo test -p openjax-core --test m6_submit_stream`
+- 风险点：provider 边界条件下 SSE 尾包处理。
+- 回滚策略：仅回滚 provider parser 接入提交，保留 streaming 基础模块。
 
-3. PR-3
-- gateway mapper 拆分与 replay 抽象替换。
-- 可配置 replay window/channel capacity。
+3. PR-C（阶段 4）
+- 变更范围：gateway mapper 拆分、`ReplayBuffer` 装配、state 职责瘦身。
+- 回归命令：`cargo check`，`cargo test -p openjax-gateway`
+- 风险点：SSE 恢复和回放窗口错误语义回退。
+- 回滚策略：回滚 gateway mapper 模块与 state 路由变更。
 
-4. PR-4
-- 工具执行链路发射 args_delta/progress/failed。
-- approval 中断语义统一。
+4. PR-D（阶段 5）
+- 变更范围：工具生命周期补齐 `args_delta/progress/failed`，审批拒绝/超时失败映射。
+- 回归命令：`cargo check`，`cargo test -p openjax-core --test m21_tool_streaming_events`，`cargo test -p tui_next`
+- 风险点：旧消费者仅依赖 `ToolCallCompleted` 的行为差异。
+- 回滚策略：保留新事件定义，回滚 core 发射点改动。
 
-5. PR-5
-- 清理旧事件路径与文档更新。
+5. PR-E（阶段 7+8）
+- 变更范围：测试矩阵收口、指标命名统一、runbook 与文档状态更新。
+- 回归命令：`cargo test --workspace`
+- 风险点：文档与代码埋点命名不一致。
+- 回滚策略：文档可独立回滚，不影响运行时路径。
 
 ## 执行原则
 

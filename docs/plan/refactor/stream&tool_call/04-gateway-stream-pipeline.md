@@ -1,6 +1,6 @@
 # 04 Gateway Stream Pipeline
 
-状态：`in_progress`
+状态：`done`
 
 ## 目标
 
@@ -26,8 +26,9 @@
 2. `state.rs` 中映射逻辑降到可维护长度。
 3. SSE 恢复测试覆盖 query/header 两种恢复路径。
 
-## 当前进展
+## 本阶段完成项
 
-1. 回放窗口已切到 `streaming::ReplayBuffer`。
-2. replay/broadcast 容量已引入环境变量配置。
-3. 下一步是将 `map_core_event` 继续拆分为 response/tool/approval mapper 子模块。
+1. `map_core_event` 映射已拆分到 `openjax-gateway/src/event_mapper/response.rs`、`tool.rs`、`approval.rs`。
+2. `state.rs` 仅保留会话状态同步、事件封装、发布与回放装配逻辑。
+3. 回放窗口复用 `openjax_core::streaming::ReplayBuffer`，并保持 `OPENJAX_GATEWAY_EVENT_REPLAY_LIMIT`/`OPENJAX_GATEWAY_EVENT_CHANNEL_CAPACITY` 配置化。
+4. SSE 线格式继续 `Envelope + payload`，`Last-Event-ID`/`after_event_seq` 恢复语义不变。

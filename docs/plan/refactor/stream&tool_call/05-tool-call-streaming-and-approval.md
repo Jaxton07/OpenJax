@@ -1,6 +1,6 @@
 # 05 Tool Call Streaming And Approval
 
-状态：`in_progress`
+状态：`done`
 
 ## 目标语义
 
@@ -16,12 +16,12 @@
   - `ToolCallFailed`
 - `openjax-gateway/openjaxd/ui-tui` 已补齐事件分支消费。
 
-## 待落地
+## 本阶段完成项
 
-1. 在工具执行入口发出 `ToolCallArgsDelta`。
-2. 对长任务工具输出 `ToolCallProgress`。
-3. 出错统一转 `ToolCallFailed`，并保留 `code/message/retryable`。
-4. 审批拒绝/超时路径与 `ToolCallFailed` 对齐。
+1. 单工具与批工具执行路径均已补齐 `ToolCallArgsDelta`、`ToolCallProgress`、`ToolCallFailed` 发射点。
+2. 审批拒绝/超时在工具失败路径映射为 `ToolCallFailed`（`approval_rejected/approval_timeout`）。
+3. 工具 guard 阻断与依赖未满足路径统一进入失败事件模型。
+4. 新增 `openjax-core/tests/m21_tool_streaming_events.rs` 校验生命周期顺序与审批拒绝对齐。
 
 ## 验收
 

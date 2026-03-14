@@ -86,6 +86,17 @@ OpenJax 工具系统提供以下核心特性：
 - **Freeform 工具支持**：支持 Lark 语法定义的自由格式工具（如 apply_patch）
 - **模块化架构**：工具代码按功能拆分为独立模块，易于维护和扩展
 
+## 与流式系统对齐
+
+工具执行会通过统一事件流输出以下生命周期事件：
+
+1. `tool_call_started`
+2. `tool_args_delta`（可选）
+3. `tool_call_progress`（可选）
+4. `tool_call_completed` 或 `tool_call_failed`
+
+审批事件 `approval_requested/approval_resolved` 与工具事件并流，便于 WebUI/TUI 单时间线渲染。
+
 ## 可用工具
 
 当前系统包含以下工具：

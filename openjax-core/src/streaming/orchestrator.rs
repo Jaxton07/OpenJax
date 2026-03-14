@@ -50,9 +50,9 @@ impl ResponseStreamOrchestrator {
         (
             resolved.clone(),
             Event::ResponseCompleted {
-            turn_id: self.turn_id,
-            content: resolved.clone(),
-            stream_source: self.stream_source.clone(),
+                turn_id: self.turn_id,
+                content: resolved.clone(),
+                stream_source: self.stream_source.clone(),
             },
         )
     }
@@ -72,5 +72,57 @@ impl ResponseStreamOrchestrator {
 
     pub fn accumulated(&self) -> &str {
         &self.accumulated
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use openjax_protocol::{Event, StreamSource};
+
+    use super::ResponseStreamOrchestrator;
+
+    #[test]
+    fn emits_started_then_delta_then_completed() {
+        let mut orchestrator = ResponseStreamOrchestrator::new(7, StreamSource::ModelLive);
+        let events = orchestrator.on_delta("hello");
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            events[0],
+            Event::ResponseStarted { turn_id: 7, .. }
+        ));
+        assert!(matches!(
+            events[1],
+            Event::ResponseTextDelta {
+                turn_id: 7,
+                ref content_delta,
+                ..
+            } if content_delta == "hello"
+        ));
+
+        let (resolved, completed) = orchestrator.emit_completed(String::new());
+        assert_eq!(resolved, "hello");
+        assert!(matches!(
+            completed,
+            Event::ResponseCompleted {
+                turn_id: 7,
+                ref content,
+                ..
+            } if content == "hello"
+        ));
+    }
+
+    #[test]
+    fn emits_response_error_payload() {
+        let orchestrator = ResponseStreamOrchestrator::new(3, StreamSource::Synthetic);
+        let error = orchestrator.emit_error("upstream", "failed".to_string(), true);
+        assert!(matches!(
+            error,
+            Event::ResponseError {
+                turn_id: 3,
+                ref code,
+                ref message,
+                retryable: true,
+            } if code == "upstream" && message == "failed"
+        ));
     }
 }

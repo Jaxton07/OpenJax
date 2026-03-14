@@ -25,6 +25,11 @@ openjax-gateway/
 │   │   ├── token.rs
 │   │   └── types.rs
 │   ├── auth_handlers.rs
+│   ├── event_mapper/
+│   │   ├── mod.rs
+│   │   ├── response.rs
+│   │   ├── tool.rs
+│   │   └── approval.rs
 │   ├── error.rs
 │   ├── handlers.rs
 │   ├── lib.rs
@@ -61,6 +66,7 @@ openjax-gateway/
 - `src/lib.rs`：组装 Axum Router、CORS、全局中间件与受保护路由。
 - `src/main.rs`：网关启动入口，读取 `OPENJAX_GATEWAY_BIND`（默认 `127.0.0.1:8765`）。
 - `src/state.rs`：`AppState`/`SessionRuntime`、事件缓存回放、turn 与审批状态管理。
+- `src/event_mapper/`：core 事件到 gateway 事件的薄映射层（response/tool/approval）。
 - `src/handlers.rs`：HTTP 处理函数与 core 事件映射到网关事件。
 - `src/auth_handlers.rs`：登录、刷新、登出、撤销、会话查询接口。
 - `src/middleware.rs`：请求 ID、鉴权、访问日志。
@@ -96,3 +102,16 @@ zsh -lc "cargo build -p openjax-gateway"
 zsh -lc "cargo test -p openjax-gateway"
 zsh -lc "cargo run -p openjax-gateway"
 ```
+
+## WebUI 流式接入（SSE）
+
+1. 建立 SSE 连接：`GET /api/v1/sessions/:session_id/events`。
+2. 使用 `Last-Event-ID` 或 `after_event_seq` 做断线恢复。
+3. 每条 SSE 的 `data` 是事件信封（`event_seq/turn_seq/type/payload`）。
+4. 关键渲染事件：
+- `response_started`
+- `response_text_delta`
+- `response_completed`
+- `tool_call_started/tool_args_delta/tool_call_progress/tool_call_completed/tool_call_failed`
+- `approval_requested/approval_resolved`
+5. 若收到 `response_error.code=REPLAY_WINDOW_EXCEEDED`，应提示前端重新发起会话流连接。

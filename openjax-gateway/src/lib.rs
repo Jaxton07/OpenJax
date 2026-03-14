@@ -1,6 +1,7 @@
 mod auth;
 mod auth_handlers;
 mod error;
+mod event_mapper;
 mod handlers;
 mod middleware;
 pub mod state;

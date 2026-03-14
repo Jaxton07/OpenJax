@@ -9,7 +9,7 @@ use crate::config::ModelConfig;
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::RegisteredModel;
 use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage};
-use crate::streaming::parser::parse_sse_data_line;
+use crate::streaming::parser::{SseParser, anthropic::AnthropicSseParser};
 
 const SYSTEM_PROMPT_PERSONA: &str = "You are OpenJax, an all-purpose personal AI assistant in a terminal environment, similar in spirit to a reliable AI butler.";
 const SYSTEM_PROMPT_BEHAVIOR: &str = "Your job is to help the user get outcomes across many domains: system and environment checks, document and knowledge tasks, coding and debugging, shell workflows, planning, and everyday productivity. \
@@ -532,34 +532,15 @@ impl ModelClient for AnthropicMessagesClient {
 
         let mut assembled = String::new();
         let mut thinking_assembled = String::new();
-        let mut pending: Vec<u8> = Vec::new();
+        let mut parser = AnthropicSseParser::default();
 
         let mut resp = resp;
         while let Some(chunk) = resp.chunk().await.context("failed reading stream chunk")? {
-            pending.extend_from_slice(&chunk);
-
-            while let Some(pos) = pending.iter().position(|b| *b == b'\n') {
-                let mut line = pending.drain(..=pos).collect::<Vec<u8>>();
-                if matches!(line.last(), Some(b'\n')) {
-                    let _ = line.pop();
-                }
-                if matches!(line.last(), Some(b'\r')) {
-                    let _ = line.pop();
-                }
-
-                let line_text = String::from_utf8_lossy(&line);
-                let Some(data) = parse_sse_data_line(&line_text) else {
-                    continue;
-                };
-
-                if data == "[DONE]" {
-                    continue;
-                }
-
-                let payload: serde_json::Value = serde_json::from_str(data).map_err(|err| {
+            for frame in parser.push_chunk(&chunk)? {
+                let payload: serde_json::Value = serde_json::from_str(&frame).map_err(|err| {
                     anyhow!(
                         "failed to parse SSE JSON chunk: {err}; chunk_snippet={}",
-                        response_snippet(data)
+                        response_snippet(&frame)
                     )
                 })?;
 
@@ -580,31 +561,26 @@ impl ModelClient for AnthropicMessagesClient {
             }
         }
 
-        if !pending.is_empty() {
-            let line_text = String::from_utf8_lossy(&pending);
-            if let Some(data) = parse_sse_data_line(&line_text)
-                && data != "[DONE]"
+        for frame in parser.finish()? {
+            let payload: serde_json::Value = serde_json::from_str(&frame).map_err(|err| {
+                anyhow!(
+                    "failed to parse trailing SSE JSON chunk: {err}; chunk_snippet={}",
+                    response_snippet(&frame)
+                )
+            })?;
+            if let Some(delta) = extract_delta_content_from_body(&payload)
+                && !delta.is_empty()
             {
-                let payload: serde_json::Value = serde_json::from_str(data).map_err(|err| {
-                    anyhow!(
-                        "failed to parse trailing SSE JSON chunk: {err}; chunk_snippet={}",
-                        response_snippet(data)
-                    )
-                })?;
-                if let Some(delta) = extract_delta_content_from_body(&payload)
-                    && !delta.is_empty()
-                {
-                    assembled.push_str(&delta);
-                    if let Some(sender) = &delta_sender {
-                        let _ = sender.send(delta);
-                    }
+                assembled.push_str(&delta);
+                if let Some(sender) = &delta_sender {
+                    let _ = sender.send(delta);
                 }
+            }
 
-                if let Some(thinking_delta) = extract_delta_thinking_from_body(&payload)
-                    && !thinking_delta.is_empty()
-                {
-                    thinking_assembled.push_str(&thinking_delta);
-                }
+            if let Some(thinking_delta) = extract_delta_thinking_from_body(&payload)
+                && !thinking_delta.is_empty()
+            {
+                thinking_assembled.push_str(&thinking_delta);
             }
         }
 

@@ -1,6 +1,6 @@
 # 07 Test Plan And Acceptance
 
-状态：`in_progress`
+状态：`done`
 
 ## Core 测试
 
@@ -30,3 +30,12 @@
 - `cargo test -p openjax-gateway`
 - `cargo test -p tui_next`
 3. 关键路径无回归：turn 流式输出、审批、工具调用。
+
+## 本轮执行结果
+
+1. 已执行：`cargo check`（通过）。
+2. 已执行：`cargo test -p openjax-core --test m6_submit_stream`（通过）。
+3. 已执行：`cargo test -p openjax-core --test m21_tool_streaming_events`（通过）。
+4. 已执行：`cargo test -p openjax-gateway`（通过）。
+5. 已执行：`cargo test -p tui_next`（通过）。
+6. 已执行：`cargo test --workspace`（通过）。

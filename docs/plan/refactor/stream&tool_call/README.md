@@ -13,12 +13,12 @@
 1. [00-current-state-audit.md](./00-current-state-audit.md) `done`
 2. [01-target-architecture.md](./01-target-architecture.md) `done`
 3. [02-event-contract-and-api.md](./02-event-contract-and-api.md) `done`
-4. [03-core-streaming-module-design.md](./03-core-streaming-module-design.md) `in_progress`
-5. [04-gateway-stream-pipeline.md](./04-gateway-stream-pipeline.md) `in_progress`
-6. [05-tool-call-streaming-and-approval.md](./05-tool-call-streaming-and-approval.md) `in_progress`
-7. [06-migration-execution-plan.md](./06-migration-execution-plan.md) `planned`
-8. [07-test-plan-and-acceptance.md](./07-test-plan-and-acceptance.md) `in_progress`
-9. [08-observability-and-runbook.md](./08-observability-and-runbook.md) `planned`
+4. [03-core-streaming-module-design.md](./03-core-streaming-module-design.md) `done`
+5. [04-gateway-stream-pipeline.md](./04-gateway-stream-pipeline.md) `done`
+6. [05-tool-call-streaming-and-approval.md](./05-tool-call-streaming-and-approval.md) `done`
+7. [06-migration-execution-plan.md](./06-migration-execution-plan.md) `done`
+8. [07-test-plan-and-acceptance.md](./07-test-plan-and-acceptance.md) `done`
+9. [08-observability-and-runbook.md](./08-observability-and-runbook.md) `done`
 
 ## 阶段目标总览
 
@@ -39,5 +39,7 @@
 - 已扩展 `openjax-protocol::Event`：`ToolCallArgsDelta/ToolCallProgress/ToolCallFailed`。
 - 已同步 `openjax-gateway/openjaxd/ui-tui` 对新增工具流式事件的消费分支。
 - 已移除 `AssistantDelta` 遗留事件并更新协议文档/schema。
-- 已将 provider 的 `parse_sse_data_line` 入口收敛到 `streaming/parser`。
-- 已将 gateway 事件回放窗口替换为 `streaming::ReplayBuffer` 并引入容量配置。
+- 已将 provider 流读取主路径切到 `SseParser::push_chunk/finish`。
+- 已完成 gateway `response/tool/approval` mapper 拆分并保持 `Envelope + payload` 线格式。
+- 已补齐工具生命周期事件发射：`started -> args_delta -> progress -> completed/failed`。
+- 已新增流式与工具生命周期测试并通过全量 `cargo test --workspace`。

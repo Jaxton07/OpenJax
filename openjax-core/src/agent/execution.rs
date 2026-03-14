@@ -51,6 +51,28 @@ impl Agent {
                 target: extract_tool_target_hint(&call.name, &call.args),
             },
         );
+        if !call.args.is_empty()
+            && let Ok(args_delta) = serde_json::to_string(&call.args)
+        {
+            self.push_event(
+                events,
+                Event::ToolCallArgsDelta {
+                    turn_id,
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: call.name.clone(),
+                    args_delta,
+                },
+            );
+        }
+        self.push_event(
+            events,
+            Event::ToolCallProgress {
+                turn_id,
+                tool_call_id: tool_call_id.clone(),
+                tool_name: call.name.clone(),
+                progress_message: "executing".to_string(),
+            },
+        );
 
         // Try execution with retry
         let mut last_error = None;
@@ -133,6 +155,17 @@ impl Agent {
                     last_error = Some(err);
                     // Check if error is retryable (not a validation error)
                     let err_str = last_error.as_ref().expect("last error set").to_string();
+                    self.push_event(
+                        events,
+                        Event::ToolCallFailed {
+                            turn_id,
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: call.name.clone(),
+                            code: tool_failure_code(&err_str).to_string(),
+                            message: err_str.clone(),
+                            retryable: tool_failure_retryable(&err_str),
+                        },
+                    );
                     if err_str.contains("invalid")
                         || err_str.contains("permission denied")
                         || err_str.contains("Approval rejected")
@@ -221,6 +254,26 @@ impl Agent {
             }
         }
     }
+}
+
+fn tool_failure_code(error_text: &str) -> &'static str {
+    let lower = error_text.to_ascii_lowercase();
+    if lower.contains("approval timed out") {
+        "approval_timeout"
+    } else if lower.contains("approval rejected") {
+        "approval_rejected"
+    } else if lower.contains("timed out") {
+        "tool_timeout"
+    } else if lower.contains("cancel") {
+        "tool_canceled"
+    } else {
+        "tool_execution_failed"
+    }
+}
+
+fn tool_failure_retryable(error_text: &str) -> bool {
+    let lower = error_text.to_ascii_lowercase();
+    lower.contains("timed out") || lower.contains("cancel")
 }
 
 fn extract_tool_target_hint(

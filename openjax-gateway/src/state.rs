@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::auth::load_api_keys_from_env;
 use crate::auth::{AuthConfig, AuthService};
 use crate::error::{ApiError, now_rfc3339};
+use crate::event_mapper::map_core_event_payload;
 
 const DEFAULT_EVENT_REPLAY_LIMIT: usize = 1024;
 const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1024;
@@ -426,183 +427,11 @@ fn map_core_event(
     event: Event,
     turn_id_tx: &mut Option<oneshot::Sender<Result<String, ApiError>>>,
 ) -> Option<String> {
-    let (core_turn_id, event_type, payload, stream_source) = match event {
-        Event::TurnStarted { turn_id } => (Some(turn_id), "turn_started", json!({}), None),
-        Event::ResponseStarted {
-            turn_id,
-            stream_source,
-        } => (
-            Some(turn_id),
-            "response_started",
-            json!({ "stream_source": stream_source }),
-            Some(stream_source_wire(stream_source).to_string()),
-        ),
-        Event::ResponseTextDelta {
-            turn_id,
-            content_delta,
-            stream_source,
-        } => (
-            Some(turn_id),
-            "response_text_delta",
-            json!({ "content_delta": content_delta, "stream_source": stream_source }),
-            Some(stream_source_wire(stream_source).to_string()),
-        ),
-        Event::ToolCallsProposed {
-            turn_id,
-            tool_calls,
-        } => (
-            Some(turn_id),
-            "tool_calls_proposed",
-            json!({ "tool_calls": tool_calls }),
-            None,
-        ),
-        Event::ToolBatchCompleted {
-            turn_id,
-            total,
-            succeeded,
-            failed,
-        } => (
-            Some(turn_id),
-            "tool_batch_completed",
-            json!({ "total": total, "succeeded": succeeded, "failed": failed }),
-            None,
-        ),
-        Event::ResponseResumed {
-            turn_id,
-            stream_source,
-        } => (
-            Some(turn_id),
-            "response_resumed",
-            json!({ "stream_source": stream_source }),
-            Some(stream_source_wire(stream_source).to_string()),
-        ),
-        Event::ResponseCompleted {
-            turn_id,
-            content,
-            stream_source,
-        } => (
-            Some(turn_id),
-            "response_completed",
-            json!({ "content": content, "stream_source": stream_source }),
-            Some(stream_source_wire(stream_source).to_string()),
-        ),
-        Event::ResponseError {
-            turn_id,
-            code,
-            message,
-            retryable,
-        } => (
-            Some(turn_id),
-            "response_error",
-            json!({ "code": code, "message": message, "retryable": retryable }),
-            None,
-        ),
-        Event::AssistantMessage { turn_id, content } => (
-            Some(turn_id),
-            "assistant_message",
-            json!({ "content": content }),
-            None,
-        ),
-        Event::ToolCallStarted {
-            turn_id,
-            tool_call_id,
-            tool_name,
-            target,
-        } => (
-            Some(turn_id),
-            "tool_call_started",
-            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "target": target }),
-            None,
-        ),
-        Event::ToolCallCompleted {
-            turn_id,
-            tool_call_id,
-            tool_name,
-            ok,
-            output,
-        } => (
-            Some(turn_id),
-            "tool_call_completed",
-            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "ok": ok, "output": output }),
-            None,
-        ),
-        Event::ToolCallArgsDelta {
-            turn_id,
-            tool_call_id,
-            tool_name,
-            args_delta,
-        } => (
-            Some(turn_id),
-            "tool_args_delta",
-            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "args_delta": args_delta }),
-            None,
-        ),
-        Event::ToolCallProgress {
-            turn_id,
-            tool_call_id,
-            tool_name,
-            progress_message,
-        } => (
-            Some(turn_id),
-            "tool_call_progress",
-            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "progress_message": progress_message }),
-            None,
-        ),
-        Event::ToolCallFailed {
-            turn_id,
-            tool_call_id,
-            tool_name,
-            code,
-            message,
-            retryable,
-        } => (
-            Some(turn_id),
-            "tool_call_failed",
-            json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
-            None,
-        ),
-        Event::ApprovalRequested {
-            turn_id,
-            request_id: approval_id,
-            target,
-            reason,
-            tool_name,
-            command_preview,
-            risk_tags,
-            sandbox_backend,
-            degrade_reason,
-        } => (
-            Some(turn_id),
-            "approval_requested",
-            json!({
-                "approval_id": approval_id,
-                "target": target,
-                "reason": reason,
-                "tool_name": tool_name,
-                "command_preview": command_preview,
-                "risk_tags": risk_tags,
-                "sandbox_backend": sandbox_backend,
-                "degrade_reason": degrade_reason
-            }),
-            None,
-        ),
-        Event::ApprovalResolved {
-            turn_id,
-            request_id: approval_id,
-            approved,
-        } => (
-            Some(turn_id),
-            "approval_resolved",
-            json!({
-                "approval_id": approval_id,
-                "approved": approved
-            }),
-            None,
-        ),
-        Event::TurnCompleted { turn_id } => (Some(turn_id), "turn_completed", json!({}), None),
-        Event::ShutdownComplete => (None, "session_shutdown", json!({}), None),
-        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => return None,
-    };
+    let mapping = map_core_event_payload(&event)?;
+    let core_turn_id = mapping.core_turn_id;
+    let event_type = mapping.event_type;
+    let payload = mapping.payload;
+    let stream_source = mapping.stream_source;
 
     let public_turn_id = core_turn_id.map(|tid| session.get_or_create_public_turn_id(tid));
     if let Some(turn_id) = &public_turn_id {
@@ -652,7 +481,7 @@ fn map_core_event(
         public_turn_id.clone(),
         event_type,
         payload,
-        stream_source.as_deref(),
+        stream_source,
     );
     if gateway_stream_debug_enabled()
         && matches!(
@@ -726,15 +555,6 @@ fn map_core_event(
     session.publish_event(envelope);
 
     public_turn_id
-}
-
-fn stream_source_wire(source: openjax_protocol::StreamSource) -> &'static str {
-    match source {
-        openjax_protocol::StreamSource::ModelLive => "model_live",
-        openjax_protocol::StreamSource::Synthetic => "synthetic",
-        openjax_protocol::StreamSource::Replay => "replay",
-        openjax_protocol::StreamSource::Unknown => "unknown",
-    }
 }
 
 fn first_turn_id(events: &[Event]) -> Option<u64> {
