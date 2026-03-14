@@ -7,6 +7,7 @@ import type { AssistantMessage, UserMessage } from "../types/chat";
 import type { GatewayConnection, StreamEvent } from "../types/gateway";
 
 const MAX_RETRY = 6;
+const STREAM_DEBUG = resolveStreamDebugEnabled();
 
 interface PageState {
   baseUrl: string;
@@ -60,21 +61,41 @@ export function useChatPage() {
   const stopStream = useCallback(() => {
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
+    if (STREAM_DEBUG) {
+      console.debug("[webui_stream] stop_stream");
+    }
     setState((prev) => ({ ...prev, streaming: false }));
   }, []);
 
   const onStreamEvent = useCallback((event: StreamEvent) => {
+    if (STREAM_DEBUG) {
+      console.debug("[webui_stream] recv_event", {
+        type: event.type,
+        sessionId: event.session_id,
+        turnId: event.turn_id,
+        eventSeq: event.event_seq,
+        turnSeq: event.turn_seq,
+        deltaLen: event.type === "response_text_delta" ? String(event.payload.content_delta ?? "").length : undefined
+      });
+    }
     const seen = lastEventSeqRef.current;
     const resetBoundary = event.event_seq === 1 || (event.turn_seq === 1 && event.type === "response_started");
 
     if (!resetBoundary && event.event_seq <= seen) {
+      if (STREAM_DEBUG) {
+        console.debug("[webui_stream] drop_old_event", {
+          type: event.type,
+          eventSeq: event.event_seq,
+          seen
+        });
+      }
       return;
     }
 
     if (resetBoundary && seen > 0) {
       completedTurnsRef.current.clear();
-      if (state.sessionId) {
-        streamStore.clearSession(state.sessionId);
+      if (event.session_id) {
+        streamStore.clearSession(event.session_id);
       }
     }
 
@@ -146,9 +167,9 @@ export function useChatPage() {
         activeTurnId: prev.activeTurnId === event.turn_id ? null : prev.activeTurnId
       }));
     }
-  }, [state.sessionId, stopStream]);
+  }, [stopStream]);
 
-  const startStreamLoop = useCallback((sessionId: string) => {
+  const startStreamLoop = useCallback((sessionId: string, streamClient: GatewayClient) => {
     stopStream();
     const abort = new AbortController();
     streamAbortRef.current = abort;
@@ -156,6 +177,9 @@ export function useChatPage() {
     const runToken = runTokenRef.current++;
 
     setState((prev) => ({ ...prev, streaming: true, replayExceeded: false }));
+    if (STREAM_DEBUG) {
+      console.debug("[webui_stream] start_loop", { sessionId });
+    }
 
     const run = async () => {
       while (!abort.signal.aborted) {
@@ -163,7 +187,7 @@ export function useChatPage() {
           return;
         }
         try {
-          await client.streamEvents({
+          await streamClient.streamEvents({
             sessionId,
             afterEventSeq: lastEventSeqRef.current,
             signal: abort.signal,
@@ -171,6 +195,13 @@ export function useChatPage() {
           });
           retryRef.current = 0;
         } catch (error) {
+          if (STREAM_DEBUG) {
+            console.debug("[webui_stream] stream_error", {
+              sessionId,
+              retry: retryRef.current,
+              message: error instanceof Error ? error.message : String(error)
+            });
+          }
           if (abort.signal.aborted) {
             return;
           }
@@ -205,7 +236,7 @@ export function useChatPage() {
     };
 
     void run();
-  }, [client, onStreamEvent, stopStream]);
+  }, [onStreamEvent, stopStream]);
 
   const connect = useCallback(async () => {
     const baseUrl = state.baseUrl.trim();
@@ -217,6 +248,9 @@ export function useChatPage() {
     }
 
     try {
+      if (STREAM_DEBUG) {
+        console.debug("[webui_stream] connect_begin", { baseUrl });
+      }
       const loginClient = new GatewayClient({ baseUrl });
       const auth = await loginClient.login(ownerKey);
       const authedClient = new GatewayClient({ baseUrl, accessToken: auth.access_token });
@@ -240,8 +274,16 @@ export function useChatPage() {
         replayExceeded: false
       }));
 
-      startStreamLoop(session.session_id);
+      startStreamLoop(session.session_id, authedClient);
+      if (STREAM_DEBUG) {
+        console.debug("[webui_stream] connect_ok", { sessionId: session.session_id });
+      }
     } catch (error) {
+      if (STREAM_DEBUG) {
+        console.debug("[webui_stream] connect_fail", {
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
       setState((prev) => ({ ...prev, globalError: humanizeError(error), connected: false }));
     }
   }, [startStreamLoop, state.baseUrl, state.ownerKey]);
@@ -280,7 +322,11 @@ export function useChatPage() {
       return;
     }
     try {
-      const session = await client.createSession();
+      const streamClient = new GatewayClient({
+        baseUrl: state.baseUrl,
+        accessToken: state.accessToken
+      });
+      const session = await streamClient.createSession();
       if (state.sessionId) {
         streamStore.clearSession(state.sessionId);
       }
@@ -296,11 +342,11 @@ export function useChatPage() {
         info: "会话已重建",
         replayExceeded: false
       }));
-      startStreamLoop(session.session_id);
+      startStreamLoop(session.session_id, streamClient);
     } catch (error) {
       setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
     }
-  }, [client, startStreamLoop, state.connected, state.sessionId]);
+  }, [startStreamLoop, state.accessToken, state.baseUrl, state.connected, state.sessionId]);
 
   useEffect(() => () => {
     stopStream();
@@ -316,4 +362,25 @@ export function useChatPage() {
     dismissError: () => setState((prev) => ({ ...prev, globalError: null })),
     dismissInfo: () => setState((prev) => ({ ...prev, info: null }))
   };
+}
+
+function resolveStreamDebugEnabled(): boolean {
+  const viteEnv =
+    typeof import.meta !== "undefined" ? (import.meta as { env?: Record<string, unknown> }).env : undefined;
+  const globals =
+    typeof globalThis !== "undefined"
+      ? (globalThis as {
+          OPENJAX_WEBUI_STREAM_DEBUG?: string | boolean;
+          VITE_OPENJAX_WEBUI_STREAM_DEBUG?: string | boolean;
+        })
+      : {};
+  const raw = String(
+    viteEnv?.VITE_OPENJAX_WEBUI_STREAM_DEBUG ??
+      globals.OPENJAX_WEBUI_STREAM_DEBUG ??
+      globals.VITE_OPENJAX_WEBUI_STREAM_DEBUG ??
+      "0"
+  )
+    .trim()
+    .toLowerCase();
+  return !(raw === "0" || raw === "off" || raw === "false" || raw === "disabled");
 }

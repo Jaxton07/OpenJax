@@ -82,6 +82,8 @@ function getOrCreate(sessionId: string): PerfSnapshot {
 }
 
 function resolveEnabled(): boolean {
+  const viteEnv =
+    typeof import.meta !== "undefined" ? (import.meta as { env?: Record<string, unknown> }).env : undefined;
   const globals =
     typeof globalThis !== "undefined"
       ? (globalThis as {
@@ -89,7 +91,12 @@ function resolveEnabled(): boolean {
           VITE_OPENJAX_WEBUI_STREAM_PERF?: string | boolean;
         })
       : {};
-  const raw = String(globals.OPENJAX_WEBUI_STREAM_PERF ?? globals.VITE_OPENJAX_WEBUI_STREAM_PERF ?? "0")
+  const raw = String(
+    viteEnv?.VITE_OPENJAX_WEBUI_STREAM_PERF ??
+      globals.OPENJAX_WEBUI_STREAM_PERF ??
+      globals.VITE_OPENJAX_WEBUI_STREAM_PERF ??
+      "0"
+  )
     .trim()
     .toLowerCase();
   return !(raw === "0" || raw === "false" || raw === "off" || raw === "disabled");

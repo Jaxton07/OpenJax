@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useStreamSnapshot } from "../hooks/useStreamSnapshot";
 import { recordAssistantPaneRender } from "../lib/devPerf";
 import type { AssistantMessage, UserMessage } from "../types/chat";
@@ -17,6 +17,8 @@ type MessageItem =
 function ConversationPane({ sessionId, turnId, users, assistants }: ConversationPaneProps) {
   const snapshot = useStreamSnapshot(sessionId, turnId);
   recordAssistantPaneRender(sessionId);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
 
   const timeline = useMemo<MessageItem[]>(() => {
     const mixed: MessageItem[] = [
@@ -44,10 +46,26 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
     return mixed;
   }, [assistants, users]);
 
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || !stickToBottomRef.current) {
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
+  }, [timeline, snapshot.version]);
+
   return (
     <section className="panel conversation-panel">
       <h2>Conversation</h2>
-      <div className="conversation-scroll">
+      <div
+        ref={scrollRef}
+        className="conversation-scroll"
+        onScroll={(event) => {
+          const container = event.currentTarget;
+          const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
+          stickToBottomRef.current = distance <= 48;
+        }}
+      >
         {timeline.length === 0 ? <div className="empty">连接后开始对话</div> : null}
 
         {timeline.map((item) =>
@@ -65,7 +83,7 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
         {snapshot.version > 0 && snapshot.isActive ? (
           <div className="conversation-row assistant live-row">
             <div className="assistant-live-tag">Streaming</div>
-            <pre className="assistant-live-inline">{snapshot.content}</pre>
+            <div className="assistant-text assistant-live-inline">{snapshot.content}</div>
           </div>
         ) : null}
       </div>
