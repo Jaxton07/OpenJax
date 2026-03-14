@@ -7,7 +7,7 @@ use super::orchestrator::ToolOrchestrator;
 use super::registry::ToolHandler;
 use super::router::{ToolCall, ToolRuntimeConfig};
 use super::tool_builder::{
-    CreateToolInvocationParams, build_default_tool_registry, create_tool_invocation,
+    CreateToolInvocationParams, build_tool_registry_with_config, create_tool_invocation,
 };
 use crate::approval::ApprovalHandler;
 
@@ -34,31 +34,29 @@ pub struct ToolExecutionRequest<'a> {
 
 impl ToolRouter {
     pub fn new() -> Self {
-        let (registry, _) = build_default_tool_registry();
+        let (registry, _) =
+            build_tool_registry_with_config(&crate::tools::spec::ToolsConfig::default());
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
         }
     }
 
-    pub fn with_config(_config: &crate::tools::spec::ToolsConfig) -> Self {
-        let (registry, _) = build_default_tool_registry();
+    pub fn with_config(config: &crate::tools::spec::ToolsConfig) -> Self {
+        let (registry, _) = build_tool_registry_with_config(config);
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
         }
     }
 
-    pub fn with_runtime_config(_config: ToolRuntimeConfig) -> Self {
-        let (registry, _) = build_default_tool_registry();
+    pub fn with_runtime_config(config: ToolRuntimeConfig) -> Self {
+        let (registry, _) = build_tool_registry_with_config(&config.tools_config);
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
         }
     }
 
     pub fn register_tool(&self, name: String, handler: Arc<dyn ToolHandler>) {
-        let orchestrator = Arc::as_ptr(&self.orchestrator) as *mut ToolOrchestrator;
-        unsafe {
-            (*orchestrator).register_tool(name, handler);
-        }
+        self.orchestrator.register_tool(name, handler);
     }
 
     pub async fn execute(&self, request: ToolExecutionRequest<'_>) -> Result<ToolExecOutcome> {
@@ -97,6 +95,7 @@ impl ToolRouter {
             cwd: cwd.to_path_buf(),
             sandbox_policy,
             approval_policy,
+            shell_type: config.shell_type,
             prevent_shell_skill_trigger: config.prevent_shell_skill_trigger,
             approval_handler,
             event_sink,

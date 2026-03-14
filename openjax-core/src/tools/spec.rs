@@ -413,7 +413,7 @@ pub fn create_disk_usage_spec() -> ToolSpec {
 
 /// 构建所有工具规范
 pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
-    vec![
+    let mut specs = vec![
         create_grep_files_spec(),
         create_read_file_spec(),
         create_list_dir_spec(),
@@ -421,10 +421,16 @@ pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
         create_system_load_spec(),
         create_disk_usage_spec(),
         create_edit_file_range_spec(),
-        create_shell_spec(),
-        match config.apply_patch_tool_type {
-            Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),
-            _ => create_apply_patch_spec(),
-        },
-    ]
+    ];
+
+    if !matches!(config.shell_type, ShellToolType::Disabled) {
+        specs.push(create_shell_spec());
+    }
+
+    specs.push(match config.apply_patch_tool_type {
+        Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),
+        _ => create_apply_patch_spec(),
+    });
+
+    specs
 }

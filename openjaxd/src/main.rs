@@ -1050,14 +1050,14 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
 
     for event in events {
         match event {
-        Event::ResponseTextDelta { .. } => response_text_deltas += 1,
-        Event::AssistantMessage { .. } => assistant_messages += 1,
-        Event::ToolCallStarted { .. }
-        | Event::ToolCallCompleted { .. }
-        | Event::ToolCallArgsDelta { .. }
-        | Event::ToolCallProgress { .. }
-        | Event::ToolCallFailed { .. } => tool_calls += 1,
-        Event::ApprovalRequested { .. } | Event::ApprovalResolved { .. } => approvals += 1,
+            Event::ResponseTextDelta { .. } => response_text_deltas += 1,
+            Event::AssistantMessage { .. } => assistant_messages += 1,
+            Event::ToolCallStarted { .. }
+            | Event::ToolCallCompleted { .. }
+            | Event::ToolCallArgsDelta { .. }
+            | Event::ToolCallProgress { .. }
+            | Event::ToolCallFailed { .. } => tool_calls += 1,
+            Event::ApprovalRequested { .. } | Event::ApprovalResolved { .. } => approvals += 1,
             Event::TurnStarted { .. }
             | Event::TurnCompleted { .. }
             | Event::ResponseStarted { .. }

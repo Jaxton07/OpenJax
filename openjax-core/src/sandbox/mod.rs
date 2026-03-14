@@ -8,7 +8,7 @@ pub mod types;
 
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput};
 use crate::tools::error::FunctionCallError;
-use crate::tools::shell::{Shell, ShellType};
+use crate::tools::shell::Shell;
 use crate::tools::{SandboxMode, SandboxPolicy};
 use tracing::info;
 
@@ -53,8 +53,8 @@ pub async fn execute_shell(
         })?;
     }
 
-    let shell =
-        Shell::new(ShellType::default()).map_err(|e| FunctionCallError::Internal(e.to_string()))?;
+    let shell = Shell::new(invocation.turn.shell_type)
+        .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
     let runtime_settings = SandboxRuntimeSettings::from_env();
     let execution_request = SandboxExecutionRequest {
         command: command.to_string(),

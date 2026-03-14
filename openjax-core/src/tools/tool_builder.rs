@@ -5,7 +5,8 @@ use crate::tools::handlers::{
     ShellCommandHandler,
 };
 use crate::tools::registry::{ToolHandler, ToolRegistry};
-use crate::tools::spec::{ToolSpec, ToolsConfig, build_all_specs};
+use crate::tools::shell::ShellType;
+use crate::tools::spec::{ShellToolType, ToolSpec, ToolsConfig, build_all_specs};
 use crate::tools::system::{DiskUsageHandler, ProcessSnapshotHandler, SystemLoadHandler};
 use std::sync::Arc;
 
@@ -47,10 +48,14 @@ impl Default for ToolRegistryBuilder {
 
 /// 构建默认的工具注册表
 pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
-    let mut builder = ToolRegistryBuilder::new();
-    let config = ToolsConfig::default();
+    build_tool_registry_with_config(&ToolsConfig::default())
+}
 
-    for spec in build_all_specs(&config) {
+/// 按配置构建工具注册表
+pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, Vec<ToolSpec>) {
+    let mut builder = ToolRegistryBuilder::new();
+
+    for spec in build_all_specs(config) {
         let parallel = !spec.name.eq("apply_patch");
         builder.push_spec(spec, parallel);
     }
@@ -64,10 +69,12 @@ pub fn build_default_tool_registry() -> (ToolRegistry, Vec<ToolSpec>) {
     let list_handler = Arc::new(ListDirHandler);
     builder.register_handler("list_dir", list_handler);
 
-    let shell_handler = Arc::new(ShellCommandHandler);
-    builder.register_handler("shell", shell_handler.clone());
-    // Backward-compatible alias; primary tool name is `shell`.
-    builder.register_handler("exec_command", shell_handler);
+    if !matches!(config.shell_type, ShellToolType::Disabled) {
+        let shell_handler = Arc::new(ShellCommandHandler);
+        builder.register_handler("shell", shell_handler.clone());
+        // Backward-compatible alias; primary tool name is `shell`.
+        builder.register_handler("exec_command", shell_handler);
+    }
 
     let patch_handler = Arc::new(ApplyPatchHandler);
     builder.register_handler("apply_patch", patch_handler);
@@ -95,6 +102,7 @@ pub struct CreateToolInvocationParams {
     pub cwd: std::path::PathBuf,
     pub sandbox_policy: SandboxPolicy,
     pub approval_policy: ApprovalPolicy,
+    pub shell_type: ShellType,
     pub prevent_shell_skill_trigger: bool,
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
@@ -115,6 +123,7 @@ pub fn create_tool_invocation(
             cwd: params.cwd,
             sandbox_policy: params.sandbox_policy,
             approval_policy: params.approval_policy,
+            shell_type: params.shell_type,
             prevent_shell_skill_trigger: params.prevent_shell_skill_trigger,
             approval_handler: params.approval_handler,
             event_sink: params.event_sink,
@@ -125,7 +134,15 @@ pub fn create_tool_invocation(
 
 #[cfg(test)]
 mod tests {
-    use super::build_default_tool_registry;
+    use super::{
+        CreateToolInvocationParams, build_default_tool_registry, build_tool_registry_with_config,
+        create_tool_invocation,
+    };
+    use crate::approval::StdinApprovalHandler;
+    use crate::tools::context::{ApprovalPolicy, SandboxPolicy, ToolPayload};
+    use crate::tools::shell::ShellType;
+    use crate::tools::spec::{ApplyPatchToolType, ShellToolType, ToolsConfig};
+    use std::sync::Arc;
 
     #[test]
     fn default_registry_includes_system_tools() {
@@ -138,5 +155,62 @@ mod tests {
         assert!(names.contains(&"process_snapshot".to_string()));
         assert!(names.contains(&"system_load".to_string()));
         assert!(names.contains(&"disk_usage".to_string()));
+    }
+
+    #[test]
+    fn registry_build_respects_apply_patch_tool_type() {
+        let freeform = ToolsConfig {
+            shell_type: crate::tools::spec::ShellToolType::Default,
+            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
+        };
+        let (registry, specs) = build_tool_registry_with_config(&freeform);
+        assert!(registry.handler("apply_patch").is_some());
+        let patch_spec = specs
+            .iter()
+            .find(|spec| spec.name == "apply_patch")
+            .expect("apply_patch spec should exist");
+        assert!(patch_spec.description.contains("FREEFORM"));
+
+        let non_freeform = ToolsConfig {
+            shell_type: crate::tools::spec::ShellToolType::Default,
+            apply_patch_tool_type: Some(ApplyPatchToolType::Default),
+        };
+        let (_, specs) = build_tool_registry_with_config(&non_freeform);
+        let patch_spec = specs
+            .iter()
+            .find(|spec| spec.name == "apply_patch")
+            .expect("apply_patch spec should exist");
+        assert!(!patch_spec.description.contains("FREEFORM"));
+    }
+
+    #[test]
+    fn create_tool_invocation_keeps_shell_type_from_runtime_config() {
+        let invocation = create_tool_invocation(CreateToolInvocationParams {
+            turn_id: 42,
+            call_id: "call-42".to_string(),
+            tool_name: "shell".to_string(),
+            arguments: r#"{"cmd":"echo hello"}"#.to_string(),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            approval_policy: ApprovalPolicy::OnRequest,
+            shell_type: ShellType::Sh,
+            prevent_shell_skill_trigger: true,
+            approval_handler: Arc::new(StdinApprovalHandler::new()),
+            event_sink: None,
+        });
+        assert!(matches!(invocation.payload, ToolPayload::Function { .. }));
+        assert_eq!(invocation.turn.shell_type, ShellType::Sh);
+    }
+
+    #[test]
+    fn registry_build_disables_shell_tools_when_configured() {
+        let config = ToolsConfig {
+            shell_type: ShellToolType::Disabled,
+            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
+        };
+        let (registry, specs) = build_tool_registry_with_config(&config);
+        assert!(registry.handler("shell").is_none());
+        assert!(registry.handler("exec_command").is_none());
+        assert!(!specs.iter().any(|spec| spec.name == "shell"));
     }
 }

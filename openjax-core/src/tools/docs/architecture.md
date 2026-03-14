@@ -137,7 +137,7 @@ pub async fn run(&self, invocation: ToolInvocation) -> Result<ToolOutput, Functi
 
 **关键方法**：
 ```rust
-pub fn register(&mut self, name: impl Into<String>, handler: Arc<dyn ToolHandler>)
+pub fn register(&self, name: impl Into<String>, handler: Arc<dyn ToolHandler>)
 pub async fn dispatch(&self, invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError>
 ```
 

@@ -406,6 +406,7 @@ mod tests {
     use crate::tools::context::{
         ApprovalPolicy, SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext,
     };
+    use crate::tools::shell::ShellType;
 
     fn shell_invocation(command: &str) -> ToolInvocation {
         ToolInvocation {
@@ -419,6 +420,7 @@ mod tests {
                 cwd: std::path::PathBuf::from("."),
                 sandbox_policy: SandboxPolicy::Write,
                 approval_policy: ApprovalPolicy::OnRequest,
+                shell_type: ShellType::default(),
                 approval_handler: Arc::new(StdinApprovalHandler::new()),
                 event_sink: None,
                 windows_sandbox_level: None,

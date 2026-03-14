@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::approval::{ApprovalHandler, StdinApprovalHandler};
+use crate::tools::shell::ShellType;
 use openjax_protocol::Event;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -77,6 +78,7 @@ pub struct ToolTurnContext {
     pub cwd: PathBuf,
     pub sandbox_policy: SandboxPolicy,
     pub approval_policy: ApprovalPolicy,
+    pub shell_type: ShellType,
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<UnboundedSender<Event>>,
     pub windows_sandbox_level: Option<String>,
@@ -90,6 +92,7 @@ impl Default for ToolTurnContext {
             cwd: PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
             approval_policy: ApprovalPolicy::OnRequest,
+            shell_type: ShellType::default(),
             approval_handler: Arc::new(StdinApprovalHandler::new()),
             event_sink: None,
             windows_sandbox_level: None,
@@ -105,6 +108,7 @@ impl std::fmt::Debug for ToolTurnContext {
             .field("cwd", &self.cwd)
             .field("sandbox_policy", &self.sandbox_policy)
             .field("approval_policy", &self.approval_policy)
+            .field("shell_type", &self.shell_type)
             .field("windows_sandbox_level", &self.windows_sandbox_level)
             .field(
                 "prevent_shell_skill_trigger",

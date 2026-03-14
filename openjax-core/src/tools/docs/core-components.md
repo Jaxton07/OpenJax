@@ -36,12 +36,12 @@ pub trait ToolHandler: Send + Sync {
 
 ```rust
 pub struct ToolRegistry {
-    handlers: HashMap<String, Arc<dyn ToolHandler>>,
+    handlers: RwLock<HashMap<String, Arc<dyn ToolHandler>>>,
 }
 
 impl ToolRegistry {
     /// 注册工具处理器
-    pub fn register(&mut self, name: impl Into<String>, handler: Arc<dyn ToolHandler>);
+    pub fn register(&self, name: impl Into<String>, handler: Arc<dyn ToolHandler>);
 
     /// 获取工具处理器
     pub fn handler(&self, name: &str) -> Option<Arc<dyn ToolHandler>>;
@@ -171,6 +171,9 @@ pub enum ToolOutput {
 pub struct ToolRuntimeConfig {
     pub approval_policy: ApprovalPolicy,
     pub sandbox_mode: SandboxMode,
+    pub shell_type: ShellType,
+    pub tools_config: ToolsConfig,
+    pub prevent_shell_skill_trigger: bool,
 }
 ```
 
@@ -178,6 +181,11 @@ pub struct ToolRuntimeConfig {
 
 - `approval_policy`: 批准策略（AlwaysAsk、OnRequest、Never）
 - `sandbox_mode`: 沙箱模式（WorkspaceWrite、DangerFullAccess）
+- `shell_type`: shell 执行类型（`bash/zsh/sh/pwsh`）
+- `tools_config`: 工具注册与规格配置（例如是否禁用 `shell`、`apply_patch` 规格类型）
+- `prevent_shell_skill_trigger`: 启用后会阻止将 `/skill-name` 这类字符串当作 shell 命令执行
+
+> 兼容性说明：本次更新不引入公开 API 破坏性改动，主要修复配置项生效一致性与并发安全问题。
 
 ## HookExecutor
 
@@ -232,18 +240,18 @@ impl SandboxManager {
 
 ```rust
 pub struct DynamicToolManager {
-    tools: HashMap<String, Arc<dyn ToolHandler>>,
+    tools: Mutex<HashMap<String, Arc<dyn ToolHandler>>>,
 }
 
 impl DynamicToolManager {
     /// 注册动态工具
-    pub fn register(&mut self, name: String, handler: Arc<dyn ToolHandler>);
+    pub fn register(&self, name: String, handler: Arc<dyn ToolHandler>);
 
     /// 列出所有工具
     pub fn list_tools(&self) -> Vec<String>;
 
     /// 移除工具
-    pub fn unregister(&mut self, name: &str);
+    pub fn unregister(&self, name: &str);
 }
 ```
 

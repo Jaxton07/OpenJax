@@ -50,10 +50,7 @@ impl ToolOrchestrator {
         name: String,
         handler: Arc<dyn crate::tools::registry::ToolHandler>,
     ) {
-        let registry = Arc::as_ptr(&self.registry) as *mut ToolRegistry;
-        unsafe {
-            (*registry).register(name, handler);
-        }
+        self.registry.register(name, handler);
     }
 
     /// 执行工具调用
