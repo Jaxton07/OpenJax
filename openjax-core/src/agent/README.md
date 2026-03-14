@@ -6,7 +6,11 @@
 
 - `bootstrap.rs`: `Agent::new/with_config/with_runtime/with_config_and_runtime`，组装模型客户端、工具路由与运行时策略。
 - `turn.rs`: `submit`/`submit_with_sink` 入口，分发工具直调模式或自然语言规划模式。
-- `planner.rs`: 自然语言回合主循环，驱动 `planner -> tool/final` 决策，含 JSON 修复、重复调用保护、final writer。
+- `planner.rs`: 自然语言回合主循环（orchestration），驱动 `planner -> tool/final` 决策与回合收敛。
+- `planner_stream_flow.rs`: planner/final 的流式编排（stream request、delta 处理、fallback 收敛、synthetic delta 发射）。
+- `planner_tool_action.rs`: 单工具调用分支编排（重复调用保护、guard 拦截、执行与失败收敛）。
+- `planner_tool_batch.rs`: `tool_batch` 执行调度（依赖图、并发执行、批次完成统计与错误事件）。
+- `planner_utils.rs`: planner 复用的工具函数与策略辅助（trace 文本、tool error 分类、git diff 策略判定）。
 - `execution.rs`: 单工具调用执行、重试、实时工具事件透传。
 - `decision.rs`: 解析并规范化模型决策 JSON。
 - `prompt.rs`: 构造 planner/final/repair prompt。
@@ -22,7 +26,7 @@
 1. `submit` 收到 `Op::UserTurn` 后写入用户历史，并发出 `TurnStarted`。
 2. 若输入匹配 `tool:<name> key=value`，走 `execute_single_tool_call`。
 3. 否则进入 `execute_natural_language_turn`：
-4. 生成 planner prompt，调用模型获得 JSON 决策（必要时进行一次 JSON repair）。
+4. 生成 planner prompt，调用 `planner_stream_flow` 获取模型决策（必要时进行一次 JSON repair）。
 5. 决策为 `tool` 时调用工具并记录 trace；决策为 `final` 时输出最终回复。
 6. 发出 `TurnCompleted` 并返回本回合事件序列。
 

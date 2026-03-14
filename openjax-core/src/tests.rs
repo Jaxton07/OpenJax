@@ -32,11 +32,57 @@ struct ScriptedToolBatchModel {
     complete_calls: Arc<Mutex<usize>>,
 }
 
+#[derive(Clone)]
+struct PlannerFallbackModel {
+    complete_calls: Arc<Mutex<usize>>,
+    stream_calls: Arc<Mutex<usize>>,
+}
+
+#[derive(Clone)]
+struct FinalWriterStreamFailureModel {
+    complete_calls: Arc<Mutex<usize>>,
+    stream_calls: Arc<Mutex<usize>>,
+}
+
 impl ScriptedToolBatchModel {
     fn new() -> Self {
         Self {
             complete_calls: Arc::new(Mutex::new(0)),
         }
+    }
+}
+
+impl PlannerFallbackModel {
+    fn new() -> Self {
+        Self {
+            complete_calls: Arc::new(Mutex::new(0)),
+            stream_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn complete_call_count(&self) -> usize {
+        *self.complete_calls.lock().expect("complete_calls lock")
+    }
+
+    fn stream_call_count(&self) -> usize {
+        *self.stream_calls.lock().expect("stream_calls lock")
+    }
+}
+
+impl FinalWriterStreamFailureModel {
+    fn new() -> Self {
+        Self {
+            complete_calls: Arc::new(Mutex::new(0)),
+            stream_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn complete_call_count(&self) -> usize {
+        *self.complete_calls.lock().expect("complete_calls lock")
+    }
+
+    fn stream_call_count(&self) -> usize {
+        *self.stream_calls.lock().expect("stream_calls lock")
     }
 }
 
@@ -81,6 +127,74 @@ impl ModelClient for ScriptedToolBatchModel {
 
     fn name(&self) -> &'static str {
         "scripted-tool-batch"
+    }
+}
+
+#[async_trait]
+impl ModelClient for PlannerFallbackModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        let mut calls = self.complete_calls.lock().expect("complete_calls lock");
+        *calls += 1;
+        Ok(ModelResponse {
+            text: r#"{"action":"final","message":"fallback final"}"#.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    async fn complete_stream(
+        &self,
+        _request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<ModelResponse> {
+        let mut calls = self.stream_calls.lock().expect("stream_calls lock");
+        *calls += 1;
+        if let Some(sender) = delta_sender {
+            let _ = sender.send("{\"action\":\"to".to_string());
+            let _ = sender.send("ol\"".to_string());
+        }
+        Ok(ModelResponse {
+            text: "not valid json".to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "planner-fallback"
+    }
+}
+
+#[async_trait]
+impl ModelClient for FinalWriterStreamFailureModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        let mut calls = self.complete_calls.lock().expect("complete_calls lock");
+        *calls += 1;
+        Ok(ModelResponse {
+            text: r#"{"action":"final","message":"seed"}"#.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<ModelResponse> {
+        let mut calls = self.stream_calls.lock().expect("stream_calls lock");
+        *calls += 1;
+        if request.stage == super::model::ModelStage::Planner {
+            if let Some(sender) = delta_sender {
+                let _ = sender.send("{\"action\":\"final\",\"message\":\"seed\"}".to_string());
+            }
+            return Ok(ModelResponse {
+                text: r#"{"action":"final","message":"seed"}"#.to_string(),
+                ..ModelResponse::default()
+            });
+        }
+        anyhow::bail!("final stream failed")
+    }
+
+    fn name(&self) -> &'static str {
+        "final-writer-stream-failure"
     }
 }
 
@@ -471,6 +585,75 @@ async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
     assert_eq!(assistant_message_text, "seed");
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 1);
+}
+
+#[tokio::test]
+async fn planner_stream_parse_failure_falls_back_to_complete_response() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    agent.final_response_mode = FinalResponseMode::PlannerOnly;
+    let model = PlannerFallbackModel::new();
+    let model_probe = model.clone();
+    agent.model_client = Box::new(model);
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "fallback".to_string(),
+        })
+        .await;
+
+    let final_message = events
+        .iter()
+        .rev()
+        .find_map(|event| match event {
+            Event::AssistantMessage { content, .. } => Some(content.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    assert_eq!(final_message, "fallback final");
+    assert_eq!(model_probe.stream_call_count(), 1);
+    assert_eq!(model_probe.complete_call_count(), 1);
+}
+
+#[tokio::test]
+async fn final_writer_stream_failure_falls_back_to_seed_message() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    agent.final_response_mode = FinalResponseMode::FinalWriter;
+    let model = FinalWriterStreamFailureModel::new();
+    let model_probe = model.clone();
+    agent.model_client = Box::new(model);
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "seed".to_string(),
+        })
+        .await;
+
+    let mut saw_stream_error = false;
+    let final_message = events
+        .iter()
+        .find_map(|event| match event {
+            Event::ResponseError { code, .. } if code == "final_writer_stream_failed" => {
+                saw_stream_error = true;
+                None
+            }
+            Event::AssistantMessage { content, .. } => Some(content.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    assert!(saw_stream_error);
+    assert_eq!(final_message, "seed");
+    assert_eq!(model_probe.stream_call_count(), 2);
+    assert_eq!(model_probe.complete_call_count(), 0);
 }
 
 #[tokio::test]

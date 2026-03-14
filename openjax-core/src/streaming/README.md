@@ -6,6 +6,7 @@
 
 - `event.rs`: 流式领域事件模型（turn/response/tool/approval/usage/error）。
 - `orchestrator.rs`: 响应流状态机（`started -> delta* -> completed/error`）。
+- `helpers.rs`: 通用流式辅助能力（delta channel 消费骨架、synthetic 文本切片为 `response_text_delta`）。
 - `parser/`: provider SSE 解析抽象与实现（`openai`、`anthropic`）。
 - `sink.rs`: 有界分发通道与背压策略（`DropNewest` / `RejectProducer`）。
 - `replay.rs`: 会话级回放窗口与越窗错误语义。
@@ -17,6 +18,12 @@
    - `parser.push_chunk(bytes)` 处理完整帧
    - `parser.finish()` 处理尾包
 3. 业务层仅消费规范化事件并发到 `submit_with_sink`。
+
+## 分层约定（机制 vs 策略）
+
+- `streaming` 只承载通用机制：流式事件编排、delta 处理、回放/背压、provider 解析。
+- `agent` 保留业务策略：planner JSON 决策解析、repair/fallback 策略、final writer 触发条件。
+- 目标是减少耦合：`streaming` 不依赖 `agent` 领域对象，`agent` 复用 `streaming` 的机制能力。
 
 ## WebUI 流式接入指引（SSE）
 
