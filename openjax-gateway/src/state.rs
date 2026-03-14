@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::OnceLock;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -16,6 +17,29 @@ use crate::auth::{AuthConfig, AuthService};
 use crate::error::{ApiError, now_rfc3339};
 
 const EVENT_REPLAY_LIMIT: usize = 1024;
+static STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
+
+fn gateway_stream_debug_enabled() -> bool {
+    *STREAM_DEBUG_ENABLED.get_or_init(|| {
+        std::env::var("OPENJAX_GATEWAY_STREAM_DEBUG")
+            .ok()
+            .map(|value| {
+                let normalized = value.trim().to_ascii_lowercase();
+                !(normalized == "0"
+                    || normalized == "off"
+                    || normalized == "false"
+                    || normalized == "disabled")
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn log_preview(text: &str, max_chars: usize) -> (String, bool) {
+    let mut iter = text.chars();
+    let preview: String = iter.by_ref().take(max_chars).collect();
+    let truncated = iter.next().is_some();
+    (preview, truncated)
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -591,6 +615,65 @@ fn map_core_event(
         payload,
         stream_source.as_deref(),
     );
+    if gateway_stream_debug_enabled()
+        && matches!(
+            event_type,
+            "response_started"
+                | "response_text_delta"
+                | "response_completed"
+                | "assistant_message"
+                | "turn_completed"
+                | "response_error"
+        )
+    {
+        let delta_raw = envelope
+            .payload
+            .get("content_delta")
+            .and_then(|value| value.as_str());
+        let content_raw = envelope
+            .payload
+            .get("content")
+            .and_then(|value| value.as_str());
+        let delta_len = envelope
+            .payload
+            .get("content_delta")
+            .and_then(|value| value.as_str())
+            .map(|value| value.len());
+        let content_len = envelope
+            .payload
+            .get("content")
+            .and_then(|value| value.as_str())
+            .map(|value| value.len());
+        let (delta_preview, delta_preview_truncated) = delta_raw
+            .map(|value| log_preview(value, 24))
+            .map(|(preview, truncated)| (Some(preview), Some(truncated)))
+            .unwrap_or((None, None));
+        let (content_preview, content_preview_truncated) = content_raw
+            .map(|value| log_preview(value, 80))
+            .map(|(preview, truncated)| (Some(preview), Some(truncated)))
+            .unwrap_or((None, None));
+        let assistant_len = public_turn_id
+            .as_ref()
+            .and_then(|turn_id| session.turns.get(turn_id))
+            .and_then(|turn| turn.assistant_message.as_ref())
+            .map(|value| value.len());
+        info!(
+            session_id = %session_id,
+            turn_id = ?public_turn_id,
+            event_type = event_type,
+            event_seq = envelope.event_seq,
+            turn_seq = envelope.turn_seq,
+            stream_source = %envelope.stream_source,
+            delta_len = ?delta_len,
+            delta_preview = ?delta_preview,
+            delta_preview_truncated = ?delta_preview_truncated,
+            content_len = ?content_len,
+            content_preview = ?content_preview,
+            content_preview_truncated = ?content_preview_truncated,
+            assistant_message_len = ?assistant_len,
+            "stream_debug.gateway_event_emitted"
+        );
+    }
     if (event_type == "tool_call_started" || event_type == "tool_call_completed")
         && envelope.payload.get("tool_call_id").is_some()
     {

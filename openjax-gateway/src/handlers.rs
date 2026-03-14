@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use async_stream::stream;
@@ -19,6 +20,23 @@ use crate::state::{
     ApiTurnError, AppState, SessionStatus, StreamEventEnvelope, TurnRuntime, TurnStatus,
     run_turn_task,
 };
+
+static STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
+
+fn gateway_stream_debug_enabled() -> bool {
+    *STREAM_DEBUG_ENABLED.get_or_init(|| {
+        std::env::var("OPENJAX_GATEWAY_STREAM_DEBUG")
+            .ok()
+            .map(|value| {
+                let normalized = value.trim().to_ascii_lowercase();
+                !(normalized == "0"
+                    || normalized == "off"
+                    || normalized == "false"
+                    || normalized == "disabled")
+            })
+            .unwrap_or(false)
+    })
+}
 
 #[derive(Debug, Serialize)]
 pub struct CreateSessionResponse {
@@ -228,6 +246,17 @@ pub async fn get_turn(
             json!({ "session_id": session_id, "turn_id": turn_id }),
         )
     })?;
+    if gateway_stream_debug_enabled() {
+        info!(
+            request_id = %ctx.request_id,
+            session_id = %session_id,
+            turn_id = %turn_id,
+            status = ?turn.status,
+            assistant_message_len = ?turn.assistant_message.as_ref().map(|msg| msg.len()),
+            has_error = turn.error.is_some(),
+            "stream_debug.get_turn_response"
+        );
+    }
     Ok(Json(TurnResponse {
         request_id: ctx.request_id,
         session_id,
@@ -385,6 +414,15 @@ pub async fn stream_events(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("req_stream")
         .to_string();
+    if gateway_stream_debug_enabled() {
+        info!(
+            request_id = %request_id,
+            session_id = %session_id,
+            after_event_seq = ?query.after_event_seq,
+            replay_count = replay.len(),
+            "stream_debug.stream_events_opened"
+        );
+    }
     let event_stream = stream! {
         let mut last_sent_event_seq = replay.last().map(|event| event.event_seq).unwrap_or(0);
         for event in replay {
@@ -444,7 +482,17 @@ pub async fn stream_events(
                         }
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    if gateway_stream_debug_enabled() {
+                        info!(
+                            request_id = %request_id,
+                            session_id = %session_id,
+                            last_sent_event_seq = last_sent_event_seq,
+                            "stream_debug.stream_events_closed"
+                        );
+                    }
+                    break;
+                }
             }
         }
     };

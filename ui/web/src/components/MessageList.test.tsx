@@ -1,11 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { streamRenderStore } from "../lib/streamRenderStore";
 import MessageList from "./MessageList";
 import type { ChatMessage } from "../types/chat";
 
 describe("MessageList", () => {
   afterEach(() => {
     delete (globalThis as { OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string }).OPENJAX_WEB_ASSISTANT_RENDER_MODE;
+    streamRenderStore.__dangerousResetForTests();
   });
 
   it("renders welcome state when empty", () => {
@@ -226,17 +228,14 @@ describe("MessageList", () => {
         isDraft: true
       }
     ];
+    act(() => {
+      streamRenderStore.start("sess_1", "turn_1", "m1", 2, "你好！有什么我可以帮您的吗？");
+    });
     render(
       <MessageList
+        sessionId="sess_1"
         messages={messages}
         pendingApprovals={[]}
-        streaming={{
-          turnId: "turn_1",
-          assistantMessageId: "m1",
-          content: "你好！有什么我可以帮您的吗？",
-          lastEventSeq: 9,
-          active: true
-        }}
         onResolveApproval={() => {}}
       />
     );

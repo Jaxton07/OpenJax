@@ -188,6 +188,7 @@ export class GatewayClient {
     while (!options.signal.aborted) {
       const result = await reader.read();
       if (result.done) {
+        buffer += decoder.decode();
         break;
       }
       buffer += decoder.decode(result.value, { stream: true });
@@ -195,29 +196,13 @@ export class GatewayClient {
       buffer = split.remainder;
 
       for (const chunk of split.chunks) {
-        const parsed = parseSseChunk(chunk);
-        if (!parsed?.data) {
-          continue;
-        }
-        try {
-          const event = JSON.parse(parsed.data) as StreamEvent;
-          if (STREAM_DEBUG_ENABLED) {
-            console.debug("[stream_debug][gateway_client][recv]", {
-              sessionId: options.sessionId,
-              eventType: event.type,
-              eventSeq: event.event_seq,
-              turnId: event.turn_id,
-              turnSeq: event.turn_seq,
-              deltaLen:
-                event.type === "response_text_delta"
-                  ? String(event.payload.content_delta ?? "").length
-                  : undefined
-            });
-          }
-          options.onEvent(event);
-        } catch (error) {
-          options.onError(error as Error);
-        }
+        processSseChunk(options, chunk);
+      }
+    }
+
+    if (!options.signal.aborted) {
+      for (const chunk of splitSseBufferAtStreamEnd(buffer)) {
+        processSseChunk(options, chunk);
       }
     }
   }
@@ -253,6 +238,40 @@ export function splitSseBuffer(buffer: string): { chunks: string[]; remainder: s
     chunks: chunks.slice(0, -1),
     remainder: chunks.at(-1) ?? ""
   };
+}
+
+export function splitSseBufferAtStreamEnd(buffer: string): string[] {
+  const split = splitSseBuffer(buffer);
+  if (split.remainder.trim().length > 0) {
+    return [...split.chunks, split.remainder];
+  }
+  return split.chunks;
+}
+
+function processSseChunk(options: StreamOptions, chunk: string): void {
+  const parsed = parseSseChunk(chunk);
+  if (!parsed?.data) {
+    return;
+  }
+  try {
+    const event = JSON.parse(parsed.data) as StreamEvent;
+    if (STREAM_DEBUG_ENABLED) {
+      console.debug("[stream_debug][gateway_client][recv]", {
+        sessionId: options.sessionId,
+        eventType: event.type,
+        eventSeq: event.event_seq,
+        turnId: event.turn_id,
+        turnSeq: event.turn_seq,
+        deltaLen:
+          event.type === "response_text_delta"
+            ? String(event.payload.content_delta ?? "").length
+            : undefined
+      });
+    }
+    options.onEvent(event);
+  } catch (error) {
+    options.onError(error as Error);
+  }
 }
 
 function parseSseChunk(chunk: string): { event?: string; data?: string } | null {

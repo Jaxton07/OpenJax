@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { GatewayClient } from "../lib/gatewayClient";
 import { applyStreamEvents } from "../lib/eventReducer";
-import { applyTextStreamEvent, isTextStreamEvent } from "../lib/streamRuntime";
+import { recordDeltaReceived } from "../lib/streamPerf";
+import { streamRenderStore } from "../lib/streamRenderStore";
 import { humanizeError, isAuthenticationError } from "../lib/errors";
 import { loadAuth, loadSessions, loadSettings, saveAuth, saveSessions, saveSettings } from "../lib/storage";
 import type { ChatMessage, ChatSession, ChatState, PendingApproval } from "../types/chat";
@@ -80,8 +80,71 @@ export function useChatApp() {
     }
     if (seqReset) {
       lastEventSeqRef.current[sessionId] = 0;
+      streamRenderStore.clear(sessionId);
     }
     lastEventSeqRef.current[sessionId] = Math.max(lastEventSeqRef.current[sessionId] ?? 0, event.event_seq);
+
+    if (event.type === "response_text_delta") {
+      recordDeltaReceived(sessionId);
+      streamRenderStore.append(sessionId, event.turn_id, String(event.payload.content_delta ?? ""), event.event_seq);
+      if (STREAM_DEBUG_ENABLED) {
+        console.debug("[stream_debug][use_chat_app][delta_store_append]", {
+          sessionId,
+          eventSeq: event.event_seq,
+          turnId: event.turn_id,
+          delta: String(event.payload.content_delta ?? "")
+        });
+      }
+      return;
+    }
+
+    if (event.type === "response_started") {
+      let startedMessageId: string | undefined;
+      let startedContent = "";
+      setState((prev) => {
+        let changed = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+          const next = applyResponseStartedSession(session, event);
+          startedMessageId = next.messageId;
+          startedContent = next.content;
+          changed = changed || next.session !== session;
+          return { ...next.session, connection: "active" as const };
+        });
+        return changed ? { ...prev, sessions } : prev;
+      });
+      streamRenderStore.start(sessionId, event.turn_id, startedMessageId, event.event_seq, startedContent);
+      return;
+    }
+
+    if (event.type === "response_completed" || event.type === "assistant_message") {
+      const payloadContent = String(event.payload.content ?? "");
+      streamRenderStore.complete(sessionId, event.turn_id, payloadContent, event.event_seq);
+      const snapshot = streamRenderStore.getSnapshot(sessionId, event.turn_id);
+      const finalizedContent = payloadContent.length > 0 ? payloadContent : snapshot.content;
+      setState((prev) => {
+        let changed = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+          const next = applyResponseCompletedSession(session, event, finalizedContent);
+          changed = changed || next !== session;
+          return { ...next, connection: "active" as const };
+        });
+        return changed ? { ...prev, sessions } : prev;
+      });
+      return;
+    }
+
+    if (event.type === "response_error") {
+      streamRenderStore.fail(sessionId, event.turn_id, event.event_seq);
+    }
+    if (event.type === "turn_completed") {
+      streamRenderStore.clear(sessionId, event.turn_id);
+    }
 
     setState((prev) => {
       let changed = false;
@@ -89,49 +152,11 @@ export function useChatApp() {
         if (session.id !== sessionId) {
           return session;
         }
-        const beforeStreaming = session.streaming?.content ?? "";
-        const beforeLastSeq = session.lastEventSeq;
-        if (STREAM_DEBUG_ENABLED) {
-          console.debug("[stream_debug][use_chat_app][before]", {
-            sessionId,
-            eventType: event.type,
-            eventSeq: event.event_seq,
-            turnId: event.turn_id,
-            sessionLastEventSeq: beforeLastSeq,
-            streamingActive: session.streaming?.active ?? false,
-            streamingLen: beforeStreaming.length
-          });
-        }
-        const next = isTextStreamEvent(event)
-          ? applyTextStreamEvent(session, event)
-          : applyStreamEvents(session, [event]);
+        const next = applyStreamEvents(session, [event]);
         changed = changed || next !== session;
-        if (STREAM_DEBUG_ENABLED) {
-          const afterStreaming = next.streaming?.content ?? "";
-          console.debug("[stream_debug][use_chat_app][after]", {
-            sessionId,
-            eventType: event.type,
-            eventSeq: event.event_seq,
-            turnId: event.turn_id,
-            changed: next !== session,
-            seenSeqBefore: seenSeq,
-            seenSeqAfter: lastEventSeqRef.current[sessionId],
-            sessionLastEventSeqBefore: beforeLastSeq,
-            sessionLastEventSeqAfter: next.lastEventSeq,
-            streamingLenBefore: beforeStreaming.length,
-            streamingLenAfter: afterStreaming.length,
-            streamingDelta:
-              event.type === "response_text_delta"
-                ? String(event.payload.content_delta ?? "")
-                : undefined
-          });
-        }
         return { ...next, connection: "active" as const };
       });
-      if (!changed) {
-        return prev;
-      }
-      return { ...prev, sessions };
+      return changed ? { ...prev, sessions } : prev;
     });
   }, []);
 
@@ -156,6 +181,9 @@ export function useChatApp() {
   const clearAuthState = useCallback((message: string) => {
     reconnectAbortRef.current?.abort();
     pollingAbortRef.current?.abort();
+    for (const session of sessionsRef.current) {
+      streamRenderStore.clear(session.id);
+    }
     saveAuth({ authenticated: false, accessToken: "", sessionId: null, scope: null });
     setState((prev) => ({
       ...prev,
@@ -290,14 +318,6 @@ export function useChatApp() {
                 if (sseRunTokenRef.current[sessionId] !== runToken) {
                   return;
                 }
-                if (event.type === "response_text_delta") {
-                  // React may batch multiple setState calls from a single network chunk.
-                  // Force per-delta commit to preserve character-level streaming feel.
-                  flushSync(() => {
-                    applyIncomingEvent(sessionId, event);
-                  });
-                  return;
-                }
                 applyIncomingEvent(sessionId, event);
               },
               onError: (error) => {
@@ -426,6 +446,9 @@ export function useChatApp() {
   const logout = useCallback(async () => {
     reconnectAbortRef.current?.abort();
     pollingAbortRef.current?.abort();
+    for (const session of sessionsRef.current) {
+      streamRenderStore.clear(session.id);
+    }
     if (state.auth.sessionId) {
       try {
         await client.logout(state.auth.sessionId);
@@ -562,6 +585,7 @@ export function useChatApp() {
 
       try {
         await withAuthRetry(() => client.shutdownSession(sessionId));
+        streamRenderStore.clear(sessionId);
         setState((prev) => {
           const removedIndex = prev.sessions.findIndex((session) => session.id === sessionId);
           if (removedIndex < 0) {
@@ -627,6 +651,7 @@ export function useChatApp() {
     }
     try {
       await withAuthRetry(() => client.clearSession(state.activeSessionId!));
+      streamRenderStore.clear(state.activeSessionId);
       updateSession(state.activeSessionId, (session) => ({
         ...session,
         messages: [],
@@ -736,6 +761,126 @@ export function useChatApp() {
 function summarizeTitle(input: string): string {
   const plain = input.replace(/\s+/g, " ").trim();
   return plain.length > 24 ? `${plain.slice(0, 24)}...` : plain;
+}
+
+function applyResponseStartedSession(
+  session: ChatSession,
+  event: StreamEvent
+): { session: ChatSession; messageId?: string; content: string } {
+  const turnId = event.turn_id;
+  if (!turnId) {
+    return { session, content: "" };
+  }
+
+  const existingIndex = findAssistantMessageIndex(session.messages, turnId);
+  const messages = [...session.messages];
+  let messageId: string;
+  let content = "";
+  if (existingIndex >= 0) {
+    const existing = messages[existingIndex];
+    messageId = existing.id;
+    content = existing.content;
+    messages[existingIndex] = {
+      ...existing,
+      isDraft: true,
+      timestamp: event.timestamp
+    };
+  } else {
+    messageId = buildAssistantDraftId(turnId);
+    messages.push({
+      id: messageId,
+      kind: "text",
+      role: "assistant",
+      content: "",
+      timestamp: event.timestamp,
+      turnId,
+      isDraft: true
+    });
+  }
+
+  return {
+    session: {
+      ...session,
+      turnPhase: "streaming",
+      lastEventSeq: Math.max(session.lastEventSeq, event.event_seq),
+      messages,
+      streaming: {
+        turnId,
+        assistantMessageId: messageId,
+        content,
+        lastEventSeq: event.event_seq,
+        active: true
+      }
+    },
+    messageId,
+    content
+  };
+}
+
+function applyResponseCompletedSession(session: ChatSession, event: StreamEvent, finalizedContent: string): ChatSession {
+  const turnId = event.turn_id;
+  if (!turnId) {
+    return session;
+  }
+
+  let nextContent = finalizedContent;
+  const messages = [...session.messages];
+  const index = findAssistantMessageIndex(messages, turnId);
+  let messageId: string;
+  if (index >= 0) {
+    const message = messages[index];
+    if (event.type === "assistant_message" && message.content.length > nextContent.length) {
+      // Guard against late, shorter assistant_message payload overriding a fuller finalized body.
+      nextContent = message.content;
+    }
+    messageId = message.id;
+    messages[index] = {
+      ...message,
+      content: nextContent,
+      isDraft: false,
+      timestamp: event.timestamp
+    };
+  } else {
+    messageId = buildAssistantDraftId(turnId);
+    messages.push({
+      id: messageId,
+      kind: "text",
+      role: "assistant",
+      content: nextContent,
+      timestamp: event.timestamp,
+      turnId,
+      isDraft: false
+    });
+  }
+
+  return {
+    ...session,
+    turnPhase: "completed",
+    lastEventSeq: Math.max(session.lastEventSeq, event.event_seq),
+    messages,
+    streaming: {
+      turnId,
+      assistantMessageId: messageId,
+      content: nextContent,
+      lastEventSeq: event.event_seq,
+      active: false
+    }
+  };
+}
+
+function findAssistantMessageIndex(messages: ChatMessage[], turnId: string): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.turnId !== turnId || message.role !== "assistant" || message.kind !== "text") {
+      continue;
+    }
+    return i;
+  }
+  return -1;
+}
+
+function buildAssistantDraftId(turnId: string): string {
+  return `assistant_draft_${turnId}`;
 }
 
 function isSessionNotFoundError(error: unknown): boolean {

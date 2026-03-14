@@ -174,9 +174,9 @@ export default function App() {
 
         <section className="chat-scroll-region">
           <MessageList
+            sessionId={activeSession?.id}
             messages={activeSession?.messages ?? []}
             pendingApprovals={activeSession?.pendingApprovals ?? []}
-            streaming={activeSession?.streaming}
             onResolveApproval={(approval, approved) => resolveApproval(approval, approved)}
           />
         </section>
