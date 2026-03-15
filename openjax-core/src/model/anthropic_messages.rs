@@ -2,8 +2,10 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Serialize;
+use std::sync::OnceLock;
+use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::config::ModelConfig;
 use crate::model::client::{ModelClient, ProviderAdapter};
@@ -24,6 +26,22 @@ fn default_system_prompt() -> String {
         "{}\n\nBehavior guidelines:\n{}\n\nSafety boundaries:\n{}",
         SYSTEM_PROMPT_PERSONA, SYSTEM_PROMPT_BEHAVIOR, SYSTEM_PROMPT_SAFETY
     )
+}
+
+static MODEL_STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
+
+fn model_stream_debug_enabled() -> bool {
+    *MODEL_STREAM_DEBUG_ENABLED.get_or_init(|| {
+        std::env::var("OPENJAX_MODEL_STREAM_DEBUG")
+            .ok()
+            .map(|value| {
+                !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "0" | "off" | "false" | "disabled"
+                )
+            })
+            .unwrap_or(false)
+    })
 }
 
 fn is_legacy_glm_chat_base_url(url: &str) -> bool {
@@ -533,10 +551,28 @@ impl ModelClient for AnthropicMessagesClient {
         let mut assembled = String::new();
         let mut thinking_assembled = String::new();
         let mut parser = AnthropicSseParser::default();
+        let stream_debug = model_stream_debug_enabled();
+        let stream_started_at = Instant::now();
+        let mut chunk_seq = 0u64;
+        let mut frame_seq = 0u64;
+        let mut delta_seq = 0u64;
+        let mut last_delta_at: Option<Instant> = None;
 
         let mut resp = resp;
         while let Some(chunk) = resp.chunk().await.context("failed reading stream chunk")? {
+            chunk_seq += 1;
+            if stream_debug {
+                debug!(
+                    backend = self.backend_name,
+                    model_id = %self.model_id,
+                    stage = request.stage.as_str(),
+                    chunk_seq = chunk_seq,
+                    chunk_bytes = chunk.len(),
+                    "model_stream_chunk_received"
+                );
+            }
             for frame in parser.push_chunk(&chunk)? {
+                frame_seq += 1;
                 let payload: serde_json::Value = serde_json::from_str(&frame).map_err(|err| {
                     anyhow!(
                         "failed to parse SSE JSON chunk: {err}; chunk_snippet={}",
@@ -547,10 +583,33 @@ impl ModelClient for AnthropicMessagesClient {
                 if let Some(delta) = extract_delta_content_from_body(&payload)
                     && !delta.is_empty()
                 {
+                    let delta_len = delta.chars().count();
+                    delta_seq += 1;
+                    last_delta_at = Some(Instant::now());
                     assembled.push_str(&delta);
                     if let Some(sender) = &delta_sender {
                         let _ = sender.send(delta);
                     }
+                    if stream_debug {
+                        debug!(
+                            backend = self.backend_name,
+                            model_id = %self.model_id,
+                            stage = request.stage.as_str(),
+                            frame_seq = frame_seq,
+                            delta_seq = delta_seq,
+                            delta_len = delta_len,
+                            assembled_len = assembled.len(),
+                            "model_stream_delta_emitted"
+                        );
+                    }
+                } else if stream_debug {
+                    debug!(
+                        backend = self.backend_name,
+                        model_id = %self.model_id,
+                        stage = request.stage.as_str(),
+                        frame_seq = frame_seq,
+                        "model_stream_frame_without_text_delta"
+                    );
                 }
 
                 if let Some(thinking_delta) = extract_delta_thinking_from_body(&payload)
@@ -562,6 +621,7 @@ impl ModelClient for AnthropicMessagesClient {
         }
 
         for frame in parser.finish()? {
+            frame_seq += 1;
             let payload: serde_json::Value = serde_json::from_str(&frame).map_err(|err| {
                 anyhow!(
                     "failed to parse trailing SSE JSON chunk: {err}; chunk_snippet={}",
@@ -571,9 +631,24 @@ impl ModelClient for AnthropicMessagesClient {
             if let Some(delta) = extract_delta_content_from_body(&payload)
                 && !delta.is_empty()
             {
+                let delta_len = delta.chars().count();
+                delta_seq += 1;
+                last_delta_at = Some(Instant::now());
                 assembled.push_str(&delta);
                 if let Some(sender) = &delta_sender {
                     let _ = sender.send(delta);
+                }
+                if stream_debug {
+                    debug!(
+                        backend = self.backend_name,
+                        model_id = %self.model_id,
+                        stage = request.stage.as_str(),
+                        frame_seq = frame_seq,
+                        delta_seq = delta_seq,
+                        delta_len = delta_len,
+                        assembled_len = assembled.len(),
+                        "model_stream_delta_emitted"
+                    );
                 }
             }
 
@@ -590,6 +665,23 @@ impl ModelClient for AnthropicMessagesClient {
                 endpoint = %self.endpoint,
                 thinking_preview = %summarize_log_preview_json(&thinking_assembled, 600),
                 "anthropic_thinking_stream"
+            );
+        }
+
+        if stream_debug {
+            debug!(
+                backend = self.backend_name,
+                model_id = %self.model_id,
+                stage = request.stage.as_str(),
+                stream_total_ms = stream_started_at.elapsed().as_millis() as u64,
+                chunk_count = chunk_seq,
+                frame_count = frame_seq,
+                delta_count = delta_seq,
+                assembled_len = assembled.len(),
+                tail_silence_ms = last_delta_at
+                    .map(|ts| ts.elapsed().as_millis() as u64)
+                    .unwrap_or(stream_started_at.elapsed().as_millis() as u64),
+                "model_stream_summary"
             );
         }
 

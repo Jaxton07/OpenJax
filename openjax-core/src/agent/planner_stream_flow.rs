@@ -36,6 +36,8 @@ impl Agent {
         let mut streamed_message = String::new();
         let mut response_started = false;
         let mut ttft_logged = false;
+        let mut delta_event_count = 0u64;
+        let mut last_live_delta_at: Option<Instant> = None;
         let mut stream_orchestrator =
             ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
 
@@ -59,6 +61,8 @@ impl Agent {
                 );
             }
             streamed_message.push_str(&chunk.message_delta);
+            delta_event_count = delta_event_count.saturating_add(1);
+            last_live_delta_at = Some(Instant::now());
             for event in stream_orchestrator.on_delta(&chunk.message_delta) {
                 self.push_event(events, event);
             }
@@ -127,6 +131,10 @@ impl Agent {
             turn_id = turn_id,
             planner_stream_total_ms = started_at.elapsed().as_millis(),
             live_streamed = response_started,
+            delta_events = delta_event_count,
+            tail_silence_ms = last_live_delta_at
+                .map(|ts| ts.elapsed().as_millis() as u64)
+                .unwrap_or(started_at.elapsed().as_millis() as u64),
             delta_chars = streamed_message.chars().count(),
             "planner_stream_completed"
         );
