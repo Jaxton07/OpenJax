@@ -8,7 +8,9 @@ use uuid::Uuid;
 
 use crate::error::now_rfc3339;
 use crate::persistence::repository::{ProviderRepository, SessionRepository};
-use crate::persistence::types::{MessageRecord, ProviderRecord, SessionRecord};
+use crate::persistence::types::{
+    ActiveProviderRecord, MessageRecord, ProviderRecord, SessionRecord,
+};
 
 #[derive(Clone)]
 pub struct SqliteGatewayStore {
@@ -79,6 +81,14 @@ impl SqliteGatewayStore {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_providers_name
                 ON llm_providers(provider_name);
+
+            CREATE TABLE IF NOT EXISTS llm_runtime_settings (
+                setting_key TEXT PRIMARY KEY,
+                provider_id TEXT,
+                model_name TEXT,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(provider_id) REFERENCES llm_providers(provider_id) ON DELETE SET NULL
+            );
             "#,
         )
         .context("init gateway schema")?;
@@ -293,6 +303,18 @@ impl ProviderRepository for SqliteGatewayStore {
         if changed == 0 {
             return Ok(None);
         }
+        {
+            let conn = self.conn.lock().expect("gateway db mutex poisoned");
+            let now = now_rfc3339();
+            conn.execute(
+                "UPDATE llm_runtime_settings
+                 SET model_name = ?1, updated_at = ?2
+                 WHERE setting_key = 'active_provider'
+                   AND provider_id = ?3",
+                params![model_name, now, provider_id],
+            )
+            .with_context(|| format!("sync active provider model {}", provider_id))?;
+        }
         self.get_provider(provider_id)
     }
 
@@ -359,6 +381,49 @@ impl ProviderRepository for SqliteGatewayStore {
             providers.push(row.context("read provider row")?);
         }
         Ok(providers)
+    }
+
+    fn get_active_provider(&self) -> Result<Option<ActiveProviderRecord>> {
+        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        conn.query_row(
+            "SELECT provider_id, model_name, updated_at
+             FROM llm_runtime_settings
+             WHERE setting_key = 'active_provider'
+               AND provider_id IS NOT NULL
+               AND model_name IS NOT NULL",
+            [],
+            |row| {
+                Ok(ActiveProviderRecord {
+                    provider_id: row.get(0)?,
+                    model_name: row.get(1)?,
+                    updated_at: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .context("query active provider")
+    }
+
+    fn set_active_provider(&self, provider_id: &str) -> Result<Option<ActiveProviderRecord>> {
+        let provider = match self.get_provider(provider_id)? {
+            Some(provider) => provider,
+            None => return Ok(None),
+        };
+        let now = now_rfc3339();
+        {
+            let conn = self.conn.lock().expect("gateway db mutex poisoned");
+            conn.execute(
+                "INSERT INTO llm_runtime_settings (setting_key, provider_id, model_name, updated_at)
+                 VALUES ('active_provider', ?1, ?2, ?3)
+                 ON CONFLICT(setting_key)
+                 DO UPDATE SET provider_id = excluded.provider_id,
+                               model_name = excluded.model_name,
+                               updated_at = excluded.updated_at",
+                params![provider.provider_id, provider.model_name, now],
+            )
+            .context("set active provider")?;
+        }
+        self.get_active_provider()
     }
 }
 
@@ -464,5 +529,64 @@ mod tests {
             .get_provider(&created.provider_id)
             .expect("get provider after delete");
         assert!(provider.is_none());
+    }
+
+    #[test]
+    fn can_set_and_get_active_provider() {
+        let store = setup_store();
+        let first = store
+            .create_provider(
+                "openai-main",
+                "https://api.openai.com/v1",
+                "gpt-4.1-mini",
+                "sk-1",
+            )
+            .expect("create first provider");
+        let second = store
+            .create_provider(
+                "glm-main",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "glm-4.7",
+                "sk-2",
+            )
+            .expect("create second provider");
+
+        let selected = store
+            .set_active_provider(&second.provider_id)
+            .expect("set active provider")
+            .expect("active provider exists");
+        assert_eq!(selected.provider_id, second.provider_id);
+        assert_eq!(selected.model_name, "glm-4.7");
+
+        let loaded = store
+            .get_active_provider()
+            .expect("load active provider")
+            .expect("active provider exists");
+        assert_eq!(loaded.provider_id, second.provider_id);
+
+        let missing = store
+            .set_active_provider("provider_missing")
+            .expect("set missing provider");
+        assert!(missing.is_none());
+
+        let unchanged = store
+            .get_active_provider()
+            .expect("load active provider after missing")
+            .expect("active provider still exists");
+        assert_eq!(unchanged.provider_id, second.provider_id);
+
+        store
+            .delete_provider(&second.provider_id)
+            .expect("delete active provider");
+        let cleared = store
+            .get_active_provider()
+            .expect("load active provider after delete");
+        assert!(cleared.is_none());
+
+        let selected_first = store
+            .set_active_provider(&first.provider_id)
+            .expect("reselect provider")
+            .expect("active provider exists");
+        assert_eq!(selected_first.provider_id, first.provider_id);
     }
 }

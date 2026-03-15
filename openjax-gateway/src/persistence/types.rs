@@ -27,3 +27,10 @@ pub struct ProviderRecord {
     pub created_at: String,
     pub updated_at: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveProviderRecord {
+    pub provider_id: String,
+    pub model_name: String,
+    pub updated_at: String,
+}

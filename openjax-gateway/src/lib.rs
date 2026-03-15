@@ -29,6 +29,7 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         .allow_methods([
             Method::GET,
             Method::POST,
+            Method::PUT,
             Method::PATCH,
             Method::DELETE,
             Method::OPTIONS,
@@ -92,6 +93,10 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         .route(
             "/api/v1/providers",
             get(handlers::list_providers).post(handlers::create_provider),
+        )
+        .route(
+            "/api/v1/providers/active",
+            get(handlers::get_active_provider).put(handlers::set_active_provider),
         )
         .route(
             "/api/v1/providers/:provider_id",

@@ -611,7 +611,14 @@ export function useChatApp() {
         setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
       }
     },
-    [clearAuthState, client, ensureSession, state.settings.outputMode, updateSession, withAuthRetry]
+    [
+      clearAuthState,
+      client,
+      ensureSession,
+      state.settings.outputMode,
+      updateSession,
+      withAuthRetry
+    ]
   );
 
   const newChat = useCallback(async () => {
@@ -753,7 +760,9 @@ export function useChatApp() {
   const updateSettings = useCallback((next: AppSettings) => {
     const normalizedSettings: AppSettings = {
       ...next,
-      baseUrl: next.baseUrl.trim()
+      baseUrl: next.baseUrl.trim(),
+      selectedProviderId: next.selectedProviderId?.trim() ? next.selectedProviderId.trim() : null,
+      selectedModelName: next.selectedModelName?.trim() ? next.selectedModelName.trim() : null
     };
     saveSettings(normalizedSettings);
     setState((prev) => ({
@@ -834,6 +843,49 @@ export function useChatApp() {
     [client, withAuthRetry]
   );
 
+  const getActiveProvider = useCallback(async (): Promise<LlmProvider | null> => {
+    const [providersData, activeData] = await Promise.all([
+      withAuthRetry(() => client.listProviders()),
+      withAuthRetry(() => client.getActiveProvider())
+    ]);
+    const providerId = activeData.active_provider?.provider_id;
+    if (!providerId) {
+      return null;
+    }
+    return providersData.providers.find((item) => item.provider_id === providerId) ?? null;
+  }, [client, withAuthRetry]);
+
+  const setActiveProvider = useCallback(
+    async (providerId: string): Promise<LlmProvider> => {
+      const [providersData, activeData] = await Promise.all([
+        withAuthRetry(() => client.listProviders()),
+        withAuthRetry(() => client.setActiveProvider(providerId))
+      ]);
+      const selectedId = activeData.active_provider?.provider_id ?? providerId;
+      const selected =
+        providersData.providers.find((item) => item.provider_id === selectedId) ??
+        providersData.providers.find((item) => item.provider_id === providerId);
+      if (!selected) {
+        throw new Error("已设置 active provider，但未在 Provider 列表中找到该项。");
+      }
+      setState((prev) => {
+        const settings: AppSettings = {
+          ...prev.settings,
+          selectedProviderId: selected.provider_id,
+          selectedModelName: selected.model_name
+        };
+        saveSettings(settings);
+        return {
+          ...prev,
+          settings,
+          globalError: null
+        };
+      });
+      return selected;
+    },
+    [client, withAuthRetry]
+  );
+
   const dismissGlobalError = useCallback(() => {
     setState((prev) => ({ ...prev, globalError: null }));
   }, []);
@@ -864,6 +916,8 @@ export function useChatApp() {
     createProvider,
     updateProvider,
     deleteProvider,
+    getActiveProvider,
+    setActiveProvider,
     dismissGlobalError,
     dismissToast
   };

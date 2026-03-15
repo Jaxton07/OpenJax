@@ -1,10 +1,16 @@
 import type { LlmProvider } from "../../types/gateway";
+import { TrashIcon } from "../../pic/icon";
+
+const EDIT_ICON = new URL("../../pic/icon/edit.svg", import.meta.url).href;
 
 interface ProviderListPanelProps {
   providers: LlmProvider[];
   loading: boolean;
   selectedProviderId: string | null;
+  errorMessage?: string;
+  successMessage?: string;
   onRefresh: () => Promise<void>;
+  onAddProvider: () => void;
   onSelect: (provider: LlmProvider) => void;
   onEdit: (provider: LlmProvider) => void;
   onDelete: (provider: LlmProvider) => Promise<void>;
@@ -14,14 +20,25 @@ export default function ProviderListPanel(props: ProviderListPanelProps) {
   return (
     <section className="provider-list-panel">
       <div className="provider-list-header">
-        <div>
-          <h3>已有 Provider</h3>
-          <p>选择一项可在右侧编辑；不选择时右侧为新增模式。</p>
+        <div className="provider-list-title">
+          <h3>Provider List</h3>
         </div>
-        <button type="button" className="btn-secondary" onClick={() => void props.onRefresh()}>
-          {props.loading ? "刷新中..." : "刷新"}
-        </button>
+        <div className="provider-list-actions">
+          <button type="button" className="btn-primary" onClick={props.onAddProvider}>
+            Add Provider
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => void props.onRefresh()}>
+            {props.loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
       </div>
+
+      {props.errorMessage ? <div className="status-tip status-error">{props.errorMessage}</div> : null}
+      {props.successMessage ? (
+        <div className="status-tip status-success" role="status" aria-live="polite">
+          {props.successMessage}
+        </div>
+      ) : null}
 
       {props.loading && props.providers.length === 0 ? (
         <div className="status-tip status-info">正在加载 Provider...</div>
@@ -31,10 +48,10 @@ export default function ProviderListPanel(props: ProviderListPanelProps) {
         {props.providers.map((provider) => {
           const selected = props.selectedProviderId === provider.provider_id;
           return (
-            <li key={provider.provider_id}>
+            <li key={provider.provider_id} className={selected ? "provider-row selected" : "provider-row"}>
               <button
                 type="button"
-                className={selected ? "provider-card selected" : "provider-card"}
+                className="provider-card"
                 aria-pressed={selected}
                 onClick={() => props.onSelect(provider)}
               >
@@ -46,15 +63,23 @@ export default function ProviderListPanel(props: ProviderListPanelProps) {
                 </div>
               </button>
               <div className="provider-card-actions">
-                <button type="button" className="btn-ghost" onClick={() => props.onEdit(provider)}>
-                  编辑
+                <button
+                  type="button"
+                  className="provider-action-btn"
+                  aria-label="编辑"
+                  title="编辑"
+                  onClick={() => props.onEdit(provider)}
+                >
+                  <img src={EDIT_ICON} alt="" />
                 </button>
                 <button
                   type="button"
-                  className="btn-danger"
+                  className="provider-action-btn danger"
+                  aria-label="删除"
+                  title="删除"
                   onClick={() => void props.onDelete(provider)}
                 >
-                  删除
+                  <TrashIcon />
                 </button>
               </div>
             </li>
@@ -63,7 +88,7 @@ export default function ProviderListPanel(props: ProviderListPanelProps) {
       </ul>
 
       {props.providers.length === 0 && !props.loading ? (
-        <div className="status-tip status-info">暂无 Provider，请先在右侧新增。</div>
+        <div className="status-tip status-info">暂无 Provider，请先新增。</div>
       ) : null}
     </section>
   );

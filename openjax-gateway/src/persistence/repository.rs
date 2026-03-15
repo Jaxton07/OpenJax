@@ -1,6 +1,8 @@
 use anyhow::Result;
 
-use crate::persistence::types::{MessageRecord, ProviderRecord, SessionRecord};
+use crate::persistence::types::{
+    ActiveProviderRecord, MessageRecord, ProviderRecord, SessionRecord,
+};
 
 pub trait SessionRepository {
     fn create_session(&self, session_id: &str, title: Option<&str>) -> Result<SessionRecord>;
@@ -35,4 +37,6 @@ pub trait ProviderRepository {
     fn delete_provider(&self, provider_id: &str) -> Result<bool>;
     fn get_provider(&self, provider_id: &str) -> Result<Option<ProviderRecord>>;
     fn list_providers(&self) -> Result<Vec<ProviderRecord>>;
+    fn get_active_provider(&self) -> Result<Option<ActiveProviderRecord>>;
+    fn set_active_provider(&self, provider_id: &str) -> Result<Option<ActiveProviderRecord>>;
 }

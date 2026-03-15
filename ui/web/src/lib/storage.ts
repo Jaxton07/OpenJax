@@ -7,7 +7,9 @@ const SESSIONS_KEY = "openjax:web:sessions";
 
 const DEFAULT_SETTINGS: AppSettings = {
   baseUrl: "http://127.0.0.1:8765",
-  outputMode: "sse"
+  outputMode: "sse",
+  selectedProviderId: null,
+  selectedModelName: null
 };
 
 const DEFAULT_AUTH: AuthState = {
@@ -43,7 +45,10 @@ export function loadSettings(): AppSettings {
     const baseUrl = normalizeBaseUrl(parsed.baseUrl);
     return {
       baseUrl,
-      outputMode: parsed.outputMode
+      outputMode: parsed.outputMode,
+      selectedProviderId:
+        typeof parsed.selectedProviderId === "string" ? parsed.selectedProviderId : null,
+      selectedModelName: typeof parsed.selectedModelName === "string" ? parsed.selectedModelName : null
     };
   } catch {
     return DEFAULT_SETTINGS;

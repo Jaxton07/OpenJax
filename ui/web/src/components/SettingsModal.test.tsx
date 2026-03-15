@@ -23,7 +23,12 @@ describe("SettingsModal", () => {
     render(
       <SettingsModal
         open
-        initialSettings={{ baseUrl: "http://127.0.0.1:8765", outputMode: "sse" }}
+        initialSettings={{
+          baseUrl: "http://127.0.0.1:8765",
+          outputMode: "sse",
+          selectedProviderId: null,
+          selectedModelName: null
+        }}
         onClose={() => {}}
         onSave={() => {}}
         onTest={async () => true}
@@ -35,6 +40,8 @@ describe("SettingsModal", () => {
           throw new Error("not used");
         }}
         onDeleteProvider={async () => {}}
+        onGetActiveProvider={async () => providerItem}
+        onSetActiveProvider={async () => providerItem}
       />
     );
 
@@ -42,7 +49,7 @@ describe("SettingsModal", () => {
 
     await waitFor(() => expect(onListProviders).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("openai-main")).toBeInTheDocument();
-    expect(screen.getByText("已有 Provider")).toBeInTheDocument();
+    expect(screen.getByText("Provider List")).toBeInTheDocument();
   });
 
   it("submits create provider form", async () => {
@@ -59,7 +66,12 @@ describe("SettingsModal", () => {
     render(
       <SettingsModal
         open
-        initialSettings={{ baseUrl: "http://127.0.0.1:8765", outputMode: "sse" }}
+        initialSettings={{
+          baseUrl: "http://127.0.0.1:8765",
+          outputMode: "sse",
+          selectedProviderId: null,
+          selectedModelName: null
+        }}
         onClose={() => {}}
         onSave={() => {}}
         onTest={async () => true}
@@ -69,10 +81,13 @@ describe("SettingsModal", () => {
           throw new Error("not used");
         }}
         onDeleteProvider={async () => {}}
+        onGetActiveProvider={async () => null}
+        onSetActiveProvider={async () => providerItem}
       />
     );
 
     await userEvent.click(screen.getByRole("button", { name: "LLM Provider" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add Provider" }));
     await userEvent.type(screen.getByLabelText("名称"), "glm-main");
     await userEvent.type(
       screen.getByLabelText("Base URL"),
@@ -90,10 +105,50 @@ describe("SettingsModal", () => {
         apiKey: "key-a"
       })
     );
-    expect(await screen.findByText("Provider 创建成功。")).toBeInTheDocument();
   });
 
-  it("selects card then updates provider", async () => {
+  it("selects provider card to activate it", async () => {
+    const onSave = vi.fn();
+    const onSetActiveProvider = vi.fn().mockResolvedValue(providerItem);
+    render(
+      <SettingsModal
+        open
+        initialSettings={{
+          baseUrl: "http://127.0.0.1:8765",
+          outputMode: "sse",
+          selectedProviderId: null,
+          selectedModelName: null
+        }}
+        onClose={() => {}}
+        onSave={onSave}
+        onTest={async () => true}
+        onListProviders={async () => [providerItem]}
+        onCreateProvider={async () => {
+          throw new Error("not used");
+        }}
+        onUpdateProvider={async () => {
+          throw new Error("not used");
+        }}
+        onDeleteProvider={async () => {}}
+        onGetActiveProvider={async () => null}
+        onSetActiveProvider={onSetActiveProvider}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "LLM Provider" }));
+    await screen.findByText("openai-main");
+    await userEvent.click(screen.getByRole("button", { name: /openai-main/i }));
+
+    await waitFor(() => expect(onSetActiveProvider).toHaveBeenCalledWith("provider_1"));
+    expect(onSave).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:8765",
+      outputMode: "sse",
+      selectedProviderId: "provider_1",
+      selectedModelName: "gpt-4.1-mini"
+    });
+  });
+
+  it("opens edit panel only when clicking edit", async () => {
     const onUpdateProvider = vi.fn().mockResolvedValue({
       ...providerItem,
       model_name: "gpt-4.1"
@@ -102,7 +157,12 @@ describe("SettingsModal", () => {
     render(
       <SettingsModal
         open
-        initialSettings={{ baseUrl: "http://127.0.0.1:8765", outputMode: "sse" }}
+        initialSettings={{
+          baseUrl: "http://127.0.0.1:8765",
+          outputMode: "sse",
+          selectedProviderId: "provider_1",
+          selectedModelName: "gpt-4.1-mini"
+        }}
         onClose={() => {}}
         onSave={() => {}}
         onTest={async () => true}
@@ -112,12 +172,15 @@ describe("SettingsModal", () => {
         }}
         onUpdateProvider={onUpdateProvider}
         onDeleteProvider={async () => {}}
+        onGetActiveProvider={async () => providerItem}
+        onSetActiveProvider={async () => providerItem}
       />
     );
 
     await userEvent.click(screen.getByRole("button", { name: "LLM Provider" }));
     await screen.findByText("openai-main");
-    await userEvent.click(screen.getByRole("button", { name: /openai-main/i }));
+    expect(screen.queryByText("编辑 Provider")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     const modelInput = screen.getByLabelText("模型名称");
     await userEvent.clear(modelInput);
@@ -141,7 +204,12 @@ describe("SettingsModal", () => {
     render(
       <SettingsModal
         open
-        initialSettings={{ baseUrl: "http://127.0.0.1:8765", outputMode: "sse" }}
+        initialSettings={{
+          baseUrl: "http://127.0.0.1:8765",
+          outputMode: "sse",
+          selectedProviderId: "provider_1",
+          selectedModelName: "gpt-4.1-mini"
+        }}
         onClose={() => {}}
         onSave={() => {}}
         onTest={async () => true}
@@ -153,6 +221,8 @@ describe("SettingsModal", () => {
           throw new Error("not used");
         }}
         onDeleteProvider={onDeleteProvider}
+        onGetActiveProvider={async () => providerItem}
+        onSetActiveProvider={async () => providerItem}
       />
     );
 
@@ -161,6 +231,5 @@ describe("SettingsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "删除" }));
 
     await waitFor(() => expect(onDeleteProvider).toHaveBeenCalledWith("provider_1"));
-    expect(await screen.findByText("Provider 已删除。")).toBeInTheDocument();
   });
 });

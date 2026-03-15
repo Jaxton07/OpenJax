@@ -152,6 +152,21 @@ pub struct ProviderDeleteResponse {
     timestamp: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ActiveProviderItem {
+    provider_id: String,
+    model_name: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ActiveProviderResponse {
+    request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_provider: Option<ActiveProviderItem>,
+    timestamp: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SubmitTurnRequest {
     input: String,
@@ -183,6 +198,11 @@ pub struct UpdateProviderRequest {
     base_url: String,
     model_name: String,
     api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetActiveProviderRequest {
+    provider_id: String,
 }
 
 fn resolve_resume_seq(after_event_seq: Option<u64>, last_event_id: Option<&str>) -> Option<u64> {
@@ -662,6 +682,40 @@ pub async fn list_providers(
     }))
 }
 
+pub async fn get_active_provider(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestContext>,
+) -> Result<Json<ActiveProviderResponse>, ApiError> {
+    let active_provider = state.get_active_provider()?.map(to_active_provider_item);
+    Ok(Json(ActiveProviderResponse {
+        request_id: ctx.request_id,
+        active_provider,
+        timestamp: now_rfc3339(),
+    }))
+}
+
+pub async fn set_active_provider(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestContext>,
+    Json(payload): Json<SetActiveProviderRequest>,
+) -> Result<Json<ActiveProviderResponse>, ApiError> {
+    let provider_id = payload.provider_id.trim();
+    if provider_id.is_empty() {
+        return Err(ApiError::invalid_argument(
+            "provider_id must not be empty",
+            json!({}),
+        ));
+    }
+    let selected = state.set_active_provider(provider_id)?.ok_or_else(|| {
+        ApiError::not_found("provider not found", json!({ "provider_id": provider_id }))
+    })?;
+    Ok(Json(ActiveProviderResponse {
+        request_id: ctx.request_id,
+        active_provider: Some(to_active_provider_item(selected)),
+        timestamp: now_rfc3339(),
+    }))
+}
+
 pub async fn create_provider(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestContext>,
@@ -757,6 +811,14 @@ fn to_provider_item(provider: crate::persistence::ProviderRecord) -> ProviderIte
         api_key_set: !provider.api_key.trim().is_empty(),
         created_at: provider.created_at,
         updated_at: provider.updated_at,
+    }
+}
+
+fn to_active_provider_item(active: crate::persistence::ActiveProviderRecord) -> ActiveProviderItem {
+    ActiveProviderItem {
+        provider_id: active.provider_id,
+        model_name: active.model_name,
+        updated_at: active.updated_at,
     }
 }
 

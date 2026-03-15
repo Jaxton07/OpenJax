@@ -190,6 +190,21 @@ impl AppState {
         self.store.list_providers().map_err(map_store_error)
     }
 
+    pub fn get_active_provider(
+        &self,
+    ) -> Result<Option<crate::persistence::ActiveProviderRecord>, ApiError> {
+        self.store.get_active_provider().map_err(map_store_error)
+    }
+
+    pub fn set_active_provider(
+        &self,
+        provider_id: &str,
+    ) -> Result<Option<crate::persistence::ActiveProviderRecord>, ApiError> {
+        self.store
+            .set_active_provider(provider_id)
+            .map_err(map_store_error)
+    }
+
     pub fn create_provider(
         &self,
         provider_name: &str,
@@ -223,7 +238,13 @@ impl AppState {
 
     pub fn runtime_config(&self) -> Config {
         let providers = self.store.list_providers().unwrap_or_default();
-        build_runtime_config(providers)
+        let active_provider_id = self
+            .store
+            .get_active_provider()
+            .ok()
+            .flatten()
+            .map(|item| item.provider_id);
+        build_runtime_config(providers, active_provider_id.as_deref())
     }
 
     fn build_session_runtime(
@@ -231,8 +252,13 @@ impl AppState {
         session_id: &str,
     ) -> anyhow::Result<Arc<Mutex<SessionRuntime>>> {
         let providers = self.store.list_providers().unwrap_or_default();
-        let config = build_runtime_config(providers);
+        let active_provider_id = self
+            .store
+            .get_active_provider()?
+            .map(|item| item.provider_id);
+        let config = build_runtime_config(providers, active_provider_id.as_deref());
         let mut runtime = SessionRuntime::new_with_config(config);
+        runtime.active_provider_id = active_provider_id;
         let messages = self.store.list_messages(session_id)?;
         for message in messages {
             let turn = message.turn_id.unwrap_or_else(|| "turn_0".to_string());
@@ -258,6 +284,7 @@ impl Default for AppState {
 pub struct SessionRuntime {
     pub agent: Arc<Mutex<Agent>>,
     pub approval_handler: Arc<GatewayApprovalHandler>,
+    pub active_provider_id: Option<String>,
     pub status: SessionStatus,
     pub turns: HashMap<String, TurnRuntime>,
     pub core_turn_to_public: HashMap<u64, String>,
@@ -281,6 +308,7 @@ impl SessionRuntime {
         Self {
             agent: Arc::new(Mutex::new(agent)),
             approval_handler,
+            active_provider_id: None,
             status: SessionStatus::Active,
             turns: HashMap::new(),
             core_turn_to_public: HashMap::new(),
@@ -300,6 +328,7 @@ impl SessionRuntime {
         agent.set_approval_handler(approval_handler.clone());
         self.agent = Arc::new(Mutex::new(agent));
         self.approval_handler = approval_handler;
+        self.active_provider_id = None;
         self.status = SessionStatus::Active;
         self.turns.clear();
         self.core_turn_to_public.clear();
@@ -453,14 +482,26 @@ fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
     }
 }
 
-fn build_runtime_config(providers: Vec<crate::persistence::ProviderRecord>) -> Config {
+fn build_runtime_config(
+    providers: Vec<crate::persistence::ProviderRecord>,
+    active_provider_id: Option<&str>,
+) -> Config {
     let mut config = Config::load();
     if providers.is_empty() {
         return config;
     }
+    let mut ordered_providers = providers;
+    if let Some(active_id) = active_provider_id
+        && let Some(index) = ordered_providers
+            .iter()
+            .position(|provider| provider.provider_id == active_id)
+    {
+        let selected = ordered_providers.remove(index);
+        ordered_providers.insert(0, selected);
+    }
     let mut models = std::collections::HashMap::new();
     let mut route_order = Vec::new();
-    for provider in providers {
+    for provider in ordered_providers {
         let mut model_id = normalize_model_id(&provider.provider_name);
         if model_id.is_empty() {
             model_id = format!("provider_{}", provider.provider_id);

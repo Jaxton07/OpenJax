@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppSettings, LlmProvider } from "../types/gateway";
 import GeneralSettingsPanel, { type GeneralStatus } from "./settings/GeneralSettingsPanel";
 import ProviderForm, { type ProviderFormValue } from "./settings/ProviderForm";
 import ProviderListPanel from "./settings/ProviderListPanel";
 import SettingsSidebar from "./settings/SettingsSidebar";
+
+const PROVIDER_FORM_EXIT_MS = 460;
+const PROVIDER_CLOSE_ICON = new URL("../pic/icon/close.svg", import.meta.url).href;
 
 interface SettingsModalProps {
   open: boolean;
@@ -15,6 +18,8 @@ interface SettingsModalProps {
   onCreateProvider: (payload: ProviderFormValue) => Promise<LlmProvider>;
   onUpdateProvider: (providerId: string, payload: ProviderFormValue) => Promise<LlmProvider>;
   onDeleteProvider: (providerId: string) => Promise<void>;
+  onGetActiveProvider: () => Promise<LlmProvider | null>;
+  onSetActiveProvider: (providerId: string) => Promise<LlmProvider>;
 }
 
 const IDLE_GENERAL_STATUS: GeneralStatus = {
@@ -30,11 +35,20 @@ export default function SettingsModal(props: SettingsModalProps) {
   const [testingGeneral, setTestingGeneral] = useState(false);
   const [savingGeneral, setSavingGeneral] = useState(false);
 
-  const [providerStatus, setProviderStatus] = useState<string>("");
+  const [providerError, setProviderError] = useState<string>("");
+  const [providerSuccess, setProviderSuccess] = useState<string>("");
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
   const [providers, setProviders] = useState<LlmProvider[]>([]);
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+    props.initialSettings.selectedProviderId
+  );
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(
+    props.initialSettings.selectedProviderId
+  );
+  const [providerPanelMode, setProviderPanelMode] = useState<"none" | "create" | "edit">("none");
+  const [closingProviderPanel, setClosingProviderPanel] = useState(false);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (!props.open) {
@@ -50,29 +64,61 @@ export default function SettingsModal(props: SettingsModalProps) {
   }, [props.open, props.onClose]);
 
   useEffect(() => {
-    if (props.open) {
+    if (props.open && !wasOpenRef.current) {
       setDraft(props.initialSettings);
       setActiveTab("general");
       setGeneralStatus(IDLE_GENERAL_STATUS);
       setTestingGeneral(false);
       setSavingGeneral(false);
-      setProviderStatus("");
-      setSelectedProviderId(null);
+      setProviderError("");
+      setProviderSuccess("");
+      setSelectedProviderId(props.initialSettings.selectedProviderId);
+      setActiveProviderId(props.initialSettings.selectedProviderId);
+      setProviderPanelMode("none");
+      setClosingProviderPanel(false);
     }
+    wasOpenRef.current = props.open;
   }, [props.initialSettings, props.open]);
+
+  const syncSelectedProviderSettings = (provider: LlmProvider | null, persist: boolean) => {
+    const nextDraft: AppSettings = {
+      ...draft,
+      selectedProviderId: provider?.provider_id ?? null,
+      selectedModelName: provider?.model_name ?? null
+    };
+    setDraft(nextDraft);
+    if (persist) {
+      const nextPersisted: AppSettings = {
+        ...props.initialSettings,
+        selectedProviderId: provider?.provider_id ?? null,
+        selectedModelName: provider?.model_name ?? null
+      };
+      props.onSave(nextPersisted);
+    }
+  };
 
   const refreshProviders = async () => {
     setLoadingProviders(true);
-    setProviderStatus("正在加载 Provider 列表...");
+    setProviderError("");
     try {
-      const items = await props.onListProviders();
+      const [items, activeProvider] = await Promise.all([
+        props.onListProviders(),
+        props.onGetActiveProvider()
+      ]);
+      const activeId = activeProvider?.provider_id ?? null;
       setProviders(items);
-      setSelectedProviderId((current) =>
-        current && items.some((item) => item.provider_id === current) ? current : null
-      );
-      setProviderStatus(items.length === 0 ? "暂无 Provider，请先新增。" : "Provider 列表已更新。");
+      setActiveProviderId(activeId);
+      setSelectedProviderId((current) => {
+        if (current && items.some((item) => item.provider_id === current)) {
+          return current;
+        }
+        return activeId;
+      });
+      if (activeProvider) {
+        syncSelectedProviderSettings(activeProvider, false);
+      }
     } catch (error) {
-      setProviderStatus((error as Error).message);
+      setProviderError((error as Error).message);
     } finally {
       setLoadingProviders(false);
     }
@@ -85,28 +131,51 @@ export default function SettingsModal(props: SettingsModalProps) {
     void refreshProviders();
   }, [activeTab, props.open]);
 
+  useEffect(() => {
+    if (!providerSuccess) {
+      return;
+    }
+    const timer = window.setTimeout(() => setProviderSuccess(""), 2200);
+    return () => window.clearTimeout(timer);
+  }, [providerSuccess]);
+
+  useEffect(() => {
+    if (!closingProviderPanel) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setProviderPanelMode("none");
+      setClosingProviderPanel(false);
+    }, PROVIDER_FORM_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [closingProviderPanel]);
+
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.provider_id === selectedProviderId) ?? null,
     [providers, selectedProviderId]
   );
 
-  const providerFormInitialValue: ProviderFormValue = selectedProvider
-    ? {
-        providerName: selectedProvider.provider_name,
-        baseUrl: selectedProvider.base_url,
-        modelName: selectedProvider.model_name,
-        apiKey: ""
-      }
-    : {
+  const providerFormInitialValue: ProviderFormValue =
+    providerPanelMode === "create"
+      ? {
         providerName: "",
         baseUrl: "",
-      modelName: "",
-      apiKey: ""
-    };
-
-  if (!props.open) {
-    return null;
-  }
+        modelName: "",
+        apiKey: ""
+      }
+      : selectedProvider
+        ? {
+            providerName: selectedProvider.provider_name,
+            baseUrl: selectedProvider.base_url,
+            modelName: selectedProvider.model_name,
+            apiKey: ""
+          }
+        : {
+            providerName: "",
+            baseUrl: "",
+            modelName: "",
+            apiKey: ""
+          };
 
   const handleSaveSettings = async (settings: AppSettings) => {
     setSavingGeneral(true);
@@ -139,14 +208,15 @@ export default function SettingsModal(props: SettingsModalProps) {
 
   const createProvider = async (value: ProviderFormValue) => {
     setSavingProvider(true);
-    setProviderStatus("正在创建 Provider...");
+    setProviderError("");
+    setProviderSuccess("");
     try {
       const created = await props.onCreateProvider(value);
       setProviders((prev) => [created, ...prev]);
       setSelectedProviderId(created.provider_id);
-      setProviderStatus("Provider 创建成功。");
+      setProviderPanelMode("edit");
     } catch (error) {
-      setProviderStatus((error as Error).message);
+      setProviderError((error as Error).message);
     } finally {
       setSavingProvider(false);
     }
@@ -157,15 +227,19 @@ export default function SettingsModal(props: SettingsModalProps) {
       return;
     }
     setSavingProvider(true);
-    setProviderStatus("正在保存 Provider...");
+    setProviderError("");
+    setProviderSuccess("");
     try {
       const updated = await props.onUpdateProvider(selectedProvider.provider_id, value);
       setProviders((prev) =>
         prev.map((item) => (item.provider_id === updated.provider_id ? updated : item))
       );
-      setProviderStatus("Provider 更新成功。");
+      if (activeProviderId === updated.provider_id) {
+        await props.onSetActiveProvider(updated.provider_id);
+        syncSelectedProviderSettings(updated, true);
+      }
     } catch (error) {
-      setProviderStatus((error as Error).message);
+      setProviderError((error as Error).message);
     } finally {
       setSavingProvider(false);
     }
@@ -177,18 +251,64 @@ export default function SettingsModal(props: SettingsModalProps) {
       return;
     }
     setSavingProvider(true);
-    setProviderStatus("正在删除 Provider...");
+    setProviderError("");
+    setProviderSuccess("");
     try {
       await props.onDeleteProvider(provider.provider_id);
       setProviders((prev) => prev.filter((item) => item.provider_id !== provider.provider_id));
       setSelectedProviderId((current) => (current === provider.provider_id ? null : current));
-      setProviderStatus("Provider 已删除。");
+      if (activeProviderId === provider.provider_id) {
+        setActiveProviderId(null);
+        syncSelectedProviderSettings(null, true);
+      }
+      if (providerPanelMode === "edit" && selectedProviderId === provider.provider_id) {
+        setClosingProviderPanel(true);
+      }
     } catch (error) {
-      setProviderStatus((error as Error).message);
+      setProviderError((error as Error).message);
     } finally {
       setSavingProvider(false);
     }
   };
+
+  const activateProvider = async (provider: LlmProvider) => {
+    setProviderError("");
+    setProviderSuccess("");
+    setSelectedProviderId(provider.provider_id);
+    try {
+      const active = await props.onSetActiveProvider(provider.provider_id);
+      setActiveProviderId(active.provider_id);
+      setProviders((prev) =>
+        prev.map((item) => (item.provider_id === active.provider_id ? active : item))
+      );
+      syncSelectedProviderSettings(active, true);
+      setProviderSuccess("已切换 Provider，将在新会话中生效。");
+    } catch (error) {
+      setProviderError((error as Error).message);
+    }
+  };
+
+  useEffect(() => {
+    if (providerPanelMode === "edit" && !selectedProvider) {
+      setClosingProviderPanel(true);
+    }
+  }, [providerPanelMode, selectedProvider]);
+
+  const openProviderPanel = (mode: "create" | "edit") => {
+    setProviderPanelMode(mode);
+    setClosingProviderPanel(false);
+  };
+
+  const closeProviderPanel = () => {
+    if (providerPanelMode === "none" || closingProviderPanel) {
+      return;
+    }
+    setClosingProviderPanel(true);
+  };
+
+  if (!props.open) {
+    return null;
+  }
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
@@ -218,30 +338,58 @@ export default function SettingsModal(props: SettingsModalProps) {
                 onSave={handleSaveSettings}
               />
             ) : (
-              <section className="settings-panel provider-panel">
+              <section
+                className={`settings-panel provider-panel ${
+                  providerPanelMode === "none" ? "is-list-only" : "is-with-form"
+                }`}
+              >
                 <ProviderListPanel
                   providers={providers}
                   loading={loadingProviders}
-                  selectedProviderId={selectedProviderId}
+                  selectedProviderId={activeProviderId}
+                  errorMessage={providerError}
+                  successMessage={providerSuccess}
                   onRefresh={refreshProviders}
-                  onSelect={(provider) => setSelectedProviderId(provider.provider_id)}
-                  onEdit={(provider) => setSelectedProviderId(provider.provider_id)}
+                  onAddProvider={() => {
+                    openProviderPanel("create");
+                    setProviderError("");
+                    setProviderSuccess("");
+                  }}
+                  onSelect={(provider) => void activateProvider(provider)}
+                  onEdit={(provider) => {
+                    setSelectedProviderId(provider.provider_id);
+                    openProviderPanel("edit");
+                    setProviderError("");
+                    setProviderSuccess("");
+                  }}
                   onDelete={removeProvider}
                 />
-                <div className="provider-form-wrap">
-                  {providerStatus ? (
-                    <div className="status-tip status-info" role="status" aria-live="polite">
-                      {providerStatus}
-                    </div>
-                  ) : null}
-                  <ProviderForm
-                    mode={selectedProvider ? "edit" : "create"}
-                    initialValue={providerFormInitialValue}
-                    submitting={savingProvider}
-                    onSubmit={selectedProvider ? updateProvider : createProvider}
-                    onCancelEdit={() => setSelectedProviderId(null)}
-                  />
-                </div>
+                {providerPanelMode !== "none" ? (
+                  <div
+                    className={
+                      closingProviderPanel
+                        ? "provider-form-wrap provider-form-wrap-closing"
+                        : "provider-form-wrap"
+                    }
+                    data-opened="true"
+                  >
+                    <button
+                      type="button"
+                      className="provider-form-close-btn"
+                      aria-label="关闭新增/编辑面板"
+                      onClick={closeProviderPanel}
+                    >
+                      <img src={PROVIDER_CLOSE_ICON} alt="" />
+                    </button>
+                    <ProviderForm
+                      mode={providerPanelMode === "edit" ? "edit" : "create"}
+                      initialValue={providerFormInitialValue}
+                      submitting={savingProvider}
+                      onSubmit={providerPanelMode === "edit" ? updateProvider : createProvider}
+                      onCancelEdit={closeProviderPanel}
+                    />
+                  </div>
+                ) : null}
               </section>
             )}
           </div>

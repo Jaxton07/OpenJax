@@ -9,6 +9,7 @@ import type {
   ProviderDeleteResponse,
   ProviderListResponse,
   ProviderMutationResponse,
+  ActiveProviderResponse,
   SessionActionResponse,
   SessionCreated,
   StreamEvent,
@@ -190,6 +191,17 @@ export class GatewayClient {
   async deleteProvider(providerId: string): Promise<ProviderDeleteResponse> {
     return this.request(`/api/v1/providers/${providerId}`, {
       method: "DELETE"
+    });
+  }
+
+  async getActiveProvider(): Promise<ActiveProviderResponse> {
+    return this.request("/api/v1/providers/active", { method: "GET" });
+  }
+
+  async setActiveProvider(providerId: string): Promise<ActiveProviderResponse> {
+    return this.request("/api/v1/providers/active", {
+      method: "PUT",
+      body: JSON.stringify({ provider_id: providerId })
     });
   }
 

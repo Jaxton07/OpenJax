@@ -3,6 +3,8 @@ export type OutputMode = "sse" | "polling";
 export interface AppSettings {
   baseUrl: string;
   outputMode: OutputMode;
+  selectedProviderId: string | null;
+  selectedModelName: string | null;
 }
 
 export interface LlmProvider {
@@ -123,6 +125,18 @@ export interface ProviderDeleteResponse {
   request_id: string;
   provider_id: string;
   status: "deleted";
+  timestamp: string;
+}
+
+export interface ActiveProvider {
+  provider_id: string;
+  model_name: string;
+  updated_at: string;
+}
+
+export interface ActiveProviderResponse {
+  request_id: string;
+  active_provider?: ActiveProvider;
   timestamp: string;
 }
 

@@ -4,4 +4,4 @@ pub mod types;
 
 pub use repository::{ProviderRepository, SessionRepository};
 pub use sqlite::SqliteGatewayStore;
-pub use types::{MessageRecord, ProviderRecord, SessionRecord};
+pub use types::{ActiveProviderRecord, MessageRecord, ProviderRecord, SessionRecord};

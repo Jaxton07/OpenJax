@@ -48,6 +48,8 @@ export default function App() {
     createProvider,
     updateProvider,
     deleteProvider,
+    getActiveProvider,
+    setActiveProvider,
     dismissGlobalError,
     dismissToast
   } = useChatApp();
@@ -202,6 +204,8 @@ export default function App() {
         onCreateProvider={createProvider}
         onUpdateProvider={updateProvider}
         onDeleteProvider={deleteProvider}
+        onGetActiveProvider={getActiveProvider}
+        onSetActiveProvider={setActiveProvider}
       />
     </div>
   );
