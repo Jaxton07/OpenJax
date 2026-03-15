@@ -83,6 +83,75 @@ pub struct SessionActionResponse {
     timestamp: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SessionSummary {
+    session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionListResponse {
+    request_id: String,
+    sessions: Vec<SessionSummary>,
+    timestamp: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionMessageItem {
+    message_id: String,
+    session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    turn_id: Option<String>,
+    role: String,
+    content: String,
+    sequence: i64,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionMessagesResponse {
+    request_id: String,
+    session_id: String,
+    messages: Vec<SessionMessageItem>,
+    timestamp: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProviderItem {
+    provider_id: String,
+    provider_name: String,
+    base_url: String,
+    model_name: String,
+    api_key_set: bool,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProviderListResponse {
+    request_id: String,
+    providers: Vec<ProviderItem>,
+    timestamp: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProviderMutationResponse {
+    request_id: String,
+    provider: ProviderItem,
+    timestamp: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProviderDeleteResponse {
+    request_id: String,
+    provider_id: String,
+    status: &'static str,
+    timestamp: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SubmitTurnRequest {
     input: String,
@@ -98,6 +167,22 @@ pub struct ResolveApprovalRequest {
 #[derive(Debug, Deserialize)]
 pub struct EventsQuery {
     after_event_seq: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProviderRequest {
+    provider_name: String,
+    base_url: String,
+    model_name: String,
+    api_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProviderRequest {
+    provider_name: String,
+    base_url: String,
+    model_name: String,
+    api_key: Option<String>,
 }
 
 fn resolve_resume_seq(after_event_seq: Option<u64>, last_event_id: Option<&str>) -> Option<u64> {
@@ -116,10 +201,57 @@ pub async fn create_session(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestContext>,
 ) -> Result<Json<CreateSessionResponse>, ApiError> {
-    let session_id = state.create_session().await;
+    let session_id = state.create_session().await?;
     Ok(Json(CreateSessionResponse {
         request_id: ctx.request_id,
         session_id,
+        timestamp: now_rfc3339(),
+    }))
+}
+
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestContext>,
+) -> Result<Json<SessionListResponse>, ApiError> {
+    let sessions = state
+        .list_persisted_sessions()?
+        .into_iter()
+        .map(|item| SessionSummary {
+            session_id: item.session_id,
+            title: item.title,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+        })
+        .collect::<Vec<SessionSummary>>();
+    Ok(Json(SessionListResponse {
+        request_id: ctx.request_id,
+        sessions,
+        timestamp: now_rfc3339(),
+    }))
+}
+
+pub async fn list_session_messages(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Extension(ctx): Extension<RequestContext>,
+) -> Result<Json<SessionMessagesResponse>, ApiError> {
+    let messages = state
+        .list_session_messages(&session_id)?
+        .into_iter()
+        .map(|item| SessionMessageItem {
+            message_id: item.message_id,
+            session_id: item.session_id,
+            turn_id: item.turn_id,
+            role: item.role,
+            content: item.content,
+            sequence: item.sequence,
+            created_at: item.created_at,
+        })
+        .collect::<Vec<SessionMessageItem>>();
+    Ok(Json(SessionMessagesResponse {
+        request_id: ctx.request_id,
+        session_id,
+        messages,
         timestamp: now_rfc3339(),
     }))
 }
@@ -132,6 +264,9 @@ pub async fn submit_turn(
 ) -> Result<Json<SubmitTurnResponse>, ApiError> {
     let session_runtime = state.get_session(&session_id).await?;
     let input = payload.input.trim().to_string();
+    if !input.is_empty() {
+        state.append_message(&session_id, None, "user", &input)?;
+    }
 
     {
         let session = session_runtime.lock().await;
@@ -153,7 +288,7 @@ pub async fn submit_turn(
         ));
     }
     if input == "/clear" {
-        clear_runtime(&session_runtime).await;
+        clear_runtime(&state, &session_runtime).await;
         let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
         let mut session = session_runtime.lock().await;
         session.turns.insert(
@@ -200,6 +335,7 @@ pub async fn submit_turn(
         session.publish_event(message);
         session.publish_event(completed_response);
         session.publish_event(completed);
+        state.append_message(&session_id, Some(&turn_id), "assistant", "session cleared")?;
         return Ok(Json(SubmitTurnResponse {
             request_id: ctx.request_id,
             session_id,
@@ -210,6 +346,7 @@ pub async fn submit_turn(
 
     let (turn_id_tx, turn_id_rx) = oneshot::channel();
     tokio::spawn(run_turn_task(
+        state.clone(),
         session_runtime,
         session_id.clone(),
         ctx.request_id.clone(),
@@ -353,7 +490,7 @@ pub async fn session_action(
         ));
     }
     let session_runtime = state.get_session(session_id).await?;
-    clear_runtime(&session_runtime).await;
+    clear_runtime(&state, &session_runtime).await;
     Ok(Json(SessionActionResponse {
         request_id: ctx.request_id,
         session_id: session_id.to_string(),
@@ -509,11 +646,118 @@ pub async fn stream_events(
     Ok(Sse::new(event_stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
+pub async fn list_providers(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestContext>,
+) -> Result<Json<ProviderListResponse>, ApiError> {
+    let providers = state
+        .list_providers()?
+        .into_iter()
+        .map(to_provider_item)
+        .collect::<Vec<ProviderItem>>();
+    Ok(Json(ProviderListResponse {
+        request_id: ctx.request_id,
+        providers,
+        timestamp: now_rfc3339(),
+    }))
+}
+
+pub async fn create_provider(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestContext>,
+    Json(payload): Json<CreateProviderRequest>,
+) -> Result<Json<ProviderMutationResponse>, ApiError> {
+    let provider_name = payload.provider_name.trim();
+    let base_url = payload.base_url.trim();
+    let model_name = payload.model_name.trim();
+    let api_key = payload.api_key.trim();
+    if provider_name.is_empty()
+        || base_url.is_empty()
+        || model_name.is_empty()
+        || api_key.is_empty()
+    {
+        return Err(ApiError::invalid_argument(
+            "provider fields must not be empty",
+            json!({}),
+        ));
+    }
+    let created = state.create_provider(provider_name, base_url, model_name, api_key)?;
+    Ok(Json(ProviderMutationResponse {
+        request_id: ctx.request_id,
+        provider: to_provider_item(created),
+        timestamp: now_rfc3339(),
+    }))
+}
+
+pub async fn update_provider(
+    State(state): State<AppState>,
+    Path(provider_id): Path<String>,
+    Extension(ctx): Extension<RequestContext>,
+    Json(payload): Json<UpdateProviderRequest>,
+) -> Result<Json<ProviderMutationResponse>, ApiError> {
+    let provider_name = payload.provider_name.trim();
+    let base_url = payload.base_url.trim();
+    let model_name = payload.model_name.trim();
+    let api_key = payload
+        .api_key
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty());
+    if provider_name.is_empty() || base_url.is_empty() || model_name.is_empty() {
+        return Err(ApiError::invalid_argument(
+            "provider fields must not be empty",
+            json!({}),
+        ));
+    }
+    let updated = state
+        .update_provider(&provider_id, provider_name, base_url, model_name, api_key)?
+        .ok_or_else(|| {
+            ApiError::not_found("provider not found", json!({ "provider_id": provider_id }))
+        })?;
+    Ok(Json(ProviderMutationResponse {
+        request_id: ctx.request_id,
+        provider: to_provider_item(updated),
+        timestamp: now_rfc3339(),
+    }))
+}
+
+pub async fn delete_provider(
+    State(state): State<AppState>,
+    Path(provider_id): Path<String>,
+    Extension(ctx): Extension<RequestContext>,
+) -> Result<Json<ProviderDeleteResponse>, ApiError> {
+    let deleted = state.delete_provider(&provider_id)?;
+    if !deleted {
+        return Err(ApiError::not_found(
+            "provider not found",
+            json!({ "provider_id": provider_id }),
+        ));
+    }
+    Ok(Json(ProviderDeleteResponse {
+        request_id: ctx.request_id,
+        provider_id,
+        status: "deleted",
+        timestamp: now_rfc3339(),
+    }))
+}
+
 fn to_sse_event(event: StreamEventEnvelope) -> SseEvent {
     SseEvent::default()
         .event(event.event_type.clone())
         .id(event.event_seq.to_string())
         .data(serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()))
+}
+
+fn to_provider_item(provider: crate::persistence::ProviderRecord) -> ProviderItem {
+    ProviderItem {
+        provider_id: provider.provider_id,
+        provider_name: provider.provider_name,
+        base_url: provider.base_url,
+        model_name: provider.model_name,
+        api_key_set: !provider.api_key.trim().is_empty(),
+        created_at: provider.created_at,
+        updated_at: provider.updated_at,
+    }
 }
 
 #[cfg(test)]
@@ -547,7 +791,11 @@ fn parse_session_action(session_action: &str) -> Result<(&str, &str), ApiError> 
     })
 }
 
-async fn clear_runtime(session_runtime: &tokio::sync::Mutex<crate::state::SessionRuntime>) {
+async fn clear_runtime(
+    state: &AppState,
+    session_runtime: &tokio::sync::Mutex<crate::state::SessionRuntime>,
+) {
+    let config = state.runtime_config();
     let mut session = session_runtime.lock().await;
-    session.clear_context();
+    session.clear_context_with_config(config);
 }

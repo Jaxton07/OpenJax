@@ -984,7 +984,7 @@ textarea {
 }
 
 .settings-modal {
-  width: min(680px, 92vw);
+  width: min(980px, 94vw);
   background: #ffffff;
   border-radius: 20px;
   border: 1px solid #dfdfdb;
@@ -1014,6 +1014,111 @@ textarea {
   padding: 10px 12px;
   background: #ffffff;
   color: #1f1f1f;
+}
+
+.settings-modal-body {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  min-height: 460px;
+}
+
+.settings-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid #ececec;
+  padding-right: 12px;
+}
+
+.settings-sidebar-nav button {
+  text-align: left;
+}
+
+.settings-sidebar-nav button.active {
+  background: #111;
+  color: #fff;
+}
+
+.settings-modal-content {
+  min-width: 0;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.provider-panel {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 12px;
+}
+
+.provider-list-panel {
+  border: 1px solid #ececec;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.provider-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.provider-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-list li {
+  border: 1px solid #ececec;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.provider-card-main span {
+  color: #606060;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.provider-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.provider-form {
+  border: 1px solid #ececec;
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .output-mode-group > div {
@@ -1097,5 +1202,22 @@ textarea {
 
   .composer-wrap {
     padding-bottom: 8px;
+  }
+
+  .settings-modal-body {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .settings-sidebar-nav {
+    border-right: none;
+    border-bottom: 1px solid #ececec;
+    padding-right: 0;
+    padding-bottom: 8px;
+    flex-direction: row;
+  }
+
+  .provider-panel {
+    grid-template-columns: 1fr;
   }
 }

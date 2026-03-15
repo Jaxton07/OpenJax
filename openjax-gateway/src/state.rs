@@ -1,11 +1,15 @@
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
 use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
-use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, Config, approval_timeout_ms_from_env};
+use openjax_core::{
+    Agent, ApprovalHandler, ApprovalRequest, Config, ModelConfig, ModelRoutingConfig,
+    ProviderModelConfig, approval_timeout_ms_from_env,
+};
 use openjax_protocol::Event;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -18,6 +22,7 @@ use crate::auth::load_api_keys_from_env;
 use crate::auth::{AuthConfig, AuthService};
 use crate::error::{ApiError, now_rfc3339};
 use crate::event_mapper::map_core_event_payload;
+use crate::persistence::{ProviderRepository, SessionRepository, SqliteGatewayStore};
 
 const DEFAULT_EVENT_REPLAY_LIMIT: usize = 1024;
 const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1024;
@@ -56,6 +61,7 @@ pub struct AppState {
     sessions: Arc<RwLock<HashMap<String, Arc<Mutex<SessionRuntime>>>>>,
     api_keys: Arc<HashSet<String>>,
     auth_service: Arc<AuthService>,
+    store: Arc<SqliteGatewayStore>,
 }
 
 impl AppState {
@@ -74,19 +80,25 @@ impl AppState {
         } else {
             AuthService::from_config(auth_config.clone())?
         };
+        let db_path = gateway_db_path_from_env();
+        let store = Arc::new(SqliteGatewayStore::open(&db_path)?);
+        migrate_providers_from_config_if_needed(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
             auth_service: Arc::new(auth_service),
+            store,
         })
     }
 
     pub fn new_with_api_keys_for_test(api_keys: HashSet<String>) -> Self {
         let auth_service = AuthService::for_test().expect("initialize test auth service");
+        let store = Arc::new(SqliteGatewayStore::open_memory().expect("initialize test store"));
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
             auth_service: Arc::new(auth_service),
+            store,
         }
     }
 
@@ -98,32 +110,142 @@ impl AppState {
         self.auth_service.clone()
     }
 
-    pub async fn create_session(&self) -> String {
+    pub async fn create_session(&self) -> Result<String, ApiError> {
         let session_id = format!("sess_{}", Uuid::new_v4().simple());
-        let runtime = Arc::new(Mutex::new(SessionRuntime::new()));
+        self.store
+            .create_session(&session_id, None)
+            .map_err(map_store_error)?;
+        let runtime = self
+            .build_session_runtime(&session_id)
+            .map_err(map_store_error)?;
         self.sessions
             .write()
             .await
             .insert(session_id.clone(), runtime);
-        session_id
+        Ok(session_id)
     }
 
     pub async fn get_session(
         &self,
         session_id: &str,
     ) -> Result<Arc<Mutex<SessionRuntime>>, ApiError> {
-        self.sessions
-            .read()
-            .await
-            .get(session_id)
-            .cloned()
-            .ok_or_else(|| {
-                ApiError::not_found("session not found", json!({ "session_id": session_id }))
-            })
+        if let Some(runtime) = self.sessions.read().await.get(session_id).cloned() {
+            return Ok(runtime);
+        }
+        let exists = self
+            .store
+            .get_session(session_id)
+            .map_err(map_store_error)?
+            .is_some();
+        if !exists {
+            return Err(ApiError::not_found(
+                "session not found",
+                json!({ "session_id": session_id }),
+            ));
+        }
+        let runtime = self
+            .build_session_runtime(session_id)
+            .map_err(map_store_error)?;
+        let mut guard = self.sessions.write().await;
+        if let Some(existing) = guard.get(session_id).cloned() {
+            return Ok(existing);
+        }
+        guard.insert(session_id.to_string(), runtime.clone());
+        Ok(runtime)
     }
 
     pub async fn remove_session(&self, session_id: &str) -> Option<Arc<Mutex<SessionRuntime>>> {
         self.sessions.write().await.remove(session_id)
+    }
+
+    pub fn list_persisted_sessions(
+        &self,
+    ) -> Result<Vec<crate::persistence::SessionRecord>, ApiError> {
+        self.store.list_sessions().map_err(map_store_error)
+    }
+
+    pub fn list_session_messages(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crate::persistence::MessageRecord>, ApiError> {
+        self.store
+            .list_messages(session_id)
+            .map_err(map_store_error)
+    }
+
+    pub fn append_message(
+        &self,
+        session_id: &str,
+        turn_id: Option<&str>,
+        role: &str,
+        content: &str,
+    ) -> Result<(), ApiError> {
+        self.store
+            .append_message(session_id, turn_id, role, content)
+            .map_err(map_store_error)?;
+        Ok(())
+    }
+
+    pub fn list_providers(&self) -> Result<Vec<crate::persistence::ProviderRecord>, ApiError> {
+        self.store.list_providers().map_err(map_store_error)
+    }
+
+    pub fn create_provider(
+        &self,
+        provider_name: &str,
+        base_url: &str,
+        model_name: &str,
+        api_key: &str,
+    ) -> Result<crate::persistence::ProviderRecord, ApiError> {
+        self.store
+            .create_provider(provider_name, base_url, model_name, api_key)
+            .map_err(map_store_error)
+    }
+
+    pub fn update_provider(
+        &self,
+        provider_id: &str,
+        provider_name: &str,
+        base_url: &str,
+        model_name: &str,
+        api_key: Option<&str>,
+    ) -> Result<Option<crate::persistence::ProviderRecord>, ApiError> {
+        self.store
+            .update_provider(provider_id, provider_name, base_url, model_name, api_key)
+            .map_err(map_store_error)
+    }
+
+    pub fn delete_provider(&self, provider_id: &str) -> Result<bool, ApiError> {
+        self.store
+            .delete_provider(provider_id)
+            .map_err(map_store_error)
+    }
+
+    pub fn runtime_config(&self) -> Config {
+        let providers = self.store.list_providers().unwrap_or_default();
+        build_runtime_config(providers)
+    }
+
+    fn build_session_runtime(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<Arc<Mutex<SessionRuntime>>> {
+        let providers = self.store.list_providers().unwrap_or_default();
+        let config = build_runtime_config(providers);
+        let mut runtime = SessionRuntime::new_with_config(config);
+        let messages = self.store.list_messages(session_id)?;
+        for message in messages {
+            let turn = message.turn_id.unwrap_or_else(|| "turn_0".to_string());
+            let turn_runtime = runtime
+                .turns
+                .entry(turn)
+                .or_insert_with(TurnRuntime::queued);
+            if message.role == "assistant" {
+                turn_runtime.status = TurnStatus::Completed;
+                turn_runtime.assistant_message = Some(message.content);
+            }
+        }
+        Ok(Arc::new(Mutex::new(runtime)))
     }
 }
 
@@ -149,8 +271,8 @@ pub struct SessionRuntime {
 }
 
 impl SessionRuntime {
-    pub fn new() -> Self {
-        let mut agent = Agent::with_config(Config::load());
+    pub fn new_with_config(config: Config) -> Self {
+        let mut agent = Agent::with_config(config);
         let approval_handler = Arc::new(GatewayApprovalHandler::default());
         agent.set_approval_handler(approval_handler.clone());
         let replay_capacity = event_replay_limit();
@@ -174,6 +296,21 @@ impl SessionRuntime {
 
     pub fn clear_context(&mut self) {
         let mut agent = Agent::with_config(Config::load());
+        let approval_handler = Arc::new(GatewayApprovalHandler::default());
+        agent.set_approval_handler(approval_handler.clone());
+        self.agent = Arc::new(Mutex::new(agent));
+        self.approval_handler = approval_handler;
+        self.status = SessionStatus::Active;
+        self.turns.clear();
+        self.core_turn_to_public.clear();
+        self.resolved_approvals.clear();
+        self.turn_event_seq.clear();
+        self.event_log = ReplayBuffer::with_capacity(self.replay_capacity);
+        self.last_event_emitted_at = None;
+    }
+
+    pub fn clear_context_with_config(&mut self, config: Config) {
+        let mut agent = Agent::with_config(config);
         let approval_handler = Arc::new(GatewayApprovalHandler::default());
         agent.set_approval_handler(approval_handler.clone());
         self.agent = Arc::new(Mutex::new(agent));
@@ -263,9 +400,164 @@ fn event_channel_capacity() -> usize {
         .unwrap_or(DEFAULT_EVENT_CHANNEL_CAPACITY)
 }
 
+fn gateway_db_path_from_env() -> PathBuf {
+    std::env::var("OPENJAX_GATEWAY_DB_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(".openjax/gateway.db"))
+}
+
+fn map_store_error(err: anyhow::Error) -> ApiError {
+    let text = err.to_string();
+    if text.contains("UNIQUE constraint failed") {
+        return ApiError::conflict("duplicate resource", json!({ "reason": text }));
+    }
+    ApiError::internal(text)
+}
+
+fn normalize_model_id(raw: &str) -> String {
+    let normalized: String = raw
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    normalized.trim_matches('_').to_string()
+}
+
+fn provider_protocol(base_url: &str, provider_name: &str) -> &'static str {
+    let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
+    if marker.contains("anthropic_messages")
+        || marker.contains("protocol=anthropic")
+        || marker.contains("/v1/messages")
+    {
+        "anthropic_messages"
+    } else {
+        "chat_completions"
+    }
+}
+
+fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
+    let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
+    if marker.contains("anthropic") || marker.contains("claude") {
+        "anthropic"
+    } else if marker.contains("kimi") {
+        "kimi"
+    } else if marker.contains("glm") || marker.contains("bigmodel") {
+        "glm"
+    } else {
+        "openai"
+    }
+}
+
+fn build_runtime_config(providers: Vec<crate::persistence::ProviderRecord>) -> Config {
+    let mut config = Config::load();
+    if providers.is_empty() {
+        return config;
+    }
+    let mut models = std::collections::HashMap::new();
+    let mut route_order = Vec::new();
+    for provider in providers {
+        let mut model_id = normalize_model_id(&provider.provider_name);
+        if model_id.is_empty() {
+            model_id = format!("provider_{}", provider.provider_id);
+        }
+        let mut dedup_index = 1usize;
+        while models.contains_key(&model_id) {
+            dedup_index += 1;
+            model_id = format!(
+                "{}_{}",
+                normalize_model_id(&provider.provider_name),
+                dedup_index
+            );
+        }
+        route_order.push(model_id.clone());
+        models.insert(
+            model_id,
+            ProviderModelConfig {
+                provider: Some(
+                    provider_vendor(&provider.base_url, &provider.provider_name).to_string(),
+                ),
+                protocol: Some(
+                    provider_protocol(&provider.base_url, &provider.provider_name).to_string(),
+                ),
+                model: Some(provider.model_name),
+                base_url: Some(provider.base_url),
+                api_key: Some(provider.api_key),
+                api_key_env: None,
+                anthropic_version: None,
+                thinking_budget_tokens: Some(2000),
+                supports_stream: Some(true),
+                supports_reasoning: Some(true),
+                supports_tool_call: Some(true),
+                supports_json_mode: Some(false),
+            },
+        );
+    }
+    let planner = route_order[0].clone();
+    let mut fallbacks = std::collections::HashMap::new();
+    for (index, model_id) in route_order.iter().enumerate() {
+        let list = route_order
+            .iter()
+            .skip(index + 1)
+            .cloned()
+            .collect::<Vec<String>>();
+        if !list.is_empty() {
+            fallbacks.insert(model_id.clone(), list);
+        }
+    }
+    config.model = Some(ModelConfig {
+        backend: None,
+        api_key: None,
+        base_url: None,
+        model: None,
+        models,
+        routing: Some(ModelRoutingConfig {
+            planner: Some(planner.clone()),
+            final_writer: Some(planner.clone()),
+            tool_reasoning: Some(planner),
+            fallbacks,
+        }),
+    });
+    config
+}
+
+fn migrate_providers_from_config_if_needed(store: &SqliteGatewayStore) {
+    let existing = store.list_providers().unwrap_or_default();
+    if !existing.is_empty() {
+        return;
+    }
+    let config = Config::load();
+    let Some(model) = config.model else {
+        return;
+    };
+    for (model_id, entry) in model.models {
+        let api_key = entry
+            .api_key
+            .or_else(|| {
+                entry
+                    .api_key_env
+                    .as_ref()
+                    .and_then(|env_name| std::env::var(env_name).ok())
+            })
+            .unwrap_or_default();
+        if api_key.trim().is_empty() {
+            continue;
+        }
+        let base_url = entry
+            .base_url
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+        let model_name = entry.model.unwrap_or_else(|| model_id.clone());
+        let _ = store.create_provider(&model_id, &base_url, &model_name, &api_key);
+    }
+}
+
 impl Default for SessionRuntime {
     fn default() -> Self {
-        Self::new()
+        Self::new_with_config(Config::load())
     }
 }
 
@@ -368,6 +660,7 @@ impl ApprovalHandler for GatewayApprovalHandler {
 }
 
 pub async fn run_turn_task(
+    app_state: AppState,
     session_runtime: Arc<Mutex<SessionRuntime>>,
     session_id: String,
     request_id: String,
@@ -393,6 +686,7 @@ pub async fn run_turn_task(
         let mapped = {
             let mut session = session_runtime.lock().await;
             map_core_event(
+                &app_state,
                 &mut session,
                 &session_id,
                 &request_id,
@@ -431,6 +725,7 @@ pub async fn run_turn_task(
 }
 
 fn map_core_event(
+    app_state: &AppState,
     session: &mut SessionRuntime,
     session_id: &str,
     request_id: &str,
@@ -478,6 +773,7 @@ fn map_core_event(
             && let Some(content) = payload.get("content").and_then(|value| value.as_str())
         {
             turn.assistant_message = Some(content.to_string());
+            let _ = app_state.append_message(session_id, Some(turn_id), "assistant", content);
         }
     }
 
@@ -631,12 +927,15 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn turn_status_remains_failed_after_turn_completed() {
-        let mut session = SessionRuntime::new();
+        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
+        let mut session = SessionRuntime::default();
         let mut turn_id_tx = None;
         let _ = map_core_event(
+            &app_state,
             &mut session,
             "sess_1",
             "req_1",
@@ -649,6 +948,7 @@ mod tests {
             &mut turn_id_tx,
         );
         let _ = map_core_event(
+            &app_state,
             &mut session,
             "sess_1",
             "req_1",
@@ -661,9 +961,11 @@ mod tests {
 
     #[test]
     fn turn_message_only_updates_from_response_completed() {
-        let mut session = SessionRuntime::new();
+        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
+        let mut session = SessionRuntime::default();
         let mut turn_id_tx = None;
         let _ = map_core_event(
+            &app_state,
             &mut session,
             "sess_1",
             "req_1",
@@ -671,6 +973,7 @@ mod tests {
             &mut turn_id_tx,
         );
         let _ = map_core_event(
+            &app_state,
             &mut session,
             "sess_1",
             "req_1",
@@ -684,6 +987,7 @@ mod tests {
         assert!(turn.assistant_message.is_none());
 
         let _ = map_core_event(
+            &app_state,
             &mut session,
             "sess_1",
             "req_1",
@@ -706,5 +1010,11 @@ mod tests {
             stream_source: openjax_protocol::StreamSource::ModelLive,
         }]);
         assert_eq!(turn_id, Some(7));
+    }
+
+    #[test]
+    fn provider_protocol_defaults_to_chat_completions_for_glm_style_base_url() {
+        let protocol = provider_protocol("https://open.bigmodel.cn/api/paas/v4", "glm-main");
+        assert_eq!(protocol, "chat_completions");
     }
 }

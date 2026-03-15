@@ -17,6 +17,19 @@ const DEFAULT_AUTH: AuthState = {
   scope: null
 };
 
+function normalizeBaseUrl(baseUrl: string): string {
+  const normalized = baseUrl.trim();
+  if (normalized === "http://127.0.0.1:8080") {
+    return DEFAULT_SETTINGS.baseUrl;
+  }
+  const localhostMatch = normalized.match(/^http:\/\/localhost(?::(\d+))?$/i);
+  if (localhostMatch) {
+    const port = localhostMatch[1] ?? "8765";
+    return `http://127.0.0.1:${port}`;
+  }
+  return normalized;
+}
+
 export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -27,10 +40,7 @@ export function loadSettings(): AppSettings {
     if (!parsed.baseUrl || !parsed.outputMode) {
       return DEFAULT_SETTINGS;
     }
-    const baseUrl =
-      parsed.baseUrl === "http://127.0.0.1:8080"
-        ? DEFAULT_SETTINGS.baseUrl
-        : parsed.baseUrl;
+    const baseUrl = normalizeBaseUrl(parsed.baseUrl);
     return {
       baseUrl,
       outputMode: parsed.outputMode

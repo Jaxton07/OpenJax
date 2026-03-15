@@ -5,8 +5,17 @@ import { recordDeltaReceived } from "../lib/streamPerf";
 import { streamRenderStore } from "../lib/streamRenderStore";
 import { humanizeError, isAuthenticationError } from "../lib/errors";
 import { loadAuth, loadSessions, loadSettings, saveAuth, saveSessions, saveSettings } from "../lib/storage";
-import type { ChatMessage, ChatSession, ChatState, PendingApproval } from "../types/chat";
-import type { AppSettings, AuthSessionItem, GatewayConnection, GatewayError, StreamEvent } from "../types/gateway";
+import type { ChatMessage, ChatSession, ChatState, MessageRole, PendingApproval } from "../types/chat";
+import type {
+  AppSettings,
+  AuthSessionItem,
+  GatewaySessionMessage,
+  GatewaySessionSummary,
+  GatewayConnection,
+  GatewayError,
+  LlmProvider,
+  StreamEvent
+} from "../types/gateway";
 
 const MAX_RECONNECT_RETRY = 6;
 const STREAM_DEBUG_ENABLED = resolveWebStreamDebugEnabled();
@@ -414,6 +423,26 @@ export function useChatApp() {
     state.settings.outputMode
   ]);
 
+  const hydrateSessionsFromGateway = useCallback(async (apiClient: GatewayClient): Promise<ChatSession[]> => {
+    const sessionsResponse = await apiClient.listChatSessions();
+    const hydrated: ChatSession[] = [];
+    for (const remoteSession of sessionsResponse.sessions) {
+      try {
+        const messagesResponse = await apiClient.listSessionMessages(remoteSession.session_id);
+        hydrated.push(buildChatSessionFromGateway(remoteSession, messagesResponse.messages));
+      } catch {
+        continue;
+      }
+    }
+    const deduped = new Map<string, ChatSession>();
+    for (const session of hydrated) {
+      if (!deduped.has(session.id)) {
+        deduped.set(session.id, session);
+      }
+    }
+    return Array.from(deduped.values());
+  }, []);
+
   const authenticate = useCallback(
     async (baseUrlInput: string, ownerKeyInput: string) => {
       const baseUrl = baseUrlInput.trim();
@@ -426,6 +455,25 @@ export function useChatApp() {
       const tempClient = new GatewayClient({ baseUrl, accessToken: "" });
       try {
         const result = await tempClient.login(ownerKey);
+        const authedClient = new GatewayClient({
+          baseUrl,
+          accessToken: result.access_token
+        });
+        let sessions: ChatSession[] = [];
+        let toast = "登录成功";
+        try {
+          sessions = await hydrateSessionsFromGateway(authedClient);
+          toast = sessions.length > 0 ? `登录成功，已同步 ${sessions.length} 个历史会话` : "登录成功，暂无历史会话";
+        } catch {
+          sessions = loadSessions();
+          toast = "历史同步失败，已使用本地缓存";
+        }
+        for (const session of sessionsRef.current) {
+          streamRenderStore.clear(session.id);
+        }
+        lastEventSeqRef.current = Object.fromEntries(
+          sessions.map((session) => [session.id, session.lastEventSeq])
+        );
 
         const settings = {
           ...state.settings,
@@ -447,8 +495,10 @@ export function useChatApp() {
             sessionId: result.session_id,
             scope: result.scope
           },
+          sessions,
+          activeSessionId: sessions[0]?.id ?? null,
           globalError: null,
-          infoToast: "登录成功"
+          infoToast: toast
         }));
         return true;
       } catch (error) {
@@ -456,7 +506,7 @@ export function useChatApp() {
         return false;
       }
     },
-    [state.settings]
+    [hydrateSessionsFromGateway, state.settings]
   );
 
   const logout = useCallback(async () => {
@@ -743,6 +793,47 @@ export function useChatApp() {
     clearAuthState("当前设备会话已失效，请重新登录。");
   }, [clearAuthState, client, withAuthRetry]);
 
+  const listProviders = useCallback(async (): Promise<LlmProvider[]> => {
+    const data = await withAuthRetry(() => client.listProviders());
+    return data.providers;
+  }, [client, withAuthRetry]);
+
+  const createProvider = useCallback(
+    async (payload: {
+      providerName: string;
+      baseUrl: string;
+      modelName: string;
+      apiKey: string;
+    }): Promise<LlmProvider> => {
+      const data = await withAuthRetry(() => client.createProvider(payload));
+      return data.provider;
+    },
+    [client, withAuthRetry]
+  );
+
+  const updateProvider = useCallback(
+    async (
+      providerId: string,
+      payload: {
+        providerName: string;
+        baseUrl: string;
+        modelName: string;
+        apiKey?: string;
+      }
+    ): Promise<LlmProvider> => {
+      const data = await withAuthRetry(() => client.updateProvider(providerId, payload));
+      return data.provider;
+    },
+    [client, withAuthRetry]
+  );
+
+  const deleteProvider = useCallback(
+    async (providerId: string): Promise<void> => {
+      await withAuthRetry(() => client.deleteProvider(providerId));
+    },
+    [client, withAuthRetry]
+  );
+
   const dismissGlobalError = useCallback(() => {
     setState((prev) => ({ ...prev, globalError: null }));
   }, []);
@@ -769,6 +860,10 @@ export function useChatApp() {
     listAuthSessions,
     revokeAuthSession,
     revokeAllAuthSessions,
+    listProviders,
+    createProvider,
+    updateProvider,
+    deleteProvider,
     dismissGlobalError,
     dismissToast
   };
@@ -777,6 +872,40 @@ export function useChatApp() {
 function summarizeTitle(input: string): string {
   const plain = input.replace(/\s+/g, " ").trim();
   return plain.length > 24 ? `${plain.slice(0, 24)}...` : plain;
+}
+
+export function mapGatewayRoleToMessageRole(role: string): MessageRole {
+  if (role === "user" || role === "assistant" || role === "tool" || role === "error" || role === "system") {
+    return role;
+  }
+  return "system";
+}
+
+export function buildChatSessionFromGateway(
+  remoteSession: GatewaySessionSummary,
+  remoteMessages: GatewaySessionMessage[]
+): ChatSession {
+  const orderedMessages = [...remoteMessages].sort((left, right) => left.sequence - right.sequence);
+  const messages: ChatMessage[] = orderedMessages.map((item) => ({
+    id: item.message_id,
+    kind: "text",
+    role: mapGatewayRoleToMessageRole(item.role),
+    content: item.content,
+    timestamp: item.created_at,
+    turnId: item.turn_id
+  }));
+  const firstUserMessage = messages.find((message) => message.role === "user");
+  const title = remoteSession.title?.trim() || summarizeTitle(firstUserMessage?.content ?? "新聊天");
+  return {
+    id: remoteSession.session_id,
+    title,
+    createdAt: remoteSession.created_at,
+    connection: "idle",
+    turnPhase: "draft",
+    lastEventSeq: 0,
+    messages,
+    pendingApprovals: []
+  };
 }
 
 function applyResponseStartedSession(

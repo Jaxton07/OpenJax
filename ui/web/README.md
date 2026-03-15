@@ -26,6 +26,9 @@ ui/web/
 └── src
     ├── App.tsx
     ├── main.tsx
+    ├── pic
+    │   └── icon
+    │       └── index.tsx
     ├── components
     │   ├── Composer.tsx
     │   ├── LoginPage.tsx
@@ -76,6 +79,7 @@ ui/web/
 - `src/lib/storage.ts`：设置与会话本地存储（`openjax:web:*`）。
 - `src/components/MessageList.tsx`：按 `message.kind` 分支渲染文本消息与 tool_steps，assistant 消息支持多段 reasoning 折叠区。
 - `src/components/tool-steps/*`：Tool 卡片组件层（列表/卡片/状态徽标/详情体）。
+- `src/pic/icon/index.tsx`：统一 SVG 图标组件出口，供页面复用。
 - `src/types/gateway.ts`：网关协议类型定义（请求/响应/事件）。
 - `src/types/chat.ts`：本地会话与消息模型（`ChatMessage.kind`、`ToolStep` 等）。
 

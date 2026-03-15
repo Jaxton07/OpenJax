@@ -4,6 +4,7 @@ mod error;
 mod event_mapper;
 mod handlers;
 mod middleware;
+pub mod persistence;
 pub mod state;
 
 pub use auth::{ApiKeyConfig, ApiKeySource, load_api_keys};
@@ -15,7 +16,7 @@ use axum::Router;
 use axum::http::Method;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE};
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -25,7 +26,13 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             "http://localhost:5173".parse().expect("valid origin"),
             "http://127.0.0.1:5173".parse().expect("valid origin"),
         ])
-        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             AUTHORIZATION,
             CONTENT_TYPE,
@@ -54,10 +61,17 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         .route("/api/v1/auth/logout", post(auth_handlers::logout));
 
     let protected = Router::new()
-        .route("/api/v1/sessions", post(handlers::create_session))
+        .route(
+            "/api/v1/sessions",
+            post(handlers::create_session).get(handlers::list_sessions),
+        )
         .route(
             "/api/v1/sessions/:session_id",
             post(handlers::session_action).delete(handlers::shutdown_session),
+        )
+        .route(
+            "/api/v1/sessions/:session_id/messages",
+            get(handlers::list_session_messages),
         )
         .route(
             "/api/v1/sessions/:session_id/turns",
@@ -74,6 +88,14 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         .route(
             "/api/v1/sessions/:session_id/events",
             get(handlers::stream_events),
+        )
+        .route(
+            "/api/v1/providers",
+            get(handlers::list_providers).post(handlers::create_provider),
+        )
+        .route(
+            "/api/v1/providers/:provider_id",
+            patch(handlers::update_provider).delete(handlers::delete_provider),
         )
         .layer(from_fn_with_state(
             state.clone(),

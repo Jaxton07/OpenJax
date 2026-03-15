@@ -3,7 +3,12 @@ import type {
   AuthLoginResponse,
   AuthRevokeResponse,
   AuthSessionsResponse,
+  GatewaySessionListResponse,
+  GatewaySessionMessagesResponse,
   GatewayConnection,
+  ProviderDeleteResponse,
+  ProviderListResponse,
+  ProviderMutationResponse,
   SessionActionResponse,
   SessionCreated,
   StreamEvent,
@@ -88,6 +93,14 @@ export class GatewayClient {
     });
   }
 
+  async listChatSessions(): Promise<GatewaySessionListResponse> {
+    return this.request("/api/v1/sessions", { method: "GET" });
+  }
+
+  async listSessionMessages(sessionId: string): Promise<GatewaySessionMessagesResponse> {
+    return this.request(`/api/v1/sessions/${sessionId}/messages`, { method: "GET" });
+  }
+
   async submitTurn(sessionId: string, input: string): Promise<TurnSubmitted> {
     return this.request(`/api/v1/sessions/${sessionId}/turns`, {
       method: "POST",
@@ -129,6 +142,53 @@ export class GatewayClient {
 
   async shutdownSession(sessionId: string): Promise<SessionActionResponse> {
     return this.request(`/api/v1/sessions/${sessionId}`, {
+      method: "DELETE"
+    });
+  }
+
+  async listProviders(): Promise<ProviderListResponse> {
+    return this.request("/api/v1/providers", { method: "GET" });
+  }
+
+  async createProvider(payload: {
+    providerName: string;
+    baseUrl: string;
+    modelName: string;
+    apiKey: string;
+  }): Promise<ProviderMutationResponse> {
+    return this.request("/api/v1/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        provider_name: payload.providerName,
+        base_url: payload.baseUrl,
+        model_name: payload.modelName,
+        api_key: payload.apiKey
+      })
+    });
+  }
+
+  async updateProvider(
+    providerId: string,
+    payload: {
+      providerName: string;
+      baseUrl: string;
+      modelName: string;
+      apiKey?: string;
+    }
+  ): Promise<ProviderMutationResponse> {
+    return this.request(`/api/v1/providers/${providerId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        provider_name: payload.providerName,
+        base_url: payload.baseUrl,
+        model_name: payload.modelName,
+        api_key: payload.apiKey
+      })
+    });
+  }
+
+  async deleteProvider(providerId: string): Promise<ProviderDeleteResponse> {
+    return this.request(`/api/v1/providers/${providerId}`, {
       method: "DELETE"
     });
   }

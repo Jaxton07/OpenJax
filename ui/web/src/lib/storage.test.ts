@@ -20,6 +20,15 @@ describe("settings storage", () => {
 
     const settings = loadSettings();
     expect(settings.outputMode).toBe("polling");
+    expect(settings.baseUrl).toBe("http://127.0.0.1:8080");
+  });
+
+  it("normalizes localhost gateway address", () => {
+    saveSettings({
+      baseUrl: "http://localhost:8765",
+      outputMode: "sse"
+    });
+    expect(loadSettings().baseUrl).toBe("http://127.0.0.1:8765");
   });
 });
 

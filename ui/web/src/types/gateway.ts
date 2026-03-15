@@ -5,6 +5,16 @@ export interface AppSettings {
   outputMode: OutputMode;
 }
 
+export interface LlmProvider {
+  provider_id: string;
+  provider_name: string;
+  base_url: string;
+  model_name: string;
+  api_key_set: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AuthState {
   authenticated: boolean;
   accessToken: string;
@@ -42,6 +52,36 @@ export interface SessionCreated {
   timestamp: string;
 }
 
+export interface GatewaySessionSummary {
+  session_id: string;
+  title?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GatewaySessionListResponse {
+  request_id: string;
+  sessions: GatewaySessionSummary[];
+  timestamp: string;
+}
+
+export interface GatewaySessionMessage {
+  message_id: string;
+  session_id: string;
+  turn_id?: string;
+  role: string;
+  content: string;
+  sequence: number;
+  created_at: string;
+}
+
+export interface GatewaySessionMessagesResponse {
+  request_id: string;
+  session_id: string;
+  messages: GatewaySessionMessage[];
+  timestamp: string;
+}
+
 export interface TurnSubmitted {
   request_id: string;
   session_id: string;
@@ -64,6 +104,25 @@ export interface SessionActionResponse {
   session_id: string;
   status: "cleared" | "shutdown" | "resolved";
   approval_id?: string;
+  timestamp: string;
+}
+
+export interface ProviderListResponse {
+  request_id: string;
+  providers: LlmProvider[];
+  timestamp: string;
+}
+
+export interface ProviderMutationResponse {
+  request_id: string;
+  provider: LlmProvider;
+  timestamp: string;
+}
+
+export interface ProviderDeleteResponse {
+  request_id: string;
+  provider_id: string;
+  status: "deleted";
   timestamp: string;
 }
 
