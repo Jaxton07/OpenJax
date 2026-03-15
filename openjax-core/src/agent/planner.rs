@@ -4,15 +4,15 @@ use openjax_protocol::Event;
 use tracing::{debug, info, warn};
 
 use crate::Agent;
-use crate::agent::decision::{
-    normalize_model_decision, normalize_tool_calls, parse_model_decision, parse_model_decision_v2,
-};
+use crate::agent::planner_tool_batch::BatchExecutionResult;
 use crate::agent::planner_utils::{summarize_log_preview, summarize_log_preview_json};
-use crate::agent::prompt::{build_json_repair_prompt, build_planner_input};
+use crate::agent::prompt::build_planner_input;
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::turn_engine::TurnEngine;
-use crate::dispatcher::{self, DispatchBranch, ProbeInput};
+use crate::dispatcher::{self, DispatchOutcome, ProbeInput};
 use crate::model::{ModelRequest, ModelStage};
+
+const FLOW_TRACE_PREFIX: &str = "OPENJAX_FLOW";
 
 impl Agent {
     pub(crate) async fn execute_natural_language_turn(
@@ -102,28 +102,31 @@ impl Agent {
                         error = %err,
                         "model_request failed"
                     );
-                    let message = format!("[model error] {err}");
                     self.push_event(
                         events,
-                        Event::AssistantMessage {
+                        Event::ResponseError {
                             turn_id,
-                            content: message.clone(),
+                            code: "model_request_failed".to_string(),
+                            message: format!("[model error] {err}"),
+                            retryable: true,
                         },
                     );
                     turn_engine.on_failed();
-                    self.record_history("assistant", message);
                     return;
                 }
             };
             let model_output = planner_stream.model_output;
-            let dispatch_meta = dispatcher::dispatch_stream(
+            let mut routed = dispatcher::route_model_output(
                 ProbeInput {
                     turn_id,
                     action_hint: planner_stream.action_hint.as_deref(),
                     model_output: Some(&model_output),
                 },
+                &model_output,
+                self.tool_batch_v2_enabled,
                 self.dispatcher_config,
             );
+            let mut used_repair = false;
 
             info!(
                 turn_id = turn_id,
@@ -137,72 +140,12 @@ impl Agent {
                 "model_raw_output"
             );
 
-            if self.tool_batch_v2_enabled
-                && let Some(v2) = parse_model_decision_v2(&model_output)
-                && v2.action.eq_ignore_ascii_case("tool_batch")
-            {
-                let mut normalized_calls = normalize_tool_calls(&v2.tool_calls);
-                if normalized_calls.is_empty() {
-                    let message = "[model error] tool_batch missing valid tool_calls".to_string();
-                    self.push_event(
-                        events,
-                        Event::AssistantMessage {
-                            turn_id,
-                            content: message.clone(),
-                        },
-                    );
-                    self.record_history("assistant", message);
-                    return;
-                }
-                if normalized_calls.len() > remaining {
-                    normalized_calls.truncate(remaining);
-                }
-                let proposals = normalized_calls
-                    .iter()
-                    .map(|call| openjax_protocol::ToolCallProposal {
-                        tool_call_id: call.tool_call_id.clone(),
-                        tool_name: call.tool_name.clone(),
-                        arguments: call
-                            .args
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect::<BTreeMap<_, _>>(),
-                        depends_on: call.depends_on.clone(),
-                        concurrency_group: call.concurrency_group.clone(),
-                    })
-                    .collect::<Vec<_>>();
-                self.push_event(
-                    events,
-                    Event::ToolCallsProposed {
-                        turn_id,
-                        tool_calls: proposals,
-                    },
-                );
-                turn_engine.on_tool_batch_started();
-                let executed = self
-                    .execute_tool_batch_calls(
-                        turn_id,
-                        normalized_calls,
-                        events,
-                        &mut tool_traces,
-                        &mut apply_patch_read_guard,
-                        &mut turn_engine,
-                    )
-                    .await;
-                executed_count += executed;
-                consecutive_duplicate_skips = 0;
-                turn_engine.on_response_resumed();
-                continue;
-            }
-
-            let decision = if let Some(parsed) = parse_model_decision(&model_output) {
-                normalize_model_decision(parsed)
-            } else {
+            if let DispatchOutcome::Repair { raw_output, .. } = &routed {
                 info!(
                     turn_id = turn_id,
                     "model_output not valid JSON, attempting repair"
                 );
-                let repair_prompt = build_json_repair_prompt(&model_output);
+                let repair_prompt = crate::agent::prompt::build_json_repair_prompt(raw_output);
 
                 self.apply_rate_limit().await;
 
@@ -217,16 +160,16 @@ impl Agent {
                             error = %err,
                             "model_repair_request failed"
                         );
-                        let message = format!("[model error] {err}");
                         self.push_event(
                             events,
-                            Event::AssistantMessage {
+                            Event::ResponseError {
                                 turn_id,
-                                content: message.clone(),
+                                code: "model_repair_failed".to_string(),
+                                message: format!("[model error] {err}"),
+                                retryable: true,
                             },
                         );
                         turn_engine.on_failed();
-                        self.record_history("assistant", message);
                         return;
                     }
                 };
@@ -245,165 +188,309 @@ impl Agent {
                     "model_repaired_output"
                 );
 
-                if let Some(parsed) = parse_model_decision(&repaired_output) {
-                    normalize_model_decision(parsed)
-                } else {
-                    // Still non-JSON after one repair attempt: treat first output as final.
+                routed = dispatcher::route_model_output(
+                    ProbeInput {
+                        turn_id,
+                        action_hint: planner_stream.action_hint.as_deref(),
+                        model_output: Some(&repaired_output),
+                    },
+                    &repaired_output,
+                    self.tool_batch_v2_enabled,
+                    self.dispatcher_config,
+                );
+                used_repair = true;
+            }
+
+            match routed {
+                DispatchOutcome::ToolBatch { meta, mut calls } => {
+                    tracing::info!(
+                        turn_id = turn_id,
+                        flow_prefix = FLOW_TRACE_PREFIX,
+                        flow_node = "planner.dispatch_consume",
+                        flow_route = "tool_batch",
+                        flow_next = "planner.tool_batch.execute",
+                        tool_calls = calls.len(),
+                        conflict_detected = meta.conflict_detected,
+                        signal_source = meta.signal_source.as_str(),
+                        "flow_trace"
+                    );
+                    info!(
+                        turn_id = turn_id,
+                        action = "tool_batch",
+                        conflict_detected = meta.conflict_detected,
+                        signal_source = meta.signal_source.as_str(),
+                        "model_decision"
+                    );
+                    if calls.len() > remaining {
+                        calls.truncate(remaining);
+                    }
+                    let proposals = calls
+                        .iter()
+                        .map(|call| openjax_protocol::ToolCallProposal {
+                            tool_call_id: call.tool_call_id.clone(),
+                            tool_name: call.tool_name.clone(),
+                            arguments: call
+                                .args
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect::<BTreeMap<_, _>>(),
+                            depends_on: call.depends_on.clone(),
+                            concurrency_group: call.concurrency_group.clone(),
+                        })
+                        .collect::<Vec<_>>();
                     self.push_event(
                         events,
-                        Event::AssistantMessage {
+                        Event::ToolCallsProposed {
                             turn_id,
-                            content: model_output.clone(),
+                            tool_calls: proposals,
+                        },
+                    );
+                    turn_engine.on_tool_batch_started();
+                    let batch_result: BatchExecutionResult = self
+                        .execute_tool_batch_calls(
+                            turn_id,
+                            calls,
+                            events,
+                            &mut tool_traces,
+                            &mut apply_patch_read_guard,
+                            &mut turn_engine,
+                        )
+                        .await;
+                    executed_count += batch_result.executed_count;
+                    consecutive_duplicate_skips = 0;
+                    if batch_result.aborted_by_approval {
+                        tracing::info!(
+                            turn_id = turn_id,
+                            flow_prefix = FLOW_TRACE_PREFIX,
+                            flow_node = "planner.tool_batch.result",
+                            flow_result = "aborted_by_approval",
+                            flow_next = "turn.failed",
+                            executed_count = batch_result.executed_count,
+                            "flow_trace"
+                        );
+                        if !batch_result.error_emitted {
+                            self.push_event(
+                                events,
+                                Event::ResponseError {
+                                    turn_id,
+                                    code: "approval_blocked".to_string(),
+                                    message: "tool batch interrupted by approval decision"
+                                        .to_string(),
+                                    retryable: false,
+                                },
+                            );
+                        }
+                        turn_engine.on_failed();
+                        return;
+                    }
+                    tracing::info!(
+                        turn_id = turn_id,
+                        flow_prefix = FLOW_TRACE_PREFIX,
+                        flow_node = "planner.tool_batch.result",
+                        flow_result = "completed",
+                        flow_next = "planner.next_round",
+                        executed_count = batch_result.executed_count,
+                        "flow_trace"
+                    );
+                    turn_engine.on_response_resumed();
+                    continue;
+                }
+                DispatchOutcome::Final { meta, decision } => {
+                    tracing::info!(
+                        turn_id = turn_id,
+                        flow_prefix = FLOW_TRACE_PREFIX,
+                        flow_node = "planner.dispatch_consume",
+                        flow_route = "final",
+                        flow_next = "frontend.response_stream",
+                        conflict_detected = meta.conflict_detected,
+                        signal_source = meta.signal_source.as_str(),
+                        "flow_trace"
+                    );
+                    info!(
+                        turn_id = turn_id,
+                        action = "final",
+                        conflict_detected = meta.conflict_detected,
+                        signal_source = meta.signal_source.as_str(),
+                        "model_decision"
+                    );
+                    debug!(
+                        turn_id = turn_id,
+                        message = ?decision.message,
+                        "model_decision_payload"
+                    );
+                    let seed_message = decision
+                        .message
+                        .unwrap_or_else(|| "任务已完成。".to_string());
+                    info!(
+                        turn_id = turn_id,
+                        phase = "completed",
+                        action = "final",
+                        final_response_mode = "planner_only",
+                        skill_shell_misfire_count = skill_shell_misfire_count,
+                        skill_workflow_shortcut_used = saw_git_status_short && saw_git_diff_stat,
+                        diff_strategy = diff_strategy,
+                        "natural_language_turn completed"
+                    );
+                    let used_repair_with_live_stream = planner_stream.live_streamed && used_repair;
+                    tracing::info!(
+                        turn_id = turn_id,
+                        flow_prefix = FLOW_TRACE_PREFIX,
+                        flow_node = "planner.final.emit",
+                        flow_route = "final",
+                        flow_next = "frontend.response_completed",
+                        live_streamed = planner_stream.live_streamed,
+                        used_repair = used_repair,
+                        used_repair_with_live_stream = used_repair_with_live_stream,
+                        "flow_trace"
+                    );
+                    let message = if planner_stream.live_streamed {
+                        turn_engine.on_response_started();
+                        let completed_content = if planner_stream.streamed_message.is_empty() {
+                            seed_message.clone()
+                        } else {
+                            planner_stream.streamed_message.clone()
+                        };
+                        self.push_event(
+                            events,
+                            Event::ResponseCompleted {
+                                turn_id,
+                                content: completed_content.clone(),
+                                stream_source: openjax_protocol::StreamSource::ModelLive,
+                            },
+                        );
+                        completed_content
+                    } else {
+                        turn_engine.on_response_started();
+                        self.push_event(
+                            events,
+                            Event::ResponseStarted {
+                                turn_id,
+                                stream_source: openjax_protocol::StreamSource::Synthetic,
+                            },
+                        );
+                        self.emit_synthetic_response_deltas(turn_id, &seed_message, events);
+                        self.push_event(
+                            events,
+                            Event::ResponseCompleted {
+                                turn_id,
+                                content: seed_message.clone(),
+                                stream_source: openjax_protocol::StreamSource::Synthetic,
+                            },
+                        );
+                        seed_message
+                    };
+                    let (preview, preview_truncated) = summarize_log_preview(&message, 300);
+                    let preview_json = serde_json::json!({ "final_response": preview }).to_string();
+                    info!(
+                        turn_id = turn_id,
+                        output_len = message.len(),
+                        output_preview = %preview_json,
+                        output_truncated = preview_truncated,
+                        used_repair_with_live_stream = used_repair_with_live_stream,
+                        "final_response"
+                    );
+                    turn_engine.on_completed();
+                    self.record_history("assistant", message);
+                    return;
+                }
+                DispatchOutcome::Tool { meta, decision } => {
+                    tracing::info!(
+                        turn_id = turn_id,
+                        flow_prefix = FLOW_TRACE_PREFIX,
+                        flow_node = "planner.dispatch_consume",
+                        flow_route = "tool",
+                        flow_next = "planner.tool_action.execute",
+                        conflict_detected = meta.conflict_detected,
+                        signal_source = meta.signal_source.as_str(),
+                        "flow_trace"
+                    );
+                    info!(
+                        turn_id = turn_id,
+                        action = "tool",
+                        tool = ?decision.tool,
+                        conflict_detected = meta.conflict_detected,
+                        signal_source = meta.signal_source.as_str(),
+                        "model_decision"
+                    );
+                    debug!(
+                        turn_id = turn_id,
+                        args = ?decision.args,
+                        "model_decision_payload"
+                    );
+                    let should_continue = self
+                        .handle_tool_action(
+                            turn_id,
+                            &decision,
+                            events,
+                            &mut tool_traces,
+                            &mut apply_patch_read_guard,
+                            &mut consecutive_duplicate_skips,
+                            &mut executed_count,
+                            &mut turn_engine,
+                            &mut skill_shell_misfire_count,
+                            &mut saw_git_status_short,
+                            &mut saw_git_diff_stat,
+                            &mut diff_strategy,
+                        )
+                        .await;
+                    if should_continue {
+                        continue;
+                    }
+                    return;
+                }
+                DispatchOutcome::Repair { meta, reason, .. } => {
+                    tracing::info!(
+                        turn_id = turn_id,
+                        flow_prefix = FLOW_TRACE_PREFIX,
+                        flow_node = "planner.repair.result",
+                        flow_route = "repair",
+                        flow_result = "exhausted",
+                        flow_next = "turn.failed",
+                        reason = reason,
+                        conflict_detected = meta.conflict_detected,
+                        "flow_trace"
+                    );
+                    warn!(
+                        turn_id = turn_id,
+                        reason = reason,
+                        conflict_detected = meta.conflict_detected,
+                        "model_decision_repair_exhausted"
+                    );
+                    self.push_event(
+                        events,
+                        Event::ResponseError {
+                            turn_id,
+                            code: "model_decision_parse_failed".to_string(),
+                            message: "model output parse failed after repair".to_string(),
+                            retryable: true,
                         },
                     );
                     turn_engine.on_failed();
-                    self.record_history("assistant", model_output);
                     return;
                 }
-            };
-
-            let action = decision.action.to_ascii_lowercase();
-            if action == "tool" || action == "tool_batch" {
-                if dispatch_meta.locked_branch != DispatchBranch::ToolCall {
-                    warn!(
+                DispatchOutcome::Error { code, message } => {
+                    tracing::info!(
                         turn_id = turn_id,
-                        locked_branch = dispatch_meta.locked_branch.as_str(),
-                        action = action,
-                        "dispatch branch conflicted with model action; preferring tool branch"
+                        flow_prefix = FLOW_TRACE_PREFIX,
+                        flow_node = "planner.dispatch_consume",
+                        flow_route = "error",
+                        flow_next = "turn.failed",
+                        flow_code = code,
+                        "flow_trace"
                     );
+                    self.push_event(
+                        events,
+                        Event::ResponseError {
+                            turn_id,
+                            code: code.to_string(),
+                            message,
+                            retryable: false,
+                        },
+                    );
+                    turn_engine.on_failed();
+                    return;
                 }
-            } else if action == "final" && dispatch_meta.locked_branch != DispatchBranch::Text {
-                warn!(
-                    turn_id = turn_id,
-                    locked_branch = dispatch_meta.locked_branch.as_str(),
-                    action = action,
-                    "dispatch branch conflicted with model action; preferring final text branch"
-                );
             }
-
-            info!(
-                turn_id = turn_id,
-                action = %action,
-                tool = ?decision.tool,
-                "model_decision"
-            );
-
-            debug!(
-                turn_id = turn_id,
-                args = ?decision.args,
-                message = ?decision.message,
-                "model_decision_payload"
-            );
-
-            if action == "final" {
-                let seed_message = decision
-                    .message
-                    .unwrap_or_else(|| "任务已完成。".to_string());
-                info!(
-                    turn_id = turn_id,
-                    phase = "completed",
-                    action = "final",
-                    final_response_mode = "planner_only",
-                    skill_shell_misfire_count = skill_shell_misfire_count,
-                    skill_workflow_shortcut_used = saw_git_status_short && saw_git_diff_stat,
-                    diff_strategy = diff_strategy,
-                    "natural_language_turn completed"
-                );
-                let message = if planner_stream.live_streamed {
-                    turn_engine.on_response_started();
-                    self.push_event(
-                        events,
-                        Event::ResponseCompleted {
-                            turn_id,
-                            content: seed_message.clone(),
-                            stream_source: openjax_protocol::StreamSource::ModelLive,
-                        },
-                    );
-                    if planner_stream.streamed_message.is_empty() {
-                        seed_message.clone()
-                    } else {
-                        planner_stream.streamed_message.clone()
-                    }
-                } else {
-                    turn_engine.on_response_started();
-                    self.push_event(
-                        events,
-                        Event::ResponseStarted {
-                            turn_id,
-                            stream_source: openjax_protocol::StreamSource::Synthetic,
-                        },
-                    );
-                    self.emit_synthetic_response_deltas(turn_id, &seed_message, events);
-                    self.push_event(
-                        events,
-                        Event::ResponseCompleted {
-                            turn_id,
-                            content: seed_message.clone(),
-                            stream_source: openjax_protocol::StreamSource::Synthetic,
-                        },
-                    );
-                    seed_message
-                };
-                let (preview, preview_truncated) = summarize_log_preview(&message, 300);
-                let preview_json = serde_json::json!({ "final_response": preview }).to_string();
-                info!(
-                    turn_id = turn_id,
-                    output_len = message.len(),
-                    output_preview = %preview_json,
-                    output_truncated = preview_truncated,
-                    "final_response"
-                );
-                self.push_event(
-                    events,
-                    Event::AssistantMessage {
-                        turn_id,
-                        content: message.clone(),
-                    },
-                );
-                turn_engine.on_completed();
-                self.record_history("assistant", message);
-                return;
-            }
-
-            if action == "tool" {
-                let should_continue = self
-                    .handle_tool_action(
-                        turn_id,
-                        &decision,
-                        events,
-                        &mut tool_traces,
-                        &mut apply_patch_read_guard,
-                        &mut consecutive_duplicate_skips,
-                        &mut executed_count,
-                        &mut turn_engine,
-                        &mut skill_shell_misfire_count,
-                        &mut saw_git_status_short,
-                        &mut saw_git_diff_stat,
-                        &mut diff_strategy,
-                    )
-                    .await;
-                if should_continue {
-                    continue;
-                }
-                return;
-            }
-
-            warn!(
-                turn_id = turn_id,
-                action = %decision.action,
-                "model_decision unsupported action"
-            );
-            let message = format!("[model error] unsupported action: {}", decision.action);
-            self.push_event(
-                events,
-                Event::AssistantMessage {
-                    turn_id,
-                    content: message.clone(),
-                },
-            );
-            turn_engine.on_failed();
-            self.record_history("assistant", message);
-            return;
         }
 
         let message = if executed_count >= self.max_tool_calls_per_turn {
@@ -436,9 +523,11 @@ impl Agent {
         };
         self.push_event(
             events,
-            Event::AssistantMessage {
+            Event::ResponseError {
                 turn_id,
-                content: message.clone(),
+                code: "turn_limit_reached".to_string(),
+                message: message.clone(),
+                retryable: true,
             },
         );
         if matches!(
@@ -447,6 +536,5 @@ impl Agent {
         ) {
             turn_engine.on_failed();
         }
-        self.record_history("assistant", message);
     }
 }

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
@@ -137,6 +138,7 @@ pub struct SessionRuntime {
     pub event_log: ReplayBuffer<StreamEventEnvelope>,
     pub event_tx: broadcast::Sender<StreamEventEnvelope>,
     pub resolved_approvals: HashSet<String>,
+    last_event_emitted_at: Option<Instant>,
     replay_capacity: usize,
 }
 
@@ -159,6 +161,7 @@ impl SessionRuntime {
             event_log: ReplayBuffer::with_capacity(replay_capacity),
             event_tx,
             resolved_approvals: HashSet::new(),
+            last_event_emitted_at: None,
             replay_capacity,
         }
     }
@@ -175,6 +178,7 @@ impl SessionRuntime {
         self.resolved_approvals.clear();
         self.turn_event_seq.clear();
         self.event_log = ReplayBuffer::with_capacity(self.replay_capacity);
+        self.last_event_emitted_at = None;
     }
 
     pub fn create_gateway_event(
@@ -442,7 +446,9 @@ fn map_core_event(
         if event_type == "turn_started" {
             turn.status = TurnStatus::Running;
         } else if event_type == "turn_completed" {
-            turn.status = TurnStatus::Completed;
+            if !matches!(turn.status, TurnStatus::Failed) {
+                turn.status = TurnStatus::Completed;
+            }
         } else if event_type == "response_error" {
             turn.status = TurnStatus::Failed;
             turn.error = Some(ApiTurnError {
@@ -462,7 +468,7 @@ fn map_core_event(
                     .unwrap_or(false),
                 details: payload.clone(),
             });
-        } else if (event_type == "assistant_message" || event_type == "response_completed")
+        } else if event_type == "response_completed"
             && let Some(content) = payload.get("content").and_then(|value| value.as_str())
         {
             turn.assistant_message = Some(content.to_string());
@@ -489,7 +495,6 @@ fn map_core_event(
             "response_started"
                 | "response_text_delta"
                 | "response_completed"
-                | "assistant_message"
                 | "turn_completed"
                 | "response_error"
         )
@@ -525,6 +530,9 @@ fn map_core_event(
             .and_then(|turn_id| session.turns.get(turn_id))
             .and_then(|turn| turn.assistant_message.as_ref())
             .map(|value| value.len());
+        let event_gap_ms = session
+            .last_event_emitted_at
+            .map(|ts| ts.elapsed().as_millis() as u64);
         info!(
             session_id = %session_id,
             turn_id = ?public_turn_id,
@@ -539,6 +547,7 @@ fn map_core_event(
             content_preview = ?content_preview,
             content_preview_truncated = ?content_preview_truncated,
             assistant_message_len = ?assistant_len,
+            event_gap_ms = ?event_gap_ms,
             "stream_debug.gateway_event_emitted"
         );
     }
@@ -554,6 +563,7 @@ fn map_core_event(
             "tool event mapped"
         );
     }
+    session.last_event_emitted_at = Some(Instant::now());
     session.publish_event(envelope);
 
     public_turn_id
@@ -586,4 +596,75 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn turn_status_remains_failed_after_turn_completed() {
+        let mut session = SessionRuntime::new();
+        let mut turn_id_tx = None;
+        let _ = map_core_event(
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::ResponseError {
+                turn_id: 1,
+                code: "ERR".to_string(),
+                message: "failed".to_string(),
+                retryable: false,
+            },
+            &mut turn_id_tx,
+        );
+        let _ = map_core_event(
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::TurnCompleted { turn_id: 1 },
+            &mut turn_id_tx,
+        );
+        let turn = session.turns.get("turn_1").expect("turn exists");
+        assert_eq!(turn.status, TurnStatus::Failed);
+    }
+
+    #[test]
+    fn turn_message_only_updates_from_response_completed() {
+        let mut session = SessionRuntime::new();
+        let mut turn_id_tx = None;
+        let _ = map_core_event(
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::TurnStarted { turn_id: 1 },
+            &mut turn_id_tx,
+        );
+        let _ = map_core_event(
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::AssistantMessage {
+                turn_id: 1,
+                content: "legacy".to_string(),
+            },
+            &mut turn_id_tx,
+        );
+        let turn = session.turns.get("turn_1").expect("turn exists");
+        assert!(turn.assistant_message.is_none());
+
+        let _ = map_core_event(
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::ResponseCompleted {
+                turn_id: 1,
+                content: "final".to_string(),
+                stream_source: openjax_protocol::StreamSource::Synthetic,
+            },
+            &mut turn_id_tx,
+        );
+        let turn = session.turns.get("turn_1").expect("turn exists");
+        assert_eq!(turn.assistant_message.as_deref(), Some("final"));
+    }
 }

@@ -176,9 +176,17 @@ pub async fn submit_turn(
             &ctx.request_id,
             &session_id,
             Some(turn_id.clone()),
-            "assistant_message",
-            json!({ "content": "session cleared" }),
-            None,
+            "response_started",
+            json!({ "stream_source": "synthetic" }),
+            Some("synthetic"),
+        );
+        let completed_response = session.create_gateway_event(
+            &ctx.request_id,
+            &session_id,
+            Some(turn_id.clone()),
+            "response_completed",
+            json!({ "content": "session cleared", "stream_source": "synthetic" }),
+            Some("synthetic"),
         );
         let completed = session.create_gateway_event(
             &ctx.request_id,
@@ -190,6 +198,7 @@ pub async fn submit_turn(
         );
         session.publish_event(started);
         session.publish_event(message);
+        session.publish_event(completed_response);
         session.publish_event(completed);
         return Ok(Json(SubmitTurnResponse {
             request_id: ctx.request_id,

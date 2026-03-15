@@ -74,7 +74,6 @@ impl Agent {
             prefer_lightweight_git_inspection =
                 skill_runtime_config.prefer_lightweight_git_inspection,
             max_diff_chars_for_planner = skill_runtime_config.max_diff_chars_for_planner,
-            dispatcher_probe_ms = dispatcher_config.probe_window.as_millis() as u64,
             dispatcher_heuristic_detect = dispatcher_config.heuristic_detect,
             cwd = %cwd.display(),
             "agent created"

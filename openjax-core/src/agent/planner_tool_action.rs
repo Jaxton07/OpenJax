@@ -6,9 +6,8 @@ use uuid::Uuid;
 
 use crate::agent::decision::ModelDecision;
 use crate::agent::planner_utils::{
-    detect_diff_strategy, extract_tool_target_hint, is_git_diff_stat, is_git_status_short,
-    is_mutating_tool, looks_like_skill_trigger_shell_command, merge_diff_strategy,
-    tool_args_delta_payload, tool_failure_code, tool_failure_retryable,
+    detect_diff_strategy, is_git_diff_stat, is_git_status_short, is_mutating_tool,
+    looks_like_skill_trigger_shell_command, merge_diff_strategy,
 };
 use crate::agent::prompt::truncate_for_prompt;
 use crate::agent::tool_guard::ApplyPatchReadGuard;
@@ -18,7 +17,6 @@ use crate::agent::tool_policy::{
     should_abort_on_consecutive_duplicate_skips,
 };
 use crate::agent::turn_engine::TurnEngine;
-use crate::dispatcher;
 use crate::{Agent, MAX_CONSECUTIVE_DUPLICATE_SKIPS, tools};
 
 impl Agent {
@@ -41,16 +39,16 @@ impl Agent {
             Some(name) if !name.trim().is_empty() => name,
             _ => {
                 warn!(turn_id = turn_id, "model_decision missing tool name");
-                let message = "[model error] tool action missing tool name".to_string();
                 self.push_event(
                     events,
-                    Event::AssistantMessage {
+                    Event::ResponseError {
                         turn_id,
-                        content: message.clone(),
+                        code: "model_invalid_tool".to_string(),
+                        message: "[model error] tool action missing tool name".to_string(),
+                        retryable: false,
                     },
                 );
                 turn_engine.on_failed();
-                self.record_history("assistant", message);
                 return false;
             }
         };
@@ -84,26 +82,14 @@ impl Agent {
                 "apply_patch blocked by read-before-repatch guard"
             );
 
-            self.push_event(
+            self.emit_tool_call_started_sequence(
+                turn_id,
+                &tool_call_id,
+                &tool_name,
+                &args,
+                "executing",
                 events,
-                Event::ToolCallStarted {
-                    turn_id,
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    target: extract_tool_target_hint(&tool_name, &args),
-                },
             );
-            if let Some(args_delta) = tool_args_delta_payload(&args) {
-                self.push_event(
-                    events,
-                    Event::ToolCallArgsDelta {
-                        turn_id,
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: tool_name.clone(),
-                        args_delta,
-                    },
-                );
-            }
             self.push_event(
                 events,
                 Event::ToolCallFailed {
@@ -124,15 +110,13 @@ impl Agent {
                     self.skill_runtime_config.max_diff_chars_for_planner
                 )
             ));
-            self.push_event(
+            self.emit_tool_call_completed(
+                turn_id,
+                &tool_call_id,
+                &tool_name,
+                false,
+                message,
                 events,
-                Event::ToolCallCompleted {
-                    turn_id,
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.to_string(),
-                    ok: false,
-                    output: message.to_string(),
-                },
             );
             *executed_count += 1;
             *consecutive_duplicate_skips = 0;
@@ -149,9 +133,11 @@ impl Agent {
             let message = duplicate_tool_call_warning(&tool_name, &args);
             self.push_event(
                 events,
-                Event::AssistantMessage {
+                Event::ResponseError {
                     turn_id,
-                    content: message.clone(),
+                    code: "duplicate_tool_call_skipped".to_string(),
+                    message: message.clone(),
+                    retryable: true,
                 },
             );
             self.record_history("assistant", message);
@@ -167,9 +153,11 @@ impl Agent {
                 let loop_message = duplicate_skip_abort_message(MAX_CONSECUTIVE_DUPLICATE_SKIPS);
                 self.push_event(
                     events,
-                    Event::AssistantMessage {
+                    Event::ResponseError {
                         turn_id,
-                        content: loop_message.clone(),
+                        code: "duplicate_tool_call_loop_abort".to_string(),
+                        message: loop_message.clone(),
+                        retryable: true,
                     },
                 );
                 turn_engine.on_failed();
@@ -194,35 +182,13 @@ impl Agent {
             "tool_call started"
         );
 
-        self.push_event(
+        self.emit_tool_call_started_sequence(
+            turn_id,
+            &tool_call_id,
+            &tool_name,
+            &args,
+            "executing",
             events,
-            Event::ToolCallStarted {
-                turn_id,
-                tool_call_id: tool_call_id.clone(),
-                tool_name: tool_name.clone(),
-                target: extract_tool_target_hint(&tool_name, &args),
-            },
-        );
-        if let Some(args_delta) = tool_args_delta_payload(&args) {
-            self.push_event(
-                events,
-                Event::ToolCallArgsDelta {
-                    turn_id,
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    args_delta,
-                },
-            );
-        }
-        dispatcher::emit_tool_call_ready(events, turn_id, &tool_call_id, &tool_name);
-        self.push_event(
-            events,
-            Event::ToolCallProgress {
-                turn_id,
-                tool_call_id: tool_call_id.clone(),
-                tool_name: tool_name.clone(),
-                progress_message: "executing".to_string(),
-            },
         );
 
         match self
@@ -259,15 +225,13 @@ impl Agent {
 
                 self.record_tool_call(&tool_name, &args, ok, &output);
 
-                self.push_event(
+                self.emit_tool_call_completed(
+                    turn_id,
+                    &tool_call_id,
+                    &tool_name,
+                    ok,
+                    &output,
                     events,
-                    Event::ToolCallCompleted {
-                        turn_id,
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: tool_name.to_string(),
-                        ok,
-                        output: output.to_string(),
-                    },
                 );
                 *executed_count += 1;
                 *consecutive_duplicate_skips = 0;
@@ -295,27 +259,14 @@ impl Agent {
                 tool_traces.push(trace);
 
                 self.record_tool_call(&tool_name, &args, false, &err_text);
-                self.push_event(
+                self.emit_tool_call_failed(turn_id, &tool_call_id, &tool_name, &err_text, events);
+                self.emit_tool_call_completed(
+                    turn_id,
+                    &tool_call_id,
+                    &tool_name,
+                    false,
+                    &err_text,
                     events,
-                    Event::ToolCallFailed {
-                        turn_id,
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: tool_name.to_string(),
-                        code: tool_failure_code(&err_text).to_string(),
-                        message: err_text.to_string(),
-                        retryable: tool_failure_retryable(&err_text),
-                    },
-                );
-
-                self.push_event(
-                    events,
-                    Event::ToolCallCompleted {
-                        turn_id,
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: tool_name.to_string(),
-                        ok: false,
-                        output: err_text.to_string(),
-                    },
                 );
                 *executed_count += 1;
                 *consecutive_duplicate_skips = 0;
@@ -328,13 +279,14 @@ impl Agent {
                         };
                     self.push_event(
                         events,
-                        Event::AssistantMessage {
+                        Event::ResponseError {
                             turn_id,
-                            content: stop_message.clone(),
+                            code: "approval_blocked".to_string(),
+                            message: stop_message,
+                            retryable: false,
                         },
                     );
                     turn_engine.on_failed();
-                    self.record_history("assistant", stop_message);
                     return false;
                 }
             }

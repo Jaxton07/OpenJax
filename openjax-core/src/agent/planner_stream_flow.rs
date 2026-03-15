@@ -99,7 +99,9 @@ impl Agent {
                 parser.raw_text().to_string()
             }
         };
+        let stream_phase_total_ms = started_at.elapsed().as_millis() as u64;
 
+        let mut fallback_complete_ms: Option<u64> = None;
         let final_output = if parse_model_decision(&model_output).is_some() {
             model_output
         } else {
@@ -123,7 +125,9 @@ impl Agent {
                 planner_stream_fallback_count = 1,
                 "planner_stream_metric"
             );
+            let fallback_started_at = Instant::now();
             let fallback = self.model_client.complete(planner_request).await?;
+            fallback_complete_ms = Some(fallback_started_at.elapsed().as_millis() as u64);
             fallback.text
         };
 
@@ -134,7 +138,8 @@ impl Agent {
             delta_events = delta_event_count,
             tail_silence_ms = last_live_delta_at
                 .map(|ts| ts.elapsed().as_millis() as u64)
-                .unwrap_or(started_at.elapsed().as_millis() as u64),
+                .unwrap_or(stream_phase_total_ms),
+            fallback_complete_ms = fallback_complete_ms,
             delta_chars = streamed_message.chars().count(),
             "planner_stream_completed"
         );

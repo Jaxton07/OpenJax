@@ -4,7 +4,6 @@ use openjax_protocol::Event;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::dispatcher;
 use crate::{Agent, tools};
 
 #[derive(Debug, Clone)]
@@ -43,37 +42,13 @@ impl Agent {
             "tool_call started"
         );
 
-        self.push_event(
+        self.emit_tool_call_started_sequence(
+            turn_id,
+            &tool_call_id,
+            &call.name,
+            &call.args,
+            "executing",
             events,
-            Event::ToolCallStarted {
-                turn_id,
-                tool_call_id: tool_call_id.clone(),
-                tool_name: call.name.clone(),
-                target: extract_tool_target_hint(&call.name, &call.args),
-            },
-        );
-        if !call.args.is_empty()
-            && let Ok(args_delta) = serde_json::to_string(&call.args)
-        {
-            self.push_event(
-                events,
-                Event::ToolCallArgsDelta {
-                    turn_id,
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: call.name.clone(),
-                    args_delta,
-                },
-            );
-        }
-        dispatcher::emit_tool_call_ready(events, turn_id, &tool_call_id, &call.name);
-        self.push_event(
-            events,
-            Event::ToolCallProgress {
-                turn_id,
-                tool_call_id: tool_call_id.clone(),
-                tool_name: call.name.clone(),
-                progress_message: "executing".to_string(),
-            },
         );
 
         // Try execution with retry
@@ -86,13 +61,6 @@ impl Agent {
                     retry_config.max_delay_ms,
                 );
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                self.push_event(
-                    events,
-                    Event::AssistantMessage {
-                        turn_id,
-                        content: format!("tool {} 第 {} 次重试...", call.name, attempt),
-                    },
-                );
                 warn!(
                     turn_id = turn_id,
                     tool_call_id = %tool_call_id,
@@ -119,54 +87,26 @@ impl Agent {
                         output_len = output.len(),
                         "tool_call completed"
                     );
-                    if attempt > 0 {
-                        self.push_event(
-                            events,
-                            Event::AssistantMessage {
-                                turn_id,
-                                content: format!("tool {} 重试成功", call.name),
-                            },
-                        );
-                    }
-                    self.push_event(
+                    self.emit_tool_call_completed(
+                        turn_id,
+                        &tool_call_id,
+                        &call.name,
+                        ok,
+                        &output,
                         events,
-                        Event::ToolCallCompleted {
-                            turn_id,
-                            tool_call_id: tool_call_id.clone(),
-                            tool_name: call.name.clone(),
-                            ok,
-                            output,
-                        },
                     );
-                    let message = if ok {
-                        format!("tool {} 执行成功", call.name)
-                    } else {
-                        format!("tool {} 执行完成但返回失败状态", call.name)
-                    };
-                    self.push_event(
-                        events,
-                        Event::AssistantMessage {
-                            turn_id,
-                            content: message.clone(),
-                        },
-                    );
-                    self.record_history("assistant", message);
                     return;
                 }
                 Err(err) => {
                     last_error = Some(err);
                     // Check if error is retryable (not a validation error)
                     let err_str = last_error.as_ref().expect("last error set").to_string();
-                    self.push_event(
+                    self.emit_tool_call_failed(
+                        turn_id,
+                        &tool_call_id,
+                        &call.name,
+                        &err_str,
                         events,
-                        Event::ToolCallFailed {
-                            turn_id,
-                            tool_call_id: tool_call_id.clone(),
-                            tool_name: call.name.clone(),
-                            code: tool_failure_code(&err_str).to_string(),
-                            message: err_str.clone(),
-                            retryable: tool_failure_retryable(&err_str),
-                        },
                     );
                     if err_str.contains("invalid")
                         || err_str.contains("permission denied")
@@ -191,25 +131,26 @@ impl Agent {
                 error = %err,
                 "tool_call completed"
             );
+            self.emit_tool_call_completed(
+                turn_id,
+                &tool_call_id,
+                &call.name,
+                false,
+                &err.to_string(),
+                events,
+            );
             self.push_event(
                 events,
-                Event::ToolCallCompleted {
+                Event::ResponseError {
                     turn_id,
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: call.name.clone(),
-                    ok: false,
-                    output: err.to_string(),
+                    code: crate::agent::planner_utils::tool_failure_code(&err.to_string())
+                        .to_string(),
+                    message: err.to_string(),
+                    retryable: crate::agent::planner_utils::tool_failure_retryable(
+                        &err.to_string(),
+                    ),
                 },
             );
-            let message = format!("tool {} 执行失败: {}", call.name, err);
-            self.push_event(
-                events,
-                Event::AssistantMessage {
-                    turn_id,
-                    content: message.clone(),
-                },
-            );
-            self.record_history("assistant", message);
         }
     }
 
@@ -256,39 +197,4 @@ impl Agent {
             }
         }
     }
-}
-
-fn tool_failure_code(error_text: &str) -> &'static str {
-    let lower = error_text.to_ascii_lowercase();
-    if lower.contains("approval timed out") {
-        "approval_timeout"
-    } else if lower.contains("approval rejected") {
-        "approval_rejected"
-    } else if lower.contains("timed out") {
-        "tool_timeout"
-    } else if lower.contains("cancel") {
-        "tool_canceled"
-    } else {
-        "tool_execution_failed"
-    }
-}
-
-fn tool_failure_retryable(error_text: &str) -> bool {
-    let lower = error_text.to_ascii_lowercase();
-    lower.contains("timed out") || lower.contains("cancel")
-}
-
-fn extract_tool_target_hint(
-    tool_name: &str,
-    args: &std::collections::HashMap<String, String>,
-) -> Option<String> {
-    let keys: &[&str] = match tool_name {
-        "read_file" | "apply_patch" | "edit_file_range" | "write_file" => {
-            &["file_path", "path", "filepath"]
-        }
-        "disk_usage" => &["path"],
-        "shell" | "exec_command" => &["cmd", "command"],
-        _ => return None,
-    };
-    keys.iter().find_map(|k| args.get(*k).cloned())
 }

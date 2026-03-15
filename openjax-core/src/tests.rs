@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{
-    Agent, ApprovalPolicy, Config, SandboxMode,
+    Agent, ApprovalHandler, ApprovalPolicy, ApprovalRequest, Config, SandboxMode,
     agent::{
         decision::{normalize_model_decision, parse_model_decision},
         prompt::{build_planner_input, summarize_user_input},
@@ -33,12 +33,48 @@ struct ScriptedToolBatchModel {
 }
 
 #[derive(Clone)]
+struct ScriptedToolBatchDependencyModel {
+    complete_calls: Arc<Mutex<usize>>,
+}
+
+#[derive(Clone)]
 struct PlannerFallbackModel {
     complete_calls: Arc<Mutex<usize>>,
     stream_calls: Arc<Mutex<usize>>,
 }
 
+#[derive(Clone)]
+struct DuplicateToolLoopModel;
+
+#[derive(Clone)]
+struct ApprovalBlockedBatchModel {
+    stream_calls: Arc<Mutex<usize>>,
+}
+
+#[derive(Debug, Default)]
+struct RejectApprovalHandler;
+
 impl ScriptedToolBatchModel {
+    fn new() -> Self {
+        Self {
+            complete_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+}
+
+impl ApprovalBlockedBatchModel {
+    fn new() -> Self {
+        Self {
+            stream_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn stream_call_count(&self) -> usize {
+        *self.stream_calls.lock().expect("stream_calls lock")
+    }
+}
+
+impl ScriptedToolBatchDependencyModel {
     fn new() -> Self {
         Self {
             complete_calls: Arc::new(Mutex::new(0)),
@@ -104,6 +140,50 @@ impl ModelClient for ScriptedToolBatchModel {
 
     fn name(&self) -> &'static str {
         "scripted-tool-batch"
+    }
+}
+
+#[async_trait]
+impl ModelClient for ScriptedToolBatchDependencyModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        let mut calls = self.complete_calls.lock().expect("complete_calls lock");
+        *calls += 1;
+        let text = if *calls == 1 {
+            r#"{"action":"tool_batch","tool_calls":[{"tool_call_id":"call_1","tool_name":"list_dir","arguments":{"path":"."}},{"tool_call_id":"call_2","tool_name":"system_load","arguments":{},"depends_on":["missing_call"]}]}"#
+        } else {
+            r#"{"action":"final","message":"dependency done"}"#
+        };
+        Ok(ModelResponse {
+            text: text.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<ModelResponse> {
+        let mut calls = self.complete_calls.lock().expect("complete_calls lock");
+        *calls += 1;
+        let text = if *calls == 1 {
+            r#"{"action":"tool_batch","tool_calls":[{"tool_call_id":"call_1","tool_name":"list_dir","arguments":{"path":"."}},{"tool_call_id":"call_2","tool_name":"system_load","arguments":{},"depends_on":["missing_call"]}]}"#
+        } else {
+            r#"{"action":"final","message":"dependency done"}"#
+        };
+        if request.stage == super::model::ModelStage::Planner
+            && let Some(sender) = delta_sender
+        {
+            let _ = sender.send(text.to_string());
+        }
+        Ok(ModelResponse {
+            text: text.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "scripted-tool-batch-dependency"
     }
 }
 
@@ -198,6 +278,77 @@ impl ModelClient for ScriptedStreamingModel {
 
     fn name(&self) -> &'static str {
         "scripted-stream"
+    }
+}
+
+#[async_trait]
+impl ModelClient for DuplicateToolLoopModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        Ok(ModelResponse {
+            text: r#"{"action":"tool","tool":"shell","args":{"cmd":"echo hi"}}"#.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    async fn complete_stream(
+        &self,
+        _request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<ModelResponse> {
+        let text = r#"{"action":"tool","tool":"shell","args":{"cmd":"echo hi"}}"#;
+        if let Some(sender) = delta_sender {
+            let _ = sender.send(text.to_string());
+        }
+        Ok(ModelResponse {
+            text: text.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "duplicate-tool-loop"
+    }
+}
+
+#[async_trait]
+impl ModelClient for ApprovalBlockedBatchModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        Ok(ModelResponse {
+            text: r#"{"action":"final","message":"should not be reached"}"#.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    async fn complete_stream(
+        &self,
+        _request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<String>>,
+    ) -> Result<ModelResponse> {
+        let mut calls = self.stream_calls.lock().expect("stream_calls lock");
+        *calls += 1;
+        let text = if *calls == 1 {
+            r#"{"action":"tool_batch","tool_calls":[{"tool_call_id":"call_1","tool_name":"list_dir","arguments":{"path":"."}},{"tool_call_id":"call_2","tool_name":"system_load","arguments":{}},{"tool_call_id":"call_3","tool_name":"list_dir","arguments":{"path":"."},"depends_on":["call_1"]}]}"#
+        } else {
+            r#"{"action":"final","message":"should not be reached"}"#
+        };
+        if let Some(sender) = delta_sender {
+            let _ = sender.send(text.to_string());
+        }
+        Ok(ModelResponse {
+            text: text.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "approval-blocked-batch"
+    }
+}
+
+#[async_trait]
+impl ApprovalHandler for RejectApprovalHandler {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        Ok(false)
     }
 }
 
@@ -379,7 +530,7 @@ fn summarize_user_input_adds_ellipsis_when_truncated() {
 }
 
 #[tokio::test]
-async fn final_action_emits_response_text_delta_before_message() {
+async fn final_action_emits_response_text_delta_before_completion() {
     let mut agent = Agent::with_runtime(
         ApprovalPolicy::Never,
         SandboxMode::WorkspaceWrite,
@@ -397,8 +548,8 @@ async fn final_action_emits_response_text_delta_before_message() {
 
     let mut delta_text = String::new();
     let mut first_delta_index: Option<usize> = None;
-    let mut assistant_message_index: Option<usize> = None;
-    let mut assistant_message_text = String::new();
+    let mut response_completed_index: Option<usize> = None;
+    let mut completed_text = String::new();
 
     for (idx, event) in events.iter().enumerate() {
         match event {
@@ -408,28 +559,28 @@ async fn final_action_emits_response_text_delta_before_message() {
                 }
                 delta_text.push_str(content_delta);
             }
-            Event::AssistantMessage { content, .. } => {
-                assistant_message_index = Some(idx);
-                assistant_message_text = content.clone();
+            Event::ResponseCompleted { content, .. } => {
+                response_completed_index = Some(idx);
+                completed_text = content.clone();
             }
             _ => {}
         }
     }
 
     assert_eq!(delta_text, "seed");
-    assert_eq!(assistant_message_text, "seed");
+    assert_eq!(completed_text, "seed");
     assert!(
         first_delta_index.is_some(),
         "expected response text delta events"
     );
     assert!(
-        assistant_message_index.is_some(),
-        "expected final assistant message"
+        response_completed_index.is_some(),
+        "expected response_completed event"
     );
     assert!(
         first_delta_index.expect("first delta")
-            < assistant_message_index.expect("assistant message index"),
-        "response text delta should be emitted before final assistant message"
+            < response_completed_index.expect("response completed index"),
+        "response text delta should be emitted before response_completed"
     );
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 1);
@@ -454,8 +605,8 @@ async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() 
 
     let mut delta_text = String::new();
     let mut first_delta_index: Option<usize> = None;
-    let mut assistant_message_index: Option<usize> = None;
-    let mut assistant_message_text = String::new();
+    let mut response_completed_index: Option<usize> = None;
+    let mut completed_text = String::new();
 
     for (idx, event) in events.iter().enumerate() {
         match event {
@@ -465,20 +616,20 @@ async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() 
                 }
                 delta_text.push_str(content_delta);
             }
-            Event::AssistantMessage { content, .. } => {
-                assistant_message_index = Some(idx);
-                assistant_message_text = content.clone();
+            Event::ResponseCompleted { content, .. } => {
+                response_completed_index = Some(idx);
+                completed_text = content.clone();
             }
             _ => {}
         }
     }
 
     assert_eq!(delta_text, "seed");
-    assert_eq!(assistant_message_text, "seed");
+    assert_eq!(completed_text, "seed");
     assert!(
         first_delta_index.expect("first delta")
-            < assistant_message_index.expect("assistant message index"),
-        "response text delta should be emitted before final assistant message"
+            < response_completed_index.expect("response completed index"),
+        "response text delta should be emitted before response_completed"
     );
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 1);
@@ -503,8 +654,6 @@ async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
 
     let mut saw_response_started = false;
     let mut saw_response_completed = false;
-    let mut assistant_message_text = String::new();
-
     for event in &events {
         match event {
             Event::ResponseStarted { .. } => saw_response_started = true,
@@ -512,16 +661,12 @@ async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
                 saw_response_completed = true;
                 assert_eq!(content, "seed");
             }
-            Event::AssistantMessage { content, .. } => {
-                assistant_message_text = content.clone();
-            }
             _ => {}
         }
     }
 
     assert!(saw_response_started);
     assert!(saw_response_completed);
-    assert_eq!(assistant_message_text, "seed");
     assert_eq!(model_probe.complete_call_count(), 0);
     assert_eq!(model_probe.stream_call_count(), 1);
 }
@@ -547,7 +692,7 @@ async fn planner_stream_parse_failure_falls_back_to_complete_response() {
         .iter()
         .rev()
         .find_map(|event| match event {
-            Event::AssistantMessage { content, .. } => Some(content.clone()),
+            Event::ResponseCompleted { content, .. } => Some(content.clone()),
             _ => None,
         })
         .unwrap_or_default();
@@ -589,7 +734,7 @@ async fn tool_batch_emits_proposal_and_batch_completed_events() {
                 saw_batch_completed = true;
                 assert_eq!(*total, 2);
             }
-            Event::AssistantMessage { content, .. } => {
+            Event::ResponseCompleted { content, .. } => {
                 final_message = content.clone();
             }
             _ => {}
@@ -601,4 +746,130 @@ async fn tool_batch_emits_proposal_and_batch_completed_events() {
     assert_eq!(started_calls, 2);
     assert_eq!(completed_calls, 2);
     assert_eq!(final_message, "batch done");
+}
+
+#[tokio::test]
+async fn tool_batch_dependency_unmet_still_emits_started_before_completed() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    agent.model_client = Box::new(ScriptedToolBatchDependencyModel::new());
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "run dependency batch".to_string(),
+        })
+        .await;
+
+    let started_idx = events.iter().position(|event| {
+        matches!(
+            event,
+            Event::ToolCallStarted {
+                tool_call_id,
+                ..
+            } if tool_call_id == "call_2"
+        )
+    });
+    let completed_idx = events.iter().position(|event| {
+        matches!(
+            event,
+            Event::ToolCallCompleted {
+                tool_call_id,
+                ..
+            } if tool_call_id == "call_2"
+        )
+    });
+    assert!(
+        started_idx.is_some(),
+        "expected started event for unresolved call"
+    );
+    assert!(
+        completed_idx.is_some(),
+        "expected completed event for unresolved call"
+    );
+    assert!(started_idx < completed_idx);
+}
+
+#[tokio::test]
+async fn duplicate_tool_skip_and_abort_emit_response_error_events() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    agent.model_client = Box::new(DuplicateToolLoopModel);
+    let mut dup_args = HashMap::new();
+    dup_args.insert("cmd".to_string(), "echo hi".to_string());
+    agent.record_tool_call("shell", &dup_args, true, "ok");
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "trigger duplicate loop".to_string(),
+        })
+        .await;
+
+    let mut saw_duplicate_skip = false;
+    let mut saw_duplicate_abort = false;
+    let mut saw_assistant_message = false;
+
+    for event in &events {
+        match event {
+            Event::ResponseError { code, .. } if code == "duplicate_tool_call_skipped" => {
+                saw_duplicate_skip = true;
+            }
+            Event::ResponseError { code, .. } if code == "duplicate_tool_call_loop_abort" => {
+                saw_duplicate_abort = true;
+            }
+            Event::AssistantMessage { .. } => {
+                saw_assistant_message = true;
+            }
+            _ => {}
+        }
+    }
+
+    assert!(saw_duplicate_skip);
+    assert!(saw_duplicate_abort);
+    assert!(!saw_assistant_message);
+}
+
+#[tokio::test]
+async fn tool_batch_approval_blocked_stops_followup_scheduling_and_rounds() {
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::AlwaysAsk,
+        SandboxMode::WorkspaceWrite,
+        PathBuf::from("."),
+    );
+    let model = ApprovalBlockedBatchModel::new();
+    let model_probe = model.clone();
+    agent.model_client = Box::new(model);
+    agent.set_approval_handler(Arc::new(RejectApprovalHandler));
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "run approval blocked batch".to_string(),
+        })
+        .await;
+
+    let mut approval_blocked_errors = 0usize;
+    let mut saw_final_response_completed = false;
+    let mut saw_call_3_started = false;
+    for event in &events {
+        match event {
+            Event::ResponseError { code, .. } if code == "approval_blocked" => {
+                approval_blocked_errors += 1;
+            }
+            Event::ResponseCompleted { .. } => saw_final_response_completed = true,
+            Event::ToolCallStarted { tool_call_id, .. } if tool_call_id == "call_3" => {
+                saw_call_3_started = true;
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(approval_blocked_errors, 1);
+    assert!(!saw_final_response_completed);
+    assert!(!saw_call_3_started);
+    assert_eq!(model_probe.stream_call_count(), 1);
 }

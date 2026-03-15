@@ -136,7 +136,7 @@ export function useChatPage() {
       return;
     }
 
-    if (event.type === "assistant_message" || event.type === "response_completed") {
+    if (event.type === "response_completed") {
       const content = String(event.payload.content ?? "");
       streamStore.complete(event.session_id, event.turn_id, content, event.event_seq);
       if (!event.turn_id || completedTurnsRef.current.has(event.turn_id)) {

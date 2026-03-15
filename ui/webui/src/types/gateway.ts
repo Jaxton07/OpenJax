@@ -48,7 +48,6 @@ export type StreamEventType =
   | "response_started"
   | "response_text_delta"
   | "response_completed"
-  | "assistant_message"
   | "response_error"
   | "tool_call_ready"
   | "turn_completed"

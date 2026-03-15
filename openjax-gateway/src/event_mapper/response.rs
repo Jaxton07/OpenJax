@@ -60,12 +60,6 @@ pub fn map(event: &Event) -> Option<CoreEventMapping> {
             payload: json!({ "code": code, "message": message, "retryable": retryable }),
             stream_source: None,
         }),
-        Event::AssistantMessage { turn_id, content } => Some(CoreEventMapping {
-            core_turn_id: Some(*turn_id),
-            event_type: "assistant_message",
-            payload: json!({ "content": content }),
-            stream_source: None,
-        }),
         Event::TurnCompleted { turn_id } => Some(CoreEventMapping {
             core_turn_id: Some(*turn_id),
             event_type: "turn_completed",

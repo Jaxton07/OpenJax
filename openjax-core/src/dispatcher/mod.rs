@@ -1,15 +1,18 @@
 mod errors;
 mod metrics;
 mod probe;
-mod route_tool;
 mod state_machine;
 
-use std::time::Duration;
+use crate::agent::decision::{
+    ModelDecision, NormalizedToolCall, normalize_model_decision, normalize_tool_calls,
+    parse_model_decision, parse_model_decision_v2,
+};
+
+const FLOW_TRACE_PREFIX: &str = "OPENJAX_FLOW";
 
 pub(crate) use errors::DispatchError;
 pub(crate) use metrics::{DispatchMetrics, DispatchTiming};
 pub(crate) use probe::{ProbeInput, probe_branch};
-pub(crate) use route_tool::emit_tool_call_ready;
 pub(crate) use state_machine::DispatchStateMachine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,18 +54,17 @@ pub(crate) struct DispatchDecisionMeta {
     pub(crate) probe_ms: u64,
     pub(crate) locked_branch: DispatchBranch,
     pub(crate) signal_source: DispatchSignalSource,
+    pub(crate) conflict_detected: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DispatcherConfig {
-    pub(crate) probe_window: Duration,
     pub(crate) heuristic_detect: bool,
 }
 
 impl Default for DispatcherConfig {
     fn default() -> Self {
         Self {
-            probe_window: Duration::from_millis(80),
             heuristic_detect: false,
         }
     }
@@ -79,11 +81,7 @@ pub(crate) fn dispatch_stream(input: ProbeInput, cfg: DispatcherConfig) -> Dispa
     let mut machine = DispatchStateMachine::new();
     let timing = DispatchTiming::started();
     machine.enter_probing();
-    tracing::debug!(
-        turn_id = input.turn_id,
-        probe_window_ms = cfg.probe_window.as_millis() as u64,
-        "dispatch_probe_started"
-    );
+    tracing::debug!(turn_id = input.turn_id, "dispatch_probe_started");
 
     let probe = probe_branch(input, cfg);
     let locked_branch = probe.branch;
@@ -95,6 +93,7 @@ pub(crate) fn dispatch_stream(input: ProbeInput, cfg: DispatcherConfig) -> Dispa
         probe_ms: metrics.dispatcher_lock_ts_ms.unwrap_or_default(),
         locked_branch,
         signal_source: probe.signal_source,
+        conflict_detected: false,
     };
 
     tracing::debug!(
@@ -106,4 +105,241 @@ pub(crate) fn dispatch_stream(input: ProbeInput, cfg: DispatcherConfig) -> Dispa
     );
 
     meta
+}
+
+#[derive(Debug)]
+pub(crate) enum DispatchOutcome {
+    ToolBatch {
+        meta: DispatchDecisionMeta,
+        calls: Vec<NormalizedToolCall>,
+    },
+    Tool {
+        meta: DispatchDecisionMeta,
+        decision: ModelDecision,
+    },
+    Final {
+        meta: DispatchDecisionMeta,
+        decision: ModelDecision,
+    },
+    Repair {
+        meta: DispatchDecisionMeta,
+        raw_output: String,
+        reason: &'static str,
+    },
+    Error {
+        code: &'static str,
+        message: String,
+    },
+}
+
+pub(crate) fn route_model_output(
+    input: ProbeInput<'_>,
+    model_output: &str,
+    tool_batch_v2_enabled: bool,
+    cfg: DispatcherConfig,
+) -> DispatchOutcome {
+    let mut meta = dispatch_stream(input, cfg);
+    let parsed_v2 = if tool_batch_v2_enabled {
+        parse_model_decision_v2(model_output)
+    } else {
+        None
+    };
+    let parsed_v1 = parse_model_decision(model_output).map(normalize_model_decision);
+
+    if let Some(v2) = parsed_v2 {
+        let action = v2.action.to_ascii_lowercase();
+        if action == "tool_batch" {
+            let calls = normalize_tool_calls(&v2.tool_calls);
+            if !calls.is_empty() {
+                if meta.locked_branch != DispatchBranch::ToolCall {
+                    meta.conflict_detected = true;
+                }
+                if meta.conflict_detected {
+                    tracing::warn!(
+                        turn_id = input.turn_id,
+                        locked_branch = meta.locked_branch.as_str(),
+                        selected_action = "tool_batch",
+                        signal_source = meta.signal_source.as_str(),
+                        "dispatch_conflict_resolved"
+                    );
+                }
+                tracing::info!(
+                    turn_id = input.turn_id,
+                    flow_prefix = FLOW_TRACE_PREFIX,
+                    flow_node = "dispatcher.route",
+                    flow_route = "tool_batch",
+                    flow_next = "planner.tool_batch",
+                    conflict_detected = meta.conflict_detected,
+                    signal_source = meta.signal_source.as_str(),
+                    "flow_trace"
+                );
+                return DispatchOutcome::ToolBatch { meta, calls };
+            }
+            tracing::info!(
+                turn_id = input.turn_id,
+                flow_prefix = FLOW_TRACE_PREFIX,
+                flow_node = "dispatcher.route",
+                flow_route = "error",
+                flow_next = "planner.error",
+                flow_code = "model_invalid_tool_batch",
+                "flow_trace"
+            );
+            return DispatchOutcome::Error {
+                code: "model_invalid_tool_batch",
+                message: "[model error] tool_batch missing valid tool_calls".to_string(),
+            };
+        }
+    }
+
+    if let Some(decision) = parsed_v1 {
+        let action = decision.action.to_ascii_lowercase();
+        if action == "tool" {
+            if decision
+                .tool
+                .as_ref()
+                .is_none_or(|name| name.trim().is_empty())
+            {
+                return DispatchOutcome::Error {
+                    code: "model_invalid_tool",
+                    message: "[model error] tool action missing tool name".to_string(),
+                };
+            }
+            if meta.locked_branch != DispatchBranch::ToolCall {
+                meta.conflict_detected = true;
+            }
+            if meta.conflict_detected {
+                tracing::warn!(
+                    turn_id = input.turn_id,
+                    locked_branch = meta.locked_branch.as_str(),
+                    selected_action = "tool",
+                    signal_source = meta.signal_source.as_str(),
+                    "dispatch_conflict_resolved"
+                );
+            }
+            tracing::info!(
+                turn_id = input.turn_id,
+                flow_prefix = FLOW_TRACE_PREFIX,
+                flow_node = "dispatcher.route",
+                flow_route = "tool",
+                flow_next = "planner.tool_action",
+                conflict_detected = meta.conflict_detected,
+                signal_source = meta.signal_source.as_str(),
+                "flow_trace"
+            );
+            return DispatchOutcome::Tool { meta, decision };
+        }
+        if action == "final" {
+            if meta.locked_branch != DispatchBranch::Text {
+                meta.conflict_detected = true;
+            }
+            if meta.conflict_detected {
+                tracing::warn!(
+                    turn_id = input.turn_id,
+                    locked_branch = meta.locked_branch.as_str(),
+                    selected_action = "final",
+                    signal_source = meta.signal_source.as_str(),
+                    "dispatch_conflict_resolved"
+                );
+            }
+            tracing::info!(
+                turn_id = input.turn_id,
+                flow_prefix = FLOW_TRACE_PREFIX,
+                flow_node = "dispatcher.route",
+                flow_route = "final",
+                flow_next = "frontend.response_stream",
+                conflict_detected = meta.conflict_detected,
+                signal_source = meta.signal_source.as_str(),
+                "flow_trace"
+            );
+            return DispatchOutcome::Final { meta, decision };
+        }
+        tracing::info!(
+            turn_id = input.turn_id,
+            flow_prefix = FLOW_TRACE_PREFIX,
+            flow_node = "dispatcher.route",
+            flow_route = "error",
+            flow_next = "planner.error",
+            flow_code = "model_unsupported_action",
+            action = %decision.action,
+            "flow_trace"
+        );
+        return DispatchOutcome::Error {
+            code: "model_unsupported_action",
+            message: format!("[model error] unsupported action: {}", decision.action),
+        };
+    }
+
+    tracing::info!(
+        turn_id = input.turn_id,
+        flow_prefix = FLOW_TRACE_PREFIX,
+        flow_node = "dispatcher.route",
+        flow_route = "repair",
+        flow_next = "planner.repair",
+        flow_reason = "decision_parse_failed",
+        "flow_trace"
+    );
+    DispatchOutcome::Repair {
+        meta,
+        raw_output: model_output.to_string(),
+        reason: "decision_parse_failed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_model_output_prefers_tool_batch_when_valid() {
+        let output = r#"{"action":"tool_batch","tool_calls":[{"tool_call_id":"c1","tool_name":"list_dir","arguments":{"path":"."}}]}"#;
+        let routed = route_model_output(
+            ProbeInput {
+                turn_id: 1,
+                action_hint: Some("final"),
+                model_output: Some(output),
+            },
+            output,
+            true,
+            DispatcherConfig::default(),
+        );
+        match routed {
+            DispatchOutcome::ToolBatch { meta, calls } => {
+                assert_eq!(calls.len(), 1);
+                assert!(!meta.conflict_detected);
+            }
+            _ => panic!("expected tool_batch outcome"),
+        }
+    }
+
+    #[test]
+    fn route_model_output_returns_final_for_valid_final_action() {
+        let output = r#"{"action":"final","message":"ok"}"#;
+        let routed = route_model_output(
+            ProbeInput {
+                turn_id: 2,
+                action_hint: Some("tool"),
+                model_output: Some(output),
+            },
+            output,
+            true,
+            DispatcherConfig::default(),
+        );
+        assert!(matches!(routed, DispatchOutcome::Final { .. }));
+    }
+
+    #[test]
+    fn route_model_output_returns_repair_on_unparseable_output() {
+        let output = "not-json";
+        let routed = route_model_output(
+            ProbeInput {
+                turn_id: 3,
+                action_hint: None,
+                model_output: Some(output),
+            },
+            output,
+            true,
+            DispatcherConfig::default(),
+        );
+        assert!(matches!(routed, DispatchOutcome::Repair { .. }));
+    }
 }

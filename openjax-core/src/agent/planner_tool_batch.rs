@@ -2,20 +2,22 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use openjax_protocol::Event;
-use tokio::task::JoinSet;
 use tracing::info;
 
 use crate::agent::decision::NormalizedToolCall;
-use crate::agent::planner_utils::{
-    extract_tool_target_hint, is_mutating_tool, tool_args_delta_payload, tool_failure_code,
-    tool_failure_retryable,
-};
+use crate::agent::planner_utils::is_mutating_tool;
 use crate::agent::prompt::truncate_for_prompt;
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::tool_policy::is_approval_blocking_error;
 use crate::agent::turn_engine::TurnEngine;
-use crate::dispatcher;
 use crate::{Agent, tools};
+
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct BatchExecutionResult {
+    pub(super) executed_count: usize,
+    pub(super) aborted_by_approval: bool,
+    pub(super) error_emitted: bool,
+}
 
 impl Agent {
     pub(super) async fn execute_tool_batch_calls(
@@ -26,15 +28,20 @@ impl Agent {
         tool_traces: &mut Vec<String>,
         apply_patch_read_guard: &mut ApplyPatchReadGuard,
         turn_engine: &mut TurnEngine,
-    ) -> usize {
+    ) -> BatchExecutionResult {
         let mut executed = 0usize;
         let mut succeeded = 0u32;
         let mut failed = 0u32;
         let total = calls.len() as u32;
         let mut completed_ids: HashSet<String> = HashSet::new();
         let batch_started_at = Instant::now();
+        let mut aborted_by_approval = false;
+        let mut error_emitted = false;
 
         while !calls.is_empty() {
+            if aborted_by_approval {
+                break;
+            }
             let ready_indices = calls
                 .iter()
                 .enumerate()
@@ -58,31 +65,19 @@ impl Agent {
                     .collect::<Vec<_>>();
                 ready_calls.reverse();
 
-                let mut join_set = JoinSet::new();
+                let mut tasks = Vec::new();
                 for call in ready_calls {
                     if let Some(message) =
                         apply_patch_read_guard.block_user_message_for_tool(&call.tool_name)
                     {
-                        self.push_event(
+                        self.emit_tool_call_started_sequence(
+                            turn_id,
+                            &call.tool_call_id,
+                            &call.tool_name,
+                            &call.args,
+                            "executing",
                             events,
-                            Event::ToolCallStarted {
-                                turn_id,
-                                tool_call_id: call.tool_call_id.clone(),
-                                tool_name: call.tool_name.clone(),
-                                target: extract_tool_target_hint(&call.tool_name, &call.args),
-                            },
                         );
-                        if let Some(args_delta) = tool_args_delta_payload(&call.args) {
-                            self.push_event(
-                                events,
-                                Event::ToolCallArgsDelta {
-                                    turn_id,
-                                    tool_call_id: call.tool_call_id.clone(),
-                                    tool_name: call.tool_name.clone(),
-                                    args_delta,
-                                },
-                            );
-                        }
                         self.push_event(
                             events,
                             Event::ToolCallFailed {
@@ -103,15 +98,13 @@ impl Agent {
                                 self.skill_runtime_config.max_diff_chars_for_planner
                             )
                         ));
-                        self.push_event(
+                        self.emit_tool_call_completed(
+                            turn_id,
+                            &call.tool_call_id,
+                            &call.tool_name,
+                            false,
+                            message,
                             events,
-                            Event::ToolCallCompleted {
-                                turn_id,
-                                tool_call_id: call.tool_call_id.clone(),
-                                tool_name: call.tool_name.clone(),
-                                ok: false,
-                                output: message.to_string(),
-                            },
                         );
                         completed_ids.insert(call.tool_call_id);
                         executed += 1;
@@ -119,68 +112,42 @@ impl Agent {
                         continue;
                     }
 
-                    self.push_event(
-                        events,
-                        Event::ToolCallStarted {
-                            turn_id,
-                            tool_call_id: call.tool_call_id.clone(),
-                            tool_name: call.tool_name.clone(),
-                            target: extract_tool_target_hint(&call.tool_name, &call.args),
-                        },
-                    );
-                    if let Some(args_delta) = tool_args_delta_payload(&call.args) {
-                        self.push_event(
-                            events,
-                            Event::ToolCallArgsDelta {
-                                turn_id,
-                                tool_call_id: call.tool_call_id.clone(),
-                                tool_name: call.tool_name.clone(),
-                                args_delta,
-                            },
-                        );
-                    }
-                    dispatcher::emit_tool_call_ready(
-                        events,
+                    self.emit_tool_call_started_sequence(
                         turn_id,
                         &call.tool_call_id,
                         &call.tool_name,
-                    );
-                    self.push_event(
+                        &call.args,
+                        "scheduled",
                         events,
-                        Event::ToolCallProgress {
-                            turn_id,
-                            tool_call_id: call.tool_call_id.clone(),
-                            tool_name: call.tool_name.clone(),
-                            progress_message: "scheduled".to_string(),
-                        },
                     );
                     let tools = self.tools.clone();
                     let tool_runtime_config = self.tool_runtime_config;
                     let approval_handler = self.approval_handler.clone();
                     let cwd = self.cwd.clone();
-                    join_set.spawn(async move {
+                    let call_for_task = call.clone();
+                    let handle = tokio::spawn(async move {
                         let tool_call = tools::ToolCall {
-                            name: call.tool_name.clone(),
-                            args: call.args.clone(),
+                            name: call_for_task.tool_name.clone(),
+                            args: call_for_task.args.clone(),
                         };
-                        let result = tools
+                        tools
                             .execute(tools::ToolExecutionRequest {
                                 turn_id,
-                                tool_call_id: call.tool_call_id.clone(),
+                                tool_call_id: call_for_task.tool_call_id.clone(),
                                 call: &tool_call,
                                 cwd: cwd.as_path(),
                                 config: tool_runtime_config,
                                 approval_handler,
                                 event_sink: None,
                             })
-                            .await;
-                        (call, result)
+                            .await
                     });
+                    tasks.push((call, handle));
                 }
 
-                while let Some(result) = join_set.join_next().await {
-                    match result {
-                        Ok((call, Ok(outcome))) => {
+                for (call, handle) in tasks {
+                    match handle.await {
+                        Ok(Ok(outcome)) => {
                             let ok = outcome.success;
                             let output = outcome.output;
                             apply_patch_read_guard.on_tool_success(&call.tool_name);
@@ -197,15 +164,13 @@ impl Agent {
                                 )
                             ));
                             self.record_tool_call(&call.tool_name, &call.args, ok, &output);
-                            self.push_event(
+                            self.emit_tool_call_completed(
+                                turn_id,
+                                &call.tool_call_id,
+                                &call.tool_name,
+                                ok,
+                                &output,
                                 events,
-                                Event::ToolCallCompleted {
-                                    turn_id,
-                                    tool_call_id: call.tool_call_id.clone(),
-                                    tool_name: call.tool_name.clone(),
-                                    ok,
-                                    output,
-                                },
                             );
                             completed_ids.insert(call.tool_call_id);
                             executed += 1;
@@ -215,7 +180,7 @@ impl Agent {
                                 failed += 1;
                             }
                         }
-                        Ok((call, Err(err))) => {
+                        Ok(Err(err)) => {
                             let err_text = err.to_string();
                             let err_text_lower = err_text.to_ascii_lowercase();
                             apply_patch_read_guard.on_tool_failure(&call.tool_name, &err_text);
@@ -228,39 +193,37 @@ impl Agent {
                                 )
                             ));
                             self.record_tool_call(&call.tool_name, &call.args, false, &err_text);
-                            self.push_event(
+                            self.emit_tool_call_failed(
+                                turn_id,
+                                &call.tool_call_id,
+                                &call.tool_name,
+                                &err_text,
                                 events,
-                                Event::ToolCallFailed {
-                                    turn_id,
-                                    tool_call_id: call.tool_call_id.clone(),
-                                    tool_name: call.tool_name.clone(),
-                                    code: tool_failure_code(&err_text).to_string(),
-                                    message: err_text.clone(),
-                                    retryable: tool_failure_retryable(&err_text),
-                                },
                             );
-                            self.push_event(
+                            self.emit_tool_call_completed(
+                                turn_id,
+                                &call.tool_call_id,
+                                &call.tool_name,
+                                false,
+                                &err_text,
                                 events,
-                                Event::ToolCallCompleted {
-                                    turn_id,
-                                    tool_call_id: call.tool_call_id.clone(),
-                                    tool_name: call.tool_name.clone(),
-                                    ok: false,
-                                    output: err_text.clone(),
-                                },
                             );
                             if is_approval_blocking_error(&err_text) {
-                                self.push_event(
-                                    events,
-                                    Event::ResponseError {
-                                        turn_id,
-                                        code: "approval_blocked".to_string(),
-                                        message: "tool batch interrupted by approval decision"
-                                            .to_string(),
-                                        retryable: false,
-                                    },
-                                );
+                                if !error_emitted {
+                                    self.push_event(
+                                        events,
+                                        Event::ResponseError {
+                                            turn_id,
+                                            code: "approval_blocked".to_string(),
+                                            message: "tool batch interrupted by approval decision"
+                                                .to_string(),
+                                            retryable: false,
+                                        },
+                                    );
+                                    error_emitted = true;
+                                }
                                 turn_engine.on_failed();
+                                aborted_by_approval = true;
                             } else if err_text_lower.contains("timed out") {
                                 self.push_event(
                                     events,
@@ -288,23 +251,65 @@ impl Agent {
                         }
                         Err(err) => {
                             let output = format!("tool task join failed: {err}");
+                            self.emit_tool_call_failed(
+                                turn_id,
+                                &call.tool_call_id,
+                                &call.tool_name,
+                                &output,
+                                events,
+                            );
+                            self.emit_tool_call_completed(
+                                turn_id,
+                                &call.tool_call_id,
+                                &call.tool_name,
+                                false,
+                                &output,
+                                events,
+                            );
                             self.push_event(
                                 events,
-                                Event::AssistantMessage {
+                                Event::ResponseError {
                                     turn_id,
-                                    content: output.clone(),
+                                    code: "tool_join_failed".to_string(),
+                                    message: output.clone(),
+                                    retryable: true,
                                 },
                             );
-                            self.record_history("assistant", output);
+                            tool_traces.push(format!(
+                                "tool={}; ok=false; output={}",
+                                call.tool_name,
+                                truncate_for_prompt(
+                                    &output,
+                                    self.skill_runtime_config.max_diff_chars_for_planner
+                                )
+                            ));
+                            self.record_tool_call(&call.tool_name, &call.args, false, &output);
+                            completed_ids.insert(call.tool_call_id);
+                            executed += 1;
+                            failed += 1;
                         }
                     }
                 }
+                if aborted_by_approval {
+                    break;
+                }
                 continue;
+            }
+            if aborted_by_approval {
+                break;
             }
 
             let unresolved = calls.split_off(0);
             for call in unresolved {
                 let output = "tool call dependency unmet".to_string();
+                self.emit_tool_call_started_sequence(
+                    turn_id,
+                    &call.tool_call_id,
+                    &call.tool_name,
+                    &call.args,
+                    "dependency_unmet",
+                    events,
+                );
                 self.push_event(
                     events,
                     Event::ToolCallFailed {
@@ -316,15 +321,13 @@ impl Agent {
                         retryable: false,
                     },
                 );
-                self.push_event(
+                self.emit_tool_call_completed(
+                    turn_id,
+                    &call.tool_call_id,
+                    &call.tool_name,
+                    false,
+                    &output,
                     events,
-                    Event::ToolCallCompleted {
-                        turn_id,
-                        tool_call_id: call.tool_call_id.clone(),
-                        tool_name: call.tool_name.clone(),
-                        ok: false,
-                        output: output.clone(),
-                    },
                 );
                 tool_traces.push(format!(
                     "tool={}; ok=false; output={}",
@@ -358,6 +361,10 @@ impl Agent {
             duration_ms = batch_started_at.elapsed().as_millis(),
             "tool_batch_completed"
         );
-        executed
+        BatchExecutionResult {
+            executed_count: executed,
+            aborted_by_approval,
+            error_emitted,
+        }
     }
 }
