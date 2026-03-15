@@ -37,6 +37,31 @@ impl Agent {
             "natural_language_turn started"
         );
 
+        if self.direct_provider_stream {
+            info!(
+                turn_id = turn_id,
+                "direct_provider_stream enabled; bypass planner/tool decision pipeline"
+            );
+            turn_engine.on_response_started();
+            let (message, ok) = self
+                .stream_direct_provider_reply(turn_id, user_input, events)
+                .await;
+            self.push_event(
+                events,
+                Event::AssistantMessage {
+                    turn_id,
+                    content: message.clone(),
+                },
+            );
+            if ok {
+                turn_engine.on_completed();
+            } else {
+                turn_engine.on_failed();
+            }
+            self.record_history("assistant", message);
+            return;
+        }
+
         while executed_count < self.max_tool_calls_per_turn
             && planner_rounds < self.max_planner_rounds_per_turn
         {

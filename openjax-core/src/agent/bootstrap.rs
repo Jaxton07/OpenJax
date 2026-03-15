@@ -10,6 +10,19 @@ use crate::agent::runtime_policy::{
 use crate::agent::state::RateLimitConfig;
 use crate::{Agent, Config, FinalResponseMode, approval, model, skills, tools};
 
+fn direct_provider_stream_from_env() -> bool {
+    std::env::var("OPENJAX_DIRECT_PROVIDER_STREAM")
+        .ok()
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            !(normalized == "0"
+                || normalized == "off"
+                || normalized == "false"
+                || normalized == "disabled")
+        })
+        .unwrap_or(false)
+}
+
 impl Agent {
     pub fn new() -> Self {
         let config = Config::load();
@@ -45,6 +58,7 @@ impl Agent {
         cwd: PathBuf,
     ) -> Self {
         let model_client = model::build_model_client_with_config(config.model.as_ref());
+        let direct_provider_stream = direct_provider_stream_from_env();
         let max_tool_calls_per_turn = resolve_max_tool_calls_per_turn(&config);
         let max_planner_rounds_per_turn = resolve_max_planner_rounds_per_turn(&config);
         let skill_config = config.skills.as_ref();
@@ -72,6 +86,7 @@ impl Agent {
             prefer_lightweight_git_inspection =
                 skill_runtime_config.prefer_lightweight_git_inspection,
             max_diff_chars_for_planner = skill_runtime_config.max_diff_chars_for_planner,
+            direct_provider_stream = direct_provider_stream,
             cwd = %cwd.display(),
             "agent created"
         );
@@ -106,6 +121,7 @@ impl Agent {
             recent_tool_calls: Vec::new(),
             state_epoch: 0,
             final_response_mode: FinalResponseMode::from_env(),
+            direct_provider_stream,
             tool_batch_v2_enabled: true,
             approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
             event_sink: None,

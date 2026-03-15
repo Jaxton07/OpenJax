@@ -88,6 +88,7 @@ pub struct Agent {
     recent_tool_calls: Vec<ToolCallRecord>,
     state_epoch: u64,
     final_response_mode: FinalResponseMode,
+    direct_provider_stream: bool,
     tool_batch_v2_enabled: bool,
     approval_handler: Arc<dyn approval::ApprovalHandler>,
     event_sink: Option<UnboundedSender<Event>>,

@@ -207,6 +207,76 @@ impl Agent {
         }
     }
 
+    pub(crate) async fn stream_direct_provider_reply(
+        &mut self,
+        turn_id: u64,
+        user_input: &str,
+        events: &mut Vec<Event>,
+    ) -> (String, bool) {
+        self.apply_rate_limit().await;
+        let stream_started_at = Instant::now();
+        let mut ttft_logged = false;
+        let mut stream_orchestrator =
+            ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
+
+        let (delta_tx, delta_rx) = tokio::sync::mpsc::unbounded_channel();
+        let stream_request = ModelRequest::for_stage(ModelStage::FinalWriter, user_input.to_string());
+        let stream_future = self
+            .model_client
+            .complete_stream(&stream_request, Some(delta_tx));
+
+        let mut streamed = String::new();
+        let result = run_stream_with_delta_handler(delta_rx, stream_future, |delta| {
+            if delta.is_empty() {
+                return;
+            }
+            if !ttft_logged {
+                ttft_logged = true;
+                info!(
+                    turn_id = turn_id,
+                    ttft_ms = stream_started_at.elapsed().as_millis(),
+                    "direct_provider_stream_ttft"
+                );
+            }
+            streamed.push_str(&delta);
+            for event in stream_orchestrator.on_delta(&delta) {
+                self.push_event(events, event);
+            }
+        })
+        .await;
+
+        match result {
+            Ok(response) => {
+                let full_text = response.text;
+                info!(
+                    turn_id = turn_id,
+                    output_len = full_text.len(),
+                    streamed_len = streamed.len(),
+                    "direct_provider_stream completed"
+                );
+                let (resolved, completed_event) = stream_orchestrator.emit_completed(full_text);
+                self.push_event(events, completed_event);
+                (resolved, true)
+            }
+            Err(err) => {
+                warn!(
+                    turn_id = turn_id,
+                    error = %err,
+                    "direct_provider_stream failed"
+                );
+                self.push_event(
+                    events,
+                    stream_orchestrator.emit_error(
+                        "direct_provider_stream_failed",
+                        err.to_string(),
+                        true,
+                    ),
+                );
+                (format!("[model error] {err}"), false)
+            }
+        }
+    }
+
     pub(super) fn emit_synthetic_response_deltas(
         &mut self,
         turn_id: u64,
