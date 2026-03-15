@@ -7,6 +7,15 @@ export type MessageKind = "text" | "tool_steps";
 export type ToolStepStatus = "running" | "success" | "waiting" | "failed";
 export type ToolStepType = "think" | "tool" | "shell" | "approval" | "summary";
 
+export interface ReasoningBlock {
+  blockId: string;
+  turnId: string;
+  content: string;
+  collapsed: boolean;
+  startedAt: string;
+  closed: boolean;
+}
+
 export interface ToolStep {
   id: string;
   type: ToolStepType;
@@ -36,6 +45,7 @@ export interface ChatMessage {
   isDraft?: boolean;
   hasCanonicalDelta?: boolean;
   toolSteps?: ToolStep[];
+  reasoningBlocks?: ReasoningBlock[];
 }
 
 export interface PendingApproval {

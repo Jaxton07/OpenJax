@@ -113,6 +113,7 @@ export interface StreamEvent {
     | "turn_started"
     | "assistant_message"
     | "response_started"
+    | "reasoning_delta"
     | "response_text_delta"
     | "tool_calls_proposed"
     | "tool_batch_completed"

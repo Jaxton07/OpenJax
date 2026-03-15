@@ -418,6 +418,72 @@ textarea {
   overflow-x: auto;
 }
 
+.reasoning-block-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.reasoning-block {
+  border: 1px solid #d6deea;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fc 100%);
+  overflow: hidden;
+}
+
+.reasoning-block-toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.reasoning-block-title {
+  font-size: 13px;
+  color: #3f4b5c;
+  font-weight: 520;
+}
+
+.reasoning-block-chevron {
+  color: #7a8596;
+  font-size: 12px;
+  transition: transform 150ms ease;
+}
+
+.reasoning-block-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.reasoning-block-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height 220ms ease,
+    opacity 180ms ease;
+}
+
+.reasoning-block-body.expanded {
+  max-height: 420px;
+  opacity: 1;
+}
+
+.reasoning-block-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 0 12px 10px;
+  color: #1f2732;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .tool-step-list {
   display: grid;
   gap: 8px;

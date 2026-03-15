@@ -87,6 +87,18 @@ export function useChatApp() {
     if (event.type === "response_text_delta") {
       recordDeltaReceived(sessionId);
       streamRenderStore.append(sessionId, event.turn_id, String(event.payload.content_delta ?? ""), event.event_seq);
+      setState((prev) => {
+        let changed = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+          const next = closeOpenReasoningBlockInSession(session, event.turn_id);
+          changed = changed || next !== session;
+          return next;
+        });
+        return changed ? { ...prev, sessions } : prev;
+      });
       if (STREAM_DEBUG_ENABLED) {
         console.debug("[stream_debug][use_chat_app][delta_store_append]", {
           sessionId,
@@ -130,7 +142,11 @@ export function useChatApp() {
           if (session.id !== sessionId) {
             return session;
           }
-          const next = applyResponseCompletedSession(session, event, finalizedContent);
+          const withReasoningClosed =
+            event.type === "response_completed"
+              ? closeOpenReasoningBlockInSession(session, event.turn_id)
+              : session;
+          const next = applyResponseCompletedSession(withReasoningClosed, event, finalizedContent);
           changed = changed || next !== session;
           return { ...next, connection: "active" as const };
         });
@@ -881,6 +897,45 @@ function findAssistantMessageIndex(messages: ChatMessage[], turnId: string): num
 
 function buildAssistantDraftId(turnId: string): string {
   return `assistant_draft_${turnId}`;
+}
+
+function closeOpenReasoningBlockInSession(session: ChatSession, turnId?: string): ChatSession {
+  if (!turnId) {
+    return session;
+  }
+  const idx = findAssistantMessageIndex(session.messages, turnId);
+  if (idx < 0) {
+    return session;
+  }
+  const message = session.messages[idx];
+  const blocks = message.reasoningBlocks;
+  if (!blocks || blocks.length === 0) {
+    return session;
+  }
+  let openIdx = -1;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    if (!blocks[i].closed) {
+      openIdx = i;
+      break;
+    }
+  }
+  if (openIdx < 0) {
+    return session;
+  }
+  const nextBlocks = [...blocks];
+  nextBlocks[openIdx] = {
+    ...nextBlocks[openIdx],
+    closed: true
+  };
+  const messages = [...session.messages];
+  messages[idx] = {
+    ...message,
+    reasoningBlocks: nextBlocks
+  };
+  return {
+    ...session,
+    messages
+  };
 }
 
 function isSessionNotFoundError(error: unknown): boolean {

@@ -504,4 +504,103 @@ describe("applyStreamEvent", () => {
     expect(step?.title).toBe("tool");
     expect(step?.status).toBe("running");
   });
+
+  it("appends continuous reasoning_delta into one open block", () => {
+    const session = baseSession();
+    const first = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r1",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "reasoning_delta",
+      payload: { content_delta: "先分析" }
+    });
+    const second = applyStreamEvent(first, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r1",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "reasoning_delta",
+      payload: { content_delta: "再推理" }
+    });
+    const assistant = second.messages.find((message) => message.turnId === "turn_r1" && message.role === "assistant");
+    expect(assistant?.reasoningBlocks).toHaveLength(1);
+    expect(assistant?.reasoningBlocks?.[0]?.content).toBe("先分析再推理");
+    expect(assistant?.reasoningBlocks?.[0]?.collapsed).toBe(true);
+    expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(false);
+  });
+
+  it("splits reasoning blocks when response_text_delta starts", () => {
+    const session = baseSession();
+    const first = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r2",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "reasoning_delta",
+      payload: { content_delta: "思考A" }
+    });
+    const textStarted = applyStreamEvent(first, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r2",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "response_text_delta",
+      payload: { content_delta: "正文A" }
+    });
+    const secondReasoning = applyStreamEvent(textStarted, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r2",
+      event_seq: 3,
+      timestamp: "2026-01-01T00:00:03Z",
+      type: "reasoning_delta",
+      payload: { content_delta: "思考B" }
+    });
+    const assistant = secondReasoning.messages.find((message) => message.turnId === "turn_r2" && message.role === "assistant");
+    expect(assistant?.reasoningBlocks).toHaveLength(2);
+    expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(true);
+    expect(assistant?.reasoningBlocks?.[1]?.content).toBe("思考B");
+    expect(assistant?.reasoningBlocks?.[1]?.closed).toBe(false);
+  });
+
+  it("splits reasoning blocks around tool lifecycle events", () => {
+    const session = baseSession();
+    const beforeTool = applyStreamEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r3",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "reasoning_delta",
+      payload: { content_delta: "调用前思考" }
+    });
+    const toolEvent = applyStreamEvent(beforeTool, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r3",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "tool_calls_proposed",
+      payload: { tool_calls: [{ tool_call_id: "call_x" }] }
+    });
+    const afterTool = applyStreamEvent(toolEvent, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r3",
+      event_seq: 3,
+      timestamp: "2026-01-01T00:00:03Z",
+      type: "reasoning_delta",
+      payload: { content_delta: "调用后思考" }
+    });
+    const assistant = afterTool.messages.find((message) => message.turnId === "turn_r3" && message.role === "assistant");
+    expect(assistant?.reasoningBlocks).toHaveLength(2);
+    expect(assistant?.reasoningBlocks?.[0]?.content).toBe("调用前思考");
+    expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(true);
+    expect(assistant?.reasoningBlocks?.[1]?.content).toBe("调用后思考");
+  });
 });

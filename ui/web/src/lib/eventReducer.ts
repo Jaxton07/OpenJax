@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatSession, ToolStep } from "../types/chat";
+import type { ChatMessage, ChatSession, ReasoningBlock, ToolStep } from "../types/chat";
 import type { StreamEvent } from "../types/gateway";
 
 export function applyStreamEvent(session: ChatSession, event: StreamEvent): ChatSession {
@@ -28,8 +28,16 @@ function applySingleStreamEvent(session: ChatSession, event: StreamEvent): ChatS
   };
 
   const turnId = event.turn_id;
+  if (turnId && shouldCloseReasoningOnEvent(event)) {
+    closeOpenReasoningBlock(next.messages, turnId);
+  }
   if (event.type === "turn_started" || event.type === "response_started" || event.type === "response_resumed") {
     next.turnPhase = "streaming";
+  }
+
+  if (event.type === "reasoning_delta" && turnId) {
+    const contentDelta = String(event.payload.content_delta ?? "");
+    appendReasoningDelta(next.messages, turnId, contentDelta, event.timestamp, event.event_seq);
   }
 
   if (event.type === "response_text_delta" && turnId) {
@@ -124,6 +132,18 @@ function isToolStepEvent(event: StreamEvent): boolean {
     event.type === "approval_requested" ||
     event.type === "approval_resolved" ||
     event.type === "error"
+  );
+}
+
+function shouldCloseReasoningOnEvent(event: StreamEvent): boolean {
+  return (
+    event.type === "response_text_delta" ||
+    event.type === "tool_call_started" ||
+    event.type === "tool_calls_proposed" ||
+    event.type === "tool_batch_completed" ||
+    event.type === "response_completed" ||
+    event.type === "response_error" ||
+    event.type === "turn_completed"
   );
 }
 
@@ -394,6 +414,106 @@ function mergeAssistantDraft(
     isDraft: true,
     hasCanonicalDelta: isCanonicalDelta
   });
+}
+
+function appendReasoningDelta(
+  messages: ChatMessage[],
+  turnId: string,
+  delta: string,
+  timestamp: string,
+  eventSeq: number
+): void {
+  if (!delta) {
+    return;
+  }
+  const idx = findAssistantMessageIndex(messages, turnId);
+  if (idx < 0) {
+    const block: ReasoningBlock = {
+      blockId: `reasoning:${turnId}:${eventSeq}`,
+      turnId,
+      content: delta,
+      collapsed: true,
+      startedAt: timestamp,
+      closed: false
+    };
+    messages.push({
+      id: crypto.randomUUID(),
+      kind: "text",
+      role: "assistant",
+      content: "",
+      timestamp,
+      turnId,
+      isDraft: true,
+      reasoningBlocks: [block]
+    });
+    return;
+  }
+  const message = messages[idx];
+  const blocks = [...(message.reasoningBlocks ?? [])];
+  const openIdx = findLastOpenReasoningBlockIndex(blocks);
+  if (openIdx >= 0) {
+    blocks[openIdx] = {
+      ...blocks[openIdx],
+      content: `${blocks[openIdx].content}${delta}`
+    };
+  } else {
+    blocks.push({
+      blockId: `reasoning:${turnId}:${eventSeq}`,
+      turnId,
+      content: delta,
+      collapsed: true,
+      startedAt: timestamp,
+      closed: false
+    });
+  }
+  messages[idx] = {
+    ...message,
+    timestamp,
+    reasoningBlocks: blocks
+  };
+}
+
+function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string): void {
+  const idx = findAssistantMessageIndex(messages, turnId);
+  if (idx < 0) {
+    return;
+  }
+  const message = messages[idx];
+  if (!message.reasoningBlocks || message.reasoningBlocks.length === 0) {
+    return;
+  }
+  const blocks = [...message.reasoningBlocks];
+  const openIdx = findLastOpenReasoningBlockIndex(blocks);
+  if (openIdx < 0) {
+    return;
+  }
+  blocks[openIdx] = {
+    ...blocks[openIdx],
+    closed: true
+  };
+  messages[idx] = {
+    ...message,
+    reasoningBlocks: blocks
+  };
+}
+
+function findLastOpenReasoningBlockIndex(blocks: ReasoningBlock[]): number {
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    if (!blocks[i].closed) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function findAssistantMessageIndex(messages: ChatMessage[], turnId: string): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.turnId === turnId && message.kind === "text" && message.role === "assistant") {
+      return i;
+    }
+  }
+  return -1;
 }
 
 function batchStatusFromPayload(payload: Record<string, unknown>): ToolStep["status"] {

@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { streamRenderStore } from "../lib/streamRenderStore";
 import MessageList from "./MessageList";
@@ -240,5 +241,73 @@ describe("MessageList", () => {
       />
     );
     expect(screen.getByText("你好！有什么我可以帮您的吗？")).toBeInTheDocument();
+  });
+
+  it("renders reasoning blocks above assistant content and collapsed by default", async () => {
+    const user = userEvent.setup();
+    const messages: ChatMessage[] = [
+      {
+        id: "m_reason",
+        kind: "text",
+        role: "assistant",
+        content: "这是最终正文",
+        timestamp: "2026-01-01T00:00:00Z",
+        turnId: "turn_1",
+        reasoningBlocks: [
+          {
+            blockId: "reasoning:turn_1:1",
+            turnId: "turn_1",
+            content: "先分析问题",
+            collapsed: true,
+            startedAt: "2026-01-01T00:00:00Z",
+            closed: true
+          }
+        ]
+      }
+    ];
+    render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
+    const toggle = screen.getByRole("button", { name: /思考过程 1/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const contentNode = screen.getByText("这是最终正文");
+    const reasoningList = screen.getByTestId("reasoning-block-list");
+    expect(reasoningList.compareDocumentPosition(contentNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("先分析问题")).toBeInTheDocument();
+  });
+
+  it("renders multiple reasoning blocks in order", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m_reason_2",
+        kind: "text",
+        role: "assistant",
+        content: "正文",
+        timestamp: "2026-01-01T00:00:00Z",
+        turnId: "turn_2",
+        reasoningBlocks: [
+          {
+            blockId: "reasoning:turn_2:1",
+            turnId: "turn_2",
+            content: "第一段",
+            collapsed: true,
+            startedAt: "2026-01-01T00:00:00Z",
+            closed: true
+          },
+          {
+            blockId: "reasoning:turn_2:2",
+            turnId: "turn_2",
+            content: "第二段",
+            collapsed: true,
+            startedAt: "2026-01-01T00:00:01Z",
+            closed: false
+          }
+        ]
+      }
+    ];
+    render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
+    expect(screen.getByRole("button", { name: /思考过程 1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /思考过程 2/ })).toBeInTheDocument();
   });
 });

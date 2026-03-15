@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MarkdownRender from "markstream-react";
 import { useStreamRenderSnapshot } from "../hooks/useStreamRenderSnapshot";
 import { recordMessageListRender } from "../lib/streamPerf";
-import type { ChatMessage, PendingApproval } from "../types/chat";
+import type { ChatMessage, PendingApproval, ReasoningBlock } from "../types/chat";
 import ToolStepList from "./tool-steps/ToolStepList";
 
 interface MessageListProps {
@@ -117,12 +117,18 @@ function MessageRow({
             sessionId={sessionId}
             turnId={message.turnId}
             fallbackContent={message.content}
+            reasoningBlocks={message.reasoningBlocks}
             assistantRenderMode={assistantRenderMode}
             onStreamTick={onDraftStreamTick}
             onStreamEnd={onDraftStreamEnd}
           />
         ) : message.role === "assistant" ? (
-          <AssistantMessage content={message.content} mode={assistantRenderMode} final />
+          <AssistantMessage
+            content={message.content}
+            reasoningBlocks={message.reasoningBlocks}
+            mode={assistantRenderMode}
+            final
+          />
         ) : (
           <div className="message-text">{message.content}</div>
         )}
@@ -135,6 +141,7 @@ interface AssistantDraftMessageProps {
   sessionId?: string;
   turnId: string;
   fallbackContent: string;
+  reasoningBlocks?: ReasoningBlock[];
   assistantRenderMode: AssistantRenderMode;
   onStreamTick: () => void;
   onStreamEnd: () => void;
@@ -144,6 +151,7 @@ function AssistantDraftMessage({
   sessionId,
   turnId,
   fallbackContent,
+  reasoningBlocks,
   assistantRenderMode,
   onStreamTick,
   onStreamEnd
@@ -162,23 +170,83 @@ function AssistantDraftMessage({
     onStreamEnd();
   }, [onStreamEnd, onStreamTick, snapshot.isActive, snapshot.version]);
 
-  return <AssistantMessage content={content} mode={assistantRenderMode} final={!snapshot.isActive} />;
+  return (
+    <AssistantMessage
+      content={content}
+      reasoningBlocks={reasoningBlocks}
+      mode={assistantRenderMode}
+      final={!snapshot.isActive}
+    />
+  );
 }
 
-function AssistantMessage({ content, mode, final }: { content: string; mode: AssistantRenderMode; final: boolean }) {
+function AssistantMessage({
+  content,
+  reasoningBlocks,
+  mode,
+  final
+}: {
+  content: string;
+  reasoningBlocks?: ReasoningBlock[];
+  mode: AssistantRenderMode;
+  final: boolean;
+}) {
+  const hasReasoning = Array.isArray(reasoningBlocks) && reasoningBlocks.length > 0;
   if (mode === "markdown") {
     return (
-      <div className="assistant-markdown">
-        <MarkdownRender
-          content={content}
-          final={final}
-          batchRendering={false}
-          deferNodesUntilVisible={false}
-        />
-      </div>
+      <>
+        {hasReasoning ? <ReasoningBlocksView blocks={reasoningBlocks} /> : null}
+        <div className="assistant-markdown">
+          <MarkdownRender
+            content={content}
+            final={final}
+            batchRendering={false}
+            deferNodesUntilVisible={false}
+          />
+        </div>
+      </>
     );
   }
-  return <div className="message-text">{content}</div>;
+  return (
+    <>
+      {hasReasoning ? <ReasoningBlocksView blocks={reasoningBlocks} /> : null}
+      <div className="message-text">{content}</div>
+    </>
+  );
+}
+
+function ReasoningBlocksView({ blocks }: { blocks?: ReasoningBlock[] }) {
+  if (!blocks || blocks.length === 0) {
+    return null;
+  }
+  return (
+    <div className="reasoning-block-list" data-testid="reasoning-block-list">
+      {blocks.map((block, index) => (
+        <ReasoningBlockCard key={block.blockId} block={block} index={index} />
+      ))}
+    </div>
+  );
+}
+
+function ReasoningBlockCard({ block, index }: { block: ReasoningBlock; index: number }) {
+  const [collapsed, setCollapsed] = useState(block.collapsed);
+  const title = `思考过程 ${index + 1}`;
+  return (
+    <section className={`reasoning-block${collapsed ? "" : " expanded"}`}>
+      <button
+        type="button"
+        className="reasoning-block-toggle"
+        aria-expanded={!collapsed}
+        onClick={() => setCollapsed((prev) => !prev)}
+      >
+        <span className="reasoning-block-title">{title}</span>
+        <span className={`reasoning-block-chevron${collapsed ? "" : " expanded"}`}>▼</span>
+      </button>
+      <div className={`reasoning-block-body${collapsed ? "" : " expanded"}`}>
+        <div className="reasoning-block-content">{block.content}</div>
+      </div>
+    </section>
+  );
 }
 
 function resolveAssistantRenderMode(): AssistantRenderMode {
