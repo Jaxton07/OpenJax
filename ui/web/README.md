@@ -12,6 +12,12 @@
 - 本地持久化设置与会话（`localStorage`）。
 - 提供 SSE 与 polling 两种输出模式。
 
+## 子目录文档导航
+
+- 组件层索引：[`src/components/README.md`](src/components/README.md)
+- 逻辑层索引：[`src/lib/README.md`](src/lib/README.md)
+- 样式层索引：[`src/styles/README.md`](src/styles/README.md)
+
 ## 文件树
 
 ```text
