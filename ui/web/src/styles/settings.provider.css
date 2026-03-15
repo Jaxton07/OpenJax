@@ -222,14 +222,14 @@
 
 .provider-form-wrap {
   min-width: 0;
-  min-height: var(--provider-content-height);
-  max-height: var(--provider-content-height);
+  height: var(--provider-content-height);
   display: grid;
   gap: 8px;
   position: relative;
-  overflow: hidden;
-  animation: provider-form-slide-in var(--provider-motion-ms) var(--provider-motion-ease) forwards;
-  will-change: transform;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  will-change: auto;
 }
 
 .provider-form-wrap.provider-form-wrap-closing {
@@ -238,10 +238,15 @@
   pointer-events: none;
 }
 
-.provider-form-wrap.provider-form-wrap-closing .provider-form {
+.provider-form-wrap .provider-form {
   width: 360px;
   min-width: 360px;
   max-width: 360px;
+  animation: provider-form-content-slide-in var(--provider-motion-ms) var(--provider-motion-ease)
+    forwards;
+}
+
+.provider-form-wrap.provider-form-wrap-closing .provider-form {
   animation: provider-form-content-slide-out var(--provider-motion-ms) var(--provider-motion-ease)
     forwards;
 }
@@ -274,7 +279,7 @@
 
 .provider-form {
   min-width: 0;
-  height: 100%;
+  min-height: 100%;
   border: 1px solid var(--settings-border);
   border-radius: 14px;
   background: #ffffff;
@@ -282,7 +287,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  overflow: auto;
+  overflow: visible;
 }
 
 .provider-form-header h3 {
@@ -371,9 +376,16 @@
     max-width: 100%;
     animation: none;
   }
+
+  .provider-form-wrap .provider-form {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    animation: none;
+  }
 }
 
-@keyframes provider-form-slide-in {
+@keyframes provider-form-content-slide-in {
   from {
     transform: translateX(42px);
   }

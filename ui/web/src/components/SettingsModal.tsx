@@ -49,6 +49,7 @@ export default function SettingsModal(props: SettingsModalProps) {
   const [providerPanelMode, setProviderPanelMode] = useState<"none" | "create" | "edit">("none");
   const [closingProviderPanel, setClosingProviderPanel] = useState(false);
   const wasOpenRef = useRef(false);
+  const providerFormWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!props.open) {
@@ -149,6 +150,17 @@ export default function SettingsModal(props: SettingsModalProps) {
     }, PROVIDER_FORM_EXIT_MS);
     return () => window.clearTimeout(timer);
   }, [closingProviderPanel]);
+
+  useEffect(() => {
+    if (providerPanelMode === "none" || closingProviderPanel) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      if (providerFormWrapRef.current) {
+        providerFormWrapRef.current.scrollTop = 0;
+      }
+    });
+  }, [closingProviderPanel, providerPanelMode, selectedProviderId]);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.provider_id === selectedProviderId) ?? null,
@@ -377,6 +389,7 @@ export default function SettingsModal(props: SettingsModalProps) {
                 />
                 {providerPanelMode !== "none" ? (
                   <div
+                    ref={providerFormWrapRef}
                     className={
                       closingProviderPanel
                         ? "provider-form-wrap provider-form-wrap-closing"
