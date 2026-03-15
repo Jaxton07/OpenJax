@@ -2,17 +2,12 @@
 
 ## 阶段 0：准备与开关
 
-1. 增加统一特性开关：
-   - `OPENJAX_STREAM_DISPATCHER_ENABLED=1`
-   - `OPENJAX_STREAM_DISPATCH_PROBE_MS=80`
-   - `OPENJAX_STREAM_TEXT_FAST_PATH_DEFAULT=1`
-2. 保留现有 `OPENJAX_DIRECT_PROVIDER_STREAM`，作为回退兜底开关。
-3. 在日志中打印当前策略矩阵，便于线上确认。
+1. 固化分发器为默认且唯一主路径，不再依赖灰度开关。
+2. 在日志中打印当前策略矩阵，便于线上确认。
 
 验收：
 
-1. 开关关闭时行为与当前版本一致。
-2. 开关开启时无编译告警，核心路径可运行。
+1. 分发器默认路径无编译告警，核心路径可运行。
 
 ## 阶段 1：实现 Dispatcher（不改外部协议）
 
@@ -71,4 +66,3 @@
 2. M2：Tool call 收敛 + 审批事件链路通过。
 3. M3：Gateway 兼容瘦身 + WebUI 无感切换。
 4. M4：灰度稳定，默认启用新路径。
-

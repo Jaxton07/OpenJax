@@ -58,13 +58,18 @@ async fn emits_args_delta_and_progress_before_completion() {
         .iter()
         .position(|evt| matches!(evt, Event::ToolCallProgress { .. }))
         .expect("tool_call_progress");
+    let ready = events
+        .iter()
+        .position(|evt| matches!(evt, Event::ToolCallReady { .. }))
+        .expect("tool_call_ready");
     let completed = events
         .iter()
         .position(|evt| matches!(evt, Event::ToolCallCompleted { .. }))
         .expect("tool_call_completed");
 
     assert!(started < args_delta);
-    assert!(args_delta < progress);
+    assert!(args_delta < ready);
+    assert!(ready < progress);
     assert!(progress < completed);
 
     let _ = fs::remove_dir_all(workspace);

@@ -64,7 +64,7 @@
 
 - 审批策略：`OPENJAX_APPROVAL_POLICY` 或 `config.sandbox.approval_policy`。
 - 沙箱模式：`OPENJAX_SANDBOX_MODE` 或 `config.sandbox.mode`。
-- Final writer 开关：`OPENJAX_FINAL_WRITER`（默认 `off`，即 planner-only）。
+- Final writer 路径已停用，当前固定使用 planner-only 输出链路。
 
 ## 扩展建议
 

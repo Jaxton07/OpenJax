@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use openjax_protocol::Event;
 use tracing::{debug, info, warn};
 
+use crate::Agent;
 use crate::agent::decision::{
     normalize_model_decision, normalize_tool_calls, parse_model_decision, parse_model_decision_v2,
 };
@@ -10,8 +11,8 @@ use crate::agent::planner_utils::{summarize_log_preview, summarize_log_preview_j
 use crate::agent::prompt::{build_json_repair_prompt, build_planner_input};
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::turn_engine::TurnEngine;
+use crate::dispatcher::{self, DispatchBranch, ProbeInput};
 use crate::model::{ModelRequest, ModelStage};
-use crate::{Agent, FinalResponseMode};
 
 impl Agent {
     pub(crate) async fn execute_natural_language_turn(
@@ -36,31 +37,6 @@ impl Agent {
             user_input_len = user_input.len(),
             "natural_language_turn started"
         );
-
-        if self.direct_provider_stream {
-            info!(
-                turn_id = turn_id,
-                "direct_provider_stream enabled; bypass planner/tool decision pipeline"
-            );
-            turn_engine.on_response_started();
-            let (message, ok) = self
-                .stream_direct_provider_reply(turn_id, user_input, events)
-                .await;
-            self.push_event(
-                events,
-                Event::AssistantMessage {
-                    turn_id,
-                    content: message.clone(),
-                },
-            );
-            if ok {
-                turn_engine.on_completed();
-            } else {
-                turn_engine.on_failed();
-            }
-            self.record_history("assistant", message);
-            return;
-        }
 
         while executed_count < self.max_tool_calls_per_turn
             && planner_rounds < self.max_planner_rounds_per_turn
@@ -115,12 +91,7 @@ impl Agent {
 
             let planner_request = ModelRequest::for_stage(ModelStage::Planner, planner_input);
             let planner_stream = match self
-                .request_planner_model_output(
-                    turn_id,
-                    &planner_request,
-                    self.final_response_mode == FinalResponseMode::PlannerOnly,
-                    events,
-                )
+                .request_planner_model_output(turn_id, &planner_request, true, events)
                 .await
             {
                 Ok(streamed) => streamed,
@@ -145,6 +116,14 @@ impl Agent {
                 }
             };
             let model_output = planner_stream.model_output;
+            let dispatch_meta = dispatcher::dispatch_stream(
+                ProbeInput {
+                    turn_id,
+                    action_hint: planner_stream.action_hint.as_deref(),
+                    model_output: Some(&model_output),
+                },
+                self.dispatcher_config,
+            );
 
             info!(
                 turn_id = turn_id,
@@ -284,6 +263,23 @@ impl Agent {
             };
 
             let action = decision.action.to_ascii_lowercase();
+            if action == "tool" || action == "tool_batch" {
+                if dispatch_meta.locked_branch != DispatchBranch::ToolCall {
+                    warn!(
+                        turn_id = turn_id,
+                        locked_branch = dispatch_meta.locked_branch.as_str(),
+                        action = action,
+                        "dispatch branch conflicted with model action; preferring tool branch"
+                    );
+                }
+            } else if action == "final" && dispatch_meta.locked_branch != DispatchBranch::Text {
+                warn!(
+                    turn_id = turn_id,
+                    locked_branch = dispatch_meta.locked_branch.as_str(),
+                    action = action,
+                    "dispatch branch conflicted with model action; preferring final text branch"
+                );
+            }
 
             info!(
                 turn_id = turn_id,
@@ -307,85 +303,46 @@ impl Agent {
                     turn_id = turn_id,
                     phase = "completed",
                     action = "final",
-                    final_response_mode = self.final_response_mode.as_str(),
+                    final_response_mode = "planner_only",
                     skill_shell_misfire_count = skill_shell_misfire_count,
                     skill_workflow_shortcut_used = saw_git_status_short && saw_git_diff_stat,
                     diff_strategy = diff_strategy,
                     "natural_language_turn completed"
                 );
-                let message = if self.final_response_mode == FinalResponseMode::FinalWriter {
+                let message = if planner_stream.live_streamed {
                     turn_engine.on_response_started();
-                    let (streamed, live_streamed) = self
-                        .stream_final_assistant_reply(
+                    self.push_event(
+                        events,
+                        Event::ResponseCompleted {
                             turn_id,
-                            user_input,
-                            &tool_traces,
-                            &seed_message,
-                            events,
-                        )
-                        .await;
-                    if live_streamed {
-                        streamed
+                            content: seed_message.clone(),
+                            stream_source: openjax_protocol::StreamSource::ModelLive,
+                        },
+                    );
+                    if planner_stream.streamed_message.is_empty() {
+                        seed_message.clone()
                     } else {
-                        self.push_event(
-                            events,
-                            Event::ResponseStarted {
-                                turn_id,
-                                stream_source: openjax_protocol::StreamSource::Synthetic,
-                            },
-                        );
-                        self.emit_synthetic_response_deltas(turn_id, &seed_message, events);
-                        self.push_event(
-                            events,
-                            Event::ResponseCompleted {
-                                turn_id,
-                                content: seed_message.clone(),
-                                stream_source: openjax_protocol::StreamSource::Synthetic,
-                            },
-                        );
-                        seed_message
+                        planner_stream.streamed_message.clone()
                     }
                 } else {
-                    info!(
-                        turn_id = turn_id,
-                        mode = self.final_response_mode.as_str(),
-                        "final_writer_request skipped"
+                    turn_engine.on_response_started();
+                    self.push_event(
+                        events,
+                        Event::ResponseStarted {
+                            turn_id,
+                            stream_source: openjax_protocol::StreamSource::Synthetic,
+                        },
                     );
-                    if planner_stream.live_streamed {
-                        turn_engine.on_response_started();
-                        self.push_event(
-                            events,
-                            Event::ResponseCompleted {
-                                turn_id,
-                                content: seed_message.clone(),
-                                stream_source: openjax_protocol::StreamSource::ModelLive,
-                            },
-                        );
-                        if planner_stream.streamed_message.is_empty() {
-                            seed_message.clone()
-                        } else {
-                            planner_stream.streamed_message.clone()
-                        }
-                    } else {
-                        turn_engine.on_response_started();
-                        self.push_event(
-                            events,
-                            Event::ResponseStarted {
-                                turn_id,
-                                stream_source: openjax_protocol::StreamSource::Synthetic,
-                            },
-                        );
-                        self.emit_synthetic_response_deltas(turn_id, &seed_message, events);
-                        self.push_event(
-                            events,
-                            Event::ResponseCompleted {
-                                turn_id,
-                                content: seed_message.clone(),
-                                stream_source: openjax_protocol::StreamSource::Synthetic,
-                            },
-                        );
-                        seed_message
-                    }
+                    self.emit_synthetic_response_deltas(turn_id, &seed_message, events);
+                    self.push_event(
+                        events,
+                        Event::ResponseCompleted {
+                            turn_id,
+                            content: seed_message.clone(),
+                            stream_source: openjax_protocol::StreamSource::Synthetic,
+                        },
+                    );
+                    seed_message
                 };
                 let (preview, preview_truncated) = summarize_log_preview(&message, 300);
                 let preview_json = serde_json::json!({ "final_response": preview }).to_string();

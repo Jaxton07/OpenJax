@@ -99,31 +99,6 @@ Tool execution history:\n{tool_context}\n"
     )
 }
 
-pub(crate) fn build_final_response_prompt(
-    user_input: &str,
-    tool_traces: &[String],
-    seed_message: &str,
-) -> String {
-    let tool_context = if tool_traces.is_empty() {
-        "(no tools executed in this turn)".to_string()
-    } else {
-        tool_traces.join("\n")
-    };
-
-    format!(
-        "You are OpenJax's final response writer.\n\
-Produce only the final assistant reply text for the user.\n\
-Do not output JSON, markdown fences, or extra metadata.\n\
-Keep the response concise, accurate, and actionable.\n\
-\n\
-User request:\n{user_input}\n\
-\n\
-Tool execution summary for this turn:\n{tool_context}\n\
-\n\
-Draft answer from planner:\n{seed_message}\n"
-    )
-}
-
 pub(crate) fn build_json_repair_prompt(previous_output: &str) -> String {
     format!(
         "Your previous response did not match the required JSON schema.\n\

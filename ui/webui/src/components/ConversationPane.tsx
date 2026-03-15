@@ -19,7 +19,6 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
   recordAssistantPaneRender(sessionId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
-  const lastAutoScrollTsRef = useRef(0);
   const prevLiveTextRef = useRef("");
   const [animatedDelta, setAnimatedDelta] = useState<{ stable: string; delta: string; key: number }>({
     stable: "",
@@ -58,13 +57,11 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
     if (!container || !stickToBottomRef.current) {
       return;
     }
-    const now = performance.now();
-    if (now - lastAutoScrollTsRef.current < 33) {
-      return;
-    }
-    lastAutoScrollTsRef.current = now;
-    container.scrollTop = container.scrollHeight;
-  }, [timeline, snapshot.version]);
+    const rafId = requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [timeline.length, snapshot.version, snapshot.content, snapshot.isActive]);
 
   useEffect(() => {
     if (!snapshot.isActive) {
@@ -111,7 +108,7 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
         onScroll={(event) => {
           const container = event.currentTarget;
           const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
-          stickToBottomRef.current = distance <= 48;
+          stickToBottomRef.current = distance <= 96;
         }}
       >
         {timeline.length === 0 ? <div className="empty">连接后开始对话</div> : null}

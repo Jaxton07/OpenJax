@@ -18,6 +18,7 @@ use crate::agent::tool_policy::{
     should_abort_on_consecutive_duplicate_skips,
 };
 use crate::agent::turn_engine::TurnEngine;
+use crate::dispatcher;
 use crate::{Agent, MAX_CONSECUTIVE_DUPLICATE_SKIPS, tools};
 
 impl Agent {
@@ -213,6 +214,7 @@ impl Agent {
                 },
             );
         }
+        dispatcher::emit_tool_call_ready(events, turn_id, &tool_call_id, &tool_name);
         self.push_event(
             events,
             Event::ToolCallProgress {

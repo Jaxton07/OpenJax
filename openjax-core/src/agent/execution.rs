@@ -4,6 +4,7 @@ use openjax_protocol::Event;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::dispatcher;
 use crate::{Agent, tools};
 
 #[derive(Debug, Clone)]
@@ -64,6 +65,7 @@ impl Agent {
                 },
             );
         }
+        dispatcher::emit_tool_call_ready(events, turn_id, &tool_call_id, &call.name);
         self.push_event(
             events,
             Event::ToolCallProgress {

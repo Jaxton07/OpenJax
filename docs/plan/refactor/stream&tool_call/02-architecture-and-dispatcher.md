@@ -89,11 +89,10 @@ LOCKED_TOOL_CALL
 
 1. `openjax-core`
    - 新增 dispatcher 抽象模块，位于 model stream 与 planner/tool 之间。
-   - 保留 `direct_provider_stream` 开关，但升级为路由策略的一部分。
+   - 分发器作为默认且唯一入口，不再依赖兼容开关切换主路径。
 2. `openjax-gateway`
    - 保持事件 envelope，不增加重复语义事件。
    - 继续支持 `after_event_seq` 回放恢复。
 3. `ui/webui`
    - 仅订阅数据面文本事件进行高频渲染。
    - 控制面事件用于工具卡片和审批卡片展示，不触发全文本重绘。
-

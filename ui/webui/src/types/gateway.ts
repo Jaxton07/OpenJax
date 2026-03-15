@@ -50,6 +50,7 @@ export type StreamEventType =
   | "response_completed"
   | "assistant_message"
   | "response_error"
+  | "tool_call_ready"
   | "turn_completed"
   | "error"
   | string;

@@ -112,6 +112,6 @@ zsh -lc "cargo run -p openjax-gateway"
 - `response_started`
 - `response_text_delta`
 - `response_completed`
-- `tool_call_started/tool_args_delta/tool_call_progress/tool_call_completed/tool_call_failed`
+- `tool_call_started/tool_args_delta/tool_call_ready/tool_call_progress/tool_call_completed/tool_call_failed`
 - `approval_requested/approval_resolved`
 5. 若收到 `response_error.code=REPLAY_WINDOW_EXCEEDED`，应提示前端重新发起会话流连接。

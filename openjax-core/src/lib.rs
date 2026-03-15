@@ -1,6 +1,7 @@
 mod agent;
 pub mod approval;
 mod config;
+pub mod dispatcher;
 mod logger;
 mod model;
 mod paths;
@@ -44,31 +45,6 @@ pub(crate) struct HistoryEntry {
     pub(crate) content: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinalResponseMode {
-    FinalWriter,
-    PlannerOnly,
-}
-
-impl FinalResponseMode {
-    fn from_env() -> Self {
-        let raw = std::env::var("OPENJAX_FINAL_WRITER")
-            .ok()
-            .unwrap_or_else(|| "off".to_string());
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "off" | "false" | "0" | "planner" | "planner_only" => Self::PlannerOnly,
-            _ => Self::FinalWriter,
-        }
-    }
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::FinalWriter => "final_writer",
-            Self::PlannerOnly => "planner_only",
-        }
-    }
-}
-
 pub struct Agent {
     next_turn_id: u64,
     model_client: Box<dyn model::ModelClient>,
@@ -87,8 +63,7 @@ pub struct Agent {
     max_planner_rounds_per_turn: usize,
     recent_tool_calls: Vec<ToolCallRecord>,
     state_epoch: u64,
-    final_response_mode: FinalResponseMode,
-    direct_provider_stream: bool,
+    dispatcher_config: dispatcher::DispatcherConfig,
     tool_batch_v2_enabled: bool,
     approval_handler: Arc<dyn approval::ApprovalHandler>,
     event_sink: Option<UnboundedSender<Event>>,

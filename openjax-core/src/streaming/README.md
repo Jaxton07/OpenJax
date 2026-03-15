@@ -22,7 +22,7 @@
 ## 分层约定（机制 vs 策略）
 
 - `streaming` 只承载通用机制：流式事件编排、delta 处理、回放/背压、provider 解析。
-- `agent` 保留业务策略：planner JSON 决策解析、repair/fallback 策略、final writer 触发条件。
+- `agent` 保留业务策略：planner JSON 决策解析、repair/fallback 策略与工具编排触发条件。
 - 目标是减少耦合：`streaming` 不依赖 `agent` 领域对象，`agent` 复用 `streaming` 的机制能力。
 
 ## WebUI 流式接入指引（SSE）

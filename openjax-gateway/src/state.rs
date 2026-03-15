@@ -542,7 +542,9 @@ fn map_core_event(
             "stream_debug.gateway_event_emitted"
         );
     }
-    if (event_type == "tool_call_started" || event_type == "tool_call_completed")
+    if (event_type == "tool_call_started"
+        || event_type == "tool_call_ready"
+        || event_type == "tool_call_completed")
         && envelope.payload.get("tool_call_id").is_some()
     {
         info!(
@@ -564,6 +566,7 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::ToolCallStarted { turn_id, .. }
             | Event::ToolCallCompleted { turn_id, .. }
             | Event::ToolCallArgsDelta { turn_id, .. }
+            | Event::ToolCallReady { turn_id, .. }
             | Event::ToolCallProgress { turn_id, .. }
             | Event::ToolCallFailed { turn_id, .. }
             | Event::AssistantMessage { turn_id, .. }

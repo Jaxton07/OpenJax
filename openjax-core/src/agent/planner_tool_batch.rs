@@ -14,6 +14,7 @@ use crate::agent::prompt::truncate_for_prompt;
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::tool_policy::is_approval_blocking_error;
 use crate::agent::turn_engine::TurnEngine;
+use crate::dispatcher;
 use crate::{Agent, tools};
 
 impl Agent {
@@ -138,6 +139,12 @@ impl Agent {
                             },
                         );
                     }
+                    dispatcher::emit_tool_call_ready(
+                        events,
+                        turn_id,
+                        &call.tool_call_id,
+                        &call.tool_name,
+                    );
                     self.push_event(
                         events,
                         Event::ToolCallProgress {

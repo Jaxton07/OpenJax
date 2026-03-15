@@ -95,6 +95,11 @@ pub enum Event {
         tool_name: String,
         args_delta: String,
     },
+    ToolCallReady {
+        turn_id: u64,
+        tool_call_id: String,
+        tool_name: String,
+    },
     ToolCallProgress {
         turn_id: u64,
         tool_call_id: String,

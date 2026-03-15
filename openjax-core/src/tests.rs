@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{
-    Agent, ApprovalPolicy, Config, FinalResponseMode, SandboxMode,
+    Agent, ApprovalPolicy, Config, SandboxMode,
     agent::{
         decision::{normalize_model_decision, parse_model_decision},
         prompt::{build_planner_input, summarize_user_input},
@@ -38,12 +38,6 @@ struct PlannerFallbackModel {
     stream_calls: Arc<Mutex<usize>>,
 }
 
-#[derive(Clone)]
-struct FinalWriterStreamFailureModel {
-    complete_calls: Arc<Mutex<usize>>,
-    stream_calls: Arc<Mutex<usize>>,
-}
-
 impl ScriptedToolBatchModel {
     fn new() -> Self {
         Self {
@@ -53,23 +47,6 @@ impl ScriptedToolBatchModel {
 }
 
 impl PlannerFallbackModel {
-    fn new() -> Self {
-        Self {
-            complete_calls: Arc::new(Mutex::new(0)),
-            stream_calls: Arc::new(Mutex::new(0)),
-        }
-    }
-
-    fn complete_call_count(&self) -> usize {
-        *self.complete_calls.lock().expect("complete_calls lock")
-    }
-
-    fn stream_call_count(&self) -> usize {
-        *self.stream_calls.lock().expect("stream_calls lock")
-    }
-}
-
-impl FinalWriterStreamFailureModel {
     fn new() -> Self {
         Self {
             complete_calls: Arc::new(Mutex::new(0)),
@@ -160,41 +137,6 @@ impl ModelClient for PlannerFallbackModel {
 
     fn name(&self) -> &'static str {
         "planner-fallback"
-    }
-}
-
-#[async_trait]
-impl ModelClient for FinalWriterStreamFailureModel {
-    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
-        let mut calls = self.complete_calls.lock().expect("complete_calls lock");
-        *calls += 1;
-        Ok(ModelResponse {
-            text: r#"{"action":"final","message":"seed"}"#.to_string(),
-            ..ModelResponse::default()
-        })
-    }
-
-    async fn complete_stream(
-        &self,
-        request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
-    ) -> Result<ModelResponse> {
-        let mut calls = self.stream_calls.lock().expect("stream_calls lock");
-        *calls += 1;
-        if request.stage == super::model::ModelStage::Planner {
-            if let Some(sender) = delta_sender {
-                let _ = sender.send("{\"action\":\"final\",\"message\":\"seed\"}".to_string());
-            }
-            return Ok(ModelResponse {
-                text: r#"{"action":"final","message":"seed"}"#.to_string(),
-                ..ModelResponse::default()
-            });
-        }
-        anyhow::bail!("final stream failed")
-    }
-
-    fn name(&self) -> &'static str {
-        "final-writer-stream-failure"
     }
 }
 
@@ -443,7 +385,6 @@ async fn final_action_emits_response_text_delta_before_message() {
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
-    agent.final_response_mode = FinalResponseMode::FinalWriter;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -475,8 +416,8 @@ async fn final_action_emits_response_text_delta_before_message() {
         }
     }
 
-    assert_eq!(delta_text, "你好");
-    assert_eq!(assistant_message_text, "你好");
+    assert_eq!(delta_text, "seed");
+    assert_eq!(assistant_message_text, "seed");
     assert!(
         first_delta_index.is_some(),
         "expected response text delta events"
@@ -491,7 +432,7 @@ async fn final_action_emits_response_text_delta_before_message() {
         "response text delta should be emitted before final assistant message"
     );
     assert_eq!(model_probe.complete_call_count(), 0);
-    assert_eq!(model_probe.stream_call_count(), 2);
+    assert_eq!(model_probe.stream_call_count(), 1);
 }
 
 #[tokio::test]
@@ -501,7 +442,6 @@ async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() 
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
-    agent.final_response_mode = FinalResponseMode::PlannerOnly;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -551,7 +491,6 @@ async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
-    agent.final_response_mode = FinalResponseMode::PlannerOnly;
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -594,7 +533,6 @@ async fn planner_stream_parse_failure_falls_back_to_complete_response() {
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
-    agent.final_response_mode = FinalResponseMode::PlannerOnly;
     let model = PlannerFallbackModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -620,50 +558,12 @@ async fn planner_stream_parse_failure_falls_back_to_complete_response() {
 }
 
 #[tokio::test]
-async fn final_writer_stream_failure_falls_back_to_seed_message() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
-    agent.final_response_mode = FinalResponseMode::FinalWriter;
-    let model = FinalWriterStreamFailureModel::new();
-    let model_probe = model.clone();
-    agent.model_client = Box::new(model);
-
-    let events = agent
-        .submit(Op::UserTurn {
-            input: "seed".to_string(),
-        })
-        .await;
-
-    let mut saw_stream_error = false;
-    let final_message = events
-        .iter()
-        .find_map(|event| match event {
-            Event::ResponseError { code, .. } if code == "final_writer_stream_failed" => {
-                saw_stream_error = true;
-                None
-            }
-            Event::AssistantMessage { content, .. } => Some(content.clone()),
-            _ => None,
-        })
-        .unwrap_or_default();
-
-    assert!(saw_stream_error);
-    assert_eq!(final_message, "seed");
-    assert_eq!(model_probe.stream_call_count(), 2);
-    assert_eq!(model_probe.complete_call_count(), 0);
-}
-
-#[tokio::test]
 async fn tool_batch_emits_proposal_and_batch_completed_events() {
     let mut agent = Agent::with_runtime(
         ApprovalPolicy::Never,
         SandboxMode::WorkspaceWrite,
         PathBuf::from("."),
     );
-    agent.final_response_mode = FinalResponseMode::PlannerOnly;
     agent.model_client = Box::new(ScriptedToolBatchModel::new());
 
     let events = agent
