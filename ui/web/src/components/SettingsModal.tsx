@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AppSettings, LlmProvider } from "../types/gateway";
-import GeneralSettingsPanel from "./settings/GeneralSettingsPanel";
+import GeneralSettingsPanel, { type GeneralStatus } from "./settings/GeneralSettingsPanel";
 import ProviderForm, { type ProviderFormValue } from "./settings/ProviderForm";
 import ProviderListPanel from "./settings/ProviderListPanel";
 import SettingsSidebar from "./settings/SettingsSidebar";
@@ -17,80 +17,155 @@ interface SettingsModalProps {
   onDeleteProvider: (providerId: string) => Promise<void>;
 }
 
+const IDLE_GENERAL_STATUS: GeneralStatus = {
+  tone: "idle",
+  message: "你可以先测试连接，再保存设置。"
+};
+
 export default function SettingsModal(props: SettingsModalProps) {
   const [draft, setDraft] = useState<AppSettings>(props.initialSettings);
-  const [status, setStatus] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"general" | "provider">("general");
-  const [providers, setProviders] = useState<LlmProvider[]>([]);
+
+  const [generalStatus, setGeneralStatus] = useState<GeneralStatus>(IDLE_GENERAL_STATUS);
+  const [testingGeneral, setTestingGeneral] = useState(false);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+
+  const [providerStatus, setProviderStatus] = useState<string>("");
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
-  const [editingProvider, setEditingProvider] = useState<LlmProvider | null>(null);
+  const [providers, setProviders] = useState<LlmProvider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!props.open) {
+      return;
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        props.onClose();
+      }
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [props.open, props.onClose]);
 
   useEffect(() => {
     if (props.open) {
       setDraft(props.initialSettings);
-      setStatus("");
       setActiveTab("general");
-      setEditingProvider(null);
+      setGeneralStatus(IDLE_GENERAL_STATUS);
+      setTestingGeneral(false);
+      setSavingGeneral(false);
+      setProviderStatus("");
+      setSelectedProviderId(null);
     }
   }, [props.initialSettings, props.open]);
+
+  const refreshProviders = async () => {
+    setLoadingProviders(true);
+    setProviderStatus("正在加载 Provider 列表...");
+    try {
+      const items = await props.onListProviders();
+      setProviders(items);
+      setSelectedProviderId((current) =>
+        current && items.some((item) => item.provider_id === current) ? current : null
+      );
+      setProviderStatus(items.length === 0 ? "暂无 Provider，请先新增。" : "Provider 列表已更新。");
+    } catch (error) {
+      setProviderStatus((error as Error).message);
+    } finally {
+      setLoadingProviders(false);
+    }
+  };
 
   useEffect(() => {
     if (!props.open || activeTab !== "provider") {
       return;
     }
-    void (async () => {
-      setLoadingProviders(true);
-      try {
-        const items = await props.onListProviders();
-        setProviders(items);
-      } catch (error) {
-        setStatus((error as Error).message);
-      } finally {
-        setLoadingProviders(false);
+    void refreshProviders();
+  }, [activeTab, props.open]);
+
+  const selectedProvider = useMemo(
+    () => providers.find((provider) => provider.provider_id === selectedProviderId) ?? null,
+    [providers, selectedProviderId]
+  );
+
+  const providerFormInitialValue: ProviderFormValue = selectedProvider
+    ? {
+        providerName: selectedProvider.provider_name,
+        baseUrl: selectedProvider.base_url,
+        modelName: selectedProvider.model_name,
+        apiKey: ""
       }
-    })();
-  }, [activeTab, props.open, props.onListProviders]);
+    : {
+        providerName: "",
+        baseUrl: "",
+      modelName: "",
+      apiKey: ""
+    };
 
   if (!props.open) {
     return null;
   }
 
-  const handleSaveSettings = (settings: AppSettings) => {
-    props.onSave(settings);
-    setStatus("设置已保存");
-    props.onClose();
+  const handleSaveSettings = async (settings: AppSettings) => {
+    setSavingGeneral(true);
+    setGeneralStatus({ tone: "info", message: "正在保存设置..." });
+    try {
+      props.onSave(settings);
+      setGeneralStatus({ tone: "success", message: "设置已保存。" });
+    } catch (error) {
+      setGeneralStatus({ tone: "error", message: (error as Error).message });
+    } finally {
+      setSavingGeneral(false);
+    }
   };
 
   const handleTestSettings = async (settings: AppSettings) => {
-    const ok = await props.onTest(settings);
-    setStatus(ok ? "连接测试成功" : "连接测试失败");
-    return ok;
+    setTestingGeneral(true);
+    setGeneralStatus({ tone: "info", message: "正在测试连接..." });
+    try {
+      const ok = await props.onTest(settings);
+      setGeneralStatus({
+        tone: ok ? "success" : "error",
+        message: ok ? "连接测试成功。" : "连接测试失败，请检查配置。"
+      });
+    } catch (error) {
+      setGeneralStatus({ tone: "error", message: (error as Error).message });
+    } finally {
+      setTestingGeneral(false);
+    }
   };
 
   const createProvider = async (value: ProviderFormValue) => {
     setSavingProvider(true);
+    setProviderStatus("正在创建 Provider...");
     try {
       const created = await props.onCreateProvider(value);
       setProviders((prev) => [created, ...prev]);
-      setStatus("Provider 创建成功");
+      setSelectedProviderId(created.provider_id);
+      setProviderStatus("Provider 创建成功。");
+    } catch (error) {
+      setProviderStatus((error as Error).message);
     } finally {
       setSavingProvider(false);
     }
   };
 
   const updateProvider = async (value: ProviderFormValue) => {
-    if (!editingProvider) {
+    if (!selectedProvider) {
       return;
     }
     setSavingProvider(true);
+    setProviderStatus("正在保存 Provider...");
     try {
-      const updated = await props.onUpdateProvider(editingProvider.provider_id, value);
+      const updated = await props.onUpdateProvider(selectedProvider.provider_id, value);
       setProviders((prev) =>
         prev.map((item) => (item.provider_id === updated.provider_id ? updated : item))
       );
-      setEditingProvider(null);
-      setStatus("Provider 更新成功");
+      setProviderStatus("Provider 更新成功。");
+    } catch (error) {
+      setProviderStatus((error as Error).message);
     } finally {
       setSavingProvider(false);
     }
@@ -101,39 +176,43 @@ export default function SettingsModal(props: SettingsModalProps) {
     if (!confirmed) {
       return;
     }
-    await props.onDeleteProvider(provider.provider_id);
-    setProviders((prev) => prev.filter((item) => item.provider_id !== provider.provider_id));
-    setStatus("Provider 已删除");
+    setSavingProvider(true);
+    setProviderStatus("正在删除 Provider...");
+    try {
+      await props.onDeleteProvider(provider.provider_id);
+      setProviders((prev) => prev.filter((item) => item.provider_id !== provider.provider_id));
+      setSelectedProviderId((current) => (current === provider.provider_id ? null : current));
+      setProviderStatus("Provider 已删除。");
+    } catch (error) {
+      setProviderStatus((error as Error).message);
+    } finally {
+      setSavingProvider(false);
+    }
   };
-
-  const providerFormInitialValue: ProviderFormValue = editingProvider
-    ? {
-        providerName: editingProvider.provider_name,
-        baseUrl: editingProvider.base_url,
-        modelName: editingProvider.model_name,
-        apiKey: ""
-      }
-    : {
-        providerName: "",
-        baseUrl: "",
-        modelName: "",
-        apiKey: ""
-      };
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
       <div className="settings-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-header">
-          <h2>设置</h2>
-          <button onClick={props.onClose}>关闭</button>
-        </div>
+        <header className="modal-header">
+          <div className="modal-title-group">
+            <h2>设置</h2>
+            <p>管理连接参数、输出策略与模型 Provider。</p>
+          </div>
+          <button type="button" className="btn-secondary" onClick={props.onClose}>
+            关闭
+          </button>
+        </header>
+
         <div className="settings-modal-body">
           <SettingsSidebar activeTab={activeTab} onChangeTab={setActiveTab} />
+
           <div className="settings-modal-content">
             {activeTab === "general" ? (
               <GeneralSettingsPanel
                 draft={draft}
-                status={status}
+                status={generalStatus}
+                testing={testingGeneral}
+                saving={savingGeneral}
                 onChangeDraft={setDraft}
                 onTest={handleTestSettings}
                 onSave={handleSaveSettings}
@@ -143,20 +222,26 @@ export default function SettingsModal(props: SettingsModalProps) {
                 <ProviderListPanel
                   providers={providers}
                   loading={loadingProviders}
-                  onRefresh={async () => {
-                    const items = await props.onListProviders();
-                    setProviders(items);
-                  }}
-                  onEdit={setEditingProvider}
+                  selectedProviderId={selectedProviderId}
+                  onRefresh={refreshProviders}
+                  onSelect={(provider) => setSelectedProviderId(provider.provider_id)}
+                  onEdit={(provider) => setSelectedProviderId(provider.provider_id)}
                   onDelete={removeProvider}
                 />
-                <ProviderForm
-                  mode={editingProvider ? "edit" : "create"}
-                  initialValue={providerFormInitialValue}
-                  submitting={savingProvider}
-                  onSubmit={editingProvider ? updateProvider : createProvider}
-                  onCancelEdit={() => setEditingProvider(null)}
-                />
+                <div className="provider-form-wrap">
+                  {providerStatus ? (
+                    <div className="status-tip status-info" role="status" aria-live="polite">
+                      {providerStatus}
+                    </div>
+                  ) : null}
+                  <ProviderForm
+                    mode={selectedProvider ? "edit" : "create"}
+                    initialValue={providerFormInitialValue}
+                    submitting={savingProvider}
+                    onSubmit={selectedProvider ? updateProvider : createProvider}
+                    onCancelEdit={() => setSelectedProviderId(null)}
+                  />
+                </div>
               </section>
             )}
           </div>

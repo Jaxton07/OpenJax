@@ -60,7 +60,19 @@ ui/web/
     │   ├── streamRuntime.test.ts
     │   └── streamRuntime.ts
     ├── styles
-    │   └── app.css
+    │   ├── app.css
+    │   ├── base.css
+    │   ├── layout.css
+    │   ├── messages.css
+    │   ├── composer.css
+    │   ├── login.css
+    │   ├── responsive.css
+    │   ├── settings.tokens.css
+    │   ├── settings.shell.css
+    │   ├── settings.general.css
+    │   ├── settings.provider.css
+    │   ├── settings.controls.css
+    │   └── settings.css
     ├── test
     │   └── setup.ts
     └── types
@@ -77,6 +89,19 @@ ui/web/
 - `src/lib/streamRenderStore.ts`：正文 delta 的运行时拼接缓存（按 `session+turn` 聚合）。
 - `src/lib/streamRuntime.ts`：文本流事件处理与顺序门控工具。
 - `src/lib/storage.ts`：设置与会话本地存储（`openjax:web:*`）。
+- `src/styles/app.css`：样式聚合入口（通过 `@import` 组合各模块样式）。
+- `src/styles/base.css`：全局基础样式与 CSS 变量。
+- `src/styles/layout.css`：应用布局、侧栏、顶部区域样式。
+- `src/styles/messages.css`：消息区、reasoning、tool step 样式。
+- `src/styles/composer.css`：输入区与发送区样式。
+- `src/styles/login.css`：登录页样式。
+- `src/styles/responsive.css`：非设置页的响应式规则。
+- `src/styles/settings.css`：设置页样式聚合入口（通过 `@import` 组合 settings 子模块）。
+- `src/styles/settings.tokens.css`：设置页主题 token。
+- `src/styles/settings.shell.css`：设置弹窗壳层与导航布局。
+- `src/styles/settings.general.css`：通用设置面板样式。
+- `src/styles/settings.provider.css`：Provider 列表与表单样式。
+- `src/styles/settings.controls.css`：设置页按钮与状态样式。
 - `src/components/MessageList.tsx`：按 `message.kind` 分支渲染文本消息与 tool_steps，assistant 消息支持多段 reasoning 折叠区。
 - `src/components/tool-steps/*`：Tool 卡片组件层（列表/卡片/状态徽标/详情体）。
 - `src/pic/icon/index.tsx`：统一 SVG 图标组件出口，供页面复用。

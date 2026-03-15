@@ -1,0 +1,86 @@
+.btn-primary,
+.btn-secondary,
+.btn-ghost,
+.btn-danger {
+  border-radius: 10px;
+  border: 1px solid transparent;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.btn-primary {
+  background: var(--settings-primary);
+  color: #ffffff;
+  border-color: var(--settings-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--settings-primary-hover);
+  border-color: var(--settings-primary-hover);
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: #223047;
+  border-color: var(--settings-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f4f6fb;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #2b3344;
+  border-color: var(--settings-border);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: #f6f8fc;
+}
+
+.btn-danger {
+  background: var(--settings-danger-bg);
+  color: var(--settings-danger);
+  border-color: #f0c8c4;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #fee4e2;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-ghost:disabled,
+.btn-danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-modal .status-tip {
+  color: var(--settings-text-subtle);
+  font-size: 13px;
+  min-height: 18px;
+}
+
+.settings-modal .status-idle {
+  color: var(--settings-text-subtle);
+}
+
+.settings-modal .status-info {
+  color: #3a4f77;
+}
+
+.settings-modal .status-success {
+  color: #166534;
+}
+
+.settings-modal .status-error {
+  color: #b5302a;
+}

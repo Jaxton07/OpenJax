@@ -1,0 +1,32 @@
+@media (max-width: 900px) {
+  .app-shell {
+    --sidebar-width: 0px;
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 220px;
+  }
+
+  .sidebar.collapsed {
+    max-height: 0;
+  }
+
+  .chat-main {
+    padding: 0 14px;
+  }
+
+  .message-bubble {
+    max-width: 96%;
+  }
+
+  .composer-wrap {
+    padding-bottom: 8px;
+  }
+}

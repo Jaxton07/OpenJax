@@ -1,0 +1,30 @@
+:root {
+  font-family: "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
+  color: #111111;
+  background: #ffffff;
+  line-height: 1.4;
+  --composer-max-width: 760px;
+  --panel: #ffffff;
+  --muted: #efefed;
+  --text-subtle: #6f6f6b;
+  --border: #dfdfdb;
+  --accent: #1f1f1d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body,
+html,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}

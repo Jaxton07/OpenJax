@@ -1,0 +1,12 @@
+:root {
+  --settings-bg: #fbfbfc;
+  --settings-card: #ffffff;
+  --settings-border: #e4e7ee;
+  --settings-text-main: #141821;
+  --settings-text-subtle: #667085;
+  --settings-primary: #1c2433;
+  --settings-primary-hover: #111827;
+  --settings-danger: #cc3b32;
+  --settings-danger-bg: #fff1f0;
+  --settings-focus: rgba(77, 109, 176, 0.26);
+}
