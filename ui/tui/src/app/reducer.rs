@@ -81,7 +81,9 @@ impl App {
                     "tui applied ToolCallCompleted"
                 );
             }
-            Event::ToolCallArgsDelta { .. } | Event::ToolCallProgress { .. } => {}
+            Event::ToolCallArgsDelta { .. }
+            | Event::ToolCallReady { .. }
+            | Event::ToolCallProgress { .. } => {}
             Event::ToolCallFailed {
                 tool_name, message, ..
             } => {
@@ -204,6 +206,7 @@ impl App {
                 self.clear_status_bar();
                 self.set_live_status(format!("Response failed: {message}"));
             }
+            Event::ReasoningDelta { .. } => {}
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
         }
     }

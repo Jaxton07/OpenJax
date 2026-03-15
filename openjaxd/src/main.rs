@@ -699,11 +699,13 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::ToolCallStarted { turn_id, .. }
             | Event::ToolCallCompleted { turn_id, .. }
             | Event::ToolCallArgsDelta { turn_id, .. }
+            | Event::ToolCallReady { turn_id, .. }
             | Event::ToolCallProgress { turn_id, .. }
             | Event::ToolCallFailed { turn_id, .. }
             | Event::AssistantMessage { turn_id, .. }
             | Event::ResponseStarted { turn_id, .. }
             | Event::ResponseTextDelta { turn_id, .. }
+            | Event::ReasoningDelta { turn_id, .. }
             | Event::ResponseCompleted { turn_id, .. }
             | Event::ResponseError { turn_id, .. }
             | Event::ResponseResumed { turn_id, .. }
@@ -726,11 +728,13 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
         | Event::ToolCallStarted { turn_id, .. }
         | Event::ToolCallCompleted { turn_id, .. }
         | Event::ToolCallArgsDelta { turn_id, .. }
+        | Event::ToolCallReady { turn_id, .. }
         | Event::ToolCallProgress { turn_id, .. }
         | Event::ToolCallFailed { turn_id, .. }
         | Event::AssistantMessage { turn_id, .. }
         | Event::ResponseStarted { turn_id, .. }
         | Event::ResponseTextDelta { turn_id, .. }
+        | Event::ReasoningDelta { turn_id, .. }
         | Event::ResponseCompleted { turn_id, .. }
         | Event::ResponseError { turn_id, .. }
         | Event::ResponseResumed { turn_id, .. }
@@ -808,6 +812,18 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_progress".to_string(),
             payload: json!({ "tool_name": tool_name, "progress_message": progress_message }),
         }),
+        Event::ToolCallReady {
+            turn_id,
+            tool_name,
+            ..
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "tool_call_ready".to_string(),
+            payload: json!({ "tool_name": tool_name }),
+        }),
         Event::ToolCallFailed {
             turn_id,
             tool_name,
@@ -852,6 +868,18 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "response_text_delta".to_string(),
+            payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
+        }),
+        Event::ReasoningDelta {
+            turn_id,
+            content_delta,
+            stream_source,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "reasoning_delta".to_string(),
             payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
         }),
         Event::ResponseCompleted {
@@ -1051,10 +1079,12 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
     for event in events {
         match event {
             Event::ResponseTextDelta { .. } => response_text_deltas += 1,
+            Event::ReasoningDelta { .. } => response_text_deltas += 1,
             Event::AssistantMessage { .. } => assistant_messages += 1,
             Event::ToolCallStarted { .. }
             | Event::ToolCallCompleted { .. }
             | Event::ToolCallArgsDelta { .. }
+            | Event::ToolCallReady { .. }
             | Event::ToolCallProgress { .. }
             | Event::ToolCallFailed { .. } => tool_calls += 1,
             Event::ApprovalRequested { .. } | Event::ApprovalResolved { .. } => approvals += 1,
