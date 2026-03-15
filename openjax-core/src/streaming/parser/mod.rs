@@ -6,6 +6,7 @@ use anyhow::Result;
 pub trait SseParser {
     fn push_chunk(&mut self, bytes: &[u8]) -> Result<Vec<String>>;
     fn finish(&mut self) -> Result<Vec<String>>;
+    fn saw_done_marker(&self) -> bool;
 }
 
 pub(crate) fn take_complete_lines(pending: &mut Vec<u8>) -> Vec<String> {

@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse};
+use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, StreamDelta};
 
 #[async_trait]
 pub trait ModelClient: Send + Sync {
@@ -11,7 +11,7 @@ pub trait ModelClient: Send + Sync {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse>;
 
     fn name(&self) -> &'static str;
@@ -24,7 +24,7 @@ pub trait ProviderAdapter: Send + Sync {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse>;
 
     fn backend_name(&self) -> &'static str;

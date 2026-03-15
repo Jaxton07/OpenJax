@@ -5,6 +5,7 @@ use super::{SseParser, parse_sse_data_line, take_complete_lines};
 #[derive(Debug, Default)]
 pub struct OpenAiSseParser {
     pending: Vec<u8>,
+    saw_done: bool,
 }
 
 impl SseParser for OpenAiSseParser {
@@ -16,6 +17,7 @@ impl SseParser for OpenAiSseParser {
                 continue;
             };
             if data == "[DONE]" {
+                self.saw_done = true;
                 continue;
             }
             frames.push(data.to_string());
@@ -33,9 +35,14 @@ impl SseParser for OpenAiSseParser {
             return Ok(Vec::new());
         };
         if data == "[DONE]" {
+            self.saw_done = true;
             return Ok(Vec::new());
         }
         Ok(vec![data.to_string()])
+    }
+
+    fn saw_done_marker(&self) -> bool {
+        self.saw_done
     }
 }
 
@@ -54,5 +61,15 @@ mod tests {
         let second = parser.push_chunk(b"NE]\n").expect("second chunk parse");
         assert!(second.is_empty());
         assert!(parser.finish().expect("finish").is_empty());
+        assert!(parser.saw_done_marker());
+    }
+
+    #[test]
+    fn parser_reports_missing_done_marker() {
+        let mut parser = OpenAiSseParser::default();
+        let frames = parser.push_chunk(b"data: {\"x\":1}\n").expect("parse");
+        assert_eq!(frames, vec!["{\"x\":1}".to_string()]);
+        assert!(parser.finish().expect("finish").is_empty());
+        assert!(!parser.saw_done_marker());
     }
 }

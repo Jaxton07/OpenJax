@@ -1,0 +1,45 @@
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"用户"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"正在"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"用"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"中文"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"向我"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"打招呼"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"中文"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"回答"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"）。"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"你好"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"！"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"我是"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"GL"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"M"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"，"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"由"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"Z"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"你的"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"吗"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"？"}}]}
+
+data: {"id":"202603151503375d574c2d0798402a","created":1773558217,"object":"chat.completion.chunk","model":"glm-4.7","choices":[{"index":0,"finish_reason":"stop","delta":{"role":"assistant","content":""}}],"usage":{"prompt_tokens":18,"completion_tokens":705,"total_tokens":723,"prompt_tokens_details":{"cached_toke
+100  136k    0  136k  100   311  15211     33  0:00:09  0:00:09 --:--:-- 14356
+ns":4},"completion_tokens_details":{"reasoning_tokens":629}}}
+
+data: [DONE]

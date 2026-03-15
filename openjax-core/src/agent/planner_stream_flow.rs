@@ -4,11 +4,20 @@ use openjax_protocol::Event;
 use tracing::{info, warn};
 
 use crate::agent::decision::{DecisionJsonStreamParser, parse_model_decision};
-use crate::model::ModelRequest;
+use crate::logger::AFTER_DISPATCH_LOG_TARGET;
+use crate::model::{ModelRequest, StreamDelta};
 use crate::streaming::{
     ResponseStreamOrchestrator, emit_synthetic_response_deltas, run_stream_with_delta_handler,
 };
 use crate::{Agent, SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS};
+
+const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
+
+fn reasoning_preview(input: &str, max_chars: usize) -> (String, bool) {
+    let total = input.chars().count();
+    let preview = input.chars().take(max_chars).collect::<String>();
+    (preview, total > max_chars)
+}
 
 #[derive(Debug, Default, Clone)]
 pub(super) struct PlannerStreamResult {
@@ -41,33 +50,63 @@ impl Agent {
         let mut stream_orchestrator =
             ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
 
-        let stream_result = run_stream_with_delta_handler(delta_rx, stream_future, |delta| {
-            if delta.is_empty() {
-                return;
-            }
-            let chunk = parser.push_chunk(&delta);
-            if !emit_live_final_deltas || chunk.message_delta.is_empty() {
-                return;
-            }
-            if !response_started {
-                response_started = true;
-            }
-            if !ttft_logged {
-                ttft_logged = true;
-                info!(
-                    turn_id = turn_id,
-                    planner_stream_ttft_ms = started_at.elapsed().as_millis(),
-                    "planner_stream_ttft"
-                );
-            }
-            streamed_message.push_str(&chunk.message_delta);
-            delta_event_count = delta_event_count.saturating_add(1);
-            last_live_delta_at = Some(Instant::now());
-            for event in stream_orchestrator.on_delta(&chunk.message_delta) {
-                self.push_event(events, event);
-            }
-        })
-        .await;
+        let stream_result =
+            run_stream_with_delta_handler(delta_rx, stream_future, |delta| match delta {
+                StreamDelta::Text(text_delta) => {
+                    if text_delta.is_empty() {
+                        return;
+                    }
+                    let chunk = parser.push_chunk(&text_delta);
+                    if !emit_live_final_deltas || chunk.message_delta.is_empty() {
+                        return;
+                    }
+                    if !response_started {
+                        response_started = true;
+                    }
+                    if !ttft_logged {
+                        ttft_logged = true;
+                        info!(
+                            turn_id = turn_id,
+                            planner_stream_ttft_ms = started_at.elapsed().as_millis(),
+                            "planner_stream_ttft"
+                        );
+                    }
+                    streamed_message.push_str(&chunk.message_delta);
+                    delta_event_count = delta_event_count.saturating_add(1);
+                    last_live_delta_at = Some(Instant::now());
+                    for event in stream_orchestrator.on_delta(&chunk.message_delta) {
+                        self.push_event(events, event);
+                    }
+                }
+                StreamDelta::Reasoning(reasoning_delta) => {
+                    if reasoning_delta.is_empty() {
+                        return;
+                    }
+                    let delta_len = reasoning_delta.chars().count();
+                    let (preview, preview_truncated) = reasoning_preview(&reasoning_delta, 48);
+                    info!(
+                        target: AFTER_DISPATCH_LOG_TARGET,
+                        turn_id = turn_id,
+                        flow_prefix = AFTER_DISPATCH_PREFIX,
+                        flow_node = "planner.reasoning.emit",
+                        flow_route = "reasoning_delta",
+                        flow_next = "gateway.reasoning_delta",
+                        delta_len = delta_len,
+                        delta_preview = %preview,
+                        delta_preview_truncated = preview_truncated,
+                        "after_dispatcher_trace"
+                    );
+                    self.push_event(
+                        events,
+                        Event::ReasoningDelta {
+                            turn_id,
+                            content_delta: reasoning_delta,
+                            stream_source: openjax_protocol::StreamSource::ModelLive,
+                        },
+                    );
+                }
+            })
+            .await;
 
         let mut fallback_reason: Option<&'static str> = None;
         let model_output = match stream_result {

@@ -18,6 +18,7 @@ interface PageState {
   activeTurnId: string | null;
   users: UserMessage[];
   assistants: AssistantMessage[];
+  reasoningByTurn: Record<string, string>;
   globalError: string | null;
   info: string | null;
   sending: boolean;
@@ -35,6 +36,7 @@ function initialState(): PageState {
     activeTurnId: null,
     users: [],
     assistants: [],
+    reasoningByTurn: {},
     globalError: null,
     info: null,
     sending: false,
@@ -105,6 +107,9 @@ export function useChatPage() {
       streamStore.start(event.session_id, event.turn_id, event.event_seq);
       setState((prev) => ({
         ...prev,
+        reasoningByTurn: event.turn_id
+          ? { ...prev.reasoningByTurn, [event.turn_id]: "" }
+          : prev.reasoningByTurn,
         activeTurnId: event.turn_id ?? prev.activeTurnId,
         streaming: true,
         globalError: null
@@ -115,6 +120,25 @@ export function useChatPage() {
     if (event.type === "response_text_delta") {
       recordDeltaRecv(event.session_id);
       streamStore.append(event.session_id, event.turn_id, String(event.payload.content_delta ?? ""), event.event_seq);
+      return;
+    }
+
+    if (event.type === "reasoning_delta") {
+      if (!event.turn_id) {
+        return;
+      }
+      const turnId = event.turn_id;
+      const delta = String(event.payload.content_delta ?? "");
+      if (!delta) {
+        return;
+      }
+      setState((prev) => ({
+        ...prev,
+        reasoningByTurn: {
+          ...prev.reasoningByTurn,
+          [turnId]: `${prev.reasoningByTurn[turnId] ?? ""}${delta}`
+        }
+      }));
       return;
     }
 
@@ -268,6 +292,7 @@ export function useChatPage() {
         sessionId: session.session_id,
         users: [],
         assistants: [],
+        reasoningByTurn: {},
         activeTurnId: null,
         globalError: null,
         info: "连接成功",
@@ -337,6 +362,7 @@ export function useChatPage() {
         sessionId: session.session_id,
         users: [],
         assistants: [],
+        reasoningByTurn: {},
         activeTurnId: null,
         globalError: null,
         info: "会话已重建",

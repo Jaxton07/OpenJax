@@ -93,3 +93,9 @@ pub struct ModelResponse {
     #[serde(default)]
     pub raw: Option<Value>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamDelta {
+    Text(String),
+    Reasoning(String),
+}

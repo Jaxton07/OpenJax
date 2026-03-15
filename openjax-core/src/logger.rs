@@ -2,6 +2,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write as IoWrite};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use time::format_description::well_known::Rfc3339;
@@ -17,6 +18,25 @@ use crate::OpenJaxPaths;
 const DEFAULT_MAX_LINES: usize = 10_000;
 const DEFAULT_MAX_ARCHIVES: usize = 4;
 const LOG_FILE_NAME: &str = "openjax.log";
+const RAW_RESPONSE_LOG_FILE_NAME: &str = "openjax-provider-raw.log";
+const AFTER_DISPATCH_LOG_FILE_NAME: &str = "openjax-after-dispatcher.log";
+pub(crate) const RAW_RESPONSE_LOG_TARGET: &str = "openjax_provider_raw";
+pub(crate) const AFTER_DISPATCH_LOG_TARGET: &str = "openjax_after_dispatcher";
+static PROVIDER_RAW_LOG_ENABLED: OnceLock<bool> = OnceLock::new();
+
+pub(crate) fn provider_raw_log_enabled() -> bool {
+    *PROVIDER_RAW_LOG_ENABLED.get_or_init(|| {
+        std::env::var("OPENJAX_PROVIDER_RAW_LOG")
+            .ok()
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "on" | "true" | "enabled" | "yes"
+                )
+            })
+            .unwrap_or(false)
+    })
+}
 
 pub struct LoggerConfig {
     pub log_dir: PathBuf,
@@ -118,6 +138,28 @@ pub fn init_logger_with_file(log_file_name: &str) -> Option<()> {
         config.max_lines,
         config.max_archives,
     );
+    let raw_log_file_name = std::env::var("OPENJAX_RAW_RESPONSE_LOG_FILE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| RAW_RESPONSE_LOG_FILE_NAME.to_string());
+    let after_dispatch_log_file_name = std::env::var("OPENJAX_AFTER_DISPATCH_LOG_FILE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| AFTER_DISPATCH_LOG_FILE_NAME.to_string());
+    let raw_writer = RollingFileWriter::new(
+        config.log_dir.clone(),
+        raw_log_file_name.clone(),
+        config.max_lines,
+        config.max_archives,
+    );
+    let after_dispatch_writer = RollingFileWriter::new(
+        config.log_dir.clone(),
+        after_dispatch_log_file_name.clone(),
+        config.max_lines,
+        config.max_archives,
+    );
 
     let level_filter = get_log_level_from_env();
 
@@ -126,6 +168,10 @@ pub fn init_logger_with_file(log_file_name: &str) -> Option<()> {
         OffsetTime::new(offset, Rfc3339)
     });
 
+    let fmt_filter = tracing_subscriber::filter::filter_fn(|meta| {
+        !is_raw_response_target(meta.target()) && !is_after_dispatch_target(meta.target())
+    })
+    .and(tracing_subscriber::filter::LevelFilter::from(level_filter));
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(file_writer)
         .with_ansi(false)
@@ -133,21 +179,53 @@ pub fn init_logger_with_file(log_file_name: &str) -> Option<()> {
         .with_thread_ids(false)
         .with_file(false)
         .with_line_number(false)
-        .with_timer(timer)
-        .with_filter(tracing_subscriber::filter::LevelFilter::from(level_filter));
+        .with_timer(timer.clone())
+        .with_filter(fmt_filter);
 
-    let subscriber = registry().with(fmt_layer);
+    let raw_filter =
+        tracing_subscriber::filter::filter_fn(|meta| is_raw_response_target(meta.target()))
+            .and(tracing_subscriber::filter::LevelFilter::INFO);
+    let raw_layer = tracing_subscriber::fmt::layer()
+        .with_writer(raw_writer)
+        .with_ansi(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_timer(timer.clone())
+        .with_filter(raw_filter);
+
+    let after_dispatch_filter =
+        tracing_subscriber::filter::filter_fn(|meta| is_after_dispatch_target(meta.target()))
+            .and(tracing_subscriber::filter::LevelFilter::INFO);
+    let after_dispatch_layer = tracing_subscriber::fmt::layer()
+        .with_writer(after_dispatch_writer)
+        .with_ansi(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_timer(timer.clone())
+        .with_filter(after_dispatch_filter);
+
+    let subscriber = registry()
+        .with(fmt_layer)
+        .with(raw_layer)
+        .with(after_dispatch_layer);
 
     tracing::subscriber::set_global_default(subscriber)
         .map_err(|e| eprintln!("[logger] failed to set subscriber: {}", e))
         .ok()?;
 
     tracing::info!(
-        "logger initialized session={} pid={} log_dir={} file={}",
+        "logger initialized session={} pid={} log_dir={} file={} raw_file={} after_dispatch_file={} provider_raw_enabled={}",
         config.session_id,
         std::process::id(),
         config.log_dir.display(),
-        config.log_file_name
+        config.log_file_name,
+        raw_log_file_name,
+        after_dispatch_log_file_name,
+        provider_raw_log_enabled()
     );
 
     Some(())
@@ -182,6 +260,28 @@ pub fn init_split_logger(core_log_file_name: &str, tui_log_file_name: &str) -> O
         config.max_lines,
         config.max_archives,
     );
+    let raw_log_file_name = std::env::var("OPENJAX_RAW_RESPONSE_LOG_FILE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| RAW_RESPONSE_LOG_FILE_NAME.to_string());
+    let after_dispatch_log_file_name = std::env::var("OPENJAX_AFTER_DISPATCH_LOG_FILE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| AFTER_DISPATCH_LOG_FILE_NAME.to_string());
+    let raw_writer = RollingFileWriter::new(
+        config.log_dir.clone(),
+        raw_log_file_name.clone(),
+        config.max_lines,
+        config.max_archives,
+    );
+    let after_dispatch_writer = RollingFileWriter::new(
+        config.log_dir.clone(),
+        after_dispatch_log_file_name.clone(),
+        config.max_lines,
+        config.max_archives,
+    );
 
     let level_filter = get_log_level_from_env();
     let timer = OffsetTime::local_rfc_3339().unwrap_or_else(|_| {
@@ -189,8 +289,12 @@ pub fn init_split_logger(core_log_file_name: &str, tui_log_file_name: &str) -> O
         OffsetTime::new(offset, Rfc3339)
     });
 
-    let core_filter = tracing_subscriber::filter::filter_fn(|meta| !is_tui_target(meta.target()))
-        .and(tracing_subscriber::filter::LevelFilter::from(level_filter));
+    let core_filter = tracing_subscriber::filter::filter_fn(|meta| {
+        !is_tui_target(meta.target())
+            && !is_raw_response_target(meta.target())
+            && !is_after_dispatch_target(meta.target())
+    })
+    .and(tracing_subscriber::filter::LevelFilter::from(level_filter));
     let tui_filter = tracing_subscriber::filter::filter_fn(|meta| is_tui_target(meta.target()))
         .and(tracing_subscriber::filter::LevelFilter::from(level_filter));
 
@@ -211,22 +315,55 @@ pub fn init_split_logger(core_log_file_name: &str, tui_log_file_name: &str) -> O
         .with_thread_ids(false)
         .with_file(false)
         .with_line_number(false)
-        .with_timer(timer)
+        .with_timer(timer.clone())
         .with_filter(tui_filter);
 
-    let subscriber = registry().with(core_layer).with(tui_layer);
+    let raw_filter =
+        tracing_subscriber::filter::filter_fn(|meta| is_raw_response_target(meta.target()))
+            .and(tracing_subscriber::filter::LevelFilter::INFO);
+    let raw_layer = tracing_subscriber::fmt::layer()
+        .with_writer(raw_writer)
+        .with_ansi(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_timer(timer.clone())
+        .with_filter(raw_filter);
+
+    let after_dispatch_filter =
+        tracing_subscriber::filter::filter_fn(|meta| is_after_dispatch_target(meta.target()))
+            .and(tracing_subscriber::filter::LevelFilter::INFO);
+    let after_dispatch_layer = tracing_subscriber::fmt::layer()
+        .with_writer(after_dispatch_writer)
+        .with_ansi(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_timer(timer.clone())
+        .with_filter(after_dispatch_filter);
+
+    let subscriber = registry()
+        .with(core_layer)
+        .with(tui_layer)
+        .with(raw_layer)
+        .with(after_dispatch_layer);
 
     tracing::subscriber::set_global_default(subscriber)
         .map_err(|e| eprintln!("[logger] failed to set subscriber: {}", e))
         .ok()?;
 
     tracing::info!(
-        "split logger initialized session={} pid={} log_dir={} core_file={} tui_file={}",
+        "split logger initialized session={} pid={} log_dir={} core_file={} tui_file={} raw_file={} after_dispatch_file={} provider_raw_enabled={}",
         config.session_id,
         std::process::id(),
         config.log_dir.display(),
         core_file,
-        tui_file
+        tui_file,
+        raw_log_file_name,
+        after_dispatch_log_file_name,
+        provider_raw_log_enabled()
     );
 
     Some(())
@@ -234,6 +371,14 @@ pub fn init_split_logger(core_log_file_name: &str, tui_log_file_name: &str) -> O
 
 fn is_tui_target(target: &str) -> bool {
     target == "tui_next" || target.starts_with("tui_next::")
+}
+
+fn is_raw_response_target(target: &str) -> bool {
+    target == RAW_RESPONSE_LOG_TARGET || target.starts_with("openjax_provider_raw::")
+}
+
+fn is_after_dispatch_target(target: &str) -> bool {
+    target == AFTER_DISPATCH_LOG_TARGET || target.starts_with("openjax_after_dispatcher::")
 }
 
 fn get_log_level_from_env() -> Level {

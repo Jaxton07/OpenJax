@@ -43,13 +43,13 @@ pub(crate) fn emit_synthetic_response_deltas(
 }
 
 pub(crate) async fn run_stream_with_delta_handler<T, Fut, F>(
-    mut delta_rx: UnboundedReceiver<String>,
+    mut delta_rx: UnboundedReceiver<crate::model::StreamDelta>,
     stream_future: Fut,
     mut on_delta: F,
 ) -> Result<T>
 where
     Fut: Future<Output = Result<T>>,
-    F: FnMut(String),
+    F: FnMut(crate::model::StreamDelta),
 {
     tokio::pin!(stream_future);
 
@@ -75,6 +75,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::model::StreamDelta;
     use anyhow::anyhow;
     use openjax_protocol::Event;
 
@@ -107,14 +108,16 @@ mod tests {
     #[tokio::test]
     async fn stream_helper_drains_buffered_deltas_after_stream_finishes() {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        tx.send("A".to_string()).expect("send A");
-        tx.send("B".to_string()).expect("send B");
+        tx.send(StreamDelta::Text("A".to_string())).expect("send A");
+        tx.send(StreamDelta::Text("B".to_string())).expect("send B");
         drop(tx);
 
         let mut observed = String::new();
         let output =
             run_stream_with_delta_handler(rx, async { Ok::<_, anyhow::Error>("ok") }, |d| {
-                observed.push_str(&d);
+                if let StreamDelta::Text(text) = d {
+                    observed.push_str(&text);
+                }
             })
             .await
             .expect("stream result");
@@ -126,13 +129,15 @@ mod tests {
     #[tokio::test]
     async fn stream_helper_returns_error_while_preserving_seen_deltas() {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        tx.send("X".to_string()).expect("send X");
+        tx.send(StreamDelta::Text("X".to_string())).expect("send X");
         drop(tx);
 
         let mut observed = String::new();
         let result =
             run_stream_with_delta_handler(rx, async { Err::<(), _>(anyhow!("boom")) }, |d| {
-                observed.push_str(&d);
+                if let StreamDelta::Text(text) = d {
+                    observed.push_str(&text);
+                }
             })
             .await;
 

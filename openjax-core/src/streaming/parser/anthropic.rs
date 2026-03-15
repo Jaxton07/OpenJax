@@ -5,6 +5,7 @@ use super::{SseParser, parse_sse_data_line, take_complete_lines};
 #[derive(Debug, Default)]
 pub struct AnthropicSseParser {
     pending: Vec<u8>,
+    saw_done: bool,
 }
 
 impl SseParser for AnthropicSseParser {
@@ -16,6 +17,7 @@ impl SseParser for AnthropicSseParser {
                 continue;
             };
             if data == "[DONE]" {
+                self.saw_done = true;
                 continue;
             }
             frames.push(data.to_string());
@@ -33,9 +35,14 @@ impl SseParser for AnthropicSseParser {
             return Ok(Vec::new());
         };
         if data == "[DONE]" {
+            self.saw_done = true;
             return Ok(Vec::new());
         }
         Ok(vec![data.to_string()])
+    }
+
+    fn saw_done_marker(&self) -> bool {
+        self.saw_done
     }
 }
 
@@ -58,5 +65,15 @@ mod tests {
 
         let trailing = parser.finish().expect("finish");
         assert_eq!(trailing, vec!["{\"delta\":{\"text\":\"llo\"}}".to_string()]);
+        assert!(!parser.saw_done_marker());
+    }
+
+    #[test]
+    fn parser_tracks_done_marker() {
+        let mut parser = AnthropicSseParser::default();
+        let frames = parser.push_chunk(b"data: [DONE]\n").expect("parse");
+        assert!(frames.is_empty());
+        assert!(parser.finish().expect("finish").is_empty());
+        assert!(parser.saw_done_marker());
     }
 }

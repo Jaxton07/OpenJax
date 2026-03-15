@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::model::client::ModelClient;
-use crate::model::types::{ModelRequest, ModelResponse};
+use crate::model::types::{ModelRequest, ModelResponse, StreamDelta};
 
 #[derive(Debug, Clone)]
 pub(crate) struct MissingConfigModelClient {
@@ -27,7 +27,7 @@ impl ModelClient for MissingConfigModelClient {
     async fn complete_stream(
         &self,
         _request: &ModelRequest,
-        _delta_sender: Option<UnboundedSender<String>>,
+        _delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         Err(anyhow!("{}", self.reason))
     }

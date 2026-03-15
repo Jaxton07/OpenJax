@@ -21,6 +21,8 @@ use crate::event_mapper::map_core_event_payload;
 
 const DEFAULT_EVENT_REPLAY_LIMIT: usize = 1024;
 const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1024;
+const AFTER_DISPATCH_LOG_TARGET: &str = "openjax_after_dispatcher";
+const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
 static STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
 
 fn gateway_stream_debug_enabled() -> bool {
@@ -43,6 +45,10 @@ fn log_preview(text: &str, max_chars: usize) -> (String, bool) {
     let preview: String = iter.by_ref().take(max_chars).collect();
     let truncated = iter.next().is_some();
     (preview, truncated)
+}
+
+fn reasoning_preview(text: &str) -> (String, bool) {
+    log_preview(text, 64)
 }
 
 #[derive(Clone)]
@@ -489,6 +495,29 @@ fn map_core_event(
         payload,
         stream_source,
     );
+    if event_type == "reasoning_delta" {
+        let delta_raw = envelope
+            .payload
+            .get("content_delta")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let (delta_preview, delta_preview_truncated) = reasoning_preview(delta_raw);
+        info!(
+            target: AFTER_DISPATCH_LOG_TARGET,
+            session_id = %session_id,
+            turn_id = ?public_turn_id,
+            flow_prefix = AFTER_DISPATCH_PREFIX,
+            flow_node = "gateway.reasoning.publish",
+            flow_route = "reasoning_delta",
+            flow_next = "frontend.reasoning_delta",
+            event_seq = envelope.event_seq,
+            turn_seq = envelope.turn_seq,
+            delta_len = delta_raw.chars().count(),
+            delta_preview = %delta_preview,
+            delta_preview_truncated = delta_preview_truncated,
+            "after_dispatcher_trace"
+        );
+    }
     if gateway_stream_debug_enabled()
         && matches!(
             event_type,
@@ -582,6 +611,7 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::AssistantMessage { turn_id, .. }
             | Event::ResponseStarted { turn_id, .. }
             | Event::ResponseTextDelta { turn_id, .. }
+            | Event::ReasoningDelta { turn_id, .. }
             | Event::ToolCallsProposed { turn_id, .. }
             | Event::ToolBatchCompleted { turn_id, .. }
             | Event::ResponseResumed { turn_id, .. }
@@ -666,5 +696,15 @@ mod tests {
         );
         let turn = session.turns.get("turn_1").expect("turn exists");
         assert_eq!(turn.assistant_message.as_deref(), Some("final"));
+    }
+
+    #[test]
+    fn first_turn_id_supports_reasoning_delta() {
+        let turn_id = first_turn_id(&[Event::ReasoningDelta {
+            turn_id: 7,
+            content_delta: "thinking".to_string(),
+            stream_source: openjax_protocol::StreamSource::ModelLive,
+        }]);
+        assert_eq!(turn_id, Some(7));
     }
 }

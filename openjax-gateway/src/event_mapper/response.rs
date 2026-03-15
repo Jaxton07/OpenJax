@@ -30,6 +30,16 @@ pub fn map(event: &Event) -> Option<CoreEventMapping> {
             payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
             stream_source: Some(stream_source_wire(stream_source)),
         }),
+        Event::ReasoningDelta {
+            turn_id,
+            content_delta,
+            stream_source,
+        } => Some(CoreEventMapping {
+            core_turn_id: Some(*turn_id),
+            event_type: "reasoning_delta",
+            payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
+            stream_source: Some(stream_source_wire(stream_source)),
+        }),
         Event::ResponseResumed {
             turn_id,
             stream_source,
@@ -76,5 +86,34 @@ fn stream_source_wire(source: &openjax_protocol::StreamSource) -> &'static str {
         openjax_protocol::StreamSource::Synthetic => "synthetic",
         openjax_protocol::StreamSource::Replay => "replay",
         openjax_protocol::StreamSource::Unknown => "unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use openjax_protocol::{Event, StreamSource};
+
+    use super::map;
+
+    #[test]
+    fn maps_reasoning_delta_event() {
+        let mapping = map(&Event::ReasoningDelta {
+            turn_id: 9,
+            content_delta: "step".to_string(),
+            stream_source: StreamSource::ModelLive,
+        })
+        .expect("mapping should exist");
+
+        assert_eq!(mapping.core_turn_id, Some(9));
+        assert_eq!(mapping.event_type, "reasoning_delta");
+        assert_eq!(
+            mapping
+                .payload
+                .get("content_delta")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            "step"
+        );
+        assert_eq!(mapping.stream_source, Some("model_live"));
     }
 }

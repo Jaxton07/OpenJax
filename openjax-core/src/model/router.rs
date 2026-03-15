@@ -9,7 +9,7 @@ use tracing::{info, warn};
 
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::{ModelRegistry, RoutingPlan};
-use crate::model::types::{ModelRequest, ModelResponse, ModelStage};
+use crate::model::types::{ModelRequest, ModelResponse, ModelStage, StreamDelta};
 
 pub struct ModelRouter {
     adapters: HashMap<String, Arc<dyn ProviderAdapter>>,
@@ -132,7 +132,7 @@ impl ModelRouter {
     async fn call_complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let primary = self.route_for_stage(request.stage);
         let chain = self.build_attempt_chain(primary);
@@ -209,7 +209,7 @@ impl ModelClient for ModelRouter {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         self.call_complete_stream(request, delta_sender).await
     }

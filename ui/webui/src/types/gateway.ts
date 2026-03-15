@@ -47,6 +47,7 @@ export interface TurnSubmitted {
 export type StreamEventType =
   | "response_started"
   | "response_text_delta"
+  | "reasoning_delta"
   | "response_completed"
   | "response_error"
   | "tool_call_ready"

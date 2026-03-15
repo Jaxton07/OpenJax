@@ -3,14 +3,15 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Serialize;
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 use crate::config::ModelConfig;
+use crate::logger::{RAW_RESPONSE_LOG_TARGET, provider_raw_log_enabled};
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::RegisteredModel;
-use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage};
+use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage, StreamDelta};
 use crate::streaming::parser::{SseParser, openai::OpenAiSseParser};
 
 const SYSTEM_PROMPT_PERSONA: &str = "You are OpenJax, an all-purpose personal AI assistant in a terminal environment, similar in spirit to a reliable AI butler.";
@@ -19,6 +20,7 @@ Be practical, accurate, and action-oriented. Prefer using available tools when v
 Keep responses concise, clear, and directly useful.";
 const SYSTEM_PROMPT_SAFETY: &str =
     "For high-impact actions, surface assumptions and confirm intent before proceeding.";
+const STREAM_IDLE_TIMEOUT_SECS: u64 = 300;
 
 fn default_system_prompt() -> String {
     format!(
@@ -272,6 +274,16 @@ fn extract_delta_content_from_body(body: &serde_json::Value) -> Option<String> {
     None
 }
 
+fn extract_delta_reasoning_from_body(body: &serde_json::Value) -> Option<String> {
+    body.get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("delta"))
+        .and_then(|v| v.get("reasoning_content"))
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
+}
+
 #[async_trait]
 impl ModelClient for ChatCompletionsClient {
     async fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
@@ -363,7 +375,7 @@ impl ModelClient for ChatCompletionsClient {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let req = ChatCompletionRequest {
             model: self.model.clone(),
@@ -414,10 +426,40 @@ impl ModelClient for ChatCompletionsClient {
         let mut frame_seq = 0u64;
         let mut delta_seq = 0u64;
         let mut last_delta_at: Option<Instant> = None;
+        let mut last_chunk_at: Option<Instant> = None;
+        let raw_log_enabled = provider_raw_log_enabled();
 
         let mut resp = resp;
-        while let Some(chunk) = resp.chunk().await.context("failed reading stream chunk")? {
+        loop {
+            let maybe_chunk = tokio::time::timeout(
+                Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS),
+                resp.chunk(),
+            )
+            .await
+            .map_err(|_| {
+                anyhow!(
+                    "chat completions stream timed out after {}s waiting for next chunk before [DONE]",
+                    STREAM_IDLE_TIMEOUT_SECS
+                )
+            })?;
+            let Some(chunk) = maybe_chunk.context("failed reading stream chunk")? else {
+                break;
+            };
             chunk_seq += 1;
+            last_chunk_at = Some(Instant::now());
+            if raw_log_enabled {
+                let raw_chunk = String::from_utf8_lossy(&chunk).into_owned();
+                info!(
+                    target: RAW_RESPONSE_LOG_TARGET,
+                    backend = self.backend_name,
+                    model_id = %self.model_id,
+                    stage = request.stage.as_str(),
+                    chunk_seq = chunk_seq,
+                    chunk_bytes = chunk.len(),
+                    raw_chunk = %raw_chunk,
+                    "provider_stream_raw_chunk"
+                );
+            }
             if stream_debug {
                 debug!(
                     backend = self.backend_name,
@@ -445,7 +487,7 @@ impl ModelClient for ChatCompletionsClient {
                     last_delta_at = Some(Instant::now());
                     assembled.push_str(&delta);
                     if let Some(sender) = &delta_sender {
-                        let _ = sender.send(delta);
+                        let _ = sender.send(StreamDelta::Text(delta));
                     }
                     if stream_debug {
                         debug!(
@@ -468,6 +510,13 @@ impl ModelClient for ChatCompletionsClient {
                         "model_stream_frame_without_text_delta"
                     );
                 }
+
+                if let Some(reasoning_delta) = extract_delta_reasoning_from_body(&payload)
+                    && !reasoning_delta.is_empty()
+                    && let Some(sender) = &delta_sender
+                {
+                    let _ = sender.send(StreamDelta::Reasoning(reasoning_delta));
+                }
             }
         }
 
@@ -487,7 +536,7 @@ impl ModelClient for ChatCompletionsClient {
                 last_delta_at = Some(Instant::now());
                 assembled.push_str(&delta);
                 if let Some(sender) = &delta_sender {
-                    let _ = sender.send(delta);
+                    let _ = sender.send(StreamDelta::Text(delta));
                 }
                 if stream_debug {
                     debug!(
@@ -501,6 +550,13 @@ impl ModelClient for ChatCompletionsClient {
                         "model_stream_delta_emitted"
                     );
                 }
+            }
+
+            if let Some(reasoning_delta) = extract_delta_reasoning_from_body(&payload)
+                && !reasoning_delta.is_empty()
+                && let Some(sender) = &delta_sender
+            {
+                let _ = sender.send(StreamDelta::Reasoning(reasoning_delta));
             }
         }
 
@@ -519,6 +575,38 @@ impl ModelClient for ChatCompletionsClient {
                     .unwrap_or(stream_started_at.elapsed().as_millis() as u64),
                 "model_stream_summary"
             );
+        }
+
+        let ended_by_eof = true;
+        let last_chunk_gap_ms = last_chunk_at
+            .map(|ts| ts.elapsed().as_millis() as u64)
+            .unwrap_or(stream_started_at.elapsed().as_millis() as u64);
+        info!(
+            backend = self.backend_name,
+            model_id = %self.model_id,
+            stage = request.stage.as_str(),
+            done_seen = parser.saw_done_marker(),
+            ended_by_eof = ended_by_eof,
+            chunk_count = chunk_seq,
+            frame_count = frame_seq,
+            last_chunk_gap_ms = last_chunk_gap_ms,
+            "model_stream_done_check"
+        );
+
+        if !parser.saw_done_marker() {
+            warn!(
+                backend = self.backend_name,
+                model_id = %self.model_id,
+                stage = request.stage.as_str(),
+                ended_by_eof = ended_by_eof,
+                chunk_count = chunk_seq,
+                frame_count = frame_seq,
+                last_chunk_gap_ms = last_chunk_gap_ms,
+                "model_stream_done_missing"
+            );
+            return Err(anyhow!(
+                "chat completions stream ended before [DONE]; treating as protocol error"
+            ));
         }
 
         if assembled.is_empty() {
@@ -550,7 +638,7 @@ impl ProviderAdapter for ChatCompletionsClient {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         <Self as ModelClient>::complete_stream(self, request, delta_sender).await
     }
@@ -580,7 +668,10 @@ impl ProviderAdapter for ChatCompletionsClient {
 mod tests {
     use serde_json::json;
 
-    use super::{extract_content_from_body, extract_delta_content_from_body};
+    use super::{
+        extract_content_from_body, extract_delta_content_from_body,
+        extract_delta_reasoning_from_body,
+    };
     use crate::streaming::parser::parse_sse_data_line;
 
     #[test]
@@ -625,5 +716,42 @@ mod tests {
     fn parse_sse_data_line_ignores_non_data_lines() {
         assert_eq!(parse_sse_data_line("event: ping"), None);
         assert_eq!(parse_sse_data_line("data: {\"x\":1}"), Some("{\"x\":1}"));
+    }
+
+    #[test]
+    fn extract_delta_reasoning_supports_reasoning_content() {
+        let body = json!({
+            "choices": [
+                {
+                    "delta": {
+                        "reasoning_content": "step-by-step"
+                    }
+                }
+            ]
+        });
+        let reasoning = extract_delta_reasoning_from_body(&body);
+        assert_eq!(reasoning.as_deref(), Some("step-by-step"));
+    }
+
+    #[test]
+    fn extract_delta_supports_mixed_content_and_reasoning() {
+        let body = json!({
+            "choices": [
+                {
+                    "delta": {
+                        "content": "answer",
+                        "reasoning_content": "thinking"
+                    }
+                }
+            ]
+        });
+        assert_eq!(
+            extract_delta_content_from_body(&body).as_deref(),
+            Some("answer")
+        );
+        assert_eq!(
+            extract_delta_reasoning_from_body(&body).as_deref(),
+            Some("thinking")
+        );
     }
 }

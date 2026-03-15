@@ -7,8 +7,10 @@ use crate::agent::decision::{
     ModelDecision, NormalizedToolCall, normalize_model_decision, normalize_tool_calls,
     parse_model_decision, parse_model_decision_v2,
 };
+use crate::logger::AFTER_DISPATCH_LOG_TARGET;
 
 const FLOW_TRACE_PREFIX: &str = "OPENJAX_FLOW";
+const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
 
 pub(crate) use errors::DispatchError;
 pub(crate) use metrics::{DispatchMetrics, DispatchTiming};
@@ -132,6 +134,30 @@ pub(crate) enum DispatchOutcome {
     },
 }
 
+fn log_after_dispatch(
+    turn_id: u64,
+    route: &'static str,
+    next: &'static str,
+    meta: Option<DispatchDecisionMeta>,
+    code: Option<&'static str>,
+    reason: Option<&'static str>,
+) {
+    tracing::info!(
+        target: AFTER_DISPATCH_LOG_TARGET,
+        turn_id = turn_id,
+        flow_prefix = AFTER_DISPATCH_PREFIX,
+        flow_node = "dispatcher.output",
+        flow_route = route,
+        flow_next = next,
+        conflict_detected = meta.map(|m| m.conflict_detected),
+        signal_source = meta.map(|m| m.signal_source.as_str()),
+        locked_branch = meta.map(|m| m.locked_branch.as_str()),
+        flow_code = code,
+        flow_reason = reason,
+        "after_dispatcher_trace"
+    );
+}
+
 pub(crate) fn route_model_output(
     input: ProbeInput<'_>,
     model_output: &str,
@@ -173,6 +199,14 @@ pub(crate) fn route_model_output(
                     signal_source = meta.signal_source.as_str(),
                     "flow_trace"
                 );
+                log_after_dispatch(
+                    input.turn_id,
+                    "tool_batch",
+                    "planner.tool_batch",
+                    Some(meta),
+                    None,
+                    None,
+                );
                 return DispatchOutcome::ToolBatch { meta, calls };
             }
             tracing::info!(
@@ -183,6 +217,14 @@ pub(crate) fn route_model_output(
                 flow_next = "planner.error",
                 flow_code = "model_invalid_tool_batch",
                 "flow_trace"
+            );
+            log_after_dispatch(
+                input.turn_id,
+                "error",
+                "planner.error",
+                Some(meta),
+                Some("model_invalid_tool_batch"),
+                None,
             );
             return DispatchOutcome::Error {
                 code: "model_invalid_tool_batch",
@@ -199,6 +241,14 @@ pub(crate) fn route_model_output(
                 .as_ref()
                 .is_none_or(|name| name.trim().is_empty())
             {
+                log_after_dispatch(
+                    input.turn_id,
+                    "error",
+                    "planner.error",
+                    Some(meta),
+                    Some("model_invalid_tool"),
+                    None,
+                );
                 return DispatchOutcome::Error {
                     code: "model_invalid_tool",
                     message: "[model error] tool action missing tool name".to_string(),
@@ -226,6 +276,14 @@ pub(crate) fn route_model_output(
                 signal_source = meta.signal_source.as_str(),
                 "flow_trace"
             );
+            log_after_dispatch(
+                input.turn_id,
+                "tool",
+                "planner.tool_action",
+                Some(meta),
+                None,
+                None,
+            );
             return DispatchOutcome::Tool { meta, decision };
         }
         if action == "final" {
@@ -251,6 +309,14 @@ pub(crate) fn route_model_output(
                 signal_source = meta.signal_source.as_str(),
                 "flow_trace"
             );
+            log_after_dispatch(
+                input.turn_id,
+                "final",
+                "frontend.response_stream",
+                Some(meta),
+                None,
+                None,
+            );
             return DispatchOutcome::Final { meta, decision };
         }
         tracing::info!(
@@ -262,6 +328,14 @@ pub(crate) fn route_model_output(
             flow_code = "model_unsupported_action",
             action = %decision.action,
             "flow_trace"
+        );
+        log_after_dispatch(
+            input.turn_id,
+            "error",
+            "planner.error",
+            Some(meta),
+            Some("model_unsupported_action"),
+            None,
         );
         return DispatchOutcome::Error {
             code: "model_unsupported_action",
@@ -277,6 +351,14 @@ pub(crate) fn route_model_output(
         flow_next = "planner.repair",
         flow_reason = "decision_parse_failed",
         "flow_trace"
+    );
+    log_after_dispatch(
+        input.turn_id,
+        "repair",
+        "planner.repair",
+        Some(meta),
+        None,
+        Some("decision_parse_failed"),
     );
     DispatchOutcome::Repair {
         meta,

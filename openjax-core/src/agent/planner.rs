@@ -10,9 +10,32 @@ use crate::agent::prompt::build_planner_input;
 use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::turn_engine::TurnEngine;
 use crate::dispatcher::{self, DispatchOutcome, ProbeInput};
+use crate::logger::AFTER_DISPATCH_LOG_TARGET;
 use crate::model::{ModelRequest, ModelStage};
 
 const FLOW_TRACE_PREFIX: &str = "OPENJAX_FLOW";
+const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
+
+fn log_after_dispatch_step(
+    turn_id: u64,
+    node: &'static str,
+    route: &'static str,
+    next: &'static str,
+    result: Option<&'static str>,
+    code: Option<&str>,
+) {
+    tracing::info!(
+        target: AFTER_DISPATCH_LOG_TARGET,
+        turn_id = turn_id,
+        flow_prefix = AFTER_DISPATCH_PREFIX,
+        flow_node = node,
+        flow_route = route,
+        flow_next = next,
+        flow_result = result,
+        flow_code = code,
+        "after_dispatcher_trace"
+    );
+}
 
 impl Agent {
     pub(crate) async fn execute_natural_language_turn(
@@ -221,6 +244,14 @@ impl Agent {
                         signal_source = meta.signal_source.as_str(),
                         "model_decision"
                     );
+                    log_after_dispatch_step(
+                        turn_id,
+                        "planner.dispatch_consume",
+                        "tool_batch",
+                        "planner.tool_batch.execute",
+                        None,
+                        None,
+                    );
                     if calls.len() > remaining {
                         calls.truncate(remaining);
                     }
@@ -280,6 +311,14 @@ impl Agent {
                                 },
                             );
                         }
+                        log_after_dispatch_step(
+                            turn_id,
+                            "planner.tool_batch.result",
+                            "tool_batch",
+                            "turn.failed",
+                            Some("aborted_by_approval"),
+                            Some("approval_blocked"),
+                        );
                         turn_engine.on_failed();
                         return;
                     }
@@ -291,6 +330,14 @@ impl Agent {
                         flow_next = "planner.next_round",
                         executed_count = batch_result.executed_count,
                         "flow_trace"
+                    );
+                    log_after_dispatch_step(
+                        turn_id,
+                        "planner.tool_batch.result",
+                        "tool_batch",
+                        "planner.next_round",
+                        Some("completed"),
+                        None,
                     );
                     turn_engine.on_response_resumed();
                     continue;
@@ -312,6 +359,14 @@ impl Agent {
                         conflict_detected = meta.conflict_detected,
                         signal_source = meta.signal_source.as_str(),
                         "model_decision"
+                    );
+                    log_after_dispatch_step(
+                        turn_id,
+                        "planner.dispatch_consume",
+                        "final",
+                        "frontend.response_stream",
+                        None,
+                        None,
                     );
                     debug!(
                         turn_id = turn_id,
@@ -342,6 +397,14 @@ impl Agent {
                         used_repair = used_repair,
                         used_repair_with_live_stream = used_repair_with_live_stream,
                         "flow_trace"
+                    );
+                    log_after_dispatch_step(
+                        turn_id,
+                        "planner.final.emit",
+                        "final",
+                        "frontend.response_completed",
+                        Some("completed"),
+                        None,
                     );
                     let message = if planner_stream.live_streamed {
                         turn_engine.on_response_started();
@@ -412,6 +475,14 @@ impl Agent {
                         signal_source = meta.signal_source.as_str(),
                         "model_decision"
                     );
+                    log_after_dispatch_step(
+                        turn_id,
+                        "planner.dispatch_consume",
+                        "tool",
+                        "planner.tool_action.execute",
+                        None,
+                        None,
+                    );
                     debug!(
                         turn_id = turn_id,
                         args = ?decision.args,
@@ -456,6 +527,14 @@ impl Agent {
                         conflict_detected = meta.conflict_detected,
                         "model_decision_repair_exhausted"
                     );
+                    log_after_dispatch_step(
+                        turn_id,
+                        "planner.repair.result",
+                        "repair",
+                        "turn.failed",
+                        Some("exhausted"),
+                        Some("model_decision_parse_failed"),
+                    );
                     self.push_event(
                         events,
                         Event::ResponseError {
@@ -477,6 +556,14 @@ impl Agent {
                         flow_next = "turn.failed",
                         flow_code = code,
                         "flow_trace"
+                    );
+                    log_after_dispatch_step(
+                        turn_id,
+                        "planner.dispatch_consume",
+                        "error",
+                        "turn.failed",
+                        Some("failed"),
+                        Some(code),
                     );
                     self.push_event(
                         events,

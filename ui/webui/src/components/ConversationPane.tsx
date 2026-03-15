@@ -8,13 +8,14 @@ interface ConversationPaneProps {
   turnId?: string;
   users: UserMessage[];
   assistants: AssistantMessage[];
+  reasoningByTurn: Record<string, string>;
 }
 
 type MessageItem =
   | { id: string; role: "user"; content: string; timestamp: string }
-  | { id: string; role: "assistant"; content: string; timestamp: string };
+  | { id: string; role: "assistant"; content: string; timestamp: string; turnId?: string };
 
-function ConversationPane({ sessionId, turnId, users, assistants }: ConversationPaneProps) {
+function ConversationPane({ sessionId, turnId, users, assistants, reasoningByTurn }: ConversationPaneProps) {
   const snapshot = useStreamSnapshot(sessionId, turnId);
   recordAssistantPaneRender(sessionId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -38,7 +39,8 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
         id: item.id,
         role: "assistant" as const,
         content: item.content,
-        timestamp: item.timestamp
+        timestamp: item.timestamp,
+        turnId: item.turnId
       }))
     ];
 
@@ -120,7 +122,15 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
             </div>
           ) : (
             <div key={item.id} className="conversation-row assistant">
-              <div className="assistant-text">{item.content}</div>
+              <div className="assistant-text-wrap">
+                <div className="assistant-text">{item.content}</div>
+                {item.turnId && reasoningByTurn[item.turnId] ? (
+                  <details className="reasoning-panel">
+                    <summary>思考过程</summary>
+                    <pre className="reasoning-text">{reasoningByTurn[item.turnId]}</pre>
+                  </details>
+                ) : null}
+              </div>
             </div>
           )
         )}
@@ -128,12 +138,20 @@ function ConversationPane({ sessionId, turnId, users, assistants }: Conversation
         {snapshot.version > 0 && snapshot.isActive ? (
           <div className="conversation-row assistant live-row">
             <div className="assistant-live-tag">Streaming</div>
-            <div className="assistant-text assistant-live-inline">
-              {animatedDelta.stable}
-              {animatedDelta.delta ? (
-                <span key={animatedDelta.key} className="stream-reveal">
-                  {animatedDelta.delta}
-                </span>
+            <div className="assistant-text-wrap">
+              <div className="assistant-text assistant-live-inline">
+                {animatedDelta.stable}
+                {animatedDelta.delta ? (
+                  <span key={animatedDelta.key} className="stream-reveal">
+                    {animatedDelta.delta}
+                  </span>
+                ) : null}
+              </div>
+              {turnId && reasoningByTurn[turnId] ? (
+                <details className="reasoning-panel">
+                  <summary>思考过程</summary>
+                  <pre className="reasoning-text">{reasoningByTurn[turnId]}</pre>
+                </details>
               ) : null}
             </div>
           </div>

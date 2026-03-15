@@ -127,6 +127,11 @@ pub enum Event {
         content_delta: String,
         stream_source: StreamSource,
     },
+    ReasoningDelta {
+        turn_id: u64,
+        content_delta: String,
+        stream_source: StreamSource,
+    },
     ToolCallsProposed {
         turn_id: u64,
         tool_calls: Vec<ToolCallProposal>,

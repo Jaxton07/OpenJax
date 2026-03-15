@@ -54,6 +54,7 @@ export default function App() {
           turnId={state.activeTurnId ?? undefined}
           users={state.users}
           assistants={state.assistants}
+          reasoningByTurn={state.reasoningByTurn}
         />
 
         <Composer

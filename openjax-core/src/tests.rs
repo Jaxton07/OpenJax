@@ -18,7 +18,7 @@ use super::{
         },
         tool_policy::should_abort_on_consecutive_duplicate_skips,
     },
-    model::{ModelClient, ModelRequest, ModelResponse},
+    model::{ModelClient, ModelRequest, ModelResponse, StreamDelta},
 };
 
 #[derive(Clone)]
@@ -118,7 +118,7 @@ impl ModelClient for ScriptedToolBatchModel {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let mut calls = self.complete_calls.lock().expect("complete_calls lock");
         *calls += 1;
@@ -130,7 +130,7 @@ impl ModelClient for ScriptedToolBatchModel {
         if request.stage == super::model::ModelStage::Planner
             && let Some(sender) = delta_sender
         {
-            let _ = sender.send(text.to_string());
+            let _ = sender.send(StreamDelta::Text(text.to_string()));
         }
         Ok(ModelResponse {
             text: text.to_string(),
@@ -162,7 +162,7 @@ impl ModelClient for ScriptedToolBatchDependencyModel {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let mut calls = self.complete_calls.lock().expect("complete_calls lock");
         *calls += 1;
@@ -174,7 +174,7 @@ impl ModelClient for ScriptedToolBatchDependencyModel {
         if request.stage == super::model::ModelStage::Planner
             && let Some(sender) = delta_sender
         {
-            let _ = sender.send(text.to_string());
+            let _ = sender.send(StreamDelta::Text(text.to_string()));
         }
         Ok(ModelResponse {
             text: text.to_string(),
@@ -201,13 +201,13 @@ impl ModelClient for PlannerFallbackModel {
     async fn complete_stream(
         &self,
         _request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let mut calls = self.stream_calls.lock().expect("stream_calls lock");
         *calls += 1;
         if let Some(sender) = delta_sender {
-            let _ = sender.send("{\"action\":\"to".to_string());
-            let _ = sender.send("ol\"".to_string());
+            let _ = sender.send(StreamDelta::Text("{\"action\":\"to".to_string()));
+            let _ = sender.send(StreamDelta::Text("ol\"".to_string()));
         }
         Ok(ModelResponse {
             text: "not valid json".to_string(),
@@ -251,15 +251,17 @@ impl ModelClient for ScriptedStreamingModel {
     async fn complete_stream(
         &self,
         request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let mut stream_calls = self.stream_calls.lock().expect("stream_calls lock");
         *stream_calls += 1;
         if request.stage == super::model::ModelStage::Planner {
             let planner_text = r#"{"action":"final","message":"seed"}"#.to_string();
             if let Some(sender) = delta_sender {
-                let _ = sender.send("{\"action\":\"final\",\"message\":\"se".to_string());
-                let _ = sender.send("ed\"}".to_string());
+                let _ = sender.send(StreamDelta::Text(
+                    "{\"action\":\"final\",\"message\":\"se".to_string(),
+                ));
+                let _ = sender.send(StreamDelta::Text("ed\"}".to_string()));
             }
             return Ok(ModelResponse {
                 text: planner_text,
@@ -267,8 +269,8 @@ impl ModelClient for ScriptedStreamingModel {
             });
         }
         if let Some(sender) = delta_sender {
-            let _ = sender.send("你".to_string());
-            let _ = sender.send("好".to_string());
+            let _ = sender.send(StreamDelta::Text("你".to_string()));
+            let _ = sender.send(StreamDelta::Text("好".to_string()));
         }
         Ok(ModelResponse {
             text: "你好".to_string(),
@@ -293,11 +295,11 @@ impl ModelClient for DuplicateToolLoopModel {
     async fn complete_stream(
         &self,
         _request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let text = r#"{"action":"tool","tool":"shell","args":{"cmd":"echo hi"}}"#;
         if let Some(sender) = delta_sender {
-            let _ = sender.send(text.to_string());
+            let _ = sender.send(StreamDelta::Text(text.to_string()));
         }
         Ok(ModelResponse {
             text: text.to_string(),
@@ -322,7 +324,7 @@ impl ModelClient for ApprovalBlockedBatchModel {
     async fn complete_stream(
         &self,
         _request: &ModelRequest,
-        delta_sender: Option<UnboundedSender<String>>,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
         let mut calls = self.stream_calls.lock().expect("stream_calls lock");
         *calls += 1;
@@ -332,7 +334,7 @@ impl ModelClient for ApprovalBlockedBatchModel {
             r#"{"action":"final","message":"should not be reached"}"#
         };
         if let Some(sender) = delta_sender {
-            let _ = sender.send(text.to_string());
+            let _ = sender.send(StreamDelta::Text(text.to_string()));
         }
         Ok(ModelResponse {
             text: text.to_string(),
