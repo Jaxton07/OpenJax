@@ -110,7 +110,9 @@ zsh -lc "cargo run -p openjax-gateway"
 3. 每条 SSE 的 `data` 是事件信封（`event_seq/turn_seq/type/payload`）。
 4. 关键渲染事件：
 - `response_started`
+- `reasoning_delta`（思考流增量，建议在正文上方折叠展示）
 - `response_text_delta`
+- `response_resumed`
 - `response_completed`
 - `tool_call_started/tool_args_delta/tool_call_ready/tool_call_progress/tool_call_completed/tool_call_failed`
 - `approval_requested/approval_resolved`
