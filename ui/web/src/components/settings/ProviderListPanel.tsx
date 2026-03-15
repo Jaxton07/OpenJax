@@ -7,8 +7,8 @@ interface ProviderListPanelProps {
   providers: LlmProvider[];
   loading: boolean;
   selectedProviderId: string | null;
-  errorMessage?: string;
-  successMessage?: string;
+  noticeMessage?: string;
+  noticeTone?: "success" | "error" | "info";
   onRefresh: () => Promise<void>;
   onAddProvider: () => void;
   onSelect: (provider: LlmProvider) => void;
@@ -23,8 +23,15 @@ export default function ProviderListPanel(props: ProviderListPanelProps) {
         <div className="provider-list-title">
           <h3>Provider List</h3>
         </div>
+        <div className="provider-list-notice-slot" aria-live="polite">
+          {props.noticeMessage ? (
+            <div className={`provider-inline-notice provider-inline-notice-${props.noticeTone ?? "info"}`}>
+              {props.noticeMessage}
+            </div>
+          ) : null}
+        </div>
         <div className="provider-list-actions">
-          <button type="button" className="btn-primary" onClick={props.onAddProvider}>
+          <button type="button" className="btn-secondary" onClick={props.onAddProvider}>
             Add Provider
           </button>
           <button type="button" className="btn-secondary" onClick={() => void props.onRefresh()}>
@@ -32,13 +39,6 @@ export default function ProviderListPanel(props: ProviderListPanelProps) {
           </button>
         </div>
       </div>
-
-      {props.errorMessage ? <div className="status-tip status-error">{props.errorMessage}</div> : null}
-      {props.successMessage ? (
-        <div className="status-tip status-success" role="status" aria-live="polite">
-          {props.successMessage}
-        </div>
-      ) : null}
 
       {props.loading && props.providers.length === 0 ? (
         <div className="status-tip status-info">正在加载 Provider...</div>

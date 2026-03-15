@@ -5,7 +5,7 @@ import ProviderForm, { type ProviderFormValue } from "./settings/ProviderForm";
 import ProviderListPanel from "./settings/ProviderListPanel";
 import SettingsSidebar from "./settings/SettingsSidebar";
 
-const PROVIDER_FORM_EXIT_MS = 460;
+const PROVIDER_FORM_EXIT_MS = 580;
 const PROVIDER_CLOSE_ICON = new URL("../pic/icon/close.svg", import.meta.url).href;
 
 interface SettingsModalProps {
@@ -274,6 +274,10 @@ export default function SettingsModal(props: SettingsModalProps) {
   const activateProvider = async (provider: LlmProvider) => {
     setProviderError("");
     setProviderSuccess("");
+    if (activeProviderId === provider.provider_id) {
+      setProviderSuccess("当前 Provider 已在使用中，新会话将继续使用该配置。");
+      return;
+    }
     setSelectedProviderId(provider.provider_id);
     try {
       const active = await props.onSetActiveProvider(provider.provider_id);
@@ -305,6 +309,13 @@ export default function SettingsModal(props: SettingsModalProps) {
     }
     setClosingProviderPanel(true);
   };
+
+  const providerNoticeMessage = providerError || providerSuccess;
+  const providerNoticeTone: "error" | "success" | "info" = providerError
+    ? "error"
+    : providerSuccess
+      ? "success"
+      : "info";
 
   if (!props.open) {
     return null;
@@ -340,15 +351,15 @@ export default function SettingsModal(props: SettingsModalProps) {
             ) : (
               <section
                 className={`settings-panel provider-panel ${
-                  providerPanelMode === "none" ? "is-list-only" : "is-with-form"
+                  providerPanelMode === "none" || closingProviderPanel ? "is-list-only" : "is-with-form"
                 }`}
               >
                 <ProviderListPanel
                   providers={providers}
                   loading={loadingProviders}
                   selectedProviderId={activeProviderId}
-                  errorMessage={providerError}
-                  successMessage={providerSuccess}
+                  noticeMessage={providerNoticeMessage}
+                  noticeTone={providerNoticeTone}
                   onRefresh={refreshProviders}
                   onAddProvider={() => {
                     openProviderPanel("create");
