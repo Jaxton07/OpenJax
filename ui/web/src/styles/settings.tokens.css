@@ -9,4 +9,17 @@
   --settings-danger: #cc3b32;
   --settings-danger-bg: #fff1f0;
   --settings-focus: rgba(77, 109, 176, 0.26);
+
+  --provider-motion-ms: 580ms;
+  --provider-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --provider-content-height: 452px;
+  --provider-form-width-open: 360px;
+
+  --provider-selected-border-color: #78dea6;
+  --provider-selected-border-width: 2px;
+  --provider-selected-hover-bg: #f5faf7;
+
+  --provider-notice-success: #2da961;
+  --provider-notice-error: #cc4e4d;
+  --provider-notice-info: #617087;
 }

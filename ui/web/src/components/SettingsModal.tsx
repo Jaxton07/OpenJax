@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppSettings, LlmProvider } from "../types/gateway";
 import GeneralSettingsPanel, { type GeneralStatus } from "./settings/GeneralSettingsPanel";
-import ProviderForm, { type ProviderFormValue } from "./settings/ProviderForm";
+import ProviderEditorPanel from "./settings/ProviderEditorPanel";
+import type { ProviderFormValue } from "./settings/ProviderForm";
 import ProviderListPanel from "./settings/ProviderListPanel";
 import SettingsSidebar from "./settings/SettingsSidebar";
 
 const PROVIDER_FORM_EXIT_MS = 580;
-const PROVIDER_CLOSE_ICON = new URL("../pic/icon/close.svg", import.meta.url).href;
 
 interface SettingsModalProps {
   open: boolean;
@@ -49,7 +49,6 @@ export default function SettingsModal(props: SettingsModalProps) {
   const [providerPanelMode, setProviderPanelMode] = useState<"none" | "create" | "edit">("none");
   const [closingProviderPanel, setClosingProviderPanel] = useState(false);
   const wasOpenRef = useRef(false);
-  const providerFormWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!props.open) {
@@ -150,17 +149,6 @@ export default function SettingsModal(props: SettingsModalProps) {
     }, PROVIDER_FORM_EXIT_MS);
     return () => window.clearTimeout(timer);
   }, [closingProviderPanel]);
-
-  useEffect(() => {
-    if (providerPanelMode === "none" || closingProviderPanel) {
-      return;
-    }
-    requestAnimationFrame(() => {
-      if (providerFormWrapRef.current) {
-        providerFormWrapRef.current.scrollTop = 0;
-      }
-    });
-  }, [closingProviderPanel, providerPanelMode, selectedProviderId]);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.provider_id === selectedProviderId) ?? null,
@@ -388,31 +376,15 @@ export default function SettingsModal(props: SettingsModalProps) {
                   onDelete={removeProvider}
                 />
                 {providerPanelMode !== "none" ? (
-                  <div
-                    ref={providerFormWrapRef}
-                    className={
-                      closingProviderPanel
-                        ? "provider-form-wrap provider-form-wrap-closing"
-                        : "provider-form-wrap"
-                    }
-                    data-opened="true"
-                  >
-                    <button
-                      type="button"
-                      className="provider-form-close-btn"
-                      aria-label="关闭新增/编辑面板"
-                      onClick={closeProviderPanel}
-                    >
-                      <img src={PROVIDER_CLOSE_ICON} alt="" />
-                    </button>
-                    <ProviderForm
-                      mode={providerPanelMode === "edit" ? "edit" : "create"}
-                      initialValue={providerFormInitialValue}
-                      submitting={savingProvider}
-                      onSubmit={providerPanelMode === "edit" ? updateProvider : createProvider}
-                      onCancelEdit={closeProviderPanel}
-                    />
-                  </div>
+                  <ProviderEditorPanel
+                    closing={closingProviderPanel}
+                    mode={providerPanelMode === "edit" ? "edit" : "create"}
+                    initialValue={providerFormInitialValue}
+                    submitting={savingProvider}
+                    scrollResetKey={`${providerPanelMode}:${selectedProviderId ?? "create"}`}
+                    onClose={closeProviderPanel}
+                    onSubmit={providerPanelMode === "edit" ? updateProvider : createProvider}
+                  />
                 ) : null}
               </section>
             )}

@@ -1,7 +1,4 @@
 .provider-panel {
-  --provider-motion-ms: 580ms;
-  --provider-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --provider-content-height: 452px;
   --provider-form-width: 0px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--provider-form-width);
@@ -20,7 +17,7 @@
 }
 
 .provider-panel.is-with-form {
-  --provider-form-width: 360px;
+  --provider-form-width: var(--provider-form-width-open);
 }
 
 .provider-list-panel {
@@ -78,15 +75,15 @@
 }
 
 .provider-inline-notice-success {
-  color: #2da961;
+  color: var(--provider-notice-success);
 }
 
 .provider-inline-notice-error {
-  color: #cc4e4d;
+  color: var(--provider-notice-error);
 }
 
 .provider-inline-notice-info {
-  color: #617087;
+  color: var(--provider-notice-info);
 }
 
 .provider-list {
@@ -117,7 +114,8 @@
 .provider-row.selected {
   background: #ffffff;
   box-shadow: none;
-  border-color: #78dea6;
+  border-color: var(--provider-selected-border-color);
+  border-width: var(--provider-selected-border-width);
 }
 
 .provider-card {
@@ -138,7 +136,7 @@
 }
 
 .provider-row.selected .provider-card:hover {
-  background: #f5faf7;
+  background: var(--provider-selected-hover-bg);
 }
 
 .provider-card-main {
