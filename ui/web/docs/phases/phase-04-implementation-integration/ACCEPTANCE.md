@@ -11,7 +11,7 @@
 
 - [x] PR 粒度可控制且支持回滚
   - 结果: Pass
-  - 证据: Track A/B/C 拆分落地记录 + `ui/web/src/lib/eventReducer.test.ts` + `ui/web/src/components/MessageList.test.tsx` + `ui/web/src/components/tool-steps/ToolStepCard.test.tsx`
+  - 证据: Track A/B/C 拆分落地记录 + `ui/web/src/lib/session-events/reducer.test.ts` + `ui/web/src/components/MessageList.test.tsx` + `ui/web/src/components/tool-steps/ToolStepCard.test.tsx`
 
 ## 阶段结论
 - 状态: Ready

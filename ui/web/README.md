@@ -54,8 +54,14 @@ ui/web/
     ├── lib
     │   ├── errors.test.ts
     │   ├── errors.ts
-    │   ├── eventReducer.test.ts
-    │   ├── eventReducer.ts
+    │   ├── session-events
+    │   │   ├── assistant.ts
+    │   │   ├── assistant.test.ts
+    │   │   ├── reducer.ts
+    │   │   ├── reducer.test.ts
+    │   │   ├── sequence.ts
+    │   │   ├── tools.ts
+    │   │   └── tools.test.ts
     │   ├── gatewayClient.test.ts
     │   ├── gatewayClient.ts
     │   ├── storage.test.ts
@@ -91,7 +97,7 @@ ui/web/
 
 - `src/hooks/useChatApp.ts`：应用状态机、会话管理、SSE 重连与 polling 流程。
 - `src/lib/gatewayClient.ts`：gateway HTTP/SSE 客户端封装。
-- `src/lib/eventReducer.ts`：将流式事件折叠为本地会话状态与消息列表（含 `message.kind` 分流）。
+- `src/lib/session-events/reducer.ts`：将流式事件折叠为本地会话状态与消息列表（含 `message.kind` 分流）。
 - `src/lib/streamRenderStore.ts`：正文 delta 的运行时拼接缓存（按 `session+turn` 聚合）。
 - `src/lib/streamRuntime.ts`：文本流事件处理与顺序门控工具。
 - `src/lib/storage.ts`：设置与会话本地存储（`openjax:web:*`）。
@@ -137,7 +143,7 @@ zsh -lc "cd ui/web && pnpm install"
 zsh -lc "cd ui/web && pnpm dev"
 zsh -lc "cd ui/web && pnpm build"
 zsh -lc "cd ui/web && pnpm test"
-zsh -lc "cd ui/web && pnpm test -- src/lib/eventReducer.test.ts src/components/MessageList.test.tsx src/components/tool-steps/ToolStepCard.test.tsx"
+zsh -lc "cd ui/web && pnpm test -- src/lib/session-events/reducer.test.ts src/components/MessageList.test.tsx src/components/tool-steps/ToolStepCard.test.tsx"
 ```
 
 默认开发地址：`http://127.0.0.1:5173`。

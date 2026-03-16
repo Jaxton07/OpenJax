@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GatewayClient } from "../lib/gatewayClient";
-import { applyStreamEvents } from "../lib/eventReducer";
 import { recordDeltaReceived } from "../lib/streamPerf";
 import { streamRenderStore } from "../lib/streamRenderStore";
 import { humanizeError, isAuthenticationError } from "../lib/errors";
+import {
+  applyResponseCompletedSession,
+  applyResponseStartedSession,
+  closeOpenReasoningBlockInSession
+} from "../lib/session-events/assistant";
+import { applySessionEvents } from "../lib/session-events/reducer";
+import { isSequenceResetEvent } from "../lib/session-events/sequence";
 import { loadAuth, loadSessions, loadSettings, saveAuth, saveSessions, saveSettings } from "../lib/storage";
 import type { ChatMessage, ChatSession, ChatState, MessageRole, PendingApproval } from "../types/chat";
 import type {
@@ -31,13 +37,6 @@ function createLocalSession(sessionId: string): ChatSession {
     messages: [],
     pendingApprovals: []
   };
-}
-
-function isSequenceResetEvent(event: StreamEvent): boolean {
-  if (event.event_seq === 1) {
-    return true;
-  }
-  return event.turn_seq === 1 && event.type === "response_started";
 }
 
 export function useChatApp() {
@@ -177,7 +176,7 @@ export function useChatApp() {
         if (session.id !== sessionId) {
           return session;
         }
-        const next = applyStreamEvents(session, [event]);
+        const next = applySessionEvents(session, [event]);
         changed = changed || next !== session;
         return { ...next, connection: "active" as const };
       });
@@ -959,165 +958,6 @@ export function buildChatSessionFromGateway(
     lastEventSeq: 0,
     messages,
     pendingApprovals: []
-  };
-}
-
-function applyResponseStartedSession(
-  session: ChatSession,
-  event: StreamEvent
-): { session: ChatSession; messageId?: string; content: string } {
-  const turnId = event.turn_id;
-  if (!turnId) {
-    return { session, content: "" };
-  }
-
-  const existingIndex = findAssistantMessageIndex(session.messages, turnId);
-  const messages = [...session.messages];
-  let messageId: string;
-  let content = "";
-  if (existingIndex >= 0) {
-    const existing = messages[existingIndex];
-    messageId = existing.id;
-    content = existing.content;
-    messages[existingIndex] = {
-      ...existing,
-      isDraft: true,
-      timestamp: event.timestamp
-    };
-  } else {
-    messageId = buildAssistantDraftId(turnId);
-    messages.push({
-      id: messageId,
-      kind: "text",
-      role: "assistant",
-      content: "",
-      timestamp: event.timestamp,
-      turnId,
-      isDraft: true
-    });
-  }
-
-  return {
-    session: {
-      ...session,
-      turnPhase: "streaming",
-      lastEventSeq: Math.max(session.lastEventSeq, event.event_seq),
-      messages,
-      streaming: {
-        turnId,
-        assistantMessageId: messageId,
-        content,
-        lastEventSeq: event.event_seq,
-        active: true
-      }
-    },
-    messageId,
-    content
-  };
-}
-
-function applyResponseCompletedSession(session: ChatSession, event: StreamEvent, finalizedContent: string): ChatSession {
-  const turnId = event.turn_id;
-  if (!turnId) {
-    return session;
-  }
-
-  let nextContent = finalizedContent;
-  const messages = [...session.messages];
-  const index = findAssistantMessageIndex(messages, turnId);
-  let messageId: string;
-  if (index >= 0) {
-    const message = messages[index];
-    if (event.type === "assistant_message" && message.content.length > nextContent.length) {
-      // Guard against late, shorter assistant_message payload overriding a fuller finalized body.
-      nextContent = message.content;
-    }
-    messageId = message.id;
-    messages[index] = {
-      ...message,
-      content: nextContent,
-      isDraft: false,
-      timestamp: event.timestamp
-    };
-  } else {
-    messageId = buildAssistantDraftId(turnId);
-    messages.push({
-      id: messageId,
-      kind: "text",
-      role: "assistant",
-      content: nextContent,
-      timestamp: event.timestamp,
-      turnId,
-      isDraft: false
-    });
-  }
-
-  return {
-    ...session,
-    turnPhase: "completed",
-    lastEventSeq: Math.max(session.lastEventSeq, event.event_seq),
-    messages,
-    streaming: {
-      turnId,
-      assistantMessageId: messageId,
-      content: nextContent,
-      lastEventSeq: event.event_seq,
-      active: false
-    }
-  };
-}
-
-function findAssistantMessageIndex(messages: ChatMessage[], turnId: string): number {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message.turnId !== turnId || message.role !== "assistant" || message.kind !== "text") {
-      continue;
-    }
-    return i;
-  }
-  return -1;
-}
-
-function buildAssistantDraftId(turnId: string): string {
-  return `assistant_draft_${turnId}`;
-}
-
-function closeOpenReasoningBlockInSession(session: ChatSession, turnId?: string): ChatSession {
-  if (!turnId) {
-    return session;
-  }
-  const idx = findAssistantMessageIndex(session.messages, turnId);
-  if (idx < 0) {
-    return session;
-  }
-  const message = session.messages[idx];
-  const blocks = message.reasoningBlocks;
-  if (!blocks || blocks.length === 0) {
-    return session;
-  }
-  let openIdx = -1;
-  for (let i = blocks.length - 1; i >= 0; i -= 1) {
-    if (!blocks[i].closed) {
-      openIdx = i;
-      break;
-    }
-  }
-  if (openIdx < 0) {
-    return session;
-  }
-  const nextBlocks = [...blocks];
-  nextBlocks[openIdx] = {
-    ...nextBlocks[openIdx],
-    closed: true
-  };
-  const messages = [...session.messages];
-  messages[idx] = {
-    ...message,
-    reasoningBlocks: nextBlocks
-  };
-  return {
-    ...session,
-    messages
   };
 }
 

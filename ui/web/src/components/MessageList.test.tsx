@@ -310,4 +310,50 @@ describe("MessageList", () => {
     expect(screen.getByRole("button", { name: /思考过程 1/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /思考过程 2/ })).toBeInTheDocument();
   });
+
+  it("renders messages in timestamp order even when input array order differs", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "assistant_late",
+        kind: "text",
+        role: "assistant",
+        content: "最终回答",
+        timestamp: "2026-01-01T00:00:03Z",
+        turnId: "turn_1"
+      },
+      {
+        id: "tool_mid",
+        kind: "tool_steps",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-01-01T00:00:02Z",
+        turnId: "turn_1",
+        toolSteps: [
+          {
+            id: "step_1",
+            type: "tool",
+            title: "read_file",
+            status: "success",
+            time: "2026-01-01T00:00:02Z"
+          }
+        ]
+      },
+      {
+        id: "user_early",
+        kind: "text",
+        role: "user",
+        content: "请读取 test.txt",
+        timestamp: "2026-01-01T00:00:01Z"
+      }
+    ];
+
+    render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
+
+    const userNode = screen.getByText("请读取 test.txt");
+    const toolNode = screen.getByText("read_file");
+    const assistantNode = screen.getByText("最终回答");
+
+    expect(userNode.compareDocumentPosition(toolNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(toolNode.compareDocumentPosition(assistantNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

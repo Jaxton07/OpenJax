@@ -17,6 +17,7 @@ type AssistantRenderMode = "text" | "markdown";
 export default function MessageList({ sessionId, messages, pendingApprovals, onResolveApproval }: MessageListProps) {
   recordMessageListRender(sessionId);
   const assistantRenderMode = resolveAssistantRenderMode();
+  const orderedMessages = useMemo(() => sortMessagesByTimestamp(messages), [messages]);
   const endRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const lastStreamScrollAtRef = useRef(0);
@@ -46,15 +47,15 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
   }, []);
 
   const messageSignature = useMemo(() => {
-    const tail = messages.at(-1);
-    return `${messages.length}:${tail?.id ?? ""}:${tail?.isDraft ? 1 : 0}:${tail?.content.length ?? 0}`;
-  }, [messages]);
+    const tail = orderedMessages.at(-1);
+    return `${orderedMessages.length}:${tail?.id ?? ""}:${tail?.isDraft ? 1 : 0}:${tail?.content.length ?? 0}`;
+  }, [orderedMessages]);
 
   useEffect(() => {
     scrollToBottom(false);
   }, [messageSignature, scrollToBottom]);
 
-  if (messages.length === 0) {
+  if (orderedMessages.length === 0) {
     return (
       <div className="welcome-panel">
         <h1>你好，准备好开始了吗？</h1>
@@ -65,7 +66,7 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
 
   return (
     <div className="message-list">
-      {messages.map((message) => (
+      {orderedMessages.map((message) => (
         <MessageRow
           key={message.id}
           sessionId={sessionId}
@@ -80,6 +81,25 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
       <div ref={endRef} />
     </div>
   );
+}
+
+function sortMessagesByTimestamp(messages: ChatMessage[]): ChatMessage[] {
+  return messages
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      const leftMs = parseTimestampToMs(left.message.timestamp);
+      const rightMs = parseTimestampToMs(right.message.timestamp);
+      if (leftMs !== rightMs) {
+        return leftMs - rightMs;
+      }
+      return left.index - right.index;
+    })
+    .map((item) => item.message);
+}
+
+function parseTimestampToMs(timestamp: string): number {
+  const ms = Date.parse(timestamp);
+  return Number.isNaN(ms) ? 0 : ms;
 }
 
 interface MessageRowProps {

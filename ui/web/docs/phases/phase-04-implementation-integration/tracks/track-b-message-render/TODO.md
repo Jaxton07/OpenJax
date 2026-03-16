@@ -10,4 +10,4 @@
 
 - [x] mixed message 场景验证（assistant + toolSteps）
   - 状态: Done
-  - 证据: `ui/web/src/lib/eventReducer.test.ts`（消息模型已拆分，验证为“每事件独立 tool_steps 消息”）
+  - 证据: `ui/web/src/lib/session-events/tools.test.ts`（消息模型已拆分，验证为“每事件独立 tool_steps 消息”）

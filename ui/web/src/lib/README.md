@@ -12,7 +12,7 @@
 ## 关键文件
 
 - `gatewayClient.ts`：HTTP API 与事件流接口封装。
-- `eventReducer.ts`：将流式事件折叠成会话/消息状态。
+- `session-events/reducer.ts`：将流式事件折叠成会话/消息状态。
 - `streamRuntime.ts`：流式事件处理辅助与顺序门控。
 - `streamRenderStore.ts`：按 `session + turn` 聚合文本渲染缓存。
 - `storage.ts`：`localStorage` 读写与数据版本兼容。
@@ -21,7 +21,9 @@
 ## 测试文件
 
 - `gatewayClient.test.ts`
-- `eventReducer.test.ts`
+- `session-events/reducer.test.ts`
+- `session-events/tools.test.ts`
+- `session-events/assistant.test.ts`
 - `streamRuntime.test.ts`
 - `streamRenderStore.test.ts`
 - `storage.test.ts`
@@ -29,7 +31,7 @@
 
 ## 维护建议
 
-- 业务状态归并优先放在 `eventReducer.ts`，避免在组件中做事件拼装。
+- 业务状态归并优先放在 `session-events/reducer.ts`，避免在组件中做事件拼装。
 - Gateway 协议改动先改 `types/gateway.ts`，再同步 `gatewayClient.ts` 与测试。
 
 ## 上层文档
