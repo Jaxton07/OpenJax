@@ -839,11 +839,11 @@ fn apply_turn_runtime_event(turn: &mut TurnRuntime, event_type: &str, payload: &
         });
         return;
     }
-    if event_type == "response_completed" || event_type == "assistant_message" {
-        if let Some(content) = payload.get("content").and_then(|value| value.as_str()) {
-            turn.assistant_message = Some(content.to_string());
-            turn.status = TurnStatus::Completed;
-        }
+    if (event_type == "response_completed" || event_type == "assistant_message")
+        && let Some(content) = payload.get("content").and_then(|value| value.as_str())
+    {
+        turn.assistant_message = Some(content.to_string());
+        turn.status = TurnStatus::Completed;
     }
 }
 

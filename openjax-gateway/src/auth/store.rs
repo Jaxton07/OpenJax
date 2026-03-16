@@ -20,6 +20,18 @@ pub struct CreatedTokens {
     pub access_expires_in: u64,
 }
 
+/// Parameters for creating a new session with tokens
+pub struct CreateSessionParams<'a> {
+    pub scope: AuthScope,
+    pub device_name: Option<&'a str>,
+    pub platform: Option<&'a str>,
+    pub user_agent: Option<&'a str>,
+    pub access_hash: &'a str,
+    pub access_ttl: Duration,
+    pub refresh_hash: &'a str,
+    pub refresh_ttl: Duration,
+}
+
 impl AuthStore {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
@@ -90,27 +102,18 @@ impl AuthStore {
         Ok(())
     }
 
-    pub fn create_session_and_tokens(
-        &self,
-        scope: AuthScope,
-        device_name: Option<&str>,
-        platform: Option<&str>,
-        user_agent: Option<&str>,
-        access_hash: &str,
-        access_ttl: Duration,
-        refresh_hash: &str,
-        refresh_ttl: Duration,
-    ) -> Result<CreatedTokens> {
+    pub fn create_session_and_tokens(&self, params: CreateSessionParams<'_>) -> Result<CreatedTokens> {
+        let access_expires_in = params.access_ttl.whole_seconds().max(0) as u64;
         let session_id = format!("authsess_{}", Uuid::new_v4().simple());
         {
             let mut conn = self.conn.lock().expect("auth db mutex poisoned");
             let tx = conn.transaction().context("begin create auth tx")?;
             let now = OffsetDateTime::now_utc();
             let created_at = now_rfc3339();
-            let access_expires_at = (now + access_ttl)
+            let access_expires_at = (now + params.access_ttl)
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_else(|_| created_at.clone());
-            let refresh_expires_at = (now + refresh_ttl)
+            let refresh_expires_at = (now + params.refresh_ttl)
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_else(|_| created_at.clone());
 
@@ -120,10 +123,10 @@ impl AuthStore {
                 params![
                     session_id,
                     device_id,
-                    scope.as_str(),
-                    device_name,
-                    platform,
-                    user_agent,
+                    params.scope.as_str(),
+                    params.device_name,
+                    params.platform,
+                    params.user_agent,
                     AuthSessionStatus::Active.as_str(),
                     created_at,
                 ],
@@ -132,14 +135,14 @@ impl AuthStore {
 
             tx.execute(
                 "INSERT INTO auth_access_tokens (token_hash, session_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
-                params![access_hash, session_id, access_expires_at, created_at],
+                params![params.access_hash, session_id, access_expires_at, created_at],
             )
             .context("insert auth access token")?;
 
             let refresh_token_id = format!("rtid_{}", Uuid::new_v4().simple());
             tx.execute(
                 "INSERT INTO auth_refresh_tokens (token_id, session_id, token_hash, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![refresh_token_id, session_id, refresh_hash, refresh_expires_at, created_at],
+                params![refresh_token_id, session_id, params.refresh_hash, refresh_expires_at, created_at],
             )
             .context("insert auth refresh token")?;
 
@@ -151,7 +154,7 @@ impl AuthStore {
 
         Ok(CreatedTokens {
             session,
-            access_expires_in: access_ttl.whole_seconds().max(0) as u64,
+            access_expires_in,
         })
     }
 
@@ -181,6 +184,7 @@ impl AuthStore {
         access_ttl: Duration,
         refresh_ttl: Duration,
     ) -> Result<RotateOutcome> {
+        let access_expires_in_secs = access_ttl.whole_seconds().max(0) as u64;
         let session_id = {
             let mut conn = self.conn.lock().expect("auth db mutex poisoned");
             let tx = conn.transaction().context("begin refresh tx")?;
@@ -279,8 +283,8 @@ impl AuthStore {
             .get_session(&session_id)?
             .context("session must exist after refresh")?;
         Ok(RotateOutcome::Rotated {
-            session,
-            access_expires_in: access_ttl.whole_seconds().max(0) as u64,
+            session: Box::new(session),
+            access_expires_in: access_expires_in_secs,
         })
     }
 
@@ -445,7 +449,7 @@ pub enum RotateOutcome {
     Missing,
     ReuseDetected,
     Rotated {
-        session: SessionRecord,
+        session: Box<SessionRecord>,
         access_expires_in: u64,
     },
 }

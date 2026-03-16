@@ -6,7 +6,7 @@ use anyhow::{Context, Result as AnyResult};
 use time::Duration;
 
 use crate::auth::rate_limit::SlidingWindowRateLimiter;
-use crate::auth::store::{AuthStore, RotateOutcome};
+use crate::auth::store::{AuthStore, RotateOutcome, CreateSessionParams};
 use crate::auth::token::{generate_token, hash_token};
 use crate::auth::types::{
     AuthScope, AuthSessionStatus, LoginResult, NewSessionInput, RefreshResult, SessionRecord,
@@ -160,16 +160,16 @@ impl AuthService {
 
         let created = self
             .store
-            .create_session_and_tokens(
-                AuthScope::Owner,
-                input.device_name.as_deref(),
-                input.platform.as_deref(),
-                input.user_agent.as_deref(),
-                &access_hash,
-                self.config.access_ttl(),
-                &refresh_hash,
-                self.config.refresh_ttl(),
-            )
+            .create_session_and_tokens(CreateSessionParams {
+                scope: AuthScope::Owner,
+                device_name: input.device_name.as_deref(),
+                platform: input.platform.as_deref(),
+                user_agent: input.user_agent.as_deref(),
+                access_hash: &access_hash,
+                access_ttl: self.config.access_ttl(),
+                refresh_hash: &refresh_hash,
+                refresh_ttl: self.config.refresh_ttl(),
+            })
             .context("create session and tokens")?;
 
         Ok(LoginResult {
@@ -204,7 +204,7 @@ impl AuthService {
                 access_token: next_access_token,
                 access_expires_in,
                 refresh_token: next_refresh_token,
-                session,
+                session: *session,
             }),
             Err(_) => Err(RefreshError::Missing),
         }

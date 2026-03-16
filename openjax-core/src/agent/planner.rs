@@ -16,6 +16,20 @@ use crate::model::{ModelRequest, ModelStage};
 const FLOW_TRACE_PREFIX: &str = "OPENJAX_FLOW";
 const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
 
+/// Tool action context to reduce parameter count in handle_tool_action
+pub(crate) struct ToolActionContext<'a> {
+    pub events: &'a mut Vec<Event>,
+    pub tool_traces: &'a mut Vec<String>,
+    pub apply_patch_read_guard: &'a mut ApplyPatchReadGuard,
+    pub consecutive_duplicate_skips: &'a mut usize,
+    pub executed_count: &'a mut usize,
+    pub turn_engine: &'a mut TurnEngine,
+    pub skill_shell_misfire_count: &'a mut usize,
+    pub saw_git_status_short: &'a mut bool,
+    pub saw_git_diff_stat: &'a mut bool,
+    pub diff_strategy: &'a mut &'static str,
+}
+
 fn log_after_dispatch_step(
     turn_id: u64,
     node: &'static str,
@@ -488,21 +502,20 @@ impl Agent {
                         args = ?decision.args,
                         "model_decision_payload"
                     );
+                    let mut ctx = ToolActionContext {
+                        events,
+                        tool_traces: &mut tool_traces,
+                        apply_patch_read_guard: &mut apply_patch_read_guard,
+                        consecutive_duplicate_skips: &mut consecutive_duplicate_skips,
+                        executed_count: &mut executed_count,
+                        turn_engine: &mut turn_engine,
+                        skill_shell_misfire_count: &mut skill_shell_misfire_count,
+                        saw_git_status_short: &mut saw_git_status_short,
+                        saw_git_diff_stat: &mut saw_git_diff_stat,
+                        diff_strategy: &mut diff_strategy,
+                    };
                     let should_continue = self
-                        .handle_tool_action(
-                            turn_id,
-                            &decision,
-                            events,
-                            &mut tool_traces,
-                            &mut apply_patch_read_guard,
-                            &mut consecutive_duplicate_skips,
-                            &mut executed_count,
-                            &mut turn_engine,
-                            &mut skill_shell_misfire_count,
-                            &mut saw_git_status_short,
-                            &mut saw_git_diff_stat,
-                            &mut diff_strategy,
-                        )
+                        .handle_tool_action(turn_id, &decision, &mut ctx)
                         .await;
                     if should_continue {
                         continue;

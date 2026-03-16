@@ -880,21 +880,6 @@ fn to_active_provider_item(active: crate::persistence::ActiveProviderRecord) -> 
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::resolve_resume_seq;
-
-    #[test]
-    fn resolve_resume_seq_prefers_after_event_seq() {
-        assert_eq!(resolve_resume_seq(Some(9), Some("3")), Some(9));
-    }
-
-    #[test]
-    fn resolve_resume_seq_uses_last_event_id_when_query_absent() {
-        assert_eq!(resolve_resume_seq(None, Some("7")), Some(7));
-    }
-}
-
 fn normalize_session_action(action: &str) -> String {
     action
         .trim_start_matches('/')
@@ -918,4 +903,19 @@ async fn clear_runtime(
     let config = state.runtime_config();
     let mut session = session_runtime.lock().await;
     session.clear_context_with_config(config);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_resume_seq;
+
+    #[test]
+    fn resolve_resume_seq_prefers_after_event_seq() {
+        assert_eq!(resolve_resume_seq(Some(9), Some("3")), Some(9));
+    }
+
+    #[test]
+    fn resolve_resume_seq_uses_last_event_id_when_query_absent() {
+        assert_eq!(resolve_resume_seq(None, Some("7")), Some(7));
+    }
 }

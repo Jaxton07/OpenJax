@@ -2,17 +2,12 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum JsonStringRole {
     Key,
     StringValue,
+    #[default]
     Other,
-}
-
-impl Default for JsonStringRole {
-    fn default() -> Self {
-        Self::Other
-    }
 }
 
 #[derive(Debug, Default, Clone)]

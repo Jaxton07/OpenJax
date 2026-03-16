@@ -59,17 +59,9 @@ pub(crate) struct DispatchDecisionMeta {
     pub(crate) conflict_detected: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct DispatcherConfig {
     pub(crate) heuristic_detect: bool,
-}
-
-impl Default for DispatcherConfig {
-    fn default() -> Self {
-        Self {
-            heuristic_detect: false,
-        }
-    }
 }
 
 impl DispatcherConfig {
@@ -89,8 +81,10 @@ pub(crate) fn dispatch_stream(input: ProbeInput, cfg: DispatcherConfig) -> Dispa
     let locked_branch = probe.branch;
     machine.lock(locked_branch);
     let _ = machine.complete();
-    let mut metrics = DispatchMetrics::default();
-    metrics.dispatcher_lock_ts_ms = Some(timing.elapsed_ms());
+    let metrics = DispatchMetrics {
+        dispatcher_lock_ts_ms: Some(timing.elapsed_ms()),
+        ..Default::default()
+    };
     let meta = DispatchDecisionMeta {
         probe_ms: metrics.dispatcher_lock_ts_ms.unwrap_or_default(),
         locked_branch,

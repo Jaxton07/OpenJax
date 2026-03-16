@@ -16,6 +16,7 @@ pub trait SessionRepository {
         content: &str,
     ) -> Result<MessageRecord>;
     fn list_messages(&self, session_id: &str) -> Result<Vec<MessageRecord>>;
+    #[allow(clippy::too_many_arguments)]
     fn append_event(
         &self,
         session_id: &str,

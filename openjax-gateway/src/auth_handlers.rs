@@ -244,10 +244,10 @@ pub async fn list_sessions(
 }
 
 fn extract_refresh_token(headers: &HeaderMap, body_token: Option<String>) -> Option<String> {
-    if let Some(value) = headers.get(COOKIE).and_then(|v| v.to_str().ok()) {
-        if let Some(token) = parse_cookie_value(value, refresh_cookie_name()) {
-            return Some(token);
-        }
+    if let Some(value) = headers.get(COOKIE).and_then(|v| v.to_str().ok())
+        && let Some(token) = parse_cookie_value(value, refresh_cookie_name())
+    {
+        return Some(token);
     }
     body_token
         .map(|value| value.trim().to_string())

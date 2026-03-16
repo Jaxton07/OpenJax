@@ -41,11 +41,11 @@ async fn main() -> Result<()> {
         "openjax-gateway listening"
     );
     println!("[openjax-gateway] listening on http://{bind_addr}");
-    if api_key_config.source == ApiKeySource::Generated {
-        if let Some(generated_key) = api_key_config.generated_key.as_deref() {
-            println!("[openjax-gateway] generated access key: {generated_key}");
-            println!("[openjax-gateway] copy this key into the Web login page to continue");
-        }
+    if api_key_config.source == ApiKeySource::Generated
+        && let Some(generated_key) = api_key_config.generated_key.as_deref()
+    {
+        println!("[openjax-gateway] generated access key: {generated_key}");
+        println!("[openjax-gateway] copy this key into the Web login page to continue");
     }
     axum::serve(listener, app).await?;
     Ok(())
