@@ -16,28 +16,30 @@ describe("useChatApp hydration helpers", () => {
       },
       [
         {
-          message_id: "m2",
+          request_id: "req",
           session_id: "sess_1",
           turn_id: "turn_1",
-          role: "assistant",
-          content: "你好",
-          sequence: 2,
-          created_at: "2026-01-01T00:00:02Z"
+          event_seq: 2,
+          turn_seq: 1,
+          timestamp: "2026-01-01T00:00:02Z",
+          stream_source: "synthetic",
+          type: "response_completed",
+          payload: { content: "你好" }
         },
         {
-          message_id: "m1",
+          request_id: "req",
           session_id: "sess_1",
-          turn_id: "turn_1",
-          role: "user",
-          content: "帮我看一下配置",
-          sequence: 1,
-          created_at: "2026-01-01T00:00:01Z"
+          event_seq: 1,
+          timestamp: "2026-01-01T00:00:01Z",
+          stream_source: "synthetic",
+          type: "user_message",
+          payload: { content: "帮我看一下配置" }
         }
       ]
     );
     expect(session.id).toBe("sess_1");
-    expect(session.messages[0].id).toBe("m1");
-    expect(session.messages[1].id).toBe("m2");
+    expect(session.messages[0].role).toBe("user");
+    expect(session.messages[1].role).toBe("assistant");
     expect(session.title).toContain("帮我看一下配置");
   });
 });

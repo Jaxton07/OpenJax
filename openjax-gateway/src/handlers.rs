@@ -120,6 +120,14 @@ pub struct SessionMessagesResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SessionTimelineResponse {
+    request_id: String,
+    session_id: String,
+    events: Vec<StreamEventEnvelope>,
+    timestamp: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ProviderItem {
     provider_id: String,
     provider_name: String,
@@ -276,6 +284,35 @@ pub async fn list_session_messages(
     }))
 }
 
+pub async fn list_session_timeline(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Query(query): Query<EventsQuery>,
+    Extension(ctx): Extension<RequestContext>,
+) -> Result<Json<SessionTimelineResponse>, ApiError> {
+    let events = state
+        .list_session_events(&session_id, query.after_event_seq)?
+        .into_iter()
+        .map(|item| StreamEventEnvelope {
+            request_id: format!("req_timeline_{}", item.id),
+            session_id: item.session_id,
+            turn_id: item.turn_id,
+            event_seq: item.event_seq,
+            turn_seq: item.turn_seq,
+            timestamp: item.timestamp,
+            event_type: item.event_type,
+            stream_source: item.stream_source,
+            payload: serde_json::from_str::<serde_json::Value>(&item.payload_json).unwrap_or_else(|_| json!({})),
+        })
+        .collect::<Vec<StreamEventEnvelope>>();
+    Ok(Json(SessionTimelineResponse {
+        request_id: ctx.request_id,
+        session_id,
+        events,
+        timestamp: now_rfc3339(),
+    }))
+}
+
 pub async fn submit_turn(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -284,12 +321,8 @@ pub async fn submit_turn(
 ) -> Result<Json<SubmitTurnResponse>, ApiError> {
     let session_runtime = state.get_session(&session_id).await?;
     let input = payload.input.trim().to_string();
-    if !input.is_empty() {
-        state.append_message(&session_id, None, "user", &input)?;
-    }
-
     {
-        let session = session_runtime.lock().await;
+        let mut session = session_runtime.lock().await;
         if matches!(
             session.status,
             SessionStatus::Closed | SessionStatus::Closing
@@ -298,6 +331,18 @@ pub async fn submit_turn(
                 "session is not active",
                 json!({ "session_id": session_id }),
             ));
+        }
+        if !input.is_empty() {
+            state.append_message(&session_id, None, "user", &input)?;
+            let user_event = session.create_gateway_event(
+                &ctx.request_id,
+                &session_id,
+                None,
+                "user_message",
+                json!({ "content": input }),
+                Some("synthetic"),
+            );
+            publish_event_for_session(&state, &mut session, user_event);
         }
     }
 
@@ -351,10 +396,10 @@ pub async fn submit_turn(
             json!({}),
             None,
         );
-        session.publish_event(started);
-        session.publish_event(message);
-        session.publish_event(completed_response);
-        session.publish_event(completed);
+        publish_event_for_session(&state, &mut session, started);
+        publish_event_for_session(&state, &mut session, message);
+        publish_event_for_session(&state, &mut session, completed_response);
+        publish_event_for_session(&state, &mut session, completed);
         state.append_message(&session_id, Some(&turn_id), "assistant", "session cleared")?;
         return Ok(Json(SubmitTurnResponse {
             request_id: ctx.request_id,
@@ -536,7 +581,7 @@ pub async fn shutdown_session(
             json!({ "reason": "shutdown_requested" }),
             None,
         );
-        session.publish_event(event);
+        publish_event_for_session(&state, &mut session, event);
         session.status = SessionStatus::Closing;
         let agent = session.agent.clone();
         drop(session);
@@ -800,6 +845,19 @@ fn to_sse_event(event: StreamEventEnvelope) -> SseEvent {
         .event(event.event_type.clone())
         .id(event.event_seq.to_string())
         .data(serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()))
+}
+
+fn publish_event_for_session(state: &AppState, session: &mut crate::state::SessionRuntime, event: StreamEventEnvelope) {
+    if let Err(err) = state.append_event(&event) {
+        warn!(
+            session_id = %event.session_id,
+            event_seq = event.event_seq,
+            event_type = %event.event_type,
+            error = %err.message,
+            "failed to persist event"
+        );
+    }
+    session.publish_event(event);
 }
 
 fn to_provider_item(provider: crate::persistence::ProviderRecord) -> ProviderItem {

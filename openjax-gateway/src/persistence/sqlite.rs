@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::error::now_rfc3339;
 use crate::persistence::repository::{ProviderRepository, SessionRepository};
 use crate::persistence::types::{
-    ActiveProviderRecord, MessageRecord, ProviderRecord, SessionRecord,
+    ActiveProviderRecord, EventRecord, MessageRecord, ProviderRecord, SessionRecord,
 };
 
 #[derive(Clone)]
@@ -69,6 +69,26 @@ impl SqliteGatewayStore {
                 ON biz_messages(session_id, sequence);
             CREATE INDEX IF NOT EXISTS idx_biz_messages_session_created_at
                 ON biz_messages(session_id, created_at ASC);
+
+            CREATE TABLE IF NOT EXISTS biz_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                event_seq INTEGER NOT NULL,
+                turn_seq INTEGER NOT NULL DEFAULT 0,
+                turn_id TEXT,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                stream_source TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES biz_sessions(session_id) ON DELETE CASCADE
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_biz_events_session_event_seq
+                ON biz_events(session_id, event_seq);
+            CREATE INDEX IF NOT EXISTS idx_biz_events_session_turn_event_seq
+                ON biz_events(session_id, turn_id, event_seq);
+            CREATE INDEX IF NOT EXISTS idx_biz_events_session_created_at
+                ON biz_events(session_id, created_at ASC);
 
             CREATE TABLE IF NOT EXISTS llm_providers (
                 provider_id TEXT PRIMARY KEY,
@@ -233,6 +253,145 @@ impl SessionRepository for SqliteGatewayStore {
             messages.push(row.context("read message row")?);
         }
         Ok(messages)
+    }
+
+    fn append_event(
+        &self,
+        session_id: &str,
+        event_seq: u64,
+        turn_seq: u64,
+        turn_id: Option<&str>,
+        event_type: &str,
+        payload_json: &str,
+        timestamp: &str,
+        stream_source: &str,
+    ) -> Result<EventRecord> {
+        let mut conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let tx = conn.transaction().context("begin append event tx")?;
+        let now = now_rfc3339();
+        tx.execute(
+            "INSERT INTO biz_events (session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                session_id,
+                event_seq as i64,
+                turn_seq as i64,
+                turn_id,
+                event_type,
+                payload_json,
+                timestamp,
+                stream_source,
+                now
+            ],
+        )
+        .with_context(|| format!("insert event for session {}", session_id))?;
+        tx.execute(
+            "UPDATE biz_sessions SET updated_at = ?1 WHERE session_id = ?2",
+            params![now, session_id],
+        )
+        .with_context(|| format!("touch session {}", session_id))?;
+        let id = tx.last_insert_rowid();
+        tx.commit().context("commit append event tx")?;
+
+        Ok(EventRecord {
+            id,
+            session_id: session_id.to_string(),
+            event_seq,
+            turn_seq,
+            turn_id: turn_id.map(ToOwned::to_owned),
+            event_type: event_type.to_string(),
+            payload_json: payload_json.to_string(),
+            timestamp: timestamp.to_string(),
+            stream_source: stream_source.to_string(),
+            created_at: now,
+        })
+    }
+
+    fn list_events(&self, session_id: &str, after_event_seq: Option<u64>) -> Result<Vec<EventRecord>> {
+        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let (sql, params_vec): (&str, Vec<rusqlite::types::Value>) = if let Some(after) = after_event_seq {
+            (
+                "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
+                 FROM biz_events
+                 WHERE session_id = ?1 AND event_seq > ?2
+                 ORDER BY event_seq ASC",
+                vec![
+                    rusqlite::types::Value::from(session_id.to_string()),
+                    rusqlite::types::Value::from(after as i64),
+                ],
+            )
+        } else {
+            (
+                "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
+                 FROM biz_events
+                 WHERE session_id = ?1
+                 ORDER BY event_seq ASC",
+                vec![rusqlite::types::Value::from(session_id.to_string())],
+            )
+        };
+        let mut stmt = conn
+            .prepare(sql)
+            .with_context(|| format!("prepare list events for session {}", session_id))?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params_vec), |row| {
+                Ok(EventRecord {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    event_seq: row.get::<_, i64>(2)? as u64,
+                    turn_seq: row.get::<_, i64>(3)? as u64,
+                    turn_id: row.get(4)?,
+                    event_type: row.get(5)?,
+                    payload_json: row.get(6)?,
+                    timestamp: row.get(7)?,
+                    stream_source: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })
+            .with_context(|| format!("query list events for session {}", session_id))?;
+        let mut events = Vec::new();
+        for row in rows {
+            events.push(row.context("read event row")?);
+        }
+        Ok(events)
+    }
+
+    fn last_event_seq(&self, session_id: &str) -> Result<Option<u64>> {
+        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let seq = conn
+            .query_row(
+                "SELECT MAX(event_seq) FROM biz_events WHERE session_id = ?1",
+                params![session_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .context("query last event seq")?
+            .flatten()
+            .map(|value| value as u64);
+        Ok(seq)
+    }
+
+    fn last_turn_seq_by_turn(&self, session_id: &str) -> Result<Vec<(String, u64)>> {
+        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let mut stmt = conn
+            .prepare(
+                "SELECT turn_id, MAX(turn_seq)
+                 FROM biz_events
+                 WHERE session_id = ?1 AND turn_id IS NOT NULL
+                 GROUP BY turn_id",
+            )
+            .with_context(|| format!("prepare turn seq query for session {}", session_id))?;
+        let rows = stmt
+            .query_map(params![session_id], |row| {
+                let turn_id: String = row.get(0)?;
+                let turn_seq: i64 = row.get(1)?;
+                Ok((turn_id, turn_seq as u64))
+            })
+            .with_context(|| format!("query turn seq for session {}", session_id))?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.context("read turn seq row")?);
+        }
+        Ok(items)
     }
 }
 
@@ -462,6 +621,100 @@ mod tests {
         let sessions = store.list_sessions().expect("list sessions");
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_id, "sess_test_1");
+    }
+
+    #[test]
+    fn can_append_and_list_events_in_sequence_order() {
+        let store = setup_store();
+        store
+            .create_session("sess_evt_1", Some("events"))
+            .expect("create session");
+        store
+            .append_event(
+                "sess_evt_1",
+                1,
+                0,
+                None,
+                "user_message",
+                r#"{"content":"hello"}"#,
+                "2026-01-01T00:00:01Z",
+                "synthetic",
+            )
+            .expect("append event 1");
+        store
+            .append_event(
+                "sess_evt_1",
+                2,
+                1,
+                Some("turn_1"),
+                "response_started",
+                "{}",
+                "2026-01-01T00:00:02Z",
+                "model_live",
+            )
+            .expect("append event 2");
+        let all = store.list_events("sess_evt_1", None).expect("list all");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].event_seq, 1);
+        assert_eq!(all[1].event_seq, 2);
+
+        let tail = store
+            .list_events("sess_evt_1", Some(1))
+            .expect("list tail after seq 1");
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0].event_type, "response_started");
+    }
+
+    #[test]
+    fn can_query_last_event_and_turn_sequences() {
+        let store = setup_store();
+        store
+            .create_session("sess_evt_2", Some("events"))
+            .expect("create session");
+        store
+            .append_event(
+                "sess_evt_2",
+                10,
+                1,
+                Some("turn_1"),
+                "response_started",
+                "{}",
+                "2026-01-01T00:00:01Z",
+                "model_live",
+            )
+            .expect("append event 10");
+        store
+            .append_event(
+                "sess_evt_2",
+                11,
+                2,
+                Some("turn_1"),
+                "response_completed",
+                r#"{"content":"ok"}"#,
+                "2026-01-01T00:00:02Z",
+                "model_live",
+            )
+            .expect("append event 11");
+        store
+            .append_event(
+                "sess_evt_2",
+                12,
+                1,
+                Some("turn_2"),
+                "response_started",
+                "{}",
+                "2026-01-01T00:00:03Z",
+                "model_live",
+            )
+            .expect("append event 12");
+
+        let last = store.last_event_seq("sess_evt_2").expect("last event seq");
+        assert_eq!(last, Some(12));
+        let turn_seq = store
+            .last_turn_seq_by_turn("sess_evt_2")
+            .expect("turn seq by turn");
+        assert!(turn_seq.contains(&(String::from("turn_1"), 2)));
+        assert!(turn_seq.contains(&(String::from("turn_2"), 1)));
     }
 
     #[test]

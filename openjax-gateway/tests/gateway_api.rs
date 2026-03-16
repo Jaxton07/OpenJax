@@ -725,3 +725,63 @@ async fn session_messages_endpoint_returns_persisted_messages() {
     assert_eq!(messages_body["messages"][0]["role"], "user");
     assert_eq!(messages_body["messages"][1]["role"], "assistant");
 }
+
+#[tokio::test]
+async fn session_timeline_endpoint_returns_persisted_events() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/sessions")
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("create request"),
+        )
+        .await
+        .expect("create response");
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = response_json(create_response).await;
+    let session_id = create_body["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    let submit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/sessions/{}/turns", session_id))
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"input":"/clear"}"#))
+                .expect("submit request"),
+        )
+        .await
+        .expect("submit response");
+    assert_eq!(submit_response.status(), StatusCode::OK);
+
+    let timeline_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!("/api/v1/sessions/{}/timeline", session_id))
+                .header("Authorization", auth_header(&access_token))
+                .body(Body::empty())
+                .expect("timeline request"),
+        )
+        .await
+        .expect("timeline response");
+    assert_eq!(timeline_response.status(), StatusCode::OK);
+    let timeline_body = response_json(timeline_response).await;
+    let events = timeline_body["events"].as_array().expect("events");
+    assert!(!events.is_empty());
+    assert_eq!(events[0]["type"], "user_message");
+    assert!(events.iter().any(|event| event["type"] == "response_completed"));
+}

@@ -16,7 +16,6 @@ import type { ChatMessage, ChatSession, ChatState, MessageRole, PendingApproval 
 import type {
   AppSettings,
   AuthSessionItem,
-  GatewaySessionMessage,
   GatewaySessionSummary,
   GatewayConnection,
   GatewayError,
@@ -434,8 +433,8 @@ export function useChatApp() {
     const hydrated: ChatSession[] = [];
     for (const remoteSession of sessionsResponse.sessions) {
       try {
-        const messagesResponse = await apiClient.listSessionMessages(remoteSession.session_id);
-        hydrated.push(buildChatSessionFromGateway(remoteSession, messagesResponse.messages));
+        const timelineResponse = await apiClient.listSessionTimeline(remoteSession.session_id);
+        hydrated.push(buildChatSessionFromGateway(remoteSession, timelineResponse.events));
       } catch {
         continue;
       }
@@ -950,30 +949,30 @@ export function mapGatewayRoleToMessageRole(role: string): MessageRole {
 
 export function buildChatSessionFromGateway(
   remoteSession: GatewaySessionSummary,
-  remoteMessages: GatewaySessionMessage[]
+  remoteEvents: StreamEvent[]
 ): ChatSession {
-  const orderedMessages = [...remoteMessages].sort((left, right) => left.sequence - right.sequence);
-  const messages: ChatMessage[] = orderedMessages.map((item) => ({
-    id: item.message_id,
-    kind: "text",
-    role: mapGatewayRoleToMessageRole(item.role),
-    content: item.content,
-    timestamp: item.created_at,
-    startEventSeq: item.sequence,
-    lastEventSeq: item.sequence,
-    turnId: item.turn_id
-  }));
-  const firstUserMessage = messages.find((message) => message.role === "user");
-  const title = remoteSession.title?.trim() || summarizeTitle(firstUserMessage?.content ?? "新聊天");
-  return {
+  const orderedEvents = [...remoteEvents].sort((left, right) => left.event_seq - right.event_seq);
+  let session: ChatSession = {
     id: remoteSession.session_id,
-    title,
+    title: remoteSession.title?.trim() || "新聊天",
     createdAt: remoteSession.created_at,
     connection: "idle",
     turnPhase: "draft",
     lastEventSeq: 0,
-    messages,
+    messages: [],
     pendingApprovals: []
+  };
+  if (orderedEvents.length > 0) {
+    session = applySessionEvents(session, orderedEvents);
+  }
+  const messages: ChatMessage[] = session.messages;
+  const firstUserMessage = messages.find((message) => message.role === "user");
+  const title = remoteSession.title?.trim() || summarizeTitle(firstUserMessage?.content ?? "新聊天");
+  return {
+    ...session,
+    title,
+    connection: "idle",
+    createdAt: remoteSession.created_at
   };
 }
 

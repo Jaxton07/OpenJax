@@ -5,6 +5,7 @@ import type {
   AuthSessionsResponse,
   GatewaySessionListResponse,
   GatewaySessionMessagesResponse,
+  GatewaySessionTimelineResponse,
   GatewayConnection,
   ProviderDeleteResponse,
   ProviderListResponse,
@@ -100,6 +101,12 @@ export class GatewayClient {
 
   async listSessionMessages(sessionId: string): Promise<GatewaySessionMessagesResponse> {
     return this.request(`/api/v1/sessions/${sessionId}/messages`, { method: "GET" });
+  }
+
+  async listSessionTimeline(sessionId: string, afterEventSeq?: number): Promise<GatewaySessionTimelineResponse> {
+    const query =
+      afterEventSeq !== undefined && afterEventSeq > 0 ? `?after_event_seq=${afterEventSeq}` : "";
+    return this.request(`/api/v1/sessions/${sessionId}/timeline${query}`, { method: "GET" });
   }
 
   async submitTurn(sessionId: string, input: string): Promise<TurnSubmitted> {

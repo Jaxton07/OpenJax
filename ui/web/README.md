@@ -5,7 +5,7 @@
 ## 职责
 
 - 提供多会话聊天 UI（侧边栏、消息区、输入区）。
-- 对接 gateway API：会话创建、turn 提交、状态轮询、SSE 订阅。
+- 对接 gateway API：会话创建、turn 提交、状态轮询、timeline hydration、SSE 订阅。
 - 支持审批交互（approve/reject）。
 - 支持结构化 Tool Step 卡片渲染（`message.kind=tool_steps`）。
 - 支持按事件分段的思考流渲染（`reasoning_delta`，默认折叠，按事件时间线与正文/tool 交错显示）。
@@ -96,7 +96,7 @@ ui/web/
 ## 关键实现映射
 
 - `src/hooks/useChatApp.ts`：应用状态机、会话管理、SSE 重连与 polling 流程。
-- `src/lib/gatewayClient.ts`：gateway HTTP/SSE 客户端封装。
+- `src/lib/gatewayClient.ts`：gateway HTTP/SSE 客户端封装（含 timeline 拉取接口）。
 - `src/lib/session-events/reducer.ts`：将流式事件折叠为本地会话状态与消息列表（含 `message.kind` 分流）。
 - `src/lib/timeline/buildTimeline.ts`：将消息展开为事件级时间线项，按 `event_seq` 主排序。
 - `src/lib/streamRenderStore.ts`：正文 delta 的运行时拼接缓存（按 `session+turn` 聚合）。
@@ -132,6 +132,14 @@ ui/web/
   - 展示规则：每段一个独立时间线卡片，默认折叠，可与 tool 卡片按事件顺序交错显示。
 - 目前 reducer 保留 `role=tool` 文本双写路径（过渡用）。
 - 旧 `assistant + toolSteps` 结构不再兼容，渲染按 `kind` 判定。
+
+## 时间线恢复（Hydration）
+
+- 冷启动恢复入口：`GET /api/v1/sessions/{session_id}/timeline`
+- 处理方式：`useChatApp` 将 timeline 事件交给 `applySessionEvents` 统一归并重建会话。
+- 主排序键：`event_seq`（`timestamp` 仅兜底）。
+- 事件覆盖：`user_message`、`reasoning_delta`、tool/approval、`response_text_delta`、`response_completed` 等。
+- 说明：`/messages` 仍保留用于兼容展示，但不再作为时间线恢复主入口。
 
 
 ## 运行与测试
@@ -171,12 +179,9 @@ zsh -lc "cd ui/web && pnpm test -- src/lib/session-events/reducer.test.ts src/co
 - `POST /api/v1/sessions`
 - `POST /api/v1/sessions/{session_id}/turns`
 - `GET /api/v1/sessions/{session_id}/turns/{turn_id}`
+- `GET /api/v1/sessions/{session_id}/timeline`
 - `GET /api/v1/sessions/{session_id}/events`
 - `POST /api/v1/sessions/{session_id}/approvals/{approval_id}:resolve`
 - `POST /api/v1/sessions/{session_id}:clear`
 - `POST /api/v1/sessions/{session_id}:compact`
 - `DELETE /api/v1/sessions/{session_id}`
-    │   ├── timeline
-    │   │   ├── buildTimeline.ts
-    │   │   ├── buildTimeline.test.ts
-    │   │   └── types.ts

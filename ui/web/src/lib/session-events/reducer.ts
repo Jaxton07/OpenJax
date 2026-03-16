@@ -44,6 +44,37 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
   };
 
   const turnId = event.turn_id;
+  if (event.type === "user_message") {
+    const content = String(event.payload.content ?? "");
+    const existingIdx = next.messages.findIndex(
+      (message) =>
+        message.kind === "text" &&
+        message.role === "user" &&
+        message.content === content &&
+        message.turnId === turnId
+    );
+    if (existingIdx >= 0) {
+      next.messages[existingIdx] = {
+        ...next.messages[existingIdx],
+        timestamp: event.timestamp,
+        startEventSeq: next.messages[existingIdx].startEventSeq ?? event.event_seq,
+        lastEventSeq: Math.max(next.messages[existingIdx].lastEventSeq ?? event.event_seq, event.event_seq),
+        turnId
+      };
+    } else {
+      next.messages.push({
+        id: crypto.randomUUID(),
+        kind: "text",
+        role: "user",
+        content,
+        timestamp: event.timestamp,
+        startEventSeq: event.event_seq,
+        lastEventSeq: event.event_seq,
+        turnId
+      });
+    }
+  }
+
   if (turnId && shouldCloseReasoningOnEvent(event)) {
     closeOpenReasoningBlock(next.messages, turnId, event.event_seq);
   }

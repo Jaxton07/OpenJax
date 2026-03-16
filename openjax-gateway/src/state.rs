@@ -173,6 +173,16 @@ impl AppState {
             .map_err(map_store_error)
     }
 
+    pub fn list_session_events(
+        &self,
+        session_id: &str,
+        after_event_seq: Option<u64>,
+    ) -> Result<Vec<crate::persistence::EventRecord>, ApiError> {
+        self.store
+            .list_events(session_id, after_event_seq)
+            .map_err(map_store_error)
+    }
+
     pub fn append_message(
         &self,
         session_id: &str,
@@ -182,6 +192,24 @@ impl AppState {
     ) -> Result<(), ApiError> {
         self.store
             .append_message(session_id, turn_id, role, content)
+            .map_err(map_store_error)?;
+        Ok(())
+    }
+
+    pub fn append_event(&self, event: &StreamEventEnvelope) -> Result<(), ApiError> {
+        let payload_json =
+            serde_json::to_string(&event.payload).map_err(|err| ApiError::internal(err.to_string()))?;
+        self.store
+            .append_event(
+                &event.session_id,
+                event.event_seq,
+                event.turn_seq,
+                event.turn_id.as_deref(),
+                &event.event_type,
+                &payload_json,
+                &event.timestamp,
+                &event.stream_source,
+            )
             .map_err(map_store_error)?;
         Ok(())
     }
@@ -259,16 +287,30 @@ impl AppState {
         let config = build_runtime_config(providers, active_provider_id.as_deref());
         let mut runtime = SessionRuntime::new_with_config(config);
         runtime.active_provider_id = active_provider_id;
-        let messages = self.store.list_messages(session_id)?;
-        for message in messages {
-            let turn = message.turn_id.unwrap_or_else(|| "turn_0".to_string());
-            let turn_runtime = runtime
-                .turns
-                .entry(turn)
-                .or_insert_with(TurnRuntime::queued);
-            if message.role == "assistant" {
-                turn_runtime.status = TurnStatus::Completed;
-                turn_runtime.assistant_message = Some(message.content);
+        if let Some(max_event_seq) = self.store.last_event_seq(session_id)? {
+            runtime.next_event_seq = max_event_seq.saturating_add(1);
+        }
+        for (turn_id, seq) in self.store.last_turn_seq_by_turn(session_id)? {
+            runtime.turn_event_seq.insert(turn_id, seq);
+        }
+        let events = self.store.list_events(session_id, None)?;
+        for row in events {
+            let payload = serde_json::from_str::<Value>(&row.payload_json).unwrap_or_else(|_| json!({}));
+            let envelope = StreamEventEnvelope {
+                request_id: format!("req_replay_{}", row.id),
+                session_id: row.session_id.clone(),
+                turn_id: row.turn_id.clone(),
+                event_seq: row.event_seq,
+                turn_seq: row.turn_seq,
+                timestamp: row.timestamp.clone(),
+                event_type: row.event_type.clone(),
+                stream_source: row.stream_source.clone(),
+                payload: payload.clone(),
+            };
+            let _ = runtime.event_log.push(envelope);
+            if let Some(turn_id) = row.turn_id {
+                let turn = runtime.turns.entry(turn_id).or_insert_with(TurnRuntime::queued);
+                apply_turn_runtime_event(turn, &row.event_type, &payload);
             }
         }
         Ok(Arc::new(Mutex::new(runtime)))
@@ -765,6 +807,63 @@ pub async fn run_turn_task(
     }
 }
 
+fn apply_turn_runtime_event(turn: &mut TurnRuntime, event_type: &str, payload: &Value) {
+    if event_type == "turn_started" {
+        turn.status = TurnStatus::Running;
+        return;
+    }
+    if event_type == "turn_completed" {
+        if !matches!(turn.status, TurnStatus::Failed) {
+            turn.status = TurnStatus::Completed;
+        }
+        return;
+    }
+    if event_type == "response_error" || event_type == "error" {
+        turn.status = TurnStatus::Failed;
+        turn.error = Some(ApiTurnError {
+            code: payload
+                .get("code")
+                .and_then(|value| value.as_str())
+                .unwrap_or("UPSTREAM_ERROR")
+                .to_string(),
+            message: payload
+                .get("message")
+                .and_then(|value| value.as_str())
+                .unwrap_or("response failed")
+                .to_string(),
+            retryable: payload
+                .get("retryable")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
+            details: payload.clone(),
+        });
+        return;
+    }
+    if event_type == "response_completed" || event_type == "assistant_message" {
+        if let Some(content) = payload.get("content").and_then(|value| value.as_str()) {
+            turn.assistant_message = Some(content.to_string());
+            turn.status = TurnStatus::Completed;
+        }
+    }
+}
+
+fn publish_and_persist_event(
+    app_state: &AppState,
+    session: &mut SessionRuntime,
+    event: StreamEventEnvelope,
+) {
+    if let Err(err) = app_state.append_event(&event) {
+        warn!(
+            session_id = %event.session_id,
+            event_seq = event.event_seq,
+            event_type = %event.event_type,
+            error = %err.message,
+            "failed to persist event"
+        );
+    }
+    session.publish_event(event);
+}
+
 fn map_core_event(
     app_state: &AppState,
     session: &mut SessionRuntime,
@@ -785,32 +884,8 @@ fn map_core_event(
             .turns
             .entry(turn_id.clone())
             .or_insert_with(TurnRuntime::queued);
-        if event_type == "turn_started" {
-            turn.status = TurnStatus::Running;
-        } else if event_type == "turn_completed" {
-            if !matches!(turn.status, TurnStatus::Failed) {
-                turn.status = TurnStatus::Completed;
-            }
-        } else if event_type == "response_error" {
-            turn.status = TurnStatus::Failed;
-            turn.error = Some(ApiTurnError {
-                code: payload
-                    .get("code")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("UPSTREAM_ERROR")
-                    .to_string(),
-                message: payload
-                    .get("message")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("response failed")
-                    .to_string(),
-                retryable: payload
-                    .get("retryable")
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(false),
-                details: payload.clone(),
-            });
-        } else if event_type == "response_completed"
+        apply_turn_runtime_event(turn, event_type, &payload);
+        if event_type == "response_completed"
             && let Some(content) = payload.get("content").and_then(|value| value.as_str())
         {
             turn.assistant_message = Some(content.to_string());
@@ -930,7 +1005,7 @@ fn map_core_event(
         );
     }
     session.last_event_emitted_at = Some(Instant::now());
-    session.publish_event(envelope);
+    publish_and_persist_event(app_state, session, envelope);
 
     public_turn_id
 }

@@ -84,6 +84,13 @@ export interface GatewaySessionMessagesResponse {
   timestamp: string;
 }
 
+export interface GatewaySessionTimelineResponse {
+  request_id: string;
+  session_id: string;
+  events: StreamEvent[];
+  timestamp: string;
+}
+
 export interface TurnSubmitted {
   request_id: string;
   session_id: string;
@@ -183,6 +190,7 @@ export interface StreamEvent {
   timestamp: string;
   stream_source?: "model_live" | "synthetic" | "replay" | "unknown";
   type:
+    | "user_message"
     | "turn_started"
     | "assistant_message"
     | "response_started"

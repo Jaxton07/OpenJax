@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::persistence::types::{
-    ActiveProviderRecord, MessageRecord, ProviderRecord, SessionRecord,
+    ActiveProviderRecord, EventRecord, MessageRecord, ProviderRecord, SessionRecord,
 };
 
 pub trait SessionRepository {
@@ -16,6 +16,20 @@ pub trait SessionRepository {
         content: &str,
     ) -> Result<MessageRecord>;
     fn list_messages(&self, session_id: &str) -> Result<Vec<MessageRecord>>;
+    fn append_event(
+        &self,
+        session_id: &str,
+        event_seq: u64,
+        turn_seq: u64,
+        turn_id: Option<&str>,
+        event_type: &str,
+        payload_json: &str,
+        timestamp: &str,
+        stream_source: &str,
+    ) -> Result<EventRecord>;
+    fn list_events(&self, session_id: &str, after_event_seq: Option<u64>) -> Result<Vec<EventRecord>>;
+    fn last_event_seq(&self, session_id: &str) -> Result<Option<u64>>;
+    fn last_turn_seq_by_turn(&self, session_id: &str) -> Result<Vec<(String, u64)>>;
 }
 
 pub trait ProviderRepository {

@@ -75,6 +75,10 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             get(handlers::list_session_messages),
         )
         .route(
+            "/api/v1/sessions/:session_id/timeline",
+            get(handlers::list_session_timeline),
+        )
+        .route(
             "/api/v1/sessions/:session_id/turns",
             post(handlers::submit_turn),
         )

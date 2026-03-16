@@ -35,6 +35,29 @@ describe("session-events/reducer", () => {
     expect(second.messages).toHaveLength(1);
   });
 
+  it("upserts user_message by event seq and content", () => {
+    const session = baseSession();
+    const first = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "user_message",
+      payload: { content: "你好" }
+    });
+    const second = applySessionEvent(first, {
+      request_id: "req",
+      session_id: "sess_1",
+      event_seq: 2,
+      timestamp: "2026-01-01T00:00:02Z",
+      type: "user_message",
+      payload: { content: "你好" }
+    });
+    expect(second.messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(second.messages[0].startEventSeq).toBe(1);
+    expect(second.messages[0].lastEventSeq).toBe(2);
+  });
+
   it("merges response text deltas into text messages only", () => {
     const session = baseSession();
     const delta1 = applySessionEvent(session, {

@@ -18,6 +18,20 @@ pub struct MessageRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventRecord {
+    pub id: i64,
+    pub session_id: String,
+    pub event_seq: u64,
+    pub turn_seq: u64,
+    pub turn_id: Option<String>,
+    pub event_type: String,
+    pub payload_json: String,
+    pub timestamp: String,
+    pub stream_source: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderRecord {
     pub provider_id: String,
     pub provider_name: String,
