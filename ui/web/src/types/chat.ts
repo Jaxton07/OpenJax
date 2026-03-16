@@ -13,6 +13,7 @@ export interface ReasoningBlock {
   content: string;
   collapsed: boolean;
   startedAt: string;
+  endedAt?: string;
   closed: boolean;
   startEventSeq?: number;
   lastEventSeq?: number;

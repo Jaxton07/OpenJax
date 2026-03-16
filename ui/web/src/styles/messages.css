@@ -19,6 +19,10 @@
   display: flex;
 }
 
+.message-row--compact {
+  margin-bottom: 0;
+}
+
 .message-row.role-user {
   justify-content: flex-end;
 }
@@ -116,7 +120,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 4px 0;
   cursor: pointer;
   overflow: hidden;
   border-radius: 6px;
@@ -128,7 +132,7 @@
 }
 
 .reasoning-block-title {
-  font-size: 14px;
+  font-size: 15px;
   color: #666;
   font-weight: 400;
   flex: 1;
@@ -186,16 +190,16 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: fit-content;
+  width: min(380px, 50%);
   max-width: 100%;
   min-width: 0;
 }
 
 .step-card {
-  width: auto;
-  border: none;
+  width: 100%;
+  border: 1px solid #e5e8ed;
   border-radius: 6px;
-  background: transparent;
+  background: #ffffff;
   overflow: hidden;
   transition: background-color 0.15s ease;
 }

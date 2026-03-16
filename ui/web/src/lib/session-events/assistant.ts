@@ -267,7 +267,8 @@ export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string,
   blocks[openIdx] = {
     ...blocks[openIdx],
     closed: true,
-    endEventSeq: blocks[openIdx].lastEventSeq ?? eventSeq
+    endEventSeq: blocks[openIdx].lastEventSeq ?? eventSeq,
+    endedAt: new Date().toISOString()
   };
   messages[idx] = {
     ...message,
@@ -300,7 +301,8 @@ export function closeOpenReasoningBlockInSession(
   nextBlocks[openIdx] = {
     ...nextBlocks[openIdx],
     closed: true,
-    endEventSeq: nextBlocks[openIdx].lastEventSeq ?? eventSeq
+    endEventSeq: nextBlocks[openIdx].lastEventSeq ?? eventSeq,
+    endedAt: new Date().toISOString()
   };
   const messages = [...session.messages];
   messages[idx] = {

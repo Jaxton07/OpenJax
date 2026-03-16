@@ -23,10 +23,14 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
 
   const title = useMemo(() => {
     const startedAt = new Date(block.startedAt).getTime();
-    const duration = formatDuration(startedAt, now);
+    // 如果已结束且有 endedAt，使用 endedAt，否则使用当前时间
+    const endTime = block.closed && block.endedAt
+      ? new Date(block.endedAt).getTime()
+      : now;
+    const duration = formatDuration(startedAt, endTime);
     const prefix = block.closed ? "Thought" : "Thinking";
     return `${prefix} ${duration}`;
-  }, [block.closed, block.startedAt, now]);
+  }, [block, now]);
 
   return (
     <section className={`reasoning-block${collapsed ? "" : " expanded"}`}>

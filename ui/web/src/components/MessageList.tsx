@@ -107,7 +107,7 @@ function TimelineRow({
 }: TimelineRowProps) {
   if (item.type === "reasoning_block") {
     return (
-      <div className="message-row role-assistant">
+      <div className="message-row role-assistant message-row--compact">
         <div className="message-bubble">
           <ReasoningBlockCard block={item.payload.block} />
         </div>
@@ -117,7 +117,7 @@ function TimelineRow({
 
   if (item.type === "tool_step") {
     return (
-      <div className="message-row role-assistant">
+      <div className="message-row role-assistant message-row--compact">
         <div className="message-bubble">
           <ToolStepList
             steps={[item.payload.step]}
