@@ -271,7 +271,7 @@ describe("MessageList", () => {
       }
     ];
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
-    const toggle = screen.getByRole("button", { name: /思考过程 1/ });
+    const toggle = screen.getByRole("button", { name: /Thinking|Thought/ });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     const toggleNode = toggle.closest(".reasoning-block");
     expect(toggleNode).not.toBeNull();
@@ -318,8 +318,8 @@ describe("MessageList", () => {
       }
     ];
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
-    expect(screen.getByRole("button", { name: /思考过程 1/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /思考过程 2/ })).toBeInTheDocument();
+    const reasoningButtons = screen.getAllByRole("button", { name: /Thinking|Thought/ });
+    expect(reasoningButtons.length).toBe(2);
   });
 
   it("renders timeline by event_seq order", () => {
@@ -402,9 +402,11 @@ describe("MessageList", () => {
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
 
     const userNode = screen.getByText("请读取 test.txt");
-    const reasoning1 = screen.getByRole("button", { name: /思考过程 1/ });
+    const reasoningButtons = screen.getAllByRole("button", { name: /Thinking|Thought/ });
+    expect(reasoningButtons.length).toBe(2);
+    const reasoning1 = reasoningButtons[0];
+    const reasoning2 = reasoningButtons[1];
     const toolNode = screen.getByText("read_file");
-    const reasoning2 = screen.getByRole("button", { name: /思考过程 2/ });
     const assistantNode = screen.getByText("最终回答");
 
     expect(userNode.compareDocumentPosition(reasoning1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

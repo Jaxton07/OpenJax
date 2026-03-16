@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import MarkdownRender from "markstream-react";
 import { useStreamRenderSnapshot } from "../hooks/useStreamRenderSnapshot";
 import { buildTimeline } from "../lib/timeline/buildTimeline";
 import { recordMessageListRender } from "../lib/streamPerf";
-import type { ChatMessage, PendingApproval, ReasoningBlock } from "../types/chat";
+import type { ChatMessage, PendingApproval } from "../types/chat";
 import ToolStepList from "./tool-steps/ToolStepList";
+import ReasoningBlockCard from "./ReasoningBlockCard";
 import type { TimelineItem } from "../lib/timeline/types";
 
 interface MessageListProps {
@@ -108,7 +109,7 @@ function TimelineRow({
     return (
       <div className="message-row role-assistant">
         <div className="message-bubble">
-          <ReasoningBlockCard block={item.payload.block} index={item.payload.sequenceNumber - 1} />
+          <ReasoningBlockCard block={item.payload.block} />
         </div>
       </div>
     );
@@ -221,26 +222,7 @@ function AssistantMessage({
   );
 }
 
-function ReasoningBlockCard({ block, index }: { block: ReasoningBlock; index: number }) {
-  const [collapsed, setCollapsed] = useState(block.collapsed);
-  const title = `思考过程 ${index + 1}`;
-  return (
-    <section className={`reasoning-block${collapsed ? "" : " expanded"}`}>
-      <button
-        type="button"
-        className="reasoning-block-toggle"
-        aria-expanded={!collapsed}
-        onClick={() => setCollapsed((prev) => !prev)}
-      >
-        <span className="reasoning-block-title">{title}</span>
-        <span className={`reasoning-block-chevron${collapsed ? "" : " expanded"}`}>▼</span>
-      </button>
-      <div className={`reasoning-block-body${collapsed ? "" : " expanded"}`}>
-        <div className="reasoning-block-content">{block.content}</div>
-      </div>
-    </section>
-  );
-}
+
 
 function resolveAssistantRenderMode(): AssistantRenderMode {
   const globals =
