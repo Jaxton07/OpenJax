@@ -2,6 +2,7 @@ import type { ChatMessage } from "../../types/chat";
 import type { TimelineItem } from "./types";
 
 const FALLBACK_EVENT_SEQ = Number.MAX_SAFE_INTEGER;
+const TIMELINE_DEBUG_ENABLED = resolveTimelineDebugEnabled();
 
 export function buildTimeline(messages: ChatMessage[]): TimelineItem[] {
   const items: TimelineItem[] = [];
@@ -50,9 +51,11 @@ export function buildTimeline(messages: ChatMessage[]): TimelineItem[] {
       }
 
       if (message.content || message.isDraft) {
-        const eventSeqStart = message.startEventSeq ?? message.lastEventSeq ?? FALLBACK_EVENT_SEQ;
-        const eventSeqEnd = message.lastEventSeq ?? eventSeqStart;
-        items.push({
+        const eventSeqStart =
+          message.textStartEventSeq ?? message.startEventSeq ?? message.lastEventSeq ?? FALLBACK_EVENT_SEQ;
+        const eventSeqEnd =
+          message.textEndEventSeq ?? message.textLastEventSeq ?? message.lastEventSeq ?? eventSeqStart;
+        const item: TimelineItem = {
           id: `assistant_text:${message.id}`,
           type: "assistant_text",
           turnId: message.turnId,
@@ -61,7 +64,21 @@ export function buildTimeline(messages: ChatMessage[]): TimelineItem[] {
           timestamp: message.timestamp,
           stableIndex: stableIndex++,
           payload: { message }
-        });
+        };
+        items.push(item);
+        if (TIMELINE_DEBUG_ENABLED) {
+          console.debug("[timeline_debug][assistant_text_item]", {
+            id: message.id,
+            turnId: message.turnId,
+            textStartEventSeq: message.textStartEventSeq,
+            textLastEventSeq: message.textLastEventSeq,
+            textEndEventSeq: message.textEndEventSeq,
+            messageStartEventSeq: message.startEventSeq,
+            messageLastEventSeq: message.lastEventSeq,
+            eventSeqStart: item.eventSeqStart,
+            eventSeqEnd: item.eventSeqEnd
+          });
+        }
       }
       continue;
     }
@@ -120,4 +137,22 @@ function compareTimelineItem(left: TimelineItem, right: TimelineItem): number {
 function parseTimestampToMs(timestamp: string): number {
   const ms = Date.parse(timestamp);
   return Number.isNaN(ms) ? Number.MAX_SAFE_INTEGER : ms;
+}
+
+function resolveTimelineDebugEnabled(): boolean {
+  const globals =
+    typeof globalThis !== "undefined"
+      ? (globalThis as {
+          OPENJAX_WEB_STREAM_DEBUG?: string | boolean;
+          VITE_OPENJAX_WEB_STREAM_DEBUG?: string | boolean;
+        })
+      : {};
+  const raw = String(
+    globals.OPENJAX_WEB_STREAM_DEBUG ??
+      globals.VITE_OPENJAX_WEB_STREAM_DEBUG ??
+      "0"
+  )
+    .trim()
+    .toLowerCase();
+  return !(raw === "0" || raw === "off" || raw === "false" || raw === "disabled");
 }

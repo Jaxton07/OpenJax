@@ -121,4 +121,92 @@ describe("session-events/assistant", () => {
     expect(assistant?.reasoningBlocks?.[1]?.content).toBe("调用后思考");
     expect(assistant?.reasoningBlocks?.[1]?.startEventSeq).toBe(3);
   });
+
+  it("tracks text seq independently from message start seq", () => {
+    const session = baseSession();
+    const reasoning = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r4",
+      event_seq: 10,
+      timestamp: "2026-01-01T00:00:10Z",
+      type: "reasoning_delta",
+      payload: { content_delta: "思考1" }
+    });
+    const tool = applySessionEvent(reasoning, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r4",
+      event_seq: 11,
+      timestamp: "2026-01-01T00:00:11Z",
+      type: "tool_call_started",
+      payload: { tool_name: "read_file", tool_call_id: "call_1" }
+    });
+    const text = applySessionEvent(tool, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r4",
+      event_seq: 13,
+      timestamp: "2026-01-01T00:00:13Z",
+      type: "response_text_delta",
+      payload: { content_delta: "正文" }
+    });
+    const assistant = text.messages.find((message) => message.turnId === "turn_r4" && message.role === "assistant");
+    expect(assistant?.startEventSeq).toBe(10);
+    expect(assistant?.textStartEventSeq).toBe(13);
+    expect(assistant?.textLastEventSeq).toBe(13);
+  });
+
+  it("backs text seq with response_completed when no text delta exists", () => {
+    const session = baseSession();
+    const completed = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r5",
+      event_seq: 20,
+      timestamp: "2026-01-01T00:00:20Z",
+      type: "response_completed",
+      payload: { content: "最终正文" }
+    });
+    const assistant = completed.messages.find((message) => message.turnId === "turn_r5" && message.role === "assistant");
+    expect(assistant?.textStartEventSeq).toBe(20);
+    expect(assistant?.textLastEventSeq).toBe(20);
+    expect(assistant?.textEndEventSeq).toBe(20);
+  });
+
+  it("does not regress text seq on late assistant_message", () => {
+    const session = baseSession();
+    const textDelta = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r6",
+      event_seq: 30,
+      timestamp: "2026-01-01T00:00:30Z",
+      type: "response_text_delta",
+      payload: { content_delta: "正文1" }
+    });
+    const completed = applySessionEvent(textDelta, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r6",
+      event_seq: 31,
+      timestamp: "2026-01-01T00:00:31Z",
+      type: "response_completed",
+      payload: { content: "正文1" }
+    });
+    const lateAssistant = applySessionEvent(completed, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_r6",
+      event_seq: 32,
+      timestamp: "2026-01-01T00:00:32Z",
+      type: "assistant_message",
+      payload: { content: "正" }
+    });
+    const assistant = lateAssistant.messages.find((message) => message.turnId === "turn_r6" && message.role === "assistant");
+    expect(assistant?.content).toBe("正文1");
+    expect(assistant?.textStartEventSeq).toBe(30);
+    expect(assistant?.textLastEventSeq).toBe(32);
+    expect(assistant?.textEndEventSeq).toBe(32);
+  });
 });

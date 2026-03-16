@@ -6,7 +6,8 @@ import { humanizeError, isAuthenticationError } from "../lib/errors";
 import {
   applyResponseCompletedSession,
   applyResponseStartedSession,
-  closeOpenReasoningBlockInSession
+  closeOpenReasoningBlockInSession,
+  touchAssistantTextSeqInSession
 } from "../lib/session-events/assistant";
 import { applySessionEvents } from "../lib/session-events/reducer";
 import { isSequenceResetEvent } from "../lib/session-events/sequence";
@@ -101,7 +102,13 @@ export function useChatApp() {
           if (session.id !== sessionId) {
             return session;
           }
-          const next = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq);
+          const withReasoningClosed = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq);
+          const next = touchAssistantTextSeqInSession(
+            withReasoningClosed,
+            event.turn_id,
+            event.event_seq,
+            event.timestamp
+          );
           changed = changed || next !== session;
           return next;
         });
@@ -540,19 +547,22 @@ export function useChatApp() {
       }
 
       const sessionId = await ensureSession();
-      const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        kind: "text",
-        role: "user",
-        content: message,
-        timestamp: new Date().toISOString()
-      };
-
       updateSession(sessionId, (session) => ({
         ...session,
         turnPhase: "submitting",
         title: session.messages.length === 0 ? summarizeTitle(message) : session.title,
-        messages: [...session.messages, userMessage]
+        messages: [
+          ...session.messages,
+          {
+            id: crypto.randomUUID(),
+            kind: "text",
+            role: "user",
+            content: message,
+            timestamp: new Date().toISOString(),
+            startEventSeq: session.lastEventSeq + 1,
+            lastEventSeq: session.lastEventSeq + 1
+          }
+        ]
       }));
 
       try {
@@ -579,6 +589,8 @@ export function useChatApp() {
                   role: "assistant",
                   content: result.assistant_message ?? "",
                   timestamp: result.timestamp,
+                  startEventSeq: session.lastEventSeq + 1,
+                  lastEventSeq: session.lastEventSeq + 1,
                   turnId: result.turn_id
                 }
               ]
@@ -595,6 +607,8 @@ export function useChatApp() {
                   role: "error",
                   content: result.error?.message ?? "回合失败",
                   timestamp: result.timestamp,
+                  startEventSeq: session.lastEventSeq + 1,
+                  lastEventSeq: session.lastEventSeq + 1,
                   turnId: result.turn_id
                 }
               ]
@@ -945,6 +959,8 @@ export function buildChatSessionFromGateway(
     role: mapGatewayRoleToMessageRole(item.role),
     content: item.content,
     timestamp: item.created_at,
+    startEventSeq: item.sequence,
+    lastEventSeq: item.sequence,
     turnId: item.turn_id
   }));
   const firstUserMessage = messages.find((message) => message.role === "user");

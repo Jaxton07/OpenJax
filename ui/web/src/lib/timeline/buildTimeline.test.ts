@@ -12,8 +12,11 @@ describe("buildTimeline", () => {
         content: "最终正文",
         timestamp: "2026-01-01T00:00:03Z",
         turnId: "turn_1",
-        startEventSeq: 13,
+        startEventSeq: 10,
         lastEventSeq: 13,
+        textStartEventSeq: 13,
+        textLastEventSeq: 13,
+        textEndEventSeq: 13,
         reasoningBlocks: [
           {
             blockId: "r1",
@@ -97,6 +100,46 @@ describe("buildTimeline", () => {
     const timeline = buildTimeline(messages);
     expect(timeline[0]?.payload.message.id).toBe("a1");
     expect(timeline[1]?.payload.message.id).toBe("a2");
+  });
+
+  it("uses text seq for assistant_text ordering before message start seq", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "assistant_early_start",
+        kind: "text",
+        role: "assistant",
+        content: "最终正文",
+        timestamp: "2026-01-01T00:00:03Z",
+        startEventSeq: 1,
+        lastEventSeq: 8,
+        textStartEventSeq: 8,
+        textLastEventSeq: 8
+      },
+      {
+        id: "tool_msg",
+        kind: "tool_steps",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-01-01T00:00:02Z",
+        startEventSeq: 5,
+        lastEventSeq: 5,
+        toolSteps: [
+          {
+            id: "step_1",
+            type: "tool",
+            title: "read_file",
+            status: "success",
+            time: "2026-01-01T00:00:02Z",
+            startEventSeq: 5,
+            lastEventSeq: 5,
+            endEventSeq: 5
+          }
+        ]
+      }
+    ];
+
+    const timeline = buildTimeline(messages);
+    expect(timeline.map((item) => item.type)).toEqual(["tool_step", "assistant_text"]);
   });
 
   it("keeps stable ordering for same seq and timestamp", () => {

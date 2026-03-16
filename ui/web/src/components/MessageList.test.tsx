@@ -331,8 +331,11 @@ describe("MessageList", () => {
         content: "最终回答",
         timestamp: "2026-01-01T00:00:01Z",
         turnId: "turn_1",
-        startEventSeq: 13,
-        lastEventSeq: 13
+        startEventSeq: 10,
+        lastEventSeq: 13,
+        textStartEventSeq: 13,
+        textLastEventSeq: 13,
+        textEndEventSeq: 13
       },
       {
         id: "tool_mid",
@@ -408,5 +411,34 @@ describe("MessageList", () => {
     expect(reasoning1.compareDocumentPosition(toolNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(toolNode.compareDocumentPosition(reasoning2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(reasoning2.compareDocumentPosition(assistantNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps local user message before assistant when assistant has stream seq", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "assistant_stream",
+        kind: "text",
+        role: "assistant",
+        content: "你好！我是 OpenJax。",
+        timestamp: "2026-01-01T00:00:02Z",
+        startEventSeq: 1,
+        lastEventSeq: 2
+      },
+      {
+        id: "user_local",
+        kind: "text",
+        role: "user",
+        content: "你好",
+        timestamp: "2026-01-01T00:00:01Z",
+        startEventSeq: 0,
+        lastEventSeq: 0
+      }
+    ];
+
+    render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
+
+    const userNode = screen.getByText("你好");
+    const assistantNode = screen.getByText("你好！我是 OpenJax。");
+    expect(userNode.compareDocumentPosition(assistantNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -49,6 +49,9 @@ export interface ChatMessage {
   timestamp: string;
   startEventSeq?: number;
   lastEventSeq?: number;
+  textStartEventSeq?: number;
+  textLastEventSeq?: number;
+  textEndEventSeq?: number;
   turnId?: string;
   isDraft?: boolean;
   hasCanonicalDelta?: boolean;

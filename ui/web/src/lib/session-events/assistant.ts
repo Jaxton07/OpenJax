@@ -98,7 +98,10 @@ export function applyResponseCompletedSession(
       isDraft: false,
       timestamp: event.timestamp,
       startEventSeq: message.startEventSeq ?? event.event_seq,
-      lastEventSeq: Math.max(message.lastEventSeq ?? event.event_seq, event.event_seq)
+      lastEventSeq: Math.max(message.lastEventSeq ?? event.event_seq, event.event_seq),
+      textStartEventSeq: message.textStartEventSeq ?? event.event_seq,
+      textLastEventSeq: Math.max(message.textLastEventSeq ?? event.event_seq, event.event_seq),
+      textEndEventSeq: Math.max(message.textEndEventSeq ?? event.event_seq, event.event_seq)
     };
   } else {
     messageId = buildAssistantDraftId(turnId);
@@ -110,6 +113,9 @@ export function applyResponseCompletedSession(
       timestamp: event.timestamp,
       startEventSeq: event.event_seq,
       lastEventSeq: event.event_seq,
+      textStartEventSeq: event.event_seq,
+      textLastEventSeq: event.event_seq,
+      textEndEventSeq: event.event_seq,
       turnId,
       isDraft: false
     });
@@ -156,7 +162,9 @@ export function mergeAssistantDraft(
       content: `${messages[idx].content}${delta}`,
       hasCanonicalDelta: messages[idx].hasCanonicalDelta || isCanonicalDelta,
       startEventSeq: messages[idx].startEventSeq ?? event.event_seq,
-      lastEventSeq: Math.max(messages[idx].lastEventSeq ?? event.event_seq, event.event_seq)
+      lastEventSeq: Math.max(messages[idx].lastEventSeq ?? event.event_seq, event.event_seq),
+      textStartEventSeq: messages[idx].textStartEventSeq ?? event.event_seq,
+      textLastEventSeq: Math.max(messages[idx].textLastEventSeq ?? event.event_seq, event.event_seq)
     };
     return;
   }
@@ -168,6 +176,8 @@ export function mergeAssistantDraft(
     timestamp,
     startEventSeq: event.event_seq,
     lastEventSeq: event.event_seq,
+    textStartEventSeq: event.event_seq,
+    textLastEventSeq: event.event_seq,
     turnId,
     isDraft: true,
     hasCanonicalDelta: isCanonicalDelta
@@ -322,12 +332,27 @@ export function finalizeAssistantMessageFallback(
         eventSeq: event.event_seq
       });
     }
+    messages[draftIdx] = {
+      ...messages[draftIdx],
+      textStartEventSeq: messages[draftIdx].textStartEventSeq ?? event.event_seq,
+      textLastEventSeq: Math.max(messages[draftIdx].textLastEventSeq ?? event.event_seq, event.event_seq),
+      textEndEventSeq: Math.max(messages[draftIdx].textEndEventSeq ?? event.event_seq, event.event_seq)
+    };
     return;
   }
   const existingIdx = messages.findIndex(
     (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant"
   );
-  if (existingIdx >= 0 || !content) {
+  if (existingIdx >= 0) {
+    messages[existingIdx] = {
+      ...messages[existingIdx],
+      textStartEventSeq: messages[existingIdx].textStartEventSeq ?? event.event_seq,
+      textLastEventSeq: Math.max(messages[existingIdx].textLastEventSeq ?? event.event_seq, event.event_seq),
+      textEndEventSeq: Math.max(messages[existingIdx].textEndEventSeq ?? event.event_seq, event.event_seq)
+    };
+    return;
+  }
+  if (!content) {
     return;
   }
   messages.push({
@@ -338,6 +363,9 @@ export function finalizeAssistantMessageFallback(
     timestamp,
     startEventSeq: event.event_seq,
     lastEventSeq: event.event_seq,
+    textStartEventSeq: event.event_seq,
+    textLastEventSeq: event.event_seq,
+    textEndEventSeq: event.event_seq,
     turnId,
     isDraft: false
   });
@@ -366,7 +394,10 @@ export function sealAssistantMessage(
       ...messages[draftIdx],
       isDraft: false,
       timestamp,
-      lastEventSeq: Math.max(messages[draftIdx].lastEventSeq ?? event.event_seq, event.event_seq)
+      lastEventSeq: Math.max(messages[draftIdx].lastEventSeq ?? event.event_seq, event.event_seq),
+      textStartEventSeq: messages[draftIdx].textStartEventSeq ?? event.event_seq,
+      textLastEventSeq: Math.max(messages[draftIdx].textLastEventSeq ?? event.event_seq, event.event_seq),
+      textEndEventSeq: Math.max(messages[draftIdx].textEndEventSeq ?? event.event_seq, event.event_seq)
     };
     return;
   }
@@ -375,6 +406,12 @@ export function sealAssistantMessage(
     (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant"
   );
   if (existingIdx >= 0) {
+    messages[existingIdx] = {
+      ...messages[existingIdx],
+      textStartEventSeq: messages[existingIdx].textStartEventSeq ?? event.event_seq,
+      textLastEventSeq: Math.max(messages[existingIdx].textLastEventSeq ?? event.event_seq, event.event_seq),
+      textEndEventSeq: Math.max(messages[existingIdx].textEndEventSeq ?? event.event_seq, event.event_seq)
+    };
     return;
   }
 
@@ -396,9 +433,39 @@ export function sealAssistantMessage(
     timestamp,
     startEventSeq: event.event_seq,
     lastEventSeq: event.event_seq,
+    textStartEventSeq: event.event_seq,
+    textLastEventSeq: event.event_seq,
+    textEndEventSeq: event.event_seq,
     turnId,
     isDraft: false
   });
+}
+
+export function touchAssistantTextSeqInSession(
+  session: ChatSession,
+  turnId?: string,
+  eventSeq?: number,
+  timestamp?: string
+): ChatSession {
+  if (!turnId || eventSeq === undefined) {
+    return session;
+  }
+  const idx = findAssistantMessageIndex(session.messages, turnId);
+  if (idx < 0) {
+    return session;
+  }
+  const message = session.messages[idx];
+  const messages = [...session.messages];
+  messages[idx] = {
+    ...message,
+    timestamp: timestamp ?? message.timestamp,
+    textStartEventSeq: message.textStartEventSeq ?? eventSeq,
+    textLastEventSeq: Math.max(message.textLastEventSeq ?? eventSeq, eventSeq)
+  };
+  return {
+    ...session,
+    messages
+  };
 }
 
 export function markTurnDraftFinal(messages: ChatMessage[], turnId?: string): void {
