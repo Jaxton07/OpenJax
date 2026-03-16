@@ -88,6 +88,10 @@ tui_next
 ![Web UI Home](docs/assets/screenshots/web-ui/chat_page_01.png)
 ![Web UI Session](docs/assets/screenshots/web-ui/chat_page_02.png)
 
+## TUI Screenshots
+
+![Rust TUI](docs/assets/screenshots/tui/openjax_tui.png)
+
 ## Installation
 
 ### Option A: Online install from GitHub Release (recommended)

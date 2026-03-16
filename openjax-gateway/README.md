@@ -96,7 +96,6 @@ openjax-gateway/
 - `OPENJAX_GATEWAY_BIND`：监听地址，默认 `127.0.0.1:8765`。
 - `OPENJAX_GATEWAY_API_KEYS`：逗号分隔 API keys（优先）。
 - `OPENJAX_API_KEYS`：兼容 API keys 变量（后备）。
-- `OPENJAX_GATEWAY_AUTH_DB_PATH`：auth SQLite 路径（默认 `./.openjax/auth.db`）。
 - `OPENJAX_GATEWAY_ACCESS_TTL_MINUTES`：access token TTL（默认 15）。
 - `OPENJAX_GATEWAY_REFRESH_TTL_DAYS`：refresh token TTL（默认 30）。
 - `OPENJAX_GATEWAY_COOKIE_SECURE`：refresh cookie 是否设置 `Secure`（默认 true）。

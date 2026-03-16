@@ -88,6 +88,10 @@ tui_next
 ![Web UI 首页](docs/assets/screenshots/web-ui/chat_page_01.png)
 ![Web UI 会话页](docs/assets/screenshots/web-ui/chat_page_02.png)
 
+## TUI 截图
+
+![Rust TUI](docs/assets/screenshots/tui/openjax_tui.png)
+
 ## 安装方式
 
 ### 方式 A：从 GitHub Release 在线安装（推荐）

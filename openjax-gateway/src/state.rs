@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
 use openjax_core::{
     Agent, ApprovalHandler, ApprovalRequest, Config, ModelConfig, ModelRoutingConfig,
-    ProviderModelConfig, approval_timeout_ms_from_env,
+    OpenJaxPaths, ProviderModelConfig, approval_timeout_ms_from_env,
 };
 use openjax_protocol::Event;
 use serde::Serialize;
@@ -80,7 +80,7 @@ impl AppState {
         } else {
             AuthService::from_config(auth_config.clone())?
         };
-        let db_path = gateway_db_path_from_env();
+        let db_path = gateway_db_path();
         let store = Arc::new(SqliteGatewayStore::open(&db_path)?);
         migrate_providers_from_config_if_needed(&store);
         Ok(Self {
@@ -471,10 +471,13 @@ fn event_channel_capacity() -> usize {
         .unwrap_or(DEFAULT_EVENT_CHANNEL_CAPACITY)
 }
 
-fn gateway_db_path_from_env() -> PathBuf {
-    std::env::var("OPENJAX_GATEWAY_DB_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(".openjax/gateway.db"))
+fn gateway_db_path() -> PathBuf {
+    OpenJaxPaths::detect()
+        .map(|paths| {
+            let _ = paths.ensure_runtime_dirs();
+            paths.database_dir.join("gateway.db")
+        })
+        .unwrap_or_else(|| PathBuf::from(".openjax/database/gateway.db"))
 }
 
 fn map_store_error(err: anyhow::Error) -> ApiError {

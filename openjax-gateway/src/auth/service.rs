@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::time::Duration as StdDuration;
 
 use anyhow::{Context, Result as AnyResult};
+use openjax_core::OpenJaxPaths;
 use time::Duration;
 
 use crate::auth::rate_limit::SlidingWindowRateLimiter;
@@ -26,9 +27,12 @@ pub struct AuthConfig {
 
 impl AuthConfig {
     pub fn from_env() -> Self {
-        let db_path = std::env::var("OPENJAX_GATEWAY_AUTH_DB_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(".openjax/auth.db"));
+        let db_path = OpenJaxPaths::detect()
+            .map(|paths| {
+                let _ = paths.ensure_runtime_dirs();
+                paths.database_dir.join("auth.db")
+            })
+            .unwrap_or_else(|| PathBuf::from(".openjax/database/auth.db"));
         let access_ttl_minutes = std::env::var("OPENJAX_GATEWAY_ACCESS_TTL_MINUTES")
             .ok()
             .and_then(|v| v.parse::<i64>().ok())
