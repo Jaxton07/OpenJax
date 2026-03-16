@@ -157,18 +157,29 @@
 }
 
 .tool-step-list {
-  display: grid;
-  gap: 8px;
-  width: min(380px, 50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
 }
 
 .step-card {
-  width: 100%;
-  border: 0.8px solid #e5e8ed;
-  border-radius: 12px;
-  background: #ffffff;
+  width: auto;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   overflow: hidden;
+  transition: background-color 0.15s ease;
+}
+
+.step-card:hover {
+  background: #f5f5f5;
+}
+
+.step-card.expanded {
+  background: #f5f5f5;
 }
 
 .approval-step-card {
@@ -183,10 +194,11 @@
   text-align: left;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 4px 8px;
   cursor: pointer;
   overflow: hidden;
+  border-radius: 6px;
 }
 
 .step-head:focus-visible {
@@ -196,8 +208,8 @@
 
 .step-meta {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -205,9 +217,9 @@
 }
 
 .step-title {
-  color: #3c3c3a;
-  font-size: 13px;
-  font-weight: 480;
+  color: #666;
+  font-size: 14px;
+  font-weight: 400;
   flex: 0 1 auto;
   min-width: fit-content;
   white-space: nowrap;
@@ -216,8 +228,8 @@
 }
 
 .step-subtitle {
-  color: #666a72;
-  font-size: 12px;
+  color: #999;
+  font-size: 14px;
   flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
@@ -226,53 +238,53 @@
 }
 
 .step-time {
-  color: #6d737d;
-  font-size: 12px;
+  color: #aaa;
+  font-size: 13px;
   white-space: nowrap;
-  margin-left: auto;
   flex-shrink: 0;
 }
 
 .step-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
-  background: #b8b4ab;
+  background: #bbb;
   flex-shrink: 0;
-  box-shadow: 0 0 0 3px rgba(184, 180, 171, 0.22);
+  box-shadow: none;
 }
 
 .step-dot--success {
   background: #1fbe63;
-  box-shadow: none;
 }
 
 .step-dot--running {
   background: #1fbe63;
-  box-shadow: 0 0 0 3px rgba(31, 190, 99, 0.18);
-  animation:
-    step-dot-pulse 1.15s ease-in-out infinite,
-    step-dot-brighten 1.15s ease-in-out infinite;
+  animation: step-dot-pulse 1.15s ease-in-out infinite;
 }
 
 .step-dot--waiting {
-  background: #b6b2aa;
-  box-shadow: 0 0 0 3px rgba(182, 178, 170, 0.2);
+  background: #bbb;
 }
 
 .step-dot--failed {
   background: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
 }
 
 .step-chevron {
-  color: #797974;
-  font-size: 13px;
-  transition: transform 150ms ease;
+  color: #999;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 150ms ease;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 
-.step-chevron.expanded {
-  transform: rotate(180deg);
+.step-card:hover .step-chevron {
+  opacity: 1;
+}
+
+.step-card.expanded .step-chevron {
+  opacity: 1;
+  transform: rotate(90deg);
 }
 
 .step-body {
@@ -282,6 +294,7 @@
   transition:
     max-height 220ms ease,
     opacity 180ms ease;
+  padding-left: 20px;
 }
 
 .step-body.expanded {
@@ -291,18 +304,18 @@
 
 .step-desc {
   margin: 0;
-  padding: 0 12px 8px;
-  color: #666662;
+  padding: 8px 0;
+  color: #666;
   font-size: 12px;
 }
 
 .step-code,
 .step-output {
-  margin: 0 12px 8px;
-  border-radius: 8px;
-  border: 1px solid #ecece8;
-  background: #f8f8f6;
-  padding: 8px 10px;
+  margin: 0 0 6px;
+  border-radius: 4px;
+  border: none;
+  background: #f5f5f5;
+  padding: 6px 8px;
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -362,15 +375,5 @@
   }
   50% {
     box-shadow: 0 0 0 5px rgba(31, 190, 99, 0);
-  }
-}
-
-@keyframes step-dot-brighten {
-  0%,
-  100% {
-    background: #1fbe63;
-  }
-  50% {
-    background: #37da7a;
   }
 }

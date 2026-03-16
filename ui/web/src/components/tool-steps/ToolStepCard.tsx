@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import type { ToolStep } from "../../types/chat";
 import { formatStepDuration } from "./formatStepDuration";
 import StepBody from "./StepBody";
+import { RightArrowIcon } from "../../pic/icon";
 
 interface ToolStepCardProps {
   defaultExpanded?: boolean;
@@ -37,6 +38,9 @@ export default function ToolStepCard({ defaultExpanded = false, step }: ToolStep
           <span className="step-subtitle">{step.subtitle || step.type}</span>
           <span className="step-time">{timeText}</span>
         </span>
+        {hasBody ? (
+          <RightArrowIcon className="step-chevron" aria-hidden="true" width={14} height={14} />
+        ) : null}
       </button>
       <StepBody bodyId={bodyId} expanded={expanded} headingId={headingId} step={step} />
     </section>

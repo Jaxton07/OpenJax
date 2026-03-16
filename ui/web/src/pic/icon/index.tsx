@@ -72,3 +72,11 @@ export function EyeOffIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function RightArrowIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path d="M296.8 856l357.8-344-357.8-344c-7.9-7.5-12.4-18-12.5-28.9 0-36.5 45.9-54.8 72.7-28.9l357.8 344c33.3 32 33.3 83.9 0 115.8L357 913.9c-26.8 25.8-72.7 7.5-72.7-28.9 0-11 4.5-21.4 12.5-29z" />
+    </svg>
+  );
+}
