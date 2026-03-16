@@ -45,7 +45,7 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
 
   const turnId = event.turn_id;
   if (turnId && shouldCloseReasoningOnEvent(event)) {
-    closeOpenReasoningBlock(next.messages, turnId);
+    closeOpenReasoningBlock(next.messages, turnId, event.event_seq);
   }
   if (event.type === "turn_started" || event.type === "response_started" || event.type === "response_resumed") {
     next.turnPhase = "streaming";
@@ -128,6 +128,8 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
       kind: "text",
       role: "error",
       content: String(event.payload.message ?? "turn failed"),
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
       turnId,
       timestamp: event.timestamp
     });

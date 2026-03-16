@@ -41,6 +41,8 @@ describe("session-events/assistant", () => {
     expect(assistant?.reasoningBlocks?.[0]?.content).toBe("先分析再推理");
     expect(assistant?.reasoningBlocks?.[0]?.collapsed).toBe(true);
     expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(false);
+    expect(assistant?.reasoningBlocks?.[0]?.startEventSeq).toBe(1);
+    expect(assistant?.reasoningBlocks?.[0]?.lastEventSeq).toBe(2);
   });
 
   it("splits reasoning blocks when response_text_delta starts", () => {
@@ -75,8 +77,11 @@ describe("session-events/assistant", () => {
     const assistant = secondReasoning.messages.find((message) => message.turnId === "turn_r2" && message.role === "assistant");
     expect(assistant?.reasoningBlocks).toHaveLength(2);
     expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(true);
+    expect(assistant?.reasoningBlocks?.[0]?.endEventSeq).toBe(1);
     expect(assistant?.reasoningBlocks?.[1]?.content).toBe("思考B");
     expect(assistant?.reasoningBlocks?.[1]?.closed).toBe(false);
+    expect(assistant?.reasoningBlocks?.[1]?.startEventSeq).toBe(3);
+    expect(assistant?.reasoningBlocks?.[1]?.lastEventSeq).toBe(3);
   });
 
   it("splits reasoning blocks around tool lifecycle events", () => {
@@ -112,6 +117,8 @@ describe("session-events/assistant", () => {
     expect(assistant?.reasoningBlocks).toHaveLength(2);
     expect(assistant?.reasoningBlocks?.[0]?.content).toBe("调用前思考");
     expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(true);
+    expect(assistant?.reasoningBlocks?.[0]?.endEventSeq).toBe(1);
     expect(assistant?.reasoningBlocks?.[1]?.content).toBe("调用后思考");
+    expect(assistant?.reasoningBlocks?.[1]?.startEventSeq).toBe(3);
   });
 });

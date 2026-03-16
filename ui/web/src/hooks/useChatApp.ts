@@ -101,7 +101,7 @@ export function useChatApp() {
           if (session.id !== sessionId) {
             return session;
           }
-          const next = closeOpenReasoningBlockInSession(session, event.turn_id);
+          const next = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq);
           changed = changed || next !== session;
           return next;
         });
@@ -152,7 +152,7 @@ export function useChatApp() {
           }
           const withReasoningClosed =
             event.type === "response_completed"
-              ? closeOpenReasoningBlockInSession(session, event.turn_id)
+              ? closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq)
               : session;
           const next = applyResponseCompletedSession(withReasoningClosed, event, finalizedContent);
           changed = changed || next !== session;

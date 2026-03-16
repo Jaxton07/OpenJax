@@ -13,6 +13,7 @@
 
 - `gatewayClient.ts`：HTTP API 与事件流接口封装。
 - `session-events/reducer.ts`：将流式事件折叠成会话/消息状态。
+- `timeline/buildTimeline.ts`：将消息模型展开为事件级时间线项并按 `event_seq` 排序。
 - `streamRuntime.ts`：流式事件处理辅助与顺序门控。
 - `streamRenderStore.ts`：按 `session + turn` 聚合文本渲染缓存。
 - `storage.ts`：`localStorage` 读写与数据版本兼容。
@@ -24,6 +25,7 @@
 - `session-events/reducer.test.ts`
 - `session-events/tools.test.ts`
 - `session-events/assistant.test.ts`
+- `timeline/buildTimeline.test.ts`
 - `streamRuntime.test.ts`
 - `streamRenderStore.test.ts`
 - `storage.test.ts`

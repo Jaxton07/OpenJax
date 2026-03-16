@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MarkdownRender from "markstream-react";
 import { useStreamRenderSnapshot } from "../hooks/useStreamRenderSnapshot";
+import { buildTimeline } from "../lib/timeline/buildTimeline";
 import { recordMessageListRender } from "../lib/streamPerf";
 import type { ChatMessage, PendingApproval, ReasoningBlock } from "../types/chat";
 import ToolStepList from "./tool-steps/ToolStepList";
+import type { TimelineItem } from "../lib/timeline/types";
 
 interface MessageListProps {
   sessionId?: string;
@@ -17,7 +19,7 @@ type AssistantRenderMode = "text" | "markdown";
 export default function MessageList({ sessionId, messages, pendingApprovals, onResolveApproval }: MessageListProps) {
   recordMessageListRender(sessionId);
   const assistantRenderMode = resolveAssistantRenderMode();
-  const orderedMessages = useMemo(() => sortMessagesByTimestamp(messages), [messages]);
+  const timelineItems = useMemo(() => buildTimeline(messages), [messages]);
   const endRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const lastStreamScrollAtRef = useRef(0);
@@ -47,15 +49,15 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
   }, []);
 
   const messageSignature = useMemo(() => {
-    const tail = orderedMessages.at(-1);
-    return `${orderedMessages.length}:${tail?.id ?? ""}:${tail?.isDraft ? 1 : 0}:${tail?.content.length ?? 0}`;
-  }, [orderedMessages]);
+    const tail = timelineItems.at(-1);
+    return `${timelineItems.length}:${tail?.id ?? ""}:${tail?.eventSeqEnd ?? 0}`;
+  }, [timelineItems]);
 
   useEffect(() => {
     scrollToBottom(false);
   }, [messageSignature, scrollToBottom]);
 
-  if (orderedMessages.length === 0) {
+  if (timelineItems.length === 0) {
     return (
       <div className="welcome-panel">
         <h1>你好，准备好开始了吗？</h1>
@@ -66,11 +68,11 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
 
   return (
     <div className="message-list">
-      {orderedMessages.map((message) => (
-        <MessageRow
-          key={message.id}
+      {timelineItems.map((item) => (
+        <TimelineRow
+          key={item.id}
           sessionId={sessionId}
-          message={message}
+          item={item}
           pendingApprovals={pendingApprovals}
           assistantRenderMode={assistantRenderMode}
           onResolveApproval={onResolveApproval}
@@ -83,28 +85,9 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
   );
 }
 
-function sortMessagesByTimestamp(messages: ChatMessage[]): ChatMessage[] {
-  return messages
-    .map((message, index) => ({ message, index }))
-    .sort((left, right) => {
-      const leftMs = parseTimestampToMs(left.message.timestamp);
-      const rightMs = parseTimestampToMs(right.message.timestamp);
-      if (leftMs !== rightMs) {
-        return leftMs - rightMs;
-      }
-      return left.index - right.index;
-    })
-    .map((item) => item.message);
-}
-
-function parseTimestampToMs(timestamp: string): number {
-  const ms = Date.parse(timestamp);
-  return Number.isNaN(ms) ? 0 : ms;
-}
-
-interface MessageRowProps {
+interface TimelineRowProps {
   sessionId?: string;
-  message: ChatMessage;
+  item: TimelineItem;
   pendingApprovals: PendingApproval[];
   assistantRenderMode: AssistantRenderMode;
   onResolveApproval: (approval: PendingApproval, approved: boolean) => Promise<void> | void;
@@ -112,43 +95,54 @@ interface MessageRowProps {
   onDraftStreamEnd: () => void;
 }
 
-function MessageRow({
+function TimelineRow({
   sessionId,
-  message,
+  item,
   pendingApprovals,
   assistantRenderMode,
   onResolveApproval,
   onDraftStreamTick,
   onDraftStreamEnd
-}: MessageRowProps) {
+}: TimelineRowProps) {
+  if (item.type === "reasoning_block") {
+    return (
+      <div className="message-row role-assistant">
+        <div className="message-bubble">
+          <ReasoningBlockCard block={item.payload.block} index={item.payload.sequenceNumber - 1} />
+        </div>
+      </div>
+    );
+  }
+
+  if (item.type === "tool_step") {
+    return (
+      <div className="message-row role-assistant">
+        <div className="message-bubble">
+          <ToolStepList
+            steps={[item.payload.step]}
+            pendingApprovals={pendingApprovals}
+            onResolveApproval={onResolveApproval}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const message = item.payload.message;
   return (
     <div className={`message-row role-${message.role}`}>
       <div className="message-bubble">
-        {message.kind === "tool_steps" ? (
-          Array.isArray(message.toolSteps) && message.toolSteps.length > 0 ? (
-            <ToolStepList
-              steps={message.toolSteps}
-              pendingApprovals={pendingApprovals}
-              onResolveApproval={onResolveApproval}
-            />
-          ) : null
-        ) : message.role === "assistant" && message.isDraft && message.turnId ? (
+        {message.role === "assistant" && message.isDraft && message.turnId ? (
           <AssistantDraftMessage
             sessionId={sessionId}
             turnId={message.turnId}
             fallbackContent={message.content}
-            reasoningBlocks={message.reasoningBlocks}
             assistantRenderMode={assistantRenderMode}
             onStreamTick={onDraftStreamTick}
             onStreamEnd={onDraftStreamEnd}
           />
         ) : message.role === "assistant" ? (
-          <AssistantMessage
-            content={message.content}
-            reasoningBlocks={message.reasoningBlocks}
-            mode={assistantRenderMode}
-            final
-          />
+          <AssistantMessage content={message.content} mode={assistantRenderMode} final />
         ) : (
           <div className="message-text">{message.content}</div>
         )}
@@ -161,7 +155,6 @@ interface AssistantDraftMessageProps {
   sessionId?: string;
   turnId: string;
   fallbackContent: string;
-  reasoningBlocks?: ReasoningBlock[];
   assistantRenderMode: AssistantRenderMode;
   onStreamTick: () => void;
   onStreamEnd: () => void;
@@ -171,7 +164,6 @@ function AssistantDraftMessage({
   sessionId,
   turnId,
   fallbackContent,
-  reasoningBlocks,
   assistantRenderMode,
   onStreamTick,
   onStreamEnd
@@ -193,7 +185,6 @@ function AssistantDraftMessage({
   return (
     <AssistantMessage
       content={content}
-      reasoningBlocks={reasoningBlocks}
       mode={assistantRenderMode}
       final={!snapshot.isActive}
     />
@@ -202,20 +193,16 @@ function AssistantDraftMessage({
 
 function AssistantMessage({
   content,
-  reasoningBlocks,
   mode,
   final
 }: {
   content: string;
-  reasoningBlocks?: ReasoningBlock[];
   mode: AssistantRenderMode;
   final: boolean;
 }) {
-  const hasReasoning = Array.isArray(reasoningBlocks) && reasoningBlocks.length > 0;
   if (mode === "markdown") {
     return (
       <>
-        {hasReasoning ? <ReasoningBlocksView blocks={reasoningBlocks} /> : null}
         <div className="assistant-markdown">
           <MarkdownRender
             content={content}
@@ -229,22 +216,8 @@ function AssistantMessage({
   }
   return (
     <>
-      {hasReasoning ? <ReasoningBlocksView blocks={reasoningBlocks} /> : null}
       <div className="message-text">{content}</div>
     </>
-  );
-}
-
-function ReasoningBlocksView({ blocks }: { blocks?: ReasoningBlock[] }) {
-  if (!blocks || blocks.length === 0) {
-    return null;
-  }
-  return (
-    <div className="reasoning-block-list" data-testid="reasoning-block-list">
-      {blocks.map((block, index) => (
-        <ReasoningBlockCard key={block.blockId} block={block} index={index} />
-      ))}
-    </div>
   );
 }
 

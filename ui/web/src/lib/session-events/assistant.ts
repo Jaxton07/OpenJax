@@ -33,7 +33,9 @@ export function applyResponseStartedSession(
     messages[existingIndex] = {
       ...existing,
       isDraft: true,
-      timestamp: event.timestamp
+      timestamp: event.timestamp,
+      startEventSeq: existing.startEventSeq ?? event.event_seq,
+      lastEventSeq: Math.max(existing.lastEventSeq ?? event.event_seq, event.event_seq)
     };
   } else {
     messageId = buildAssistantDraftId(turnId);
@@ -43,6 +45,8 @@ export function applyResponseStartedSession(
       role: "assistant",
       content: "",
       timestamp: event.timestamp,
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
       turnId,
       isDraft: true
     });
@@ -92,7 +96,9 @@ export function applyResponseCompletedSession(
       ...message,
       content: nextContent,
       isDraft: false,
-      timestamp: event.timestamp
+      timestamp: event.timestamp,
+      startEventSeq: message.startEventSeq ?? event.event_seq,
+      lastEventSeq: Math.max(message.lastEventSeq ?? event.event_seq, event.event_seq)
     };
   } else {
     messageId = buildAssistantDraftId(turnId);
@@ -102,6 +108,8 @@ export function applyResponseCompletedSession(
       role: "assistant",
       content: nextContent,
       timestamp: event.timestamp,
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
       turnId,
       isDraft: false
     });
@@ -146,7 +154,9 @@ export function mergeAssistantDraft(
     messages[idx] = {
       ...messages[idx],
       content: `${messages[idx].content}${delta}`,
-      hasCanonicalDelta: messages[idx].hasCanonicalDelta || isCanonicalDelta
+      hasCanonicalDelta: messages[idx].hasCanonicalDelta || isCanonicalDelta,
+      startEventSeq: messages[idx].startEventSeq ?? event.event_seq,
+      lastEventSeq: Math.max(messages[idx].lastEventSeq ?? event.event_seq, event.event_seq)
     };
     return;
   }
@@ -156,6 +166,8 @@ export function mergeAssistantDraft(
     role: "assistant",
     content: delta,
     timestamp,
+    startEventSeq: event.event_seq,
+    lastEventSeq: event.event_seq,
     turnId,
     isDraft: true,
     hasCanonicalDelta: isCanonicalDelta
@@ -180,7 +192,9 @@ export function appendReasoningDelta(
       content: delta,
       collapsed: true,
       startedAt: timestamp,
-      closed: false
+      closed: false,
+      startEventSeq: eventSeq,
+      lastEventSeq: eventSeq
     };
     messages.push({
       id: crypto.randomUUID(),
@@ -188,6 +202,8 @@ export function appendReasoningDelta(
       role: "assistant",
       content: "",
       timestamp,
+      startEventSeq: eventSeq,
+      lastEventSeq: eventSeq,
       turnId,
       isDraft: true,
       reasoningBlocks: [block]
@@ -200,7 +216,8 @@ export function appendReasoningDelta(
   if (openIdx >= 0) {
     blocks[openIdx] = {
       ...blocks[openIdx],
-      content: `${blocks[openIdx].content}${delta}`
+      content: `${blocks[openIdx].content}${delta}`,
+      lastEventSeq: Math.max(blocks[openIdx].lastEventSeq ?? eventSeq, eventSeq)
     };
   } else {
     blocks.push({
@@ -209,17 +226,21 @@ export function appendReasoningDelta(
       content: delta,
       collapsed: true,
       startedAt: timestamp,
-      closed: false
+      closed: false,
+      startEventSeq: eventSeq,
+      lastEventSeq: eventSeq
     });
   }
   messages[idx] = {
     ...message,
     timestamp,
+    startEventSeq: message.startEventSeq ?? eventSeq,
+    lastEventSeq: Math.max(message.lastEventSeq ?? eventSeq, eventSeq),
     reasoningBlocks: blocks
   };
 }
 
-export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string): void {
+export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string, eventSeq?: number): void {
   const idx = findAssistantMessageIndex(messages, turnId);
   if (idx < 0) {
     return;
@@ -235,7 +256,8 @@ export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string)
   }
   blocks[openIdx] = {
     ...blocks[openIdx],
-    closed: true
+    closed: true,
+    endEventSeq: blocks[openIdx].lastEventSeq ?? eventSeq
   };
   messages[idx] = {
     ...message,
@@ -243,7 +265,11 @@ export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string)
   };
 }
 
-export function closeOpenReasoningBlockInSession(session: ChatSession, turnId?: string): ChatSession {
+export function closeOpenReasoningBlockInSession(
+  session: ChatSession,
+  turnId?: string,
+  eventSeq?: number
+): ChatSession {
   if (!turnId) {
     return session;
   }
@@ -263,7 +289,8 @@ export function closeOpenReasoningBlockInSession(session: ChatSession, turnId?: 
   const nextBlocks = [...blocks];
   nextBlocks[openIdx] = {
     ...nextBlocks[openIdx],
-    closed: true
+    closed: true,
+    endEventSeq: nextBlocks[openIdx].lastEventSeq ?? eventSeq
   };
   const messages = [...session.messages];
   messages[idx] = {
@@ -309,6 +336,8 @@ export function finalizeAssistantMessageFallback(
     role: "assistant",
     content,
     timestamp,
+    startEventSeq: event.event_seq,
+    lastEventSeq: event.event_seq,
     turnId,
     isDraft: false
   });
@@ -336,7 +365,8 @@ export function sealAssistantMessage(
     messages[draftIdx] = {
       ...messages[draftIdx],
       isDraft: false,
-      timestamp
+      timestamp,
+      lastEventSeq: Math.max(messages[draftIdx].lastEventSeq ?? event.event_seq, event.event_seq)
     };
     return;
   }
@@ -364,6 +394,8 @@ export function sealAssistantMessage(
     role: "assistant",
     content,
     timestamp,
+    startEventSeq: event.event_seq,
+    lastEventSeq: event.event_seq,
     turnId,
     isDraft: false
   });

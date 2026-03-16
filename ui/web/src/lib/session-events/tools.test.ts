@@ -48,6 +48,9 @@ describe("session-events/tools", () => {
     expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
     expect(stepMessages[0].toolSteps?.[0].output).toBe("ok");
     expect(stepMessages[0].toolSteps?.[0].durationSec).toBe(1);
+    expect(stepMessages[0].toolSteps?.[0].startEventSeq).toBe(1);
+    expect(stepMessages[0].toolSteps?.[0].lastEventSeq).toBe(2);
+    expect(stepMessages[0].toolSteps?.[0].endEventSeq).toBe(2);
   });
 
   it("keeps different tool_call_id entries as separate cards even in same turn", () => {
@@ -148,6 +151,9 @@ describe("session-events/tools", () => {
     expect(steps).toHaveLength(1);
     expect(steps[0]?.status).toBe("success");
     expect(steps[0]?.durationSec).toBe(1);
+    expect(steps[0]?.startEventSeq).toBe(1);
+    expect(steps[0]?.lastEventSeq).toBe(2);
+    expect(steps[0]?.endEventSeq).toBe(2);
     expect(requested.pendingApprovals).toHaveLength(1);
     expect(requested.pendingApprovals[0]?.toolCallId).toBe("call_1");
     expect(resolved.pendingApprovals).toHaveLength(0);
@@ -276,5 +282,8 @@ describe("session-events/tools", () => {
     expect(stepMessages).toHaveLength(1);
     expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
     expect(stepMessages[0].toolSteps?.[0].output).toContain("succeeded=1");
+    expect(stepMessages[0].toolSteps?.[0].startEventSeq).toBe(1);
+    expect(stepMessages[0].toolSteps?.[0].lastEventSeq).toBe(2);
+    expect(stepMessages[0].toolSteps?.[0].endEventSeq).toBe(2);
   });
 });

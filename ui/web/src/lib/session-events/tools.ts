@@ -22,6 +22,8 @@ export function upsertToolStepMessage(messages: ChatMessage[], event: StreamEven
       role: "assistant",
       content: "",
       timestamp: event.timestamp,
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
       turnId: event.turn_id,
       isDraft: false,
       toolSteps: [nextStep]
@@ -34,6 +36,8 @@ export function upsertToolStepMessage(messages: ChatMessage[], event: StreamEven
   messages[messageIdx] = {
     ...prevMessage,
     timestamp: event.timestamp,
+    startEventSeq: prevMessage.startEventSeq ?? event.event_seq,
+    lastEventSeq: Math.max(prevMessage.lastEventSeq ?? event.event_seq, event.event_seq),
     toolSteps: [mergeToolStep(prevStep, nextStep)]
   };
 }
@@ -71,15 +75,29 @@ export function upsertToolBatchSummary(
     status,
     output,
     time: event.timestamp,
+    startEventSeq: event.event_seq,
+    lastEventSeq: event.event_seq,
+    endEventSeq: event.type === "tool_batch_completed" ? event.event_seq : undefined,
     startedAt: event.type === "tool_calls_proposed" ? event.timestamp : undefined,
     endedAt: event.type === "tool_batch_completed" ? event.timestamp : undefined,
     meta: event.payload
   };
   if (idx >= 0) {
+    const previous = messages[idx].toolSteps?.[0];
     messages[idx] = {
       ...messages[idx],
       timestamp: event.timestamp,
-      toolSteps: [withDuration({ ...(messages[idx].toolSteps?.[0] ?? step), ...step })]
+      startEventSeq: messages[idx].startEventSeq ?? event.event_seq,
+      lastEventSeq: Math.max(messages[idx].lastEventSeq ?? event.event_seq, event.event_seq),
+      toolSteps: [
+        withDuration({
+          ...(previous ?? step),
+          ...step,
+          startEventSeq: previous?.startEventSeq ?? step.startEventSeq,
+          lastEventSeq: Math.max(previous?.lastEventSeq ?? step.lastEventSeq ?? 0, step.lastEventSeq ?? 0),
+          endEventSeq: step.endEventSeq ?? previous?.endEventSeq
+        })
+      ]
     };
     return;
   }
@@ -89,6 +107,8 @@ export function upsertToolBatchSummary(
     role: "assistant",
     content: "",
     timestamp: event.timestamp,
+    startEventSeq: event.event_seq,
+    lastEventSeq: event.event_seq,
     turnId,
     isDraft: false,
     toolSteps: [step]
@@ -132,10 +152,19 @@ function mergeToolStep(previous: ToolStep | undefined, next: ToolStep): ToolStep
       approvalId: next.approvalId ?? previous.approvalId,
       toolCallId: next.toolCallId ?? previous.toolCallId,
       endedAt: next.endedAt ?? previous.endedAt,
+      startEventSeq: previous.startEventSeq,
+      lastEventSeq: Math.max(previous.lastEventSeq ?? next.lastEventSeq ?? 0, next.lastEventSeq ?? 0),
+      endEventSeq: next.endEventSeq ?? previous.endEventSeq,
       meta: next.meta
     });
   }
-  return withDuration({ ...previous, ...next });
+  return withDuration({
+    ...previous,
+    ...next,
+    startEventSeq: previous.startEventSeq,
+    lastEventSeq: Math.max(previous.lastEventSeq ?? next.lastEventSeq ?? 0, next.lastEventSeq ?? 0),
+    endEventSeq: next.endEventSeq ?? previous.endEventSeq
+  });
 }
 
 function resolveAggregationKey(event: StreamEvent): AggregateKey {
@@ -176,6 +205,8 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       subtitle: String(event.payload.target ?? ""),
       status: "running",
       time: event.timestamp,
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
       startedAt: event.timestamp,
       toolCallId: toolCallIdFromPayload(event),
       meta: event.payload
@@ -190,6 +221,9 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       status: "success",
       output: String(event.payload.output ?? ""),
       time: event.timestamp,
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
+      endEventSeq: event.event_seq,
       endedAt: event.timestamp,
       toolCallId: toolCallIdFromPayload(event),
       meta: event.payload
@@ -212,6 +246,8 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       status: "waiting",
       description,
       time: event.timestamp,
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
       startedAt: event.timestamp,
       approvalId: String(event.payload.approval_id ?? ""),
       toolCallId: toolCallIdFromPayload(event),
@@ -226,6 +262,9 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       title: String(event.payload.tool_name ?? "approval"),
       status: "success",
       time: event.timestamp,
+      startEventSeq: event.event_seq,
+      lastEventSeq: event.event_seq,
+      endEventSeq: event.event_seq,
       endedAt: event.timestamp,
       approvalId: String(event.payload.approval_id ?? ""),
       toolCallId: toolCallIdFromPayload(event),
@@ -240,6 +279,9 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
     status: "failed",
     output: String(event.payload.message ?? "turn failed"),
     time: event.timestamp,
+    startEventSeq: event.event_seq,
+    lastEventSeq: event.event_seq,
+    endEventSeq: event.event_seq,
     meta: event.payload
   };
 }

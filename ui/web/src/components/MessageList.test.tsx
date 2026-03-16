@@ -243,7 +243,7 @@ describe("MessageList", () => {
     expect(screen.getByText("你好！有什么我可以帮您的吗？")).toBeInTheDocument();
   });
 
-  it("renders reasoning blocks above assistant content and collapsed by default", async () => {
+  it("renders reasoning block as standalone timeline item and keeps collapsed by default", async () => {
     const user = userEvent.setup();
     const messages: ChatMessage[] = [
       {
@@ -253,6 +253,8 @@ describe("MessageList", () => {
         content: "这是最终正文",
         timestamp: "2026-01-01T00:00:00Z",
         turnId: "turn_1",
+        startEventSeq: 3,
+        lastEventSeq: 3,
         reasoningBlocks: [
           {
             blockId: "reasoning:turn_1:1",
@@ -260,7 +262,10 @@ describe("MessageList", () => {
             content: "先分析问题",
             collapsed: true,
             startedAt: "2026-01-01T00:00:00Z",
-            closed: true
+            closed: true,
+            startEventSeq: 1,
+            lastEventSeq: 1,
+            endEventSeq: 1
           }
         ]
       }
@@ -268,9 +273,10 @@ describe("MessageList", () => {
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
     const toggle = screen.getByRole("button", { name: /思考过程 1/ });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const toggleNode = toggle.closest(".reasoning-block");
+    expect(toggleNode).not.toBeNull();
     const contentNode = screen.getByText("这是最终正文");
-    const reasoningList = screen.getByTestId("reasoning-block-list");
-    expect(reasoningList.compareDocumentPosition(contentNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(toggleNode!.compareDocumentPosition(contentNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
@@ -293,7 +299,10 @@ describe("MessageList", () => {
             content: "第一段",
             collapsed: true,
             startedAt: "2026-01-01T00:00:00Z",
-            closed: true
+            closed: true,
+            startEventSeq: 1,
+            lastEventSeq: 1,
+            endEventSeq: 1
           },
           {
             blockId: "reasoning:turn_2:2",
@@ -301,7 +310,9 @@ describe("MessageList", () => {
             content: "第二段",
             collapsed: true,
             startedAt: "2026-01-01T00:00:01Z",
-            closed: false
+            closed: false,
+            startEventSeq: 2,
+            lastEventSeq: 2
           }
         ]
       }
@@ -311,22 +322,24 @@ describe("MessageList", () => {
     expect(screen.getByRole("button", { name: /思考过程 2/ })).toBeInTheDocument();
   });
 
-  it("renders messages in timestamp order even when input array order differs", () => {
+  it("renders timeline by event_seq order", () => {
     const messages: ChatMessage[] = [
       {
         id: "assistant_late",
         kind: "text",
         role: "assistant",
         content: "最终回答",
-        timestamp: "2026-01-01T00:00:03Z",
-        turnId: "turn_1"
+        timestamp: "2026-01-01T00:00:01Z",
+        turnId: "turn_1",
+        startEventSeq: 13,
+        lastEventSeq: 13
       },
       {
         id: "tool_mid",
         kind: "tool_steps",
         role: "assistant",
         content: "",
-        timestamp: "2026-01-01T00:00:02Z",
+        timestamp: "2026-01-01T00:00:10Z",
         turnId: "turn_1",
         toolSteps: [
           {
@@ -334,7 +347,41 @@ describe("MessageList", () => {
             type: "tool",
             title: "read_file",
             status: "success",
-            time: "2026-01-01T00:00:02Z"
+            time: "2026-01-01T00:00:10Z",
+            startEventSeq: 11,
+            lastEventSeq: 11,
+            endEventSeq: 11
+          }
+        ]
+      },
+      {
+        id: "assistant_reason",
+        kind: "text",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-01-01T00:00:09Z",
+        turnId: "turn_1",
+        reasoningBlocks: [
+          {
+            blockId: "reasoning:turn_1:10",
+            turnId: "turn_1",
+            content: "先思考",
+            collapsed: true,
+            startedAt: "2026-01-01T00:00:09Z",
+            closed: true,
+            startEventSeq: 10,
+            lastEventSeq: 10,
+            endEventSeq: 10
+          },
+          {
+            blockId: "reasoning:turn_1:12",
+            turnId: "turn_1",
+            content: "再思考",
+            collapsed: true,
+            startedAt: "2026-01-01T00:00:11Z",
+            closed: false,
+            startEventSeq: 12,
+            lastEventSeq: 12
           }
         ]
       },
@@ -343,17 +390,23 @@ describe("MessageList", () => {
         kind: "text",
         role: "user",
         content: "请读取 test.txt",
-        timestamp: "2026-01-01T00:00:01Z"
+        timestamp: "2026-01-01T00:00:02Z",
+        startEventSeq: 1,
+        lastEventSeq: 1
       }
     ];
 
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
 
     const userNode = screen.getByText("请读取 test.txt");
+    const reasoning1 = screen.getByRole("button", { name: /思考过程 1/ });
     const toolNode = screen.getByText("read_file");
+    const reasoning2 = screen.getByRole("button", { name: /思考过程 2/ });
     const assistantNode = screen.getByText("最终回答");
 
-    expect(userNode.compareDocumentPosition(toolNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(toolNode.compareDocumentPosition(assistantNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(userNode.compareDocumentPosition(reasoning1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reasoning1.compareDocumentPosition(toolNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(toolNode.compareDocumentPosition(reasoning2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reasoning2.compareDocumentPosition(assistantNode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

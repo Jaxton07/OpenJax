@@ -59,6 +59,8 @@ describe("session-events/reducer", () => {
     expect(delta2.messages).toHaveLength(1);
     expect(delta2.messages[0].kind).toBe("text");
     expect(delta2.messages[0].content).toBe("hello");
+    expect(delta2.messages[0].startEventSeq).toBe(1);
+    expect(delta2.messages[0].lastEventSeq).toBe(2);
   });
 
   it("supports v2 response_text_delta and response_completed aliases", () => {
@@ -199,5 +201,21 @@ describe("session-events/reducer", () => {
     });
     expect(next.connection).toBe("closed");
     expect(next.turnPhase).toBe("completed");
+  });
+
+  it("writes seq metadata when error message is emitted", () => {
+    const session = baseSession();
+    const next = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_err",
+      event_seq: 7,
+      timestamp: "2026-01-01T00:00:07Z",
+      type: "response_error",
+      payload: { message: "boom" }
+    });
+    const error = next.messages.find((message) => message.role === "error");
+    expect(error?.startEventSeq).toBe(7);
+    expect(error?.lastEventSeq).toBe(7);
   });
 });

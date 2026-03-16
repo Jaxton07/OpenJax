@@ -14,6 +14,9 @@ export interface ReasoningBlock {
   collapsed: boolean;
   startedAt: string;
   closed: boolean;
+  startEventSeq?: number;
+  lastEventSeq?: number;
+  endEventSeq?: number;
 }
 
 export interface ToolStep {
@@ -22,6 +25,9 @@ export interface ToolStep {
   title: string;
   status: ToolStepStatus;
   time: string;
+  startEventSeq?: number;
+  lastEventSeq?: number;
+  endEventSeq?: number;
   startedAt?: string;
   endedAt?: string;
   durationSec?: number;
@@ -41,6 +47,8 @@ export interface ChatMessage {
   role: MessageRole;
   content: string;
   timestamp: string;
+  startEventSeq?: number;
+  lastEventSeq?: number;
   turnId?: string;
   isDraft?: boolean;
   hasCanonicalDelta?: boolean;
