@@ -2,8 +2,7 @@
 
 ## SQLite 文件
 
-- 环境变量：`OPENJAX_GATEWAY_AUTH_DB_PATH`
-- 默认：`./.openjax/auth.db`
+- 路径：`~/.openjax/database/auth.db`
 
 ## 表结构
 
