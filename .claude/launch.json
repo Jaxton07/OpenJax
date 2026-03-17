@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Gateway (openjax-gateway)",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["run", "-p", "openjax-gateway"],
+      "port": 8765,
+      "url": "http://127.0.0.1:8765"
+    },
+    {
+      "name": "Web Frontend (Vite)",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd ui/web && pnpm dev --host 127.0.0.1 --port 5173"],
+      "port": 5173,
+      "url": "http://127.0.0.1:5173"
+    },
+    {
+      "name": "Full Dev Stack (Gateway + Web)",
+      "runtimeExecutable": "make",
+      "runtimeArgs": ["run-web-dev"],
+      "port": 5173,
+      "url": "http://127.0.0.1:5173"
+    }
+  ]
+}
