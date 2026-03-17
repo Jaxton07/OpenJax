@@ -11,6 +11,15 @@ use crate::app::{App, SubmitAction};
 use crate::approval::TuiApprovalHandler;
 use crate::tui::{DrawRequest, Tui};
 
+// Two-phase approval pattern:
+// Phase 1 — TuiApprovalHandler queues a minimal ApprovalRequest (from core's internal
+//   approval channel). We emit an ApprovalRequested event with empty optional fields
+//   (tool_name, risk_tags, sandbox_backend, etc.) to show the approval panel immediately.
+// Phase 2 — The gateway also forwards a richer ApprovalRequested event containing full
+//   metadata. reducer.rs deduplicates by request_id and merges the richer fields into
+//   the existing PendingApproval without creating a second state transition
+//   (see reducer.rs apply_core_event, dedup block).
+// This design lets the UI appear instantly while richer metadata arrives asynchronously.
 pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &TuiApprovalHandler) {
     let mut drained = 0usize;
     while let Some(request) = approval_handler.pop_request().await {

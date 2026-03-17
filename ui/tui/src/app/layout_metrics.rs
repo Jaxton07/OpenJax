@@ -28,7 +28,10 @@ pub struct BottomLayout {
 }
 
 impl App {
-    pub fn bottom_layout(&self, _width: u16) -> BottomLayout {
+    pub fn bottom_layout(
+        &self,
+        _width: u16, /* reserved: future width-aware input wrapping */
+    ) -> BottomLayout {
         let approval_rows = if self.state.pending_approval.is_some() {
             self.approval_panel_height()
         } else {
