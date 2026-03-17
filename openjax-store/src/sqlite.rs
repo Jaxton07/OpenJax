@@ -4,27 +4,36 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-use crate::error::now_rfc3339;
-use crate::persistence::repository::{ProviderRepository, SessionRepository};
-use crate::persistence::types::{
+use crate::repository::{ProviderRepository, SessionRepository};
+use crate::types::{
     ActiveProviderRecord, EventRecord, MessageRecord, ProviderRecord, SessionRecord,
 };
 
+fn now_rfc3339() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+/// Shared SQLite store for sessions, messages, events, and LLM provider config.
+/// This is the single source of truth for all persisted state in OpenJax.
 #[derive(Clone)]
-pub struct SqliteGatewayStore {
+pub struct SqliteStore {
     conn: Arc<Mutex<Connection>>,
 }
 
-impl SqliteGatewayStore {
+impl SqliteStore {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
-                .with_context(|| format!("create gateway db dir {}", parent.display()))?;
+                .with_context(|| format!("create store db dir {}", parent.display()))?;
         }
         let conn = Connection::open(path)
-            .with_context(|| format!("open gateway db {}", path.display()))?;
+            .with_context(|| format!("open store db {}", path.display()))?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -33,7 +42,7 @@ impl SqliteGatewayStore {
     }
 
     pub fn open_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory().context("open in-memory gateway db")?;
+        let conn = Connection::open_in_memory().context("open in-memory store db")?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -42,7 +51,7 @@ impl SqliteGatewayStore {
     }
 
     fn init_schema(&self) -> Result<()> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.execute_batch(
             r#"
             PRAGMA foreign_keys = ON;
@@ -111,7 +120,7 @@ impl SqliteGatewayStore {
             );
             "#,
         )
-        .context("init gateway schema")?;
+        .context("init store schema")?;
         Ok(())
     }
 
@@ -129,10 +138,10 @@ impl SqliteGatewayStore {
     }
 }
 
-impl SessionRepository for SqliteGatewayStore {
+impl SessionRepository for SqliteStore {
     fn create_session(&self, session_id: &str, title: Option<&str>) -> Result<SessionRecord> {
         {
-            let mut conn = self.conn.lock().expect("gateway db mutex poisoned");
+            let mut conn = self.conn.lock().expect("store db mutex poisoned");
             let tx = conn.transaction().context("begin create session tx")?;
             let now = now_rfc3339();
             tx.execute(
@@ -147,7 +156,7 @@ impl SessionRepository for SqliteGatewayStore {
     }
 
     fn get_session(&self, session_id: &str) -> Result<Option<SessionRecord>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.query_row(
             "SELECT session_id, title, created_at, updated_at FROM biz_sessions WHERE session_id = ?1",
             params![session_id],
@@ -165,7 +174,7 @@ impl SessionRepository for SqliteGatewayStore {
     }
 
     fn list_sessions(&self) -> Result<Vec<SessionRecord>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         let mut stmt = conn
             .prepare(
                 "SELECT session_id, title, created_at, updated_at FROM biz_sessions ORDER BY updated_at DESC",
@@ -197,7 +206,7 @@ impl SessionRepository for SqliteGatewayStore {
         content: &str,
     ) -> Result<MessageRecord> {
         let message_id = format!("msg_{}", Uuid::new_v4().simple());
-        let mut conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let mut conn = self.conn.lock().expect("store db mutex poisoned");
         let tx = conn.transaction().context("begin append message tx")?;
         let sequence = Self::next_message_sequence(&tx, session_id)?;
         let now = now_rfc3339();
@@ -225,7 +234,7 @@ impl SessionRepository for SqliteGatewayStore {
     }
 
     fn list_messages(&self, session_id: &str) -> Result<Vec<MessageRecord>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         let mut stmt = conn
             .prepare(
                 "SELECT message_id, session_id, turn_id, role, content, sequence, created_at
@@ -266,7 +275,7 @@ impl SessionRepository for SqliteGatewayStore {
         timestamp: &str,
         stream_source: &str,
     ) -> Result<EventRecord> {
-        let mut conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let mut conn = self.conn.lock().expect("store db mutex poisoned");
         let tx = conn.transaction().context("begin append event tx")?;
         let now = now_rfc3339();
         tx.execute(
@@ -308,27 +317,28 @@ impl SessionRepository for SqliteGatewayStore {
     }
 
     fn list_events(&self, session_id: &str, after_event_seq: Option<u64>) -> Result<Vec<EventRecord>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
-        let (sql, params_vec): (&str, Vec<rusqlite::types::Value>) = if let Some(after) = after_event_seq {
-            (
-                "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
-                 FROM biz_events
-                 WHERE session_id = ?1 AND event_seq > ?2
-                 ORDER BY event_seq ASC",
-                vec![
-                    rusqlite::types::Value::from(session_id.to_string()),
-                    rusqlite::types::Value::from(after as i64),
-                ],
-            )
-        } else {
-            (
-                "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
-                 FROM biz_events
-                 WHERE session_id = ?1
-                 ORDER BY event_seq ASC",
-                vec![rusqlite::types::Value::from(session_id.to_string())],
-            )
-        };
+        let conn = self.conn.lock().expect("store db mutex poisoned");
+        let (sql, params_vec): (&str, Vec<rusqlite::types::Value>) =
+            if let Some(after) = after_event_seq {
+                (
+                    "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
+                     FROM biz_events
+                     WHERE session_id = ?1 AND event_seq > ?2
+                     ORDER BY event_seq ASC",
+                    vec![
+                        rusqlite::types::Value::from(session_id.to_string()),
+                        rusqlite::types::Value::from(after as i64),
+                    ],
+                )
+            } else {
+                (
+                    "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
+                     FROM biz_events
+                     WHERE session_id = ?1
+                     ORDER BY event_seq ASC",
+                    vec![rusqlite::types::Value::from(session_id.to_string())],
+                )
+            };
         let mut stmt = conn
             .prepare(sql)
             .with_context(|| format!("prepare list events for session {}", session_id))?;
@@ -356,7 +366,7 @@ impl SessionRepository for SqliteGatewayStore {
     }
 
     fn last_event_seq(&self, session_id: &str) -> Result<Option<u64>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         let seq = conn
             .query_row(
                 "SELECT MAX(event_seq) FROM biz_events WHERE session_id = ?1",
@@ -366,12 +376,12 @@ impl SessionRepository for SqliteGatewayStore {
             .optional()
             .context("query last event seq")?
             .flatten()
-            .map(|value| value as u64);
+            .map(|v| v as u64);
         Ok(seq)
     }
 
     fn last_turn_seq_by_turn(&self, session_id: &str) -> Result<Vec<(String, u64)>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         let mut stmt = conn
             .prepare(
                 "SELECT turn_id, MAX(turn_seq)
@@ -395,7 +405,7 @@ impl SessionRepository for SqliteGatewayStore {
     }
 }
 
-impl ProviderRepository for SqliteGatewayStore {
+impl ProviderRepository for SqliteStore {
     fn create_provider(
         &self,
         provider_name: &str,
@@ -406,7 +416,7 @@ impl ProviderRepository for SqliteGatewayStore {
         let provider_id = format!("provider_{}", Uuid::new_v4().simple());
         let now = now_rfc3339();
         {
-            let conn = self.conn.lock().expect("gateway db mutex poisoned");
+            let conn = self.conn.lock().expect("store db mutex poisoned");
             conn.execute(
                 "INSERT INTO llm_providers (provider_id, provider_name, base_url, model_name, api_key, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
@@ -428,7 +438,7 @@ impl ProviderRepository for SqliteGatewayStore {
     ) -> Result<Option<ProviderRecord>> {
         let now = now_rfc3339();
         let changed = {
-            let conn = self.conn.lock().expect("gateway db mutex poisoned");
+            let conn = self.conn.lock().expect("store db mutex poisoned");
             let sql = if api_key.is_some() {
                 "UPDATE llm_providers
                  SET provider_name = ?1, base_url = ?2, model_name = ?3, api_key = ?4, updated_at = ?5
@@ -441,14 +451,7 @@ impl ProviderRepository for SqliteGatewayStore {
             if let Some(api_key) = api_key {
                 conn.execute(
                     sql,
-                    params![
-                        provider_name,
-                        base_url,
-                        model_name,
-                        api_key,
-                        now,
-                        provider_id
-                    ],
+                    params![provider_name, base_url, model_name, api_key, now, provider_id],
                 )
                 .with_context(|| format!("update provider {}", provider_id))?
             } else {
@@ -463,7 +466,7 @@ impl ProviderRepository for SqliteGatewayStore {
             return Ok(None);
         }
         {
-            let conn = self.conn.lock().expect("gateway db mutex poisoned");
+            let conn = self.conn.lock().expect("store db mutex poisoned");
             let now = now_rfc3339();
             conn.execute(
                 "UPDATE llm_runtime_settings
@@ -479,7 +482,7 @@ impl ProviderRepository for SqliteGatewayStore {
 
     fn delete_provider(&self, provider_id: &str) -> Result<bool> {
         let changed = {
-            let conn = self.conn.lock().expect("gateway db mutex poisoned");
+            let conn = self.conn.lock().expect("store db mutex poisoned");
             conn.execute(
                 "DELETE FROM llm_providers WHERE provider_id = ?1",
                 params![provider_id],
@@ -490,7 +493,7 @@ impl ProviderRepository for SqliteGatewayStore {
     }
 
     fn get_provider(&self, provider_id: &str) -> Result<Option<ProviderRecord>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.query_row(
             "SELECT provider_id, provider_name, base_url, model_name, api_key, created_at, updated_at
              FROM llm_providers
@@ -513,7 +516,7 @@ impl ProviderRepository for SqliteGatewayStore {
     }
 
     fn list_providers(&self) -> Result<Vec<ProviderRecord>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         let mut stmt = conn
             .prepare(
                 "SELECT provider_id, provider_name, base_url, model_name, api_key, created_at, updated_at
@@ -543,7 +546,7 @@ impl ProviderRepository for SqliteGatewayStore {
     }
 
     fn get_active_provider(&self) -> Result<Option<ActiveProviderRecord>> {
-        let conn = self.conn.lock().expect("gateway db mutex poisoned");
+        let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.query_row(
             "SELECT provider_id, model_name, updated_at
              FROM llm_runtime_settings
@@ -565,12 +568,12 @@ impl ProviderRepository for SqliteGatewayStore {
 
     fn set_active_provider(&self, provider_id: &str) -> Result<Option<ActiveProviderRecord>> {
         let provider = match self.get_provider(provider_id)? {
-            Some(provider) => provider,
+            Some(p) => p,
             None => return Ok(None),
         };
         let now = now_rfc3339();
         {
-            let conn = self.conn.lock().expect("gateway db mutex poisoned");
+            let conn = self.conn.lock().expect("store db mutex poisoned");
             conn.execute(
                 "INSERT INTO llm_runtime_settings (setting_key, provider_id, model_name, updated_at)
                  VALUES ('active_provider', ?1, ?2, ?3)
@@ -590,8 +593,8 @@ impl ProviderRepository for SqliteGatewayStore {
 mod tests {
     use super::*;
 
-    fn setup_store() -> SqliteGatewayStore {
-        SqliteGatewayStore::open_memory().expect("open in-memory store")
+    fn setup_store() -> SqliteStore {
+        SqliteStore::open_memory().expect("open in-memory store")
     }
 
     #[test]
@@ -631,26 +634,14 @@ mod tests {
             .expect("create session");
         store
             .append_event(
-                "sess_evt_1",
-                1,
-                0,
-                None,
-                "user_message",
-                r#"{"content":"hello"}"#,
-                "2026-01-01T00:00:01Z",
-                "synthetic",
+                "sess_evt_1", 1, 0, None, "user_message",
+                r#"{"content":"hello"}"#, "2026-01-01T00:00:01Z", "synthetic",
             )
             .expect("append event 1");
         store
             .append_event(
-                "sess_evt_1",
-                2,
-                1,
-                Some("turn_1"),
-                "response_started",
-                "{}",
-                "2026-01-01T00:00:02Z",
-                "model_live",
+                "sess_evt_1", 2, 1, Some("turn_1"), "response_started",
+                "{}", "2026-01-01T00:00:02Z", "model_live",
             )
             .expect("append event 2");
         let all = store.list_events("sess_evt_1", None).expect("list all");
@@ -668,51 +659,14 @@ mod tests {
     #[test]
     fn can_query_last_event_and_turn_sequences() {
         let store = setup_store();
-        store
-            .create_session("sess_evt_2", Some("events"))
-            .expect("create session");
-        store
-            .append_event(
-                "sess_evt_2",
-                10,
-                1,
-                Some("turn_1"),
-                "response_started",
-                "{}",
-                "2026-01-01T00:00:01Z",
-                "model_live",
-            )
-            .expect("append event 10");
-        store
-            .append_event(
-                "sess_evt_2",
-                11,
-                2,
-                Some("turn_1"),
-                "response_completed",
-                r#"{"content":"ok"}"#,
-                "2026-01-01T00:00:02Z",
-                "model_live",
-            )
-            .expect("append event 11");
-        store
-            .append_event(
-                "sess_evt_2",
-                12,
-                1,
-                Some("turn_2"),
-                "response_started",
-                "{}",
-                "2026-01-01T00:00:03Z",
-                "model_live",
-            )
-            .expect("append event 12");
+        store.create_session("sess_evt_2", Some("events")).expect("create session");
+        store.append_event("sess_evt_2", 10, 1, Some("turn_1"), "response_started", "{}", "2026-01-01T00:00:01Z", "model_live").expect("append 10");
+        store.append_event("sess_evt_2", 11, 2, Some("turn_1"), "response_completed", r#"{"content":"ok"}"#, "2026-01-01T00:00:02Z", "model_live").expect("append 11");
+        store.append_event("sess_evt_2", 12, 1, Some("turn_2"), "response_started", "{}", "2026-01-01T00:00:03Z", "model_live").expect("append 12");
 
         let last = store.last_event_seq("sess_evt_2").expect("last event seq");
         assert_eq!(last, Some(12));
-        let turn_seq = store
-            .last_turn_seq_by_turn("sess_evt_2")
-            .expect("turn seq by turn");
+        let turn_seq = store.last_turn_seq_by_turn("sess_evt_2").expect("turn seq by turn");
         assert!(turn_seq.contains(&(String::from("turn_1"), 2)));
         assert!(turn_seq.contains(&(String::from("turn_2"), 1)));
     }
@@ -720,126 +674,48 @@ mod tests {
     #[test]
     fn provider_name_has_unique_constraint() {
         let store = setup_store();
-        let _ = store
-            .create_provider(
-                "openai-main",
-                "https://api.openai.com/v1",
-                "gpt-4.1",
-                "sk-1",
-            )
-            .expect("create first provider");
-        let duplicate = store.create_provider(
-            "openai-main",
-            "https://api.openai.com/v1",
-            "gpt-4.1-mini",
-            "sk-2",
-        );
-        assert!(duplicate.is_err());
+        store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1", "sk-1").expect("create first");
+        let dup = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-2");
+        assert!(dup.is_err());
     }
 
     #[test]
     fn can_update_and_delete_provider() {
         let store = setup_store();
-        let created = store
-            .create_provider(
-                "glm-main",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4",
-                "key-a",
-            )
-            .expect("create provider");
-        let updated = store
-            .update_provider(
-                &created.provider_id,
-                "glm-main",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4-plus",
-                Some("key-b"),
-            )
-            .expect("update provider")
-            .expect("provider exists");
+        let created = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4", "key-a").expect("create");
+        let updated = store.update_provider(&created.provider_id, "glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4-plus", Some("key-b")).expect("update").expect("exists");
         assert_eq!(updated.model_name, "glm-4-plus");
         assert_eq!(updated.api_key, "key-b");
 
-        let updated_without_key = store
-            .update_provider(
-                &created.provider_id,
-                "glm-main-2",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4-air",
-                None,
-            )
-            .expect("update provider without key")
-            .expect("provider exists");
-        assert_eq!(updated_without_key.provider_name, "glm-main-2");
-        assert_eq!(updated_without_key.api_key, "key-b");
+        let updated2 = store.update_provider(&created.provider_id, "glm-main-2", "https://open.bigmodel.cn/api/paas/v4", "glm-4-air", None).expect("update no key").expect("exists");
+        assert_eq!(updated2.provider_name, "glm-main-2");
+        assert_eq!(updated2.api_key, "key-b");
 
-        let deleted = store
-            .delete_provider(&created.provider_id)
-            .expect("delete provider");
-        assert!(deleted);
-        let provider = store
-            .get_provider(&created.provider_id)
-            .expect("get provider after delete");
-        assert!(provider.is_none());
+        assert!(store.delete_provider(&created.provider_id).expect("delete"));
+        assert!(store.get_provider(&created.provider_id).expect("get after delete").is_none());
     }
 
     #[test]
     fn can_set_and_get_active_provider() {
         let store = setup_store();
-        let first = store
-            .create_provider(
-                "openai-main",
-                "https://api.openai.com/v1",
-                "gpt-4.1-mini",
-                "sk-1",
-            )
-            .expect("create first provider");
-        let second = store
-            .create_provider(
-                "glm-main",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4.7",
-                "sk-2",
-            )
-            .expect("create second provider");
+        let first = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-1").expect("create first");
+        let second = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4.7", "sk-2").expect("create second");
 
-        let selected = store
-            .set_active_provider(&second.provider_id)
-            .expect("set active provider")
-            .expect("active provider exists");
+        let selected = store.set_active_provider(&second.provider_id).expect("set active").expect("exists");
         assert_eq!(selected.provider_id, second.provider_id);
         assert_eq!(selected.model_name, "glm-4.7");
 
-        let loaded = store
-            .get_active_provider()
-            .expect("load active provider")
-            .expect("active provider exists");
+        let loaded = store.get_active_provider().expect("load active").expect("exists");
         assert_eq!(loaded.provider_id, second.provider_id);
 
-        let missing = store
-            .set_active_provider("provider_missing")
-            .expect("set missing provider");
-        assert!(missing.is_none());
-
-        let unchanged = store
-            .get_active_provider()
-            .expect("load active provider after missing")
-            .expect("active provider still exists");
+        assert!(store.set_active_provider("provider_missing").expect("set missing").is_none());
+        let unchanged = store.get_active_provider().expect("load after missing").expect("still exists");
         assert_eq!(unchanged.provider_id, second.provider_id);
 
-        store
-            .delete_provider(&second.provider_id)
-            .expect("delete active provider");
-        let cleared = store
-            .get_active_provider()
-            .expect("load active provider after delete");
-        assert!(cleared.is_none());
+        store.delete_provider(&second.provider_id).expect("delete active");
+        assert!(store.get_active_provider().expect("load after delete").is_none());
 
-        let selected_first = store
-            .set_active_provider(&first.provider_id)
-            .expect("reselect provider")
-            .expect("active provider exists");
-        assert_eq!(selected_first.provider_id, first.provider_id);
+        let reselect = store.set_active_provider(&first.provider_id).expect("reselect").expect("exists");
+        assert_eq!(reselect.provider_id, first.provider_id);
     }
 }

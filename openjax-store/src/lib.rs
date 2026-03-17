@@ -1,7 +1,7 @@
-pub mod repository;
-pub mod sqlite;
-pub mod types;
+mod repository;
+mod sqlite;
+mod types;
 
 pub use repository::{ProviderRepository, SessionRepository};
-pub use sqlite::SqliteGatewayStore;
+pub use sqlite::SqliteStore;
 pub use types::{ActiveProviderRecord, EventRecord, MessageRecord, ProviderRecord, SessionRecord};
