@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "openjax-protocol",
+  "openjax-store",
   "openjax-core",
   "openjaxd",
   "ui/tui",
@@ -29,7 +30,7 @@ toml = "0.8"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "local-time"] }
-time = { version = "0.3", features = ["local-offset", "macros"] }
+time = { version = "0.3", features = ["local-offset", "macros", "formatting"] }
 walkdir = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 tempfile = "3"

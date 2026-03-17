@@ -7,8 +7,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
 use openjax_core::{
-    Agent, ApprovalHandler, ApprovalRequest, Config, ModelConfig, ModelRoutingConfig,
-    OpenJaxPaths, ProviderModelConfig, approval_timeout_ms_from_env,
+    Agent, ApprovalHandler, ApprovalRequest, Config, OpenJaxPaths, approval_timeout_ms_from_env,
+    build_config_from_providers,
 };
 use openjax_protocol::Event;
 use serde::Serialize;
@@ -22,7 +22,7 @@ use crate::auth::load_api_keys_from_env;
 use crate::auth::{AuthConfig, AuthService};
 use crate::error::{ApiError, now_rfc3339};
 use crate::event_mapper::map_core_event_payload;
-use crate::persistence::{ProviderRepository, SessionRepository, SqliteGatewayStore};
+use openjax_store::{ProviderRepository, SessionRepository, SqliteStore};
 
 const DEFAULT_EVENT_REPLAY_LIMIT: usize = 1024;
 const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1024;
@@ -61,7 +61,7 @@ pub struct AppState {
     sessions: Arc<RwLock<HashMap<String, Arc<Mutex<SessionRuntime>>>>>,
     api_keys: Arc<HashSet<String>>,
     auth_service: Arc<AuthService>,
-    store: Arc<SqliteGatewayStore>,
+    store: Arc<SqliteStore>,
 }
 
 impl AppState {
@@ -81,7 +81,7 @@ impl AppState {
             AuthService::from_config(auth_config.clone())?
         };
         let db_path = gateway_db_path();
-        let store = Arc::new(SqliteGatewayStore::open(&db_path)?);
+        let store = Arc::new(SqliteStore::open(&db_path)?);
         migrate_providers_from_config_if_needed(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -93,7 +93,7 @@ impl AppState {
 
     pub fn new_with_api_keys_for_test(api_keys: HashSet<String>) -> Self {
         let auth_service = AuthService::for_test().expect("initialize test auth service");
-        let store = Arc::new(SqliteGatewayStore::open_memory().expect("initialize test store"));
+        let store = Arc::new(SqliteStore::open_memory().expect("initialize test store"));
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
@@ -160,14 +160,14 @@ impl AppState {
 
     pub fn list_persisted_sessions(
         &self,
-    ) -> Result<Vec<crate::persistence::SessionRecord>, ApiError> {
+    ) -> Result<Vec<openjax_store::SessionRecord>, ApiError> {
         self.store.list_sessions().map_err(map_store_error)
     }
 
     pub fn list_session_messages(
         &self,
         session_id: &str,
-    ) -> Result<Vec<crate::persistence::MessageRecord>, ApiError> {
+    ) -> Result<Vec<openjax_store::MessageRecord>, ApiError> {
         self.store
             .list_messages(session_id)
             .map_err(map_store_error)
@@ -177,7 +177,7 @@ impl AppState {
         &self,
         session_id: &str,
         after_event_seq: Option<u64>,
-    ) -> Result<Vec<crate::persistence::EventRecord>, ApiError> {
+    ) -> Result<Vec<openjax_store::EventRecord>, ApiError> {
         self.store
             .list_events(session_id, after_event_seq)
             .map_err(map_store_error)
@@ -214,20 +214,20 @@ impl AppState {
         Ok(())
     }
 
-    pub fn list_providers(&self) -> Result<Vec<crate::persistence::ProviderRecord>, ApiError> {
+    pub fn list_providers(&self) -> Result<Vec<openjax_store::ProviderRecord>, ApiError> {
         self.store.list_providers().map_err(map_store_error)
     }
 
     pub fn get_active_provider(
         &self,
-    ) -> Result<Option<crate::persistence::ActiveProviderRecord>, ApiError> {
+    ) -> Result<Option<openjax_store::ActiveProviderRecord>, ApiError> {
         self.store.get_active_provider().map_err(map_store_error)
     }
 
     pub fn set_active_provider(
         &self,
         provider_id: &str,
-    ) -> Result<Option<crate::persistence::ActiveProviderRecord>, ApiError> {
+    ) -> Result<Option<openjax_store::ActiveProviderRecord>, ApiError> {
         self.store
             .set_active_provider(provider_id)
             .map_err(map_store_error)
@@ -239,7 +239,7 @@ impl AppState {
         base_url: &str,
         model_name: &str,
         api_key: &str,
-    ) -> Result<crate::persistence::ProviderRecord, ApiError> {
+    ) -> Result<openjax_store::ProviderRecord, ApiError> {
         self.store
             .create_provider(provider_name, base_url, model_name, api_key)
             .map_err(map_store_error)
@@ -252,7 +252,7 @@ impl AppState {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
-    ) -> Result<Option<crate::persistence::ProviderRecord>, ApiError> {
+    ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         self.store
             .update_provider(provider_id, provider_name, base_url, model_name, api_key)
             .map_err(map_store_error)
@@ -488,134 +488,14 @@ fn map_store_error(err: anyhow::Error) -> ApiError {
     ApiError::internal(text)
 }
 
-fn normalize_model_id(raw: &str) -> String {
-    let normalized: String = raw
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    normalized.trim_matches('_').to_string()
-}
-
-fn provider_protocol(base_url: &str, provider_name: &str) -> &'static str {
-    let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
-    if marker.contains("anthropic_messages")
-        || marker.contains("protocol=anthropic")
-        || marker.contains("/v1/messages")
-    {
-        "anthropic_messages"
-    } else {
-        "chat_completions"
-    }
-}
-
-fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
-    let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
-    if marker.contains("anthropic") || marker.contains("claude") {
-        "anthropic"
-    } else if marker.contains("kimi") {
-        "kimi"
-    } else if marker.contains("glm") || marker.contains("bigmodel") {
-        "glm"
-    } else {
-        "openai"
-    }
-}
-
 fn build_runtime_config(
-    providers: Vec<crate::persistence::ProviderRecord>,
+    providers: Vec<openjax_store::ProviderRecord>,
     active_provider_id: Option<&str>,
 ) -> Config {
-    // Load non-model config (sandbox, agent, skills) from file.
-    // Model/provider config is exclusively managed via the WebUI and stored in the DB.
-    let mut config = Config::load();
-    config.model = None;
-
-    if providers.is_empty() {
-        return config;
-    }
-    let mut ordered_providers = providers;
-    if let Some(active_id) = active_provider_id
-        && let Some(index) = ordered_providers
-            .iter()
-            .position(|provider| provider.provider_id == active_id)
-    {
-        let selected = ordered_providers.remove(index);
-        ordered_providers.insert(0, selected);
-    }
-    let mut models = std::collections::HashMap::new();
-    let mut route_order = Vec::new();
-    for provider in ordered_providers {
-        let mut model_id = normalize_model_id(&provider.provider_name);
-        if model_id.is_empty() {
-            model_id = format!("provider_{}", provider.provider_id);
-        }
-        let mut dedup_index = 1usize;
-        while models.contains_key(&model_id) {
-            dedup_index += 1;
-            model_id = format!(
-                "{}_{}",
-                normalize_model_id(&provider.provider_name),
-                dedup_index
-            );
-        }
-        route_order.push(model_id.clone());
-        models.insert(
-            model_id,
-            ProviderModelConfig {
-                provider: Some(
-                    provider_vendor(&provider.base_url, &provider.provider_name).to_string(),
-                ),
-                protocol: Some(
-                    provider_protocol(&provider.base_url, &provider.provider_name).to_string(),
-                ),
-                model: Some(provider.model_name),
-                base_url: Some(provider.base_url),
-                api_key: Some(provider.api_key),
-                api_key_env: None,
-                anthropic_version: None,
-                thinking_budget_tokens: Some(2000),
-                supports_stream: Some(true),
-                supports_reasoning: Some(true),
-                supports_tool_call: Some(true),
-                supports_json_mode: Some(false),
-            },
-        );
-    }
-    let planner = route_order[0].clone();
-    let mut fallbacks = std::collections::HashMap::new();
-    for (index, model_id) in route_order.iter().enumerate() {
-        let list = route_order
-            .iter()
-            .skip(index + 1)
-            .cloned()
-            .collect::<Vec<String>>();
-        if !list.is_empty() {
-            fallbacks.insert(model_id.clone(), list);
-        }
-    }
-    config.model = Some(ModelConfig {
-        backend: None,
-        api_key: None,
-        base_url: None,
-        model: None,
-        models,
-        routing: Some(ModelRoutingConfig {
-            planner: Some(planner.clone()),
-            final_writer: Some(planner.clone()),
-            tool_reasoning: Some(planner),
-            fallbacks,
-        }),
-    });
-    config
+    build_config_from_providers(providers, active_provider_id)
 }
 
-fn migrate_providers_from_config_if_needed(store: &SqliteGatewayStore) {
+fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
     let existing = store.list_providers().unwrap_or_default();
     if !existing.is_empty() {
         return;
@@ -1050,6 +930,7 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openjax_core::provider_protocol;
     use std::collections::HashSet;
 
     #[test]

@@ -1,18 +1,9 @@
 use std::collections::HashMap;
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use openjax_store::{ProviderRecord, ProviderRepository, SqliteStore};
 
 use crate::config::{Config, ModelConfig, ModelRoutingConfig, ProviderModelConfig};
 use crate::paths::OpenJaxPaths;
-
-/// Minimal provider row read from the DB.
-struct ProviderRow {
-    provider_id: String,
-    provider_name: String,
-    base_url: String,
-    model_name: String,
-    api_key: String,
-}
 
 /// Load LLM provider config from the shared gateway DB and merge it with the
 /// non-model portions of the file-based config (sandbox / agent / skills).
@@ -35,63 +26,30 @@ fn gateway_db_path() -> Option<std::path::PathBuf> {
     db.exists().then_some(db)
 }
 
-fn read_db_providers() -> (Vec<ProviderRow>, Option<String>) {
+fn read_db_providers() -> (Vec<ProviderRecord>, Option<String>) {
     let db_path = match gateway_db_path() {
         Some(p) => p,
         None => return (Vec::new(), None),
     };
-    let conn = match Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
-        Ok(c) => c,
+    let store = match SqliteStore::open(&db_path) {
+        Ok(s) => s,
         Err(_) => return (Vec::new(), None),
     };
-    let providers = query_providers(&conn);
-    let active_id = query_active_provider_id(&conn);
+    let providers = store.list_providers().unwrap_or_default();
+    let active_id = store
+        .get_active_provider()
+        .ok()
+        .flatten()
+        .map(|r| r.provider_id);
     (providers, active_id)
 }
 
-fn query_providers(conn: &Connection) -> Vec<ProviderRow> {
-    let mut stmt = match conn.prepare(
-        "SELECT provider_id, provider_name, base_url, model_name, api_key \
-         FROM llm_providers \
-         ORDER BY created_at DESC",
-    ) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    stmt.query_map([], |row| {
-        Ok(ProviderRow {
-            provider_id: row.get(0)?,
-            provider_name: row.get(1)?,
-            base_url: row.get(2)?,
-            model_name: row.get(3)?,
-            api_key: row.get(4)?,
-        })
-    })
-    .ok()
-    .map(|rows| rows.flatten().collect())
-    .unwrap_or_default()
-}
-
-fn query_active_provider_id(conn: &Connection) -> Option<String> {
-    conn.query_row(
-        "SELECT provider_id \
-         FROM llm_runtime_settings \
-         WHERE setting_key = 'active_provider' \
-           AND provider_id IS NOT NULL",
-        [],
-        |row| row.get(0),
-    )
-    .optional()
-    .ok()
-    .flatten()
-}
-
 // ---------------------------------------------------------------------------
-// Config building (mirrors gateway's build_runtime_config)
+// Config building (canonical implementation shared with gateway/state.rs)
 // ---------------------------------------------------------------------------
 
-fn build_config_from_providers(
-    providers: Vec<ProviderRow>,
+pub fn build_config_from_providers(
+    providers: Vec<ProviderRecord>,
     active_provider_id: Option<&str>,
 ) -> Config {
     // sandbox / agent / skills still come from the config file; model section is DB-only.
@@ -128,12 +86,8 @@ fn build_config_from_providers(
         models.insert(
             model_id,
             ProviderModelConfig {
-                provider: Some(
-                    provider_vendor(&provider.base_url, &provider.provider_name).to_string(),
-                ),
-                protocol: Some(
-                    provider_protocol(&provider.base_url, &provider.provider_name).to_string(),
-                ),
+                provider: Some(provider_vendor(&provider.base_url, &provider.provider_name).to_string()),
+                protocol: Some(provider_protocol(&provider.base_url, &provider.provider_name).to_string()),
                 model: Some(provider.model_name),
                 base_url: Some(provider.base_url),
                 api_key: Some(provider.api_key),
@@ -174,10 +128,10 @@ fn build_config_from_providers(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Shared helpers — also used by gateway/state.rs to avoid duplication
 // ---------------------------------------------------------------------------
 
-fn normalize_model_id(raw: &str) -> String {
+pub fn normalize_model_id(raw: &str) -> String {
     let s: String = raw
         .chars()
         .map(|c| {
@@ -191,7 +145,7 @@ fn normalize_model_id(raw: &str) -> String {
     s.trim_matches('_').to_string()
 }
 
-fn provider_protocol(base_url: &str, provider_name: &str) -> &'static str {
+pub fn provider_protocol(base_url: &str, provider_name: &str) -> &'static str {
     let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
     if marker.contains("anthropic_messages")
         || marker.contains("protocol=anthropic")
@@ -203,7 +157,7 @@ fn provider_protocol(base_url: &str, provider_name: &str) -> &'static str {
     }
 }
 
-fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
+pub fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
     let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
     if marker.contains("anthropic") || marker.contains("claude") {
         "anthropic"
