@@ -63,17 +63,28 @@ OpenJax prioritizes secure, controllable, and lightweight automation, not just a
 
 ### Recommended for new users: Web UI
 
+**1. Install**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
-export PATH="$HOME/.local/openjax/bin:$PATH"
-export OPENAI_API_KEY="<your_api_key>"
+```
+
+**2. Reload PATH**
+```bash
+source ~/.zshrc   # or restart your terminal
+```
+
+**3. Start gateway**
+```bash
 openjax-gateway
 ```
 
 Then open `http://127.0.0.1:8765` in your browser.
-If no API key env is configured, gateway will print a generated owner key in the terminal.
-Use that key on the `/login` page. Web exchanges owner key for access/refresh tokens and does not persist owner key locally.
-For local web development (`make run-web-dev`), the frontend runs at `http://127.0.0.1:5173`.
+
+The install script automatically adds `~/.local/openjax/bin` to your PATH via `~/.zshrc` (or `~/.bashrc`). Pass `--no-modify-path` to skip this.
+
+Gateway will print a generated owner key on first launch. Use that key on the `/login` page — the Web UI exchanges it for access/refresh tokens and does not persist the owner key locally.
+
+LLM providers and API keys are configured through the Web UI settings page. For local web development (`make run-web-dev`), the frontend runs at `http://127.0.0.1:5173`.
 
 ### Optional: Rust TUI
 
@@ -122,10 +133,9 @@ Or install directly from GitHub Release:
 curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
 ```
 
-Add to `PATH` and launch:
+Launch after install (PATH is set automatically; restart terminal or `source ~/.zshrc` first):
 
 ```bash
-export PATH="$HOME/.local/openjax/bin:$PATH"
 tui_next
 ```
 
@@ -141,18 +151,20 @@ For Linux/macOS package commands and full deployment flow, see [docs/deployment.
 
 ## Configuration
 
+LLM providers and API keys are primarily configured through the **Web UI settings page** after starting `openjax-gateway`.
+
+On first launch, OpenJax auto-generates a config template at `~/.openjax/config.toml`. This file supports multi-model routing with per-model API keys and fallback chains — edit it directly for advanced setups.
+
+The following environment variables override the config file at runtime:
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENJAX_MODEL` | Model backend | `gpt-4.1-mini` |
-| `OPENAI_API_KEY` | OpenAI API key | - |
-| `OPENJAX_KIMI_API_KEY` | Kimi API key | - |
-| `OPENJAX_GLM_API_KEY` | GLM API key | - |
-| `OPENJAX_ANTHROPIC_API_KEY` | Claude API key | - |
+| `OPENAI_API_KEY` | OpenAI API key override | - |
+| `OPENJAX_KIMI_API_KEY` | Kimi API key override | - |
+| `OPENJAX_GLM_API_KEY` | GLM API key override | - |
+| `OPENJAX_ANTHROPIC_API_KEY` | Claude API key override | - |
 | `OPENJAX_APPROVAL_POLICY` | Approval level | `on_request` |
 | `OPENJAX_SANDBOX_MODE` | Sandbox mode | `workspace_write` |
-
-If no config file exists, OpenJax auto-generates a template at:
-- `~/.openjax/config.toml`
 
 ## Architecture
 

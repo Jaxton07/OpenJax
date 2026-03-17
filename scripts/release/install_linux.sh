@@ -3,15 +3,17 @@ set -euo pipefail
 
 PREFIX="${HOME}/.local/openjax"
 ASSUME_YES=0
+NO_MODIFY_PATH=0
 
 usage() {
   cat <<USAGE
-Usage: ./install.sh [--prefix <path>] [-y]
+Usage: ./install.sh [--prefix <path>] [-y] [--no-modify-path]
 
 Options:
-  --prefix <path>   Install prefix (default: ~/.local/openjax)
-  -y, --yes         Skip confirmation prompt
-  -h, --help        Show this help
+  --prefix <path>     Install prefix (default: ~/.local/openjax)
+  -y, --yes           Skip confirmation prompt
+  --no-modify-path    Do not modify shell rc file (PATH must be set manually)
+  -h, --help          Show this help
 USAGE
 }
 
@@ -23,6 +25,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -y|--yes)
       ASSUME_YES=1
+      shift
+      ;;
+    --no-modify-path)
+      NO_MODIFY_PATH=1
       shift
       ;;
     -h|--help)
@@ -74,15 +80,45 @@ chmod +x "${PREFIX}/bin/tui_next" "${PREFIX}/bin/openjaxd" "${PREFIX}/bin/openja
 
 echo "[install] done: ${PREFIX}/bin"
 
-case ":${PATH}:" in
-  *":${PREFIX}/bin:"*)
-    echo "[install] PATH already includes ${PREFIX}/bin"
-    ;;
-  *)
-    echo "[install] add to PATH if needed:"
-    echo "  export PATH=\"${PREFIX}/bin:\$PATH\""
-    ;;
-esac
+_write_path_to_rc() {
+  local bin_dir="$1"
+  local shell_name
+  shell_name="$(basename "${SHELL:-}")"
+  local rc_file=""
+  case "$shell_name" in
+    zsh)  rc_file="${HOME}/.zshrc" ;;
+    bash) rc_file="${HOME}/.bashrc" ;;
+  esac
+
+  if [[ -z "$rc_file" ]]; then
+    echo "[install] shell '${shell_name}' not recognized; add to PATH manually:"
+    echo "  export PATH=\"${bin_dir}:\$PATH\""
+    return
+  fi
+
+  if grep -qF "$bin_dir" "$rc_file" 2>/dev/null; then
+    echo "[install] PATH entry already present in ${rc_file}"
+    return
+  fi
+
+  printf '\n# OpenJax\nexport PATH="%s:$PATH"\n' "$bin_dir" >> "$rc_file"
+  echo "[install] added PATH entry to ${rc_file}"
+  echo "[install] run: source ${rc_file}  (or restart your terminal)"
+}
+
+if [[ "$NO_MODIFY_PATH" -eq 1 ]]; then
+  case ":${PATH}:" in
+    *":${PREFIX}/bin:"*)
+      echo "[install] PATH already includes ${PREFIX}/bin"
+      ;;
+    *)
+      echo "[install] add to PATH manually:"
+      echo "  export PATH=\"${PREFIX}/bin:\$PATH\""
+      ;;
+  esac
+else
+  _write_path_to_rc "${PREFIX}/bin"
+fi
 
 echo "[install] run checks:"
 echo "  ${PREFIX}/bin/tui_next --help"
