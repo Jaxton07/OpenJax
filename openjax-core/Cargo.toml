@@ -27,3 +27,4 @@ tempfile.workspace = true
 pretty_assertions.workspace = true
 which.workspace = true
 sysinfo.workspace = true
+rusqlite.workspace = true

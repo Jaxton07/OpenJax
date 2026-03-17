@@ -5,6 +5,7 @@ pub mod dispatcher;
 mod logger;
 mod model;
 mod paths;
+mod provider_store;
 pub mod sandbox;
 pub mod skills;
 pub mod streaming;
@@ -30,6 +31,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 pub use model::build_model_client;
 pub use model::build_model_client_with_config;
+pub use provider_store::load_runtime_config;
 pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
 

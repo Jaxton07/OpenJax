@@ -1137,6 +1137,7 @@ dependencies = [
  "openjax-protocol",
  "pretty_assertions",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "serde_yaml",

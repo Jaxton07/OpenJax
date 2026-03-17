@@ -531,7 +531,11 @@ fn build_runtime_config(
     providers: Vec<crate::persistence::ProviderRecord>,
     active_provider_id: Option<&str>,
 ) -> Config {
+    // Load non-model config (sandbox, agent, skills) from file.
+    // Model/provider config is exclusively managed via the WebUI and stored in the DB.
     let mut config = Config::load();
+    config.model = None;
+
     if providers.is_empty() {
         return config;
     }
