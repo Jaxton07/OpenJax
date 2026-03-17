@@ -228,12 +228,6 @@
   min-height: 0;
 }
 
-.chat-banners {
-  display: grid;
-  gap: 8px;
-  min-height: 0;
-}
-
 .chat-header {
   display: flex;
   justify-content: space-between;
@@ -252,6 +246,12 @@
   font-weight: 540;
 }
 
+.chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .chat-status {
   color: var(--text-subtle);
   border: 1px solid var(--border);
@@ -260,20 +260,86 @@
   font-size: 12px;
 }
 
-.banner {
-  border-radius: 12px;
-  padding: 10px 12px;
+.header-settings-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #555;
+  transition: background-color 0.16s ease;
 }
 
-.banner.error {
+.header-settings-btn:hover {
+  background: #f1f3f6;
+}
+
+.header-settings-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: #444;
+}
+
+/* Toast Banner */
+.chat-banners {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast-banner {
+  pointer-events: auto;
+  max-width: 480px;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  position: relative;
+}
+
+.toast-banner__message {
+  display: block;
+  padding: 10px 14px 16px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.toast-banner__progress-track {
+  height: 3px;
+  background: rgba(0, 0, 0, 0.08);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+.toast-banner__progress-bar {
+  height: 100%;
+}
+
+.toast-banner--error {
   background: #fce8e8;
   color: #9d1010;
 }
 
-.banner.info {
+.toast-banner--error .toast-banner__progress-bar {
+  background: #c0392b;
+}
+
+.toast-banner--info {
   background: #ebf3ff;
   color: #1c4ea3;
+}
+
+.toast-banner--info .toast-banner__progress-bar {
+  background: #3b82f6;
 }
 
 .primary {

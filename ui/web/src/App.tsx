@@ -4,8 +4,9 @@ import LoginPage from "./components/LoginPage";
 import MessageList from "./components/MessageList";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
+import ToastBanner from "./components/ToastBanner";
 import { useChatApp } from "./hooks/useChatApp";
-import { SidebarToggleIcon } from "./pic/icon";
+import { SettingsIcon, SidebarToggleIcon } from "./pic/icon";
 import type { AppSettings } from "./types/gateway";
 
 type AppRoute = "/login" | "/chat";
@@ -140,7 +141,6 @@ export default function App() {
         collapsed={sidebarCollapsed}
         onSelectSession={switchSession}
         onDeleteSession={deleteSession}
-        onOpenSettings={() => setSettingsOpen(true)}
         onManageSessions={() => void manageAuthSessions()}
         onLogout={() => {
           void logout();
@@ -161,19 +161,35 @@ export default function App() {
             </button>
             <h1>OpenJax</h1>
           </div>
-          <div className="chat-status">{activeSession?.connection ?? "idle"}</div>
+          <div className="chat-header-right">
+            <button
+              className="header-settings-btn"
+              onClick={() => setSettingsOpen(true)}
+              title="设置"
+              aria-label="打开设置"
+            >
+              <SettingsIcon aria-hidden="true" />
+            </button>
+            <div className="chat-status">{activeSession?.connection ?? "idle"}</div>
+          </div>
         </header>
 
         <div className="chat-banners">
           {state.globalError ? (
-            <div className="banner error" onClick={dismissGlobalError}>
-              {state.globalError}
-            </div>
+            <ToastBanner
+              message={state.globalError}
+              variant="error"
+              duration={6000}
+              onDismiss={dismissGlobalError}
+            />
           ) : null}
           {state.infoToast ? (
-            <div className="banner info" onClick={dismissToast}>
-              {state.infoToast}
-            </div>
+            <ToastBanner
+              message={state.infoToast}
+              variant="info"
+              duration={4000}
+              onDismiss={dismissToast}
+            />
           ) : null}
         </div>
 

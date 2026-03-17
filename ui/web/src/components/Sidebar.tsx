@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SettingsIcon, TrashIcon } from "../pic/icon";
+import { TrashIcon } from "../pic/icon";
 import type { ChatSession } from "../types/chat";
 
 interface SidebarProps {
@@ -8,7 +8,6 @@ interface SidebarProps {
   collapsed: boolean;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => Promise<void> | void;
-  onOpenSettings: () => void;
   onManageSessions: () => void;
   onLogout: () => void;
 }
@@ -62,12 +61,6 @@ export default function Sidebar(props: SidebarProps) {
         {props.sessions.length === 0 ? <div className="history-empty">暂无历史对话</div> : null}
       </div>
       <div className="sidebar-bottom">
-        <button className="settings-btn" onClick={props.onOpenSettings}>
-          <span className="btn-icon" aria-hidden="true">
-            <SettingsIcon />
-          </span>
-          <span>设置</span>
-        </button>
         <button className="settings-btn" onClick={props.onManageSessions}>
           <span>会话管理</span>
         </button>
