@@ -187,13 +187,23 @@
 }
 
 .reasoning-block-content {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
   margin: 0;
   color: var(--ink-3);
   font-size: 13px;
   font-style: italic;
   line-height: 1.7;
+}
+
+.reasoning-block-content .markstream-react {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+}
+
+.reasoning-block-content .markstream-react pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .tool-step-list {

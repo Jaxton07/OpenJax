@@ -1135,6 +1135,7 @@ dependencies = [
  "async-trait",
  "dirs",
  "openjax-protocol",
+ "openjax-store",
  "pretty_assertions",
  "reqwest",
  "serde",
@@ -1167,6 +1168,7 @@ dependencies = [
  "hex",
  "openjax-core",
  "openjax-protocol",
+ "openjax-store",
  "rand 0.8.5",
  "rusqlite",
  "serde",
@@ -1189,18 +1191,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "openjax-store"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "rusqlite",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "openjaxd"
 version = "0.2.11"
 dependencies = [
  "anyhow",
- "async-trait",
- "openjax-core",
- "openjax-protocol",
- "serde",
+ "openjax-gateway",
  "serde_json",
  "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]

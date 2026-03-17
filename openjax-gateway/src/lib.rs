@@ -4,11 +4,12 @@ mod error;
 mod event_mapper;
 mod handlers;
 mod middleware;
-pub mod persistence;
 pub mod state;
+pub mod stdio;
 
 pub use auth::{ApiKeyConfig, ApiKeySource, load_api_keys};
 pub use state::AppState;
+pub use stdio::run_stdio;
 
 use std::path::PathBuf;
 

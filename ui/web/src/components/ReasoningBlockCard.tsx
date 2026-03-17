@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import MarkdownRender from "markstream-react";
+import { sanitizeMarkdownContent } from "../lib/markdown";
 import type { ReasoningBlock } from "../types/chat";
 
 interface ReasoningBlockCardProps {
@@ -70,7 +72,14 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
         </svg>
       </div>
       <div className="reasoning-block-body">
-        <div className="reasoning-block-content">{block.content}</div>
+        <div className="reasoning-block-content">
+          <MarkdownRender
+            content={sanitizeMarkdownContent(block.content)}
+            final={block.closed}
+            batchRendering={false}
+            deferNodesUntilVisible={false}
+          />
+        </div>
       </div>
     </div>
   );

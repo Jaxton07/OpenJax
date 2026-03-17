@@ -8,6 +8,7 @@ import type { ChatMessage } from "../types/chat";
 describe("MessageList", () => {
   afterEach(() => {
     delete (globalThis as { OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string }).OPENJAX_WEB_ASSISTANT_RENDER_MODE;
+    vi.unstubAllEnvs();
     streamRenderStore.__dangerousResetForTests();
   });
 
@@ -16,9 +17,7 @@ describe("MessageList", () => {
     expect(screen.getByText("你好，准备好开始了吗？")).toBeInTheDocument();
   });
 
-  it("renders assistant markdown content", () => {
-    (globalThis as { OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string }).OPENJAX_WEB_ASSISTANT_RENDER_MODE =
-      "markdown";
+  it("renders assistant markdown content by default", () => {
     const messages: ChatMessage[] = [
       {
         id: "m1",
@@ -34,7 +33,9 @@ describe("MessageList", () => {
     expect(screen.getByText("const x = 1")).toBeInTheDocument();
   });
 
-  it("renders assistant text mode by default", () => {
+  it("renders assistant text mode when explicitly configured", () => {
+    (globalThis as { OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string }).OPENJAX_WEB_ASSISTANT_RENDER_MODE =
+      "text";
     const messages: ChatMessage[] = [
       {
         id: "m1",
@@ -46,6 +47,22 @@ describe("MessageList", () => {
     ];
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
     expect(screen.getByText((content) => content.includes("## Hello") && content.includes("**bold**"))).toBeInTheDocument();
+  });
+
+  it("falls back to markdown when render mode is unknown", () => {
+    (globalThis as { OPENJAX_WEB_ASSISTANT_RENDER_MODE?: string }).OPENJAX_WEB_ASSISTANT_RENDER_MODE =
+      "something-else";
+    const messages: ChatMessage[] = [
+      {
+        id: "m1",
+        kind: "text",
+        role: "assistant",
+        content: "## Unknown mode still markdown",
+        timestamp: "2026-01-01T00:00:00Z"
+      }
+    ];
+    render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
+    expect(screen.getByRole("heading", { name: "Unknown mode still markdown" })).toBeInTheDocument();
   });
 
   it("renders tool steps when kind is tool_steps", () => {
@@ -217,20 +234,20 @@ describe("MessageList", () => {
     closestSpy.mockRestore();
   });
 
-  it("prefers runtime streaming content for assistant draft", () => {
+  it("prefers runtime streaming markdown content for assistant draft", () => {
     const messages: ChatMessage[] = [
       {
         id: "m1",
         kind: "text",
         role: "assistant",
-        content: "你有什",
+        content: "```ts\nconst",
         timestamp: "2026-01-01T00:00:00Z",
         turnId: "turn_1",
         isDraft: true
       }
     ];
     act(() => {
-      streamRenderStore.start("sess_1", "turn_1", "m1", 2, "你好！有什么我可以帮您的吗？");
+      streamRenderStore.start("sess_1", "turn_1", "m1", 2, "```ts\nconst greeting = 'hello'");
     });
     render(
       <MessageList
@@ -240,7 +257,24 @@ describe("MessageList", () => {
         onResolveApproval={() => {}}
       />
     );
-    expect(screen.getByText("你好！有什么我可以帮您的吗？")).toBeInTheDocument();
+    expect(screen.getByText("const greeting = 'hello'")).toBeInTheDocument();
+  });
+
+  it("does not execute html script in assistant markdown", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m_html",
+        kind: "text",
+        role: "assistant",
+        content: "safe<script>alert('xss')</script>text",
+        timestamp: "2026-01-01T00:00:00Z"
+      }
+    ];
+    const { container } = render(
+      <MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />
+    );
+    expect(container.querySelector("script")).toBeNull();
+    expect(screen.getByText((content) => content.includes("safe") && content.includes("text"))).toBeInTheDocument();
   });
 
   it("renders reasoning block as standalone timeline item and keeps collapsed by default", async () => {
@@ -259,7 +293,7 @@ describe("MessageList", () => {
           {
             blockId: "reasoning:turn_1:1",
             turnId: "turn_1",
-            content: "先分析问题",
+            content: "## 推理标题\n\n先分析问题",
             collapsed: true,
             startedAt: "2026-01-01T00:00:00Z",
             closed: true,
@@ -280,6 +314,7 @@ describe("MessageList", () => {
 
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("heading", { name: "推理标题" })).toBeInTheDocument();
     expect(screen.getByText("先分析问题")).toBeInTheDocument();
   });
 

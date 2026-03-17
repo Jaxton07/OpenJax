@@ -130,6 +130,14 @@ ui/web/
   - 数据来源：`reasoning_delta`。
   - 分段规则：收到 `reasoning_delta` 时追加到当前未关闭段；遇到 `response_text_delta` / tool 事件 / completed / error / turn_completed 关闭当前段；后续 reasoning 自动新开段。
   - 展示规则：每段一个独立时间线卡片，默认折叠，可与 tool 卡片按事件顺序交错显示。
+- Markdown 渲染策略：
+  - assistant 正文默认使用 `markstream-react` 渲染。
+  - reasoning 展开内容使用 `markstream-react` 渲染，支持流式未完成状态。
+  - 渲染前会对原始 HTML 标签做转义，避免脚本注入执行。
+  - 可通过 `OPENJAX_WEB_ASSISTANT_RENDER_MODE=text`（或 `VITE_OPENJAX_WEB_ASSISTANT_RENDER_MODE=text`）回退为纯文本正文渲染。
+  - 其他取值（含未配置）默认按 markdown 处理。
+- 流式 Markdown 注意事项：
+  - 在流式过程中，未闭合代码块/列表属于正常中间态，最终 `response_completed` 后会收敛为完整结构。
 - 目前 reducer 保留 `role=tool` 文本双写路径（过渡用）。
 - 旧 `assistant + toolSteps` 结构不再兼容，渲染按 `kind` 判定。
 

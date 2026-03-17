@@ -860,7 +860,7 @@ fn publish_event_for_session(state: &AppState, session: &mut crate::state::Sessi
     session.publish_event(event);
 }
 
-fn to_provider_item(provider: crate::persistence::ProviderRecord) -> ProviderItem {
+fn to_provider_item(provider: openjax_store::ProviderRecord) -> ProviderItem {
     ProviderItem {
         provider_id: provider.provider_id,
         provider_name: provider.provider_name,
@@ -872,7 +872,7 @@ fn to_provider_item(provider: crate::persistence::ProviderRecord) -> ProviderIte
     }
 }
 
-fn to_active_provider_item(active: crate::persistence::ActiveProviderRecord) -> ActiveProviderItem {
+fn to_active_provider_item(active: openjax_store::ActiveProviderRecord) -> ActiveProviderItem {
     ActiveProviderItem {
         provider_id: active.provider_id,
         model_name: active.model_name,

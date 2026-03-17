@@ -23,6 +23,7 @@ time.workspace = true
 walkdir.workspace = true
 uuid.workspace = true
 openjax-protocol = { path = "../openjax-protocol" }
+openjax-store = { path = "../openjax-store" }
 tempfile.workspace = true
 pretty_assertions.workspace = true
 which.workspace = true

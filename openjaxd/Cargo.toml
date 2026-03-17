@@ -6,11 +6,8 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-async-trait.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 tokio.workspace = true
-tracing.workspace = true
-uuid.workspace = true
-openjax-core = { path = "../openjax-core" }
-openjax-protocol = { path = "../openjax-protocol" }
+openjax-gateway = { path = "../openjax-gateway" }
+
+[dev-dependencies]
+serde_json.workspace = true

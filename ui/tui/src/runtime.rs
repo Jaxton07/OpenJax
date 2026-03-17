@@ -8,7 +8,7 @@ use crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use openjax_core::{Agent, Config, init_split_logger};
+use openjax_core::{Agent, load_runtime_config, init_split_logger};
 use openjax_protocol::Op;
 use scopeguard::guard;
 use tokio::sync::Mutex;
@@ -33,7 +33,7 @@ pub async fn run() -> anyhow::Result<()> {
         let _ = disable_raw_mode();
     });
 
-    let config = Config::load();
+    let config = load_runtime_config();
     let mut agent = Agent::with_config(config);
     let approval_handler = Arc::new(TuiApprovalHandler::new());
     agent.set_approval_handler(approval_handler.clone());
