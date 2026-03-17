@@ -40,40 +40,34 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
     <div
       className={blockClass}
       data-testid="reasoning-block"
-      onClick={() => !isActive && setCollapsed((prev) => !prev)}
-      role={isActive ? undefined : "button"}
-      aria-expanded={isActive ? undefined : !collapsed}
-      tabIndex={isActive ? undefined : 0}
-      onKeyDown={
-        isActive
-          ? undefined
-          : (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setCollapsed((prev) => !prev);
-              }
-            }
-      }
+      onClick={() => setCollapsed((prev) => !prev)}
+      role="button"
+      aria-expanded={!collapsed}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setCollapsed((prev) => !prev);
+        }
+      }}
     >
       <div className="reasoning-block-header">
         <span className="reasoning-block-label">思考过程</span>
         <span className="reasoning-block-dur">{duration}</span>
-        {!isActive && (
-          <svg
-            className="reasoning-block-chevron"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="18 15 12 9 6 15" />
-          </svg>
-        )}
+        <svg
+          className="reasoning-block-chevron"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="18 15 12 9 6 15" />
+        </svg>
       </div>
       <div className="reasoning-block-body">
         <div className="reasoning-block-content">{block.content}</div>
