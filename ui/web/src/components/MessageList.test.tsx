@@ -100,8 +100,8 @@ describe("MessageList", () => {
       />
     );
     expect(screen.getByTestId("approval-step-card")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "允许" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "拒绝" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
   });
 
   it("matches pending approval by toolCallId when approvalId is absent", () => {
@@ -132,7 +132,7 @@ describe("MessageList", () => {
       />
     );
     expect(screen.getByTestId("approval-step-card")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "允许" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认" })).toBeInTheDocument();
   });
 
   it("does not render old assistant+toolSteps shape without kind", () => {
@@ -271,7 +271,7 @@ describe("MessageList", () => {
       }
     ];
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
-    const toggle = screen.getByRole("button", { name: /Thinking|Thought/ });
+    const toggle = screen.getByRole("button", { name: /思考过程/ });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     const toggleNode = toggle.closest(".reasoning-block");
     expect(toggleNode).not.toBeNull();
@@ -318,8 +318,8 @@ describe("MessageList", () => {
       }
     ];
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
-    const reasoningButtons = screen.getAllByRole("button", { name: /Thinking|Thought/ });
-    expect(reasoningButtons.length).toBe(2);
+    const reasoningBlocks = screen.getAllByTestId("reasoning-block");
+    expect(reasoningBlocks.length).toBe(2);
   });
 
   it("renders timeline by event_seq order", () => {
@@ -402,10 +402,10 @@ describe("MessageList", () => {
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
 
     const userNode = screen.getByText("请读取 test.txt");
-    const reasoningButtons = screen.getAllByRole("button", { name: /Thinking|Thought/ });
-    expect(reasoningButtons.length).toBe(2);
-    const reasoning1 = reasoningButtons[0];
-    const reasoning2 = reasoningButtons[1];
+    const reasoningBlocks = screen.getAllByTestId("reasoning-block");
+    expect(reasoningBlocks.length).toBe(2);
+    const reasoning1 = reasoningBlocks[0];
+    const reasoning2 = reasoningBlocks[1];
     const toolNode = screen.getByText("read_file");
     const assistantNode = screen.getByText("最终回答");
 

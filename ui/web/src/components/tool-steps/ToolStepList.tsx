@@ -9,23 +9,49 @@ interface ToolStepListProps {
 }
 
 export default function ToolStepList({ steps, pendingApprovals, onResolveApproval }: ToolStepListProps) {
+  // Separate pending approval steps (rendered as full amber cards outside the group)
+  // from regular steps (rendered as compact rows inside a bordered group)
+  const pendingApprovalSteps: Array<{ step: ToolStep; approval: PendingApproval }> = [];
+  const regularSteps: ToolStep[] = [];
+
+  for (const step of steps) {
+    const pendingApproval = resolvePendingApproval(step, pendingApprovals);
+    if (pendingApproval) {
+      pendingApprovalSteps.push({ step, approval: pendingApproval });
+    } else {
+      regularSteps.push(step);
+    }
+  }
+
   return (
     <div className="tool-step-list" data-testid="tool-step-list">
-      {steps.map((step) => {
-        const pendingApproval = resolvePendingApproval(step, pendingApprovals);
-        const renderApprovalCard = Boolean(pendingApproval) || step.type === "approval";
-        if (renderApprovalCard) {
-          return (
-            <ApprovalStepCard
-              key={step.id}
-              step={step}
-              pendingApproval={pendingApproval}
-              onResolve={onResolveApproval}
-            />
-          );
-        }
-        return <ToolStepCard key={step.id} step={step} />;
-      })}
+      {/* Regular steps grouped in a bordered container */}
+      {regularSteps.length > 0 ? (
+        <div className="tool-group">
+          {regularSteps.map((step) =>
+            step.type === "approval" ? (
+              <ApprovalStepCard
+                key={step.id}
+                step={step}
+                pendingApproval={undefined}
+                onResolve={onResolveApproval}
+              />
+            ) : (
+              <ToolStepCard key={step.id} step={step} />
+            )
+          )}
+        </div>
+      ) : null}
+
+      {/* Pending approvals rendered as full amber cards below the group */}
+      {pendingApprovalSteps.map(({ step, approval }) => (
+        <ApprovalStepCard
+          key={step.id}
+          step={step}
+          pendingApproval={approval}
+          onResolve={onResolveApproval}
+        />
+      ))}
     </div>
   );
 }

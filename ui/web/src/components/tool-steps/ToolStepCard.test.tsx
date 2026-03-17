@@ -19,16 +19,16 @@ describe("ToolStepCard", () => {
 
     const toggleBtn = screen.getByRole("button", { name: /shell/i });
     expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("region")).toHaveClass("step-body");
-    expect(screen.getByRole("region")).not.toHaveClass("expanded");
+    expect(screen.getByRole("region")).toHaveClass("step-detail");
+    expect(screen.getByRole("region")).not.toHaveClass("open");
 
     fireEvent.click(toggleBtn);
     expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("region")).toHaveClass("expanded");
+    expect(screen.getByRole("region")).toHaveClass("open");
 
     fireEvent.click(toggleBtn);
     expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("region")).not.toHaveClass("expanded");
+    expect(screen.getByRole("region")).not.toHaveClass("open");
   });
 
   it("wires aria-controls to details region", () => {
@@ -82,7 +82,7 @@ describe("ToolStepCard", () => {
     );
 
     const dot = document.querySelector(".step-dot");
-    expect(dot).toHaveClass("step-dot--failed");
+    expect(dot).toHaveClass("step-dot-fail");
   });
 
   it("renders duration in seconds when under sixty seconds", () => {

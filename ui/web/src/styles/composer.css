@@ -14,31 +14,24 @@
 }
 
 .composer-actions button {
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.composer-actions button {
   border-width: 0.8px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border-radius: 999px;
   padding: 7px 14px;
-  background: #ffffff;
+  background: var(--bg);
   font-size: 13px;
   font-weight: 400;
-  color: #3c424d;
-  border-color: #cfd5de;
-  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.08);
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.06);
   transform: translateY(-1px);
   transition:
     border-color 0.16s ease,
     box-shadow 0.16s ease,
     transform 0.16s ease;
+  cursor: pointer;
 }
 
 .composer-action-icon {
@@ -51,13 +44,13 @@
 .composer-action-icon svg {
   width: 13px;
   height: 13px;
-  fill: #3e4450;
+  fill: var(--ink-2);
 }
 
 .composer {
   border: 0.8px solid var(--border);
   border-radius: 22px;
-  background: #ffffff;
+  background: var(--bg-sub);
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -65,13 +58,16 @@
   max-width: var(--composer-max-width);
   margin: 0 auto;
   position: relative;
-  border-color: #cfd5de;
-  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.08);
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.06);
   transform: translateY(-1px);
   transition:
     border-color 0.16s ease,
     box-shadow 0.16s ease,
     transform 0.16s ease;
+}
+
+.composer:focus-within {
+  border-color: var(--ink-4);
 }
 
 .composer textarea {
@@ -89,10 +85,11 @@
   font-size: 15px;
   font-weight: 400;
   line-height: 1.5;
+  color: var(--ink);
 }
 
 .composer textarea::placeholder {
-  color: #8d8d8d;
+  color: var(--ink-4);
   font-size: 15px;
   font-weight: 400;
 }
@@ -100,13 +97,12 @@
 .composer-send-btn {
   border: none;
   background: transparent;
-  color: #ffffff;
   width: 34px;
   height: 34px;
   cursor: not-allowed;
   display: inline-grid;
   place-items: center;
-  color: #c8ccd5;
+  color: var(--ink-5);
   transition: color 0.14s ease;
   position: absolute;
   right: 16px;
@@ -114,7 +110,7 @@
 }
 
 .composer-send-btn.ready {
-  color: #111111;
+  color: var(--ink);
   cursor: pointer;
 }
 

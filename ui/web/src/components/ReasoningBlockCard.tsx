@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReasoningBlock } from "../types/chat";
-import { RightArrowIcon } from "../pic/icon";
 
 interface ReasoningBlockCardProps {
   block: ReasoningBlock;
@@ -10,7 +9,6 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
   const [collapsed, setCollapsed] = useState(block.collapsed);
   const [now, setNow] = useState(Date.now());
 
-  // 思考中时需要实时更新计时
   useEffect(() => {
     if (block.closed) {
       return;
@@ -21,39 +19,66 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
     return () => clearInterval(timer);
   }, [block.closed]);
 
-  const title = useMemo(() => {
+  const duration = useMemo(() => {
     const startedAt = new Date(block.startedAt).getTime();
-    // 如果已结束且有 endedAt，使用 endedAt，否则使用当前时间
-    const endTime = block.closed && block.endedAt
-      ? new Date(block.endedAt).getTime()
-      : now;
-    const duration = formatDuration(startedAt, endTime);
-    const prefix = block.closed ? "Thought" : "Thinking";
-    return `${prefix} ${duration}`;
+    const endTime =
+      block.closed && block.endedAt ? new Date(block.endedAt).getTime() : now;
+    return formatDuration(startedAt, endTime);
   }, [block, now]);
 
+  const isActive = !block.closed;
+
+  const blockClass = [
+    "reasoning-block",
+    !collapsed ? "open" : "",
+    isActive ? "active" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <section className={`reasoning-block${collapsed ? "" : " expanded"}`}>
-      <button
-        type="button"
-        className="reasoning-block-toggle"
-        aria-expanded={!collapsed}
-        onClick={() => setCollapsed((prev) => !prev)}
-      >
-        <span className="reasoning-block-title">
-          {title}
-          <RightArrowIcon
+    <div
+      className={blockClass}
+      data-testid="reasoning-block"
+      onClick={() => !isActive && setCollapsed((prev) => !prev)}
+      role={isActive ? undefined : "button"}
+      aria-expanded={isActive ? undefined : !collapsed}
+      tabIndex={isActive ? undefined : 0}
+      onKeyDown={
+        isActive
+          ? undefined
+          : (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setCollapsed((prev) => !prev);
+              }
+            }
+      }
+    >
+      <div className="reasoning-block-header">
+        <span className="reasoning-block-label">思考过程</span>
+        <span className="reasoning-block-dur">{duration}</span>
+        {!isActive && (
+          <svg
             className="reasoning-block-chevron"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
             aria-hidden="true"
-            width={14}
-            height={14}
-          />
-        </span>
-      </button>
-      <div className={`reasoning-block-body${collapsed ? "" : " expanded"}`}>
+          >
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        )}
+      </div>
+      <div className="reasoning-block-body">
         <div className="reasoning-block-content">{block.content}</div>
       </div>
-    </section>
+    </div>
   );
 }
 
