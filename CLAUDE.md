@@ -169,3 +169,27 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - 在修改过程中如果发现某个文件内容过多，或者代码量很大，记得提醒用户规划拆分计划
 - 在针对某部分做修改时优先根据README 索引了解对应模块的上下文，避免自己全量搜索查看以看到太多无关内容。
 - 写代码过程中尽量遵循模块化可扩展原则，避免在同一个代码文件添加过多代码。推荐500行以下，尽量不要超过800行以上，避免给后续修改造成额外工作量。
+
+## 18) 代码提交与 PR 工作流
+### 提交前准备（同步 main）
+1. 确认当前分支不是 `main`
+2. `git fetch origin main` 拉取最新 main
+3. 若有未提交改动先 `git stash`，完成 rebase 后 `git stash pop`
+4. `git rebase origin/main`，有冲突手动解决后继续
+
+### 提交规范
+- 用 `git add <具体文件>` 逐一添加，**禁止** `git add .` 或 `git add -A`
+- commit message 格式：`类型(范围): 中文摘要`
+  - 类型：`feat` / `fix` / `docs` / `refactor` / `chore` / `test`
+  - 可在类型前加 emoji（参考现有历史记录风格）
+- message 末尾附：`Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`
+- 保持改动原子化，一个 commit 只做一件事
+
+### 推送与 PR
+- push 使用 `-u` 绑定远程：`git push -u origin <branch>`
+- 用 `gh pr create` 创建 PR，base branch 统一指向 `main`
+- PR title 与 commit message 风格一致，控制在 70 字以内
+- PR body 必须包含两部分：
+  - **Summary**：改了什么、为什么改（1-3 条要点）
+  - **Test plan**：验证步骤 checklist
+- 可直接调用 `/commit-pr` skill 自动完成上述全流程
