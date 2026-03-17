@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import MarkdownRender from "markstream-react";
 import { useStreamRenderSnapshot } from "../hooks/useStreamRenderSnapshot";
+import { sanitizeMarkdownContent } from "../lib/markdown";
 import { buildTimeline } from "../lib/timeline/buildTimeline";
 import { recordMessageListRender } from "../lib/streamPerf";
 import type { ChatMessage, PendingApproval } from "../types/chat";
@@ -206,7 +207,7 @@ function AssistantMessage({
       <>
         <div className="assistant-markdown">
           <MarkdownRender
-            content={content}
+            content={sanitizeMarkdownContent(content)}
             final={final}
             batchRendering={false}
             deferNodesUntilVisible={false}
@@ -225,6 +226,10 @@ function AssistantMessage({
 
 
 function resolveAssistantRenderMode(): AssistantRenderMode {
+  const env =
+    typeof import.meta !== "undefined"
+      ? (import.meta as { env?: Record<string, unknown> }).env ?? {}
+      : {};
   const globals =
     typeof globalThis !== "undefined"
       ? (globalThis as {
@@ -233,11 +238,12 @@ function resolveAssistantRenderMode(): AssistantRenderMode {
         })
       : {};
   const raw = String(
+    env.VITE_OPENJAX_WEB_ASSISTANT_RENDER_MODE ??
     globals.OPENJAX_WEB_ASSISTANT_RENDER_MODE ??
-      globals.VITE_OPENJAX_WEB_ASSISTANT_RENDER_MODE ??
-      "text"
+    globals.VITE_OPENJAX_WEB_ASSISTANT_RENDER_MODE ??
+    "markdown"
   )
     .trim()
     .toLowerCase();
-  return raw === "markdown" ? "markdown" : "text";
+  return raw === "text" ? "text" : "markdown";
 }
