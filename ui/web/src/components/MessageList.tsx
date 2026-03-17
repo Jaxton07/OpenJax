@@ -25,8 +25,12 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
   const endRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const lastStreamScrollAtRef = useRef(0);
+  const isScrollingProgrammaticallyRef = useRef(false);
 
   const scrollToBottom = useCallback((throttled: boolean) => {
+    if (!shouldStickToBottomRef.current) {
+      return;
+    }
     const anchor = endRef.current;
     if (!anchor) {
       return;
@@ -42,12 +46,30 @@ export default function MessageList({ sessionId, messages, pendingApprovals, onR
       }
       lastStreamScrollAtRef.current = now;
     }
-    const threshold = 64;
-    const distanceToBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
-    shouldStickToBottomRef.current = distanceToBottom <= threshold;
-    if (shouldStickToBottomRef.current) {
-      container.scrollTop = container.scrollHeight;
-    }
+    isScrollingProgrammaticallyRef.current = true;
+    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      isScrollingProgrammaticallyRef.current = false;
+    });
+  }, []);
+
+  // Track user-initiated scrolls to enable/disable sticky following
+  useEffect(() => {
+    const anchor = endRef.current;
+    if (!anchor) return;
+    const container = anchor.closest(".chat-scroll-region");
+    if (!(container instanceof HTMLElement)) return;
+
+    const NEAR_BOTTOM_THRESHOLD = 150;
+
+    const onScroll = () => {
+      if (isScrollingProgrammaticallyRef.current) return;
+      const distanceToBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+      shouldStickToBottomRef.current = distanceToBottom <= NEAR_BOTTOM_THRESHOLD;
+    };
+
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
   }, []);
 
   const messageSignature = useMemo(() => {

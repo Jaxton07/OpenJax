@@ -4,10 +4,10 @@ import LoginPage from "./components/LoginPage";
 import MessageList from "./components/MessageList";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
+import ThemeToggle from "./components/ThemeToggle";
 import ToastBanner from "./components/ToastBanner";
 import { useChatApp } from "./hooks/useChatApp";
 import { SettingsIcon, SidebarToggleIcon } from "./pic/icon";
-import type { AppSettings } from "./types/gateway";
 
 type AppRoute = "/login" | "/chat";
 
@@ -98,10 +98,6 @@ export default function App() {
     );
   }
 
-  const testSettingsConnection = async (settings: AppSettings) => {
-    return testConnection(settings);
-  };
-
   const manageAuthSessions = async () => {
     const sessions = await listAuthSessions();
     if (sessions.length === 0) {
@@ -162,6 +158,7 @@ export default function App() {
             <h1>OpenJax</h1>
           </div>
           <div className="chat-header-right">
+            <ThemeToggle />
             <button
               className="header-settings-btn"
               onClick={() => setSettingsOpen(true)}
@@ -215,7 +212,7 @@ export default function App() {
         initialSettings={state.settings}
         onClose={() => setSettingsOpen(false)}
         onSave={updateSettings}
-        onTest={testSettingsConnection}
+        onTest={testConnection}
         onListProviders={listProviders}
         onCreateProvider={createProvider}
         onUpdateProvider={updateProvider}

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import MarkdownRender from "markstream-react";
 import { sanitizeMarkdownContent } from "../lib/markdown";
 import type { ReasoningBlock } from "../types/chat";
-import { RightArrowIcon } from "../pic/icon";
 
 interface ReasoningBlockCardProps {
   block: ReasoningBlock;
@@ -12,7 +11,6 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
   const [collapsed, setCollapsed] = useState(block.collapsed);
   const [now, setNow] = useState(Date.now());
 
-  // 思考中时需要实时更新计时
   useEffect(() => {
     if (block.closed) {
       return;
@@ -23,36 +21,57 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
     return () => clearInterval(timer);
   }, [block.closed]);
 
-  const title = useMemo(() => {
+  const duration = useMemo(() => {
     const startedAt = new Date(block.startedAt).getTime();
-    // 如果已结束且有 endedAt，使用 endedAt，否则使用当前时间
-    const endTime = block.closed && block.endedAt
-      ? new Date(block.endedAt).getTime()
-      : now;
-    const duration = formatDuration(startedAt, endTime);
-    const prefix = block.closed ? "Thought" : "Thinking";
-    return `${prefix} ${duration}`;
+    const endTime =
+      block.closed && block.endedAt ? new Date(block.endedAt).getTime() : now;
+    return formatDuration(startedAt, endTime);
   }, [block, now]);
 
+  const isActive = !block.closed;
+
+  const blockClass = [
+    "reasoning-block",
+    !collapsed ? "open" : "",
+    isActive ? "active" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <section className={`reasoning-block${collapsed ? "" : " expanded"}`}>
-      <button
-        type="button"
-        className="reasoning-block-toggle"
-        aria-expanded={!collapsed}
-        onClick={() => setCollapsed((prev) => !prev)}
-      >
-        <span className="reasoning-block-title">
-          {title}
-          <RightArrowIcon
-            className="reasoning-block-chevron"
-            aria-hidden="true"
-            width={14}
-            height={14}
-          />
-        </span>
-      </button>
-      <div className={`reasoning-block-body${collapsed ? "" : " expanded"}`}>
+    <div
+      className={blockClass}
+      data-testid="reasoning-block"
+      onClick={() => setCollapsed((prev) => !prev)}
+      role="button"
+      aria-expanded={!collapsed}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setCollapsed((prev) => !prev);
+        }
+      }}
+    >
+      <div className="reasoning-block-header">
+        <span className="reasoning-block-label">思考过程</span>
+        <span className="reasoning-block-dur">{duration}</span>
+        <svg
+          className="reasoning-block-chevron"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="18 15 12 9 6 15" />
+        </svg>
+      </div>
+      <div className="reasoning-block-body">
         <div className="reasoning-block-content">
           <MarkdownRender
             content={sanitizeMarkdownContent(block.content)}
@@ -62,7 +81,7 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
           />
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 

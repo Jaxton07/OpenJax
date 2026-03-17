@@ -18,8 +18,8 @@ describe("ApprovalStepCard", () => {
     );
 
     expect(screen.getByTestId("approval-step-card")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "允许" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
   });
 
   it("calls onResolve and disables actions while submitting", async () => {
@@ -41,8 +41,8 @@ describe("ApprovalStepCard", () => {
       />
     );
 
-    const approveBtn = screen.getByRole("button", { name: "允许" });
-    const rejectBtn = screen.getByRole("button", { name: "拒绝" });
+    const approveBtn = screen.getByRole("button", { name: "确认" });
+    const rejectBtn = screen.getByRole("button", { name: "取消" });
     fireEvent.click(approveBtn);
 
     expect(onResolve).toHaveBeenCalledWith({ approvalId: "approval_1", toolName: "shell" }, true);
