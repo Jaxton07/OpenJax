@@ -63,17 +63,28 @@ OpenJax 追求的是安全可控、轻量易部署的自动化，而不是放任
 
 ### 推荐新用户：Web UI
 
+**1. 安装**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
-export PATH="$HOME/.local/openjax/bin:$PATH"
-export OPENAI_API_KEY="<your_api_key>"
+```
+
+**2. 重新加载 PATH**
+```bash
+source ~/.zshrc   # 或重启终端
+```
+
+**3. 启动 gateway**
+```bash
 openjax-gateway
 ```
 
 然后在浏览器打开 `http://127.0.0.1:8765`。
-如果未配置 API Key 环境变量，gateway 启动时会在终端打印一个随机 Owner Key。
-在 `/login` 页面填写该 key 后，Web 会换取 access/refresh token，且不会在本地持久化 owner key。
-本地开发模式（`make run-web-dev`）前端地址仍是 `http://127.0.0.1:5173`。
+
+安装脚本会自动将 `~/.local/openjax/bin` 写入 `~/.zshrc`（或 `~/.bashrc`）。如需跳过此步骤，可传入 `--no-modify-path` 参数手动配置。
+
+Gateway 首次启动时会在终端打印一个随机 Owner Key。在 `/login` 页面填写该 key 后，Web 会换取 access/refresh token，且不会在本地持久化 owner key。
+
+LLM Provider 和 API Key 在启动后通过 **Web UI 设置页面** 配置。本地开发模式（`make run-web-dev`）前端地址为 `http://127.0.0.1:5173`。
 
 ### 可选：Rust TUI
 
@@ -122,10 +133,9 @@ make package-mac
 curl -fsSL https://raw.githubusercontent.com/Jaxton07/OpenJax/main/scripts/release/install_from_github.sh | bash -s -- --yes
 ```
 
-添加到 `PATH` 并启动：
+安装完成后启动（PATH 已自动写入，重启终端或先执行 `source ~/.zshrc`）：
 
 ```bash
-export PATH="$HOME/.local/openjax/bin:$PATH"
 tui_next
 ```
 
@@ -141,18 +151,20 @@ Linux/macOS 的打包命令与完整部署说明见 [docs/deployment.zh-CN.md](d
 
 ## 配置项
 
+LLM Provider 和 API Key 主要通过启动 `openjax-gateway` 后的 **Web UI 设置页面** 进行配置。
+
+首次启动时会在 `~/.openjax/config.toml` 自动生成配置模板，支持多模型路由、按模型配置 API Key 及 fallback 链——高级用户可直接编辑该文件。
+
+以下环境变量可在运行时覆盖配置文件中的对应值：
+
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `OPENJAX_MODEL` | 模型后端 | `gpt-4.1-mini` |
-| `OPENAI_API_KEY` | OpenAI API key | - |
-| `OPENJAX_KIMI_API_KEY` | Kimi API key | - |
-| `OPENJAX_GLM_API_KEY` | GLM API key | - |
-| `OPENJAX_ANTHROPIC_API_KEY` | Claude API key | - |
+| `OPENAI_API_KEY` | OpenAI API key 覆盖 | - |
+| `OPENJAX_KIMI_API_KEY` | Kimi API key 覆盖 | - |
+| `OPENJAX_GLM_API_KEY` | GLM API key 覆盖 | - |
+| `OPENJAX_ANTHROPIC_API_KEY` | Claude API key 覆盖 | - |
 | `OPENJAX_APPROVAL_POLICY` | 审批策略 | `on_request` |
 | `OPENJAX_SANDBOX_MODE` | 沙箱模式 | `workspace_write` |
-
-若不存在配置文件，启动时会自动生成模板：
-- `~/.openjax/config.toml`
 
 ## 架构概览
 
