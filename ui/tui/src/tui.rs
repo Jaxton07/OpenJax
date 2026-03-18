@@ -78,12 +78,21 @@ impl Tui {
         } = request;
         let screen = self.terminal.size()?;
         let current_area = self.terminal.area();
-        let _ = reset_sticky_height;
         let current_bottom_chrome_height = stable_bottom_chrome_height(bottom_layout);
         let bottom_chrome_growth =
             current_bottom_chrome_height.saturating_sub(self.last_bottom_chrome_height);
-        let desired_with_reserve =
-            desired_height.max(current_area.height.saturating_add(bottom_chrome_growth));
+        // Normally the viewport only grows (sticky height) so live content stays visible
+        // while streaming.  When reset_sticky_height is set (e.g. turn completed) we allow
+        // it to shrink back to the actual desired height, eliminating the blank-line gap
+        // that otherwise appears after streaming output is committed to history.
+        // terminal.clear() uses ClearType::AfterCursor which erases from the viewport top
+        // to end-of-screen, so stale rows below the new smaller viewport are cleaned up
+        // automatically when plan.area != current_area triggers the clear call below.
+        let desired_with_reserve = if reset_sticky_height {
+            desired_height
+        } else {
+            desired_height.max(current_area.height.saturating_add(bottom_chrome_growth))
+        };
         let plan = compute_viewport_plan(
             current_area,
             screen.width,
