@@ -1,5 +1,6 @@
 target/
 .DS_Store
+.claude/worktrees/
 .openjax.toml
 .openjax/
 .sisyphus/
