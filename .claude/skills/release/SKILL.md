@@ -105,12 +105,21 @@ git push origin v{version}
 
 若 push 失败，提示错误原因，**不重试、不强制推送**。
 
-### 步骤 7：输出结果
+### 步骤 7：切回 dev 分支
+
+tag 推送成功后，立即切回 dev 分支，避免后续操作误在 main 上进行：
+
+```bash
+git checkout dev
+git pull origin dev
+```
+
+### 步骤 8：输出结果
 
 打印以下信息：
 
 ```
-v{version} 已发布！
+v{version} 已发布！已切回 dev 分支。
 
 GitHub Actions 进度：
 https://github.com/{owner}/{repo}/actions
