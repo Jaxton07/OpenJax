@@ -1,3 +1,4 @@
+use crate::tools::apply_patch::response::build_patch_response;
 use crate::tools::apply_patch::{apply_patch_actions, parse_apply_patch, plan_patch_actions};
 use crate::tools::context::ToolTurnContext;
 use crate::tools::error::FunctionCallError;
@@ -24,11 +25,7 @@ pub async fn intercept_apply_patch(
                     tracing::warn!(
                         "apply_patch was requested via shell. Use apply_patch tool instead."
                     );
-                    let summary = actions
-                        .iter()
-                        .map(|action| action.summary(cwd))
-                        .collect::<Vec<String>>()
-                        .join("\n");
+                    let summary = build_patch_response(&actions, cwd);
                     Ok(Some(format!("patch applied successfully\n{summary}")))
                 }
                 Err(e) => Err(FunctionCallError::Internal(e.to_string())),

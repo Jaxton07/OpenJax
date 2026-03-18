@@ -21,7 +21,6 @@ pub mod shell;
 pub mod spec;
 pub mod system;
 pub mod tool_builder;
-pub use apply_patch::apply_patch_tool;
 pub use apply_patch::{
     PlannedAction, apply_patch_actions, normalize_patch_arg, parse_apply_patch, plan_patch_actions,
 };

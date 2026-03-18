@@ -2,9 +2,16 @@ use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use super::matcher::{find_subsequence, split_lines_preserve_end};
-#[allow(unused_imports)]
-use super::types::{PatchHunk, PatchHunkLine, PatchLineKind, PlannedAction};
+use super::matcher::{seek_sequence, split_lines_preserve_end};
+use super::types::{HunkResultRange, HunkWarning, PatchHunk, PatchLineKind, PlannedAction};
+
+/// Result of applying patch hunks to file content.
+#[derive(Debug)]
+pub struct HunkApplyResult {
+    pub content: String,
+    pub changed_ranges: Vec<HunkResultRange>,
+    pub warnings: Vec<HunkWarning>,
+}
 
 pub async fn apply_patch_actions(actions: &[PlannedAction]) -> Result<()> {
     let mut backups = HashMap::new();
@@ -37,7 +44,8 @@ pub async fn apply_patch_actions(actions: &[PlannedAction]) -> Result<()> {
 
 async fn apply_single_patch_action(action: &PlannedAction) -> Result<()> {
     match action {
-        PlannedAction::Create { path, content } | PlannedAction::Update { path, content } => {
+        PlannedAction::Create { path, content }
+        | PlannedAction::Update { path, content, .. } => {
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.with_context(|| {
                     format!("failed to create parent dir: {}", parent.display())
@@ -102,27 +110,47 @@ async fn rollback_applied_paths(
     Ok(())
 }
 
-pub fn apply_hunks_to_content(original: &str, hunks: &[PatchHunk]) -> Result<String> {
+pub fn apply_hunks_to_content(original: &str, hunks: &[PatchHunk]) -> Result<HunkApplyResult> {
     let original_lines = split_lines_preserve_end(original);
-    let mut new_lines = Vec::new();
+    let mut new_lines: Vec<String> = Vec::new();
     let mut cursor = 0usize;
+    let mut changed_ranges: Vec<HunkResultRange> = Vec::new();
+    let mut warnings: Vec<HunkWarning> = Vec::new();
+    let hunk_count = hunks.len();
 
-    for hunk in hunks {
-        let expected = hunk
+    for (hunk_index, hunk) in hunks.iter().enumerate() {
+        let expected: Vec<String> = hunk
             .lines
             .iter()
             .filter(|line| line.kind != PatchLineKind::Add)
             .map(|line| line.text.clone())
-            .collect::<Vec<String>>();
+            .collect();
 
-        let match_pos = if expected.is_empty() {
-            cursor
+        let is_last = hunk_index == hunk_count - 1;
+
+        let (match_pos, level) = if expected.is_empty() {
+            (cursor, 0)
         } else {
-            find_subsequence(&original_lines, cursor, &expected)
+            seek_sequence(&original_lines, &expected, cursor, is_last)
                 .ok_or_else(|| anyhow!("hunk context not found"))?
         };
 
+        if level > 0 {
+            warnings.push(HunkWarning::FuzzyMatch { hunk_index, level });
+        }
+
+        // Uniqueness check: search for a second match anywhere after the first.
+        if !expected.is_empty() {
+            let second_start = match_pos + expected.len();
+            if seek_sequence(&original_lines, &expected, second_start, true).is_some() {
+                warnings.push(HunkWarning::AmbiguousMatch { hunk_index });
+            }
+        }
+
+        // Emit gap lines between previous cursor and this hunk.
         new_lines.extend_from_slice(&original_lines[cursor..match_pos]);
+
+        let hunk_start = new_lines.len() + 1; // 1-indexed
         let mut source_index = match_pos;
 
         for line in &hunk.lines {
@@ -131,18 +159,12 @@ pub fn apply_hunks_to_content(original: &str, hunks: &[PatchHunk]) -> Result<Str
                     let source = original_lines.get(source_index).ok_or_else(|| {
                         anyhow!("hunk context out of bounds while applying patch")
                     })?;
-                    if source != &line.text {
-                        return Err(anyhow!("hunk context mismatch"));
-                    }
                     new_lines.push(source.clone());
                     source_index += 1;
                 }
                 PatchLineKind::Remove => {
-                    let source = original_lines.get(source_index).ok_or_else(|| {
-                        anyhow!("hunk removal out of bounds while applying patch")
-                    })?;
-                    if source != &line.text {
-                        return Err(anyhow!("hunk removal mismatch"));
+                    if source_index >= original_lines.len() {
+                        return Err(anyhow!("hunk removal out of bounds while applying patch"));
                     }
                     source_index += 1;
                 }
@@ -152,16 +174,23 @@ pub fn apply_hunks_to_content(original: &str, hunks: &[PatchHunk]) -> Result<Str
             }
         }
 
+        let hunk_end = new_lines.len(); // 1-indexed inclusive
+        changed_ranges.push(HunkResultRange { start: hunk_start, end: hunk_end });
         cursor = source_index;
     }
 
     new_lines.extend_from_slice(&original_lines[cursor..]);
-    Ok(new_lines.join("\n"))
+    Ok(HunkApplyResult {
+        content: new_lines.join("\n"),
+        changed_ranges,
+        warnings,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::types::PatchHunkLine;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -210,6 +239,8 @@ mod tests {
         let actions = vec![PlannedAction::Update {
             path: file_path.clone(),
             content: "new content".to_string(),
+            changed_ranges: vec![],
+            warnings: vec![],
         }];
 
         apply_patch_actions(&actions).await.unwrap();
@@ -256,10 +287,14 @@ mod tests {
             PlannedAction::Update {
                 path: file1_path.clone(),
                 content: "new content1".to_string(),
+                changed_ranges: vec![],
+                warnings: vec![],
             },
             PlannedAction::Update {
                 path: PathBuf::from("/nonexistent/path.txt"),
                 content: "new content2".to_string(),
+                changed_ranges: vec![],
+                warnings: vec![],
             },
         ];
 
@@ -299,7 +334,7 @@ mod tests {
         }];
 
         let result = apply_hunks_to_content(original, &hunks).unwrap();
-        assert_eq!(result, "line1\nline2-new\nline3\n");
+        assert_eq!(result.content, "line1\nline2-new\nline3\n");
     }
 
     #[test]
@@ -328,7 +363,7 @@ mod tests {
         }];
 
         let result = apply_hunks_to_content(original, &hunks).unwrap();
-        assert_eq!(result, "line1\nline4\n");
+        assert_eq!(result.content, "line1\nline4\n");
     }
 
     #[test]
@@ -353,7 +388,7 @@ mod tests {
         }];
 
         let result = apply_hunks_to_content(original, &hunks).unwrap();
-        assert_eq!(result, "line1\nline1.5\nline2\n");
+        assert_eq!(result.content, "line1\nline1.5\nline2\n");
     }
 
     #[test]
@@ -378,12 +413,10 @@ mod tests {
         }];
 
         let result = apply_hunks_to_content(original, &hunks);
-        assert!(result.is_err());
+        assert!(result.is_err(), "expected error for mismatched context");
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("hunk context not found")
+            result.unwrap_err().to_string().contains("hunk context not found"),
+            "error should mention 'hunk context not found'"
         );
     }
 }

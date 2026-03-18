@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::debug;
 
+use crate::tools::apply_patch::response::build_patch_response;
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -67,11 +68,7 @@ impl ToolHandler for ApplyPatchHandler {
             .await
             .map_err(|e| FunctionCallError::Internal(format!("failed to apply patch: {}", e)))?;
 
-        let summary = actions
-            .iter()
-            .map(|action| action.summary(&turn.cwd))
-            .collect::<Vec<String>>()
-            .join("\n");
+        let summary = build_patch_response(&actions, &turn.cwd);
 
         Ok(ToolOutput::Function {
             body: FunctionCallOutputBody::Text(format!("patch applied successfully\n{summary}")),

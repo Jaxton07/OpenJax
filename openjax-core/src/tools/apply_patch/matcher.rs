@@ -22,14 +22,17 @@ pub fn find_subsequence(haystack: &[String], start: usize, needle: &[String]) ->
     })
 }
 
+/// Returns `Some((pos, level))` where `pos` is the start index of the match
+/// and `level` indicates which fuzzy strategy found it (0 = exact, 1 = trim_end,
+/// 2 = trim, 3 = unicode-normalized). Returns `None` if no match is found.
 pub fn seek_sequence(
     lines: &[String],
     pattern: &[String],
     start: usize,
     eof: bool,
-) -> Option<usize> {
+) -> Option<(usize, usize)> {
     if pattern.is_empty() {
-        return Some(start);
+        return Some((start, 0));
     }
 
     let max_start = if eof {
@@ -39,28 +42,15 @@ pub fn seek_sequence(
     };
 
     for level in 0..4 {
-        match level {
-            0 => {
-                if let Some(pos) = find_subsequence_exact(lines, start, pattern, max_start) {
-                    return Some(pos);
-                }
-            }
-            1 => {
-                if let Some(pos) = find_subsequence_trim_end(lines, start, pattern, max_start) {
-                    return Some(pos);
-                }
-            }
-            2 => {
-                if let Some(pos) = find_subsequence_trim(lines, start, pattern, max_start) {
-                    return Some(pos);
-                }
-            }
-            3 => {
-                if let Some(pos) = find_subsequence_normalized(lines, start, pattern, max_start) {
-                    return Some(pos);
-                }
-            }
+        let found = match level {
+            0 => find_subsequence_exact(lines, start, pattern, max_start),
+            1 => find_subsequence_trim_end(lines, start, pattern, max_start),
+            2 => find_subsequence_trim(lines, start, pattern, max_start),
+            3 => find_subsequence_normalized(lines, start, pattern, max_start),
             _ => break,
+        };
+        if let Some(pos) = found {
+            return Some((pos, level));
         }
     }
 

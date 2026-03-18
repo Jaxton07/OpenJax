@@ -1,5 +1,21 @@
 use std::path::{Path, PathBuf};
 
+/// The line range (1-indexed, inclusive) in the result file where a patch hunk landed.
+#[derive(Debug, Clone)]
+pub struct HunkResultRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Warnings produced during fuzzy hunk matching.
+#[derive(Debug, Clone)]
+pub enum HunkWarning {
+    /// Hunk matched using a fuzzy strategy at the given level (1=trim_end, 2=trim, 3=unicode).
+    FuzzyMatch { hunk_index: usize, level: usize },
+    /// Multiple match locations found; patch applied to the first occurrence.
+    AmbiguousMatch { hunk_index: usize },
+}
+
 #[derive(Debug, Clone)]
 pub enum PatchOperation {
     AddFile {
@@ -46,7 +62,12 @@ pub enum PatchLineKind {
 #[derive(Debug, Clone)]
 pub enum PlannedAction {
     Create { path: PathBuf, content: String },
-    Update { path: PathBuf, content: String },
+    Update {
+        path: PathBuf,
+        content: String,
+        changed_ranges: Vec<HunkResultRange>,
+        warnings: Vec<HunkWarning>,
+    },
     Delete { path: PathBuf },
     Move { from: PathBuf, to: PathBuf },
 }
@@ -76,7 +97,7 @@ impl PlannedAction {
                 format!(
                     "MOVE {} -> {}",
                     super::matcher::display_rel_path(cwd, from),
-                    super::matcher::display_rel_path(cwd, to)
+                    super::matcher::display_rel_path(cwd, to),
                 )
             }
         }
