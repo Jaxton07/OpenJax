@@ -3,5 +3,6 @@
     "allow": [
       "Bash(PYTHONPATH=python/openjax_sdk/src:python/openjax_tui/src python3:*)"
     ]
-  }
+  },
+  "enabledPlugins": {}
 }
