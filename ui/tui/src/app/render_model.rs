@@ -164,7 +164,7 @@ impl App {
 
         let mut lines = Vec::new();
         lines.push(Line::from(Span::styled(
-            format!("是否允许执行操作: {}", pending.target),
+            format!("Approval required: {}", pending.target),
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),

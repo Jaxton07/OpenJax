@@ -8,7 +8,7 @@ use crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use openjax_core::{Agent, load_runtime_config, init_split_logger};
+use openjax_core::{Agent, init_split_logger, load_runtime_config};
 use openjax_protocol::Op;
 use scopeguard::guard;
 use tokio::sync::Mutex;

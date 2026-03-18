@@ -12,7 +12,7 @@ use crate::state::StatusBarState;
 pub(crate) fn status_line(
     status: &StatusBarState,
     now: Instant,
-    _width: u16,
+    _width: u16, // reserved: future line-width-aware truncation
     animations_enabled: bool,
 ) -> Line<'static> {
     let mut spans = Vec::with_capacity(8);

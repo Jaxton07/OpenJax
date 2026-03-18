@@ -196,6 +196,10 @@ impl App {
                 self.state.stream_text.clear();
                 self.clear_status_bar();
                 self.state.live_messages.clear();
+                // Allow the viewport to shrink back after the turn finishes so that
+                // the expanded live-zone (grown during streaming) collapses to the
+                // minimum height instead of leaving a block of blank lines.
+                self.viewport_reset_requested = true;
             }
             Event::ShutdownComplete => {
                 self.clear_status_bar();
@@ -262,5 +266,28 @@ mod tests {
         app.apply_core_event(Event::TurnCompleted { turn_id: 1 });
         assert!(app.state.status_bar.is_none());
         assert!(app.drain_history_cells().is_empty());
+    }
+
+    #[test]
+    fn turn_completed_requests_viewport_reset_to_collapse_blank_lines() {
+        // Regression: after streaming, the live-zone expanded the viewport height.
+        // TurnCompleted must signal a viewport reset so the sticky height is released
+        // and the blank-line gap below the history content is eliminated.
+        let mut app = App::default();
+
+        app.apply_core_event(Event::TurnStarted { turn_id: 1 });
+        app.apply_core_event(Event::ResponseTextDelta {
+            turn_id: 1,
+            content_delta: "some streamed text".to_string(),
+            stream_source: StreamSource::ModelLive,
+        });
+        // Not yet requested before turn completes.
+        assert!(!app.take_viewport_reset_requested());
+
+        app.apply_core_event(Event::TurnCompleted { turn_id: 1 });
+        // Must be set so tui.rs can allow the viewport to shrink.
+        assert!(app.take_viewport_reset_requested());
+        // Consumed; second call returns false.
+        assert!(!app.take_viewport_reset_requested());
     }
 }

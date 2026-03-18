@@ -62,11 +62,11 @@ pub fn build_config_from_providers(
 
     // Put active provider first so it becomes the primary planner route.
     let mut ordered = providers;
-    if let Some(active_id) = active_provider_id {
-        if let Some(index) = ordered.iter().position(|p| p.provider_id == active_id) {
-            let selected = ordered.remove(index);
-            ordered.insert(0, selected);
-        }
+    if let Some(active_id) = active_provider_id
+        && let Some(index) = ordered.iter().position(|p| p.provider_id == active_id)
+    {
+        let selected = ordered.remove(index);
+        ordered.insert(0, selected);
     }
 
     let mut models: HashMap<String, ProviderModelConfig> = HashMap::new();

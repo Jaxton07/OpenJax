@@ -225,11 +225,6 @@ where
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn get_cursor_position(&mut self) -> io::Result<Position> {
-        self.backend.get_cursor_position()
-    }
-
     pub fn set_cursor_position<P: Into<Position>>(&mut self, position: P) -> io::Result<()> {
         let position = position.into();
         self.backend.set_cursor_position(position)?;
@@ -291,7 +286,7 @@ where
 
 pub type CrosstermTerminal = Terminal<CrosstermBackend<Stdout>>;
 
-pub fn init_crossterm_terminal(_inline_height: u16) -> io::Result<CrosstermTerminal> {
+pub fn init_crossterm_terminal() -> io::Result<CrosstermTerminal> {
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::with_options(backend)?;
     let size = terminal.size()?;

@@ -49,6 +49,7 @@ ui/tui                                   # crate root
 │   │   ├── mod.rs                       # App public API and shared helpers
 │   │   ├── reducer.rs                   # protocol event -> app state transitions
 │   │   ├── render_model.rs              # live/input/footer/approval line assembly
+│   │   ├── slash_palette.rs             # slash palette state transitions and accept logic
 │   │   └── tool_output.rs               # tool output summarization and normalization
 │   ├── approval.rs                      # TUI approval handler and pending queue bridge
 │   ├── history_cell.rs                  # history cell types and plain constructor
@@ -56,8 +57,13 @@ ui/tui                                   # crate root
 │   ├── insert_history.rs                # ANSI scrollback insertion path
 │   ├── lib.rs                           # crate exports and run entry re-export
 │   ├── main.rs                          # binary async entry
-│   ├── runtime.rs                       # runtime bootstrap and main loop orchestration
+│   ├── runtime.rs                       # runtime bootstrap: init agent, app, tui and drive main loop
 │   ├── runtime_loop.rs                  # loop helper functions (drain/render/submit)
+│   ├── slash_commands.rs                # slash command registry and match/sort logic
+│   ├── status                           # status bar rendering and animation
+│   │   ├── indicator.rs                 # status line assembly with elapsed timer
+│   │   ├── mod.rs                       # status module exports
+│   │   └── shimmer.rs                   # shimmer/wave animation for status label
 │   ├── terminal                         # custom terminal backend and draw pipeline
 │   │   ├── core.rs                      # Terminal/Frame lifecycle and viewport/cursor state
 │   │   ├── diff.rs                      # buffer diff algorithm to draw commands
@@ -66,6 +72,7 @@ ui/tui                                   # crate root
 │   │   ├── style_diff.rs                # shared style modifier diff logic
 │   │   └── tests.rs                     # terminal diff regression tests
 │   ├── tui.rs                           # high-level TUI composition and draw scheduling
+│   ├── viewport.rs                      # viewport plan, layout constraints and transient clipping
 │   ├── wrapping.rs                      # word-wrap helpers for multilingual output
 │   └── state                            # persistent app state types
 │       ├── app_state.rs                 # AppState + approval/live message structs
