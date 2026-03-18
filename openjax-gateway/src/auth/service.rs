@@ -59,8 +59,16 @@ impl AuthConfig {
                 .and_then(|v| v.parse::<usize>().ok())
                 .filter(|v| *v > 0)
                 .unwrap_or(120);
-        let token_pepper = std::env::var("OPENJAX_GATEWAY_AUTH_TOKEN_PEPPER")
-            .unwrap_or_else(|_| "openjax-local-dev-pepper".to_string());
+        let token_pepper = match std::env::var("OPENJAX_GATEWAY_AUTH_TOKEN_PEPPER") {
+            Ok(v) if !v.trim().is_empty() => v,
+            _ => {
+                tracing::warn!(
+                    "OPENJAX_GATEWAY_AUTH_TOKEN_PEPPER is not set — \
+                     using default dev pepper. DO NOT use this in production."
+                );
+                "openjax-local-dev-pepper".to_string()
+            }
+        };
         Self {
             db_path,
             access_ttl_minutes,
@@ -247,5 +255,9 @@ impl AuthService {
     pub fn list_sessions(&self) -> AnyResult<Vec<SessionView>> {
         let sessions = self.store.list_sessions().context("list sessions")?;
         Ok(sessions.into_iter().map(Into::into).collect())
+    }
+
+    pub fn cleanup_expired(&self) -> AnyResult<()> {
+        self.store.cleanup_expired().context("cleanup expired tokens")
     }
 }
