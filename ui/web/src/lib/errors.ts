@@ -34,6 +34,8 @@ export function humanizeError(error: unknown): string {
       case "UPSTREAM_UNAVAILABLE":
       case "TIMEOUT":
         return "网关暂不可用，可稍后重试。";
+      case "CONFLICT":
+        return "检测到异常登录行为，请重新登录。";
       case "NOT_IMPLEMENTED":
         return "该能力尚未实现。";
       default:

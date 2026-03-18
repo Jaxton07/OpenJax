@@ -249,7 +249,7 @@ export function useChatApp() {
         }));
         return true;
       } catch {
-        clearAuthState("登录态已失效，请重新登录。");
+        clearAuthState("登录凭据已过期，请重新输入 Owner Key 登录。");
         return false;
       } finally {
         refreshPromiseRef.current = null;

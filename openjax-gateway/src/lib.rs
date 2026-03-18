@@ -14,19 +14,33 @@ pub use stdio::run_stdio;
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::http::Method;
+use axum::http::{HeaderValue, Method};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, patch, post};
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
+fn resolve_cors_origins() -> Vec<HeaderValue> {
+    let defaults = vec![
+        "http://localhost:5173".parse().expect("valid origin"),
+        "http://127.0.0.1:5173".parse().expect("valid origin"),
+    ];
+    let Ok(raw) = std::env::var("OPENJAX_GATEWAY_CORS_ORIGINS") else {
+        return defaults;
+    };
+    let parsed: Vec<HeaderValue> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    if parsed.is_empty() { defaults } else { parsed }
+}
+
 pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin([
-            "http://localhost:5173".parse().expect("valid origin"),
-            "http://127.0.0.1:5173".parse().expect("valid origin"),
-        ])
+        .allow_origin(resolve_cors_origins())
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -53,14 +67,14 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
     let auth_protected = Router::new()
         .route("/api/v1/auth/sessions", get(auth_handlers::list_sessions))
         .route("/api/v1/auth/revoke", post(auth_handlers::revoke))
+        .route("/api/v1/auth/logout", post(auth_handlers::logout))
         .layer(from_fn_with_state(
             state.clone(),
             middleware::access_token_middleware,
         ));
 
     let auth_public = Router::new()
-        .route("/api/v1/auth/refresh", post(auth_handlers::refresh))
-        .route("/api/v1/auth/logout", post(auth_handlers::logout));
+        .route("/api/v1/auth/refresh", post(auth_handlers::refresh));
 
     let protected = Router::new()
         .route(

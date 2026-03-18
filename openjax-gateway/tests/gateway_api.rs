@@ -116,6 +116,7 @@ async fn login_refresh_logout_flow() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/auth/logout")
+                .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from(
                     serde_json::json!({ "session_id": session_id }).to_string(),
@@ -125,6 +126,30 @@ async fn login_refresh_logout_flow() {
         .await
         .expect("logout response");
     assert_eq!(logout_response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn logout_without_access_token_returns_401() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (_access_token, _cookie, session_id) = login(&app, api_key).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/logout")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "session_id": session_id }).to_string(),
+                ))
+                .expect("logout request"),
+        )
+        .await
+        .expect("logout response");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "UNAUTHENTICATED");
 }
 
 #[tokio::test]

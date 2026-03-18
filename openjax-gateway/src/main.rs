@@ -2,7 +2,7 @@ use anyhow::Result;
 use openjax_core::init_logger_with_file;
 use openjax_gateway::{ApiKeySource, AppState, load_api_keys};
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{info, warn};
 
 fn resolve_static_dir() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("OPENJAX_GATEWAY_WEB_DIR") {
@@ -26,6 +26,9 @@ async fn main() -> Result<()> {
     init_logger_with_file("openjax-gateway.log");
     let api_key_config = load_api_keys();
     let state = AppState::try_new_with_api_keys(api_key_config.keys.clone())?;
+    if let Err(e) = state.auth_service().cleanup_expired() {
+        warn!("startup auth cleanup failed: {e}");
+    }
     let static_dir = resolve_static_dir();
     let app = openjax_gateway::build_app(state, static_dir.clone());
     let bind_addr =

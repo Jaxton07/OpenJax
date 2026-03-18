@@ -22,11 +22,6 @@ pub struct LoginRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RefreshRequest {
-    refresh_token: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct LogoutRequest {
     session_id: Option<String>,
 }
@@ -127,9 +122,8 @@ pub async fn refresh(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestContext>,
     headers: HeaderMap,
-    Json(payload): Json<RefreshRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let refresh_token = extract_refresh_token(&headers, payload.refresh_token)
+    let refresh_token = extract_refresh_token(&headers)
         .ok_or_else(|| ApiError::unauthenticated("missing refresh token"))?;
 
     if !state
@@ -243,13 +237,9 @@ pub async fn list_sessions(
     }))
 }
 
-fn extract_refresh_token(headers: &HeaderMap, body_token: Option<String>) -> Option<String> {
-    if let Some(value) = headers.get(COOKIE).and_then(|v| v.to_str().ok())
-        && let Some(token) = parse_cookie_value(value, refresh_cookie_name())
-    {
-        return Some(token);
-    }
-    body_token
-        .map(|value| value.trim().to_string())
-        .filter(|v| !v.is_empty())
+fn extract_refresh_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| parse_cookie_value(v, refresh_cookie_name()))
 }
