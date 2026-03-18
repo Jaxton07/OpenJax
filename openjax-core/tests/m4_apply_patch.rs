@@ -166,3 +166,147 @@ async fn apply_patch_rolls_back_when_later_action_fails() {
 
     let _ = fs::remove_dir_all(workspace);
 }
+
+#[tokio::test]
+async fn apply_patch_fuzzy_level1_trailing_whitespace() {
+    let workspace = create_workspace();
+    // "context_a" has trailing spaces in the file; the patch omits them.
+    fs::write(
+        workspace.join("src.txt"),
+        "prefix\ncontext_a   \ncontext_b\nsuffix",
+    )
+    .expect("seed file");
+
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+
+    // Patch uses context line without trailing whitespace — should match via level-1 fuzzy.
+    let patch = "*** Begin Patch
+*** Update File: src.txt
+@@
+ prefix
+ context_a
+-context_b
++context_b-new
+ suffix
+*** End Patch";
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: apply_patch_input(patch),
+        })
+        .await;
+
+    match tool_completion(&events, "apply_patch") {
+        Event::ToolCallCompleted { ok, output, .. } => {
+            assert!(*ok, "expected success with fuzzy level-1 match; output: {output}");
+            assert!(output.contains("patch applied successfully"));
+        }
+        _ => unreachable!(),
+    }
+
+    let content = fs::read_to_string(workspace.join("src.txt")).expect("file should exist");
+    // Original trailing whitespace on context_a is preserved; context_b is replaced.
+    assert_eq!(content, "prefix\ncontext_a   \ncontext_b-new\nsuffix");
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn apply_patch_fuzzy_level3_unicode_normalization() {
+    let workspace = create_workspace();
+    // File contains an em-dash; the patch uses a plain hyphen.
+    fs::write(
+        workspace.join("doc.txt"),
+        "header\ntitle\u{2014}subtitle\nfooter",
+    )
+    .expect("seed file");
+
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+
+    // Patch uses plain "-" for the em-dash line — should match via level-3 unicode normalization.
+    let patch = "*** Begin Patch
+*** Update File: doc.txt
+@@
+ title-subtitle
+-footer
++footer-new
+*** End Patch";
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: apply_patch_input(patch),
+        })
+        .await;
+
+    match tool_completion(&events, "apply_patch") {
+        Event::ToolCallCompleted { ok, output, .. } => {
+            assert!(*ok, "expected success with fuzzy level-3 match; output: {output}");
+            assert!(output.contains("patch applied successfully"));
+        }
+        _ => unreachable!(),
+    }
+
+    let content = fs::read_to_string(workspace.join("doc.txt")).expect("file should exist");
+    // The em-dash line is preserved as context; only footer is replaced.
+    assert_eq!(content, "header\ntitle\u{2014}subtitle\nfooter-new");
+
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn apply_patch_ambiguous_match_applies_to_first() {
+    let workspace = create_workspace();
+    // Duplicate context block appears twice; patch should apply to the first occurrence.
+    fs::write(
+        workspace.join("dup.txt"),
+        "x = 1\ny = 2\n\nx = 1\ny = 2",
+    )
+    .expect("seed file");
+
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::Never,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+
+    let patch = "*** Begin Patch
+*** Update File: dup.txt
+@@
+ x = 1
+-y = 2
++y = 99
+*** End Patch";
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: apply_patch_input(patch),
+        })
+        .await;
+
+    match tool_completion(&events, "apply_patch") {
+        Event::ToolCallCompleted { ok, output, .. } => {
+            assert!(*ok, "expected success despite ambiguous match; output: {output}");
+            assert!(output.contains("patch applied successfully"));
+            // Warning about multiple matches should be present in the response.
+            assert!(
+                output.contains("matched multiple locations"),
+                "expected ambiguous-match warning in output; got: {output}"
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    let content = fs::read_to_string(workspace.join("dup.txt")).expect("file should exist");
+    // First occurrence replaced, second unchanged.
+    assert_eq!(content, "x = 1\ny = 99\n\nx = 1\ny = 2");
+
+    let _ = fs::remove_dir_all(workspace);
+}

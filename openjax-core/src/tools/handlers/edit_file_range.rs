@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde::de::{self, Deserializer};
 
+use crate::tools::apply_patch::response::build_edit_range_response;
+
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -87,7 +89,8 @@ impl ToolHandler for EditFileRangeHandler {
             ));
         }
 
-        let line_count = lines.len();
+        let original_line_count = lines.len();
+        let line_count = original_line_count;
         if args.end_line > line_count {
             return Err(FunctionCallError::RespondToModel(format!(
                 "end_line {} exceeds file length {}",
@@ -103,6 +106,12 @@ impl ToolHandler for EditFileRangeHandler {
 
         let start_idx = args.start_line - 1;
         let end_idx_exclusive = args.end_line;
+        // Compute new_end_line before replacement is consumed by splice.
+        let new_end_line = if replacement.is_empty() {
+            args.start_line.saturating_sub(1)
+        } else {
+            args.start_line - 1 + replacement.len()
+        };
         lines.splice(start_idx..end_idx_exclusive, replacement);
 
         let mut updated = lines.join("\n");
@@ -114,9 +123,12 @@ impl ToolHandler for EditFileRangeHandler {
             .await
             .map_err(|e| FunctionCallError::Internal(format!("failed to write file: {}", e)))?;
 
-        let summary = format!(
-            "edit applied successfully\nUPDATE {}:{}-{}",
-            args.file_path, args.start_line, args.end_line
+        let summary = build_edit_range_response(
+            &args.file_path,
+            &lines,
+            args.start_line,
+            new_end_line,
+            original_line_count,
         );
 
         Ok(ToolOutput::Function {

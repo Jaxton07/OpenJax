@@ -498,7 +498,7 @@ fn duplicate_detection_resets_after_mutation_epoch_change() {
 #[test]
 fn planner_prompt_contains_apply_patch_verification_rule() {
     let prompt = build_planner_input("update file", &[], &[], 3, "(none)");
-    assert!(prompt.contains("After a successful apply_patch"));
+    assert!(prompt.contains("verification already shows the requested content/changes are present"));
     assert!(prompt.contains("return final immediately"));
 }
 

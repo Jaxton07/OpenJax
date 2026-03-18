@@ -93,7 +93,7 @@ pub async fn plan_patch_actions(
                 let original = tokio::fs::read_to_string(&resolved)
                     .await
                     .with_context(|| format!("failed to read file: {}", resolved.display()))?;
-                let content = apply_hunks_to_content(&original, hunks)?;
+                let result = apply_hunks_to_content(&original, hunks)?;
 
                 if let Some(move_to_path) = move_to {
                     let move_to_resolved =
@@ -110,12 +110,16 @@ pub async fn plan_patch_actions(
                     });
                     actions.push(PlannedAction::Update {
                         path: crate::tools::resolve_workspace_path_for_write(cwd, move_to_path)?,
-                        content,
+                        content: result.content,
+                        changed_ranges: result.changed_ranges,
+                        warnings: result.warnings,
                     });
                 } else {
                     actions.push(PlannedAction::Update {
                         path: resolved,
-                        content,
+                        content: result.content,
+                        changed_ranges: result.changed_ranges,
+                        warnings: result.warnings,
                     });
                 }
             }
@@ -144,7 +148,7 @@ mod tests {
         let actions = plan_patch_actions(cwd, &operations).await.unwrap();
         assert_eq!(actions.len(), 1);
         match &actions[0] {
-            PlannedAction::Create { path, content } => {
+            PlannedAction::Create { path, content, .. } => {
                 assert_eq!(path.file_name().unwrap().to_str().unwrap(), "new.txt");
                 assert_eq!(content, "Hello world");
             }
@@ -238,7 +242,7 @@ mod tests {
         let actions = plan_patch_actions(cwd, &operations).await.unwrap();
         assert_eq!(actions.len(), 1);
         match &actions[0] {
-            PlannedAction::Update { path, content } => {
+            PlannedAction::Update { path, content, .. } => {
                 assert_eq!(path.file_name().unwrap().to_str().unwrap(), "test.txt");
                 assert_eq!(content, "line1\nline2-updated\nline3\n");
             }

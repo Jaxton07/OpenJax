@@ -84,8 +84,6 @@ Rules:\n\
 - IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
 - If a tool was already called and returned results, use those results to decide the next action.\n\
 - Only call a tool again if you need different arguments or if the previous call failed.\n\
-- After a successful apply_patch, do not call apply_patch again until you call read_file and inspect the latest file content.\n\
-- After verification read_file, if the result already satisfies the request, return final immediately.\n\
 - If verification already shows the requested content/changes are present, return final immediately.\n\
 \n\
 Available skills (auto-selected):\n\
