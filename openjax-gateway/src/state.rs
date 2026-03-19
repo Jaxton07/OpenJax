@@ -239,9 +239,11 @@ impl AppState {
         base_url: &str,
         model_name: &str,
         api_key: &str,
+        provider_type: &str,
+        context_window_size: u32,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
         self.store
-            .create_provider(provider_name, base_url, model_name, api_key)
+            .create_provider(provider_name, base_url, model_name, api_key, provider_type, context_window_size)
             .map_err(map_store_error)
     }
 
@@ -252,9 +254,10 @@ impl AppState {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        context_window_size: u32,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         self.store
-            .update_provider(provider_id, provider_name, base_url, model_name, api_key)
+            .update_provider(provider_id, provider_name, base_url, model_name, api_key, context_window_size)
             .map_err(map_store_error)
     }
 
@@ -521,7 +524,7 @@ fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
             .base_url
             .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
         let model_name = entry.model.unwrap_or_else(|| model_id.clone());
-        let _ = store.create_provider(&model_id, &base_url, &model_name, &api_key);
+        let _ = store.create_provider(&model_id, &base_url, &model_name, &api_key, "custom", 0);
     }
 }
 

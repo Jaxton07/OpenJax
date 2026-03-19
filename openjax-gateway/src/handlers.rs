@@ -134,6 +134,8 @@ pub struct ProviderItem {
     base_url: String,
     model_name: String,
     api_key_set: bool,
+    provider_type: String,
+    context_window_size: u32,
     created_at: String,
     updated_at: String,
 }
@@ -164,6 +166,7 @@ pub struct ProviderDeleteResponse {
 pub struct ActiveProviderItem {
     provider_id: String,
     model_name: String,
+    context_window_size: u32,
     updated_at: String,
 }
 
@@ -198,6 +201,14 @@ pub struct CreateProviderRequest {
     base_url: String,
     model_name: String,
     api_key: String,
+    #[serde(default = "default_provider_type")]
+    provider_type: String,
+    #[serde(default)]
+    context_window_size: u32,
+}
+
+fn default_provider_type() -> String {
+    "custom".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,6 +217,8 @@ pub struct UpdateProviderRequest {
     base_url: String,
     model_name: String,
     api_key: Option<String>,
+    #[serde(default)]
+    context_window_size: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -780,7 +793,14 @@ pub async fn create_provider(
             json!({}),
         ));
     }
-    let created = state.create_provider(provider_name, base_url, model_name, api_key)?;
+    let created = state.create_provider(
+        provider_name,
+        base_url,
+        model_name,
+        api_key,
+        &payload.provider_type,
+        payload.context_window_size,
+    )?;
     Ok(Json(ProviderMutationResponse {
         request_id: ctx.request_id,
         provider: to_provider_item(created),
@@ -809,7 +829,14 @@ pub async fn update_provider(
         ));
     }
     let updated = state
-        .update_provider(&provider_id, provider_name, base_url, model_name, api_key)?
+        .update_provider(
+            &provider_id,
+            provider_name,
+            base_url,
+            model_name,
+            api_key,
+            payload.context_window_size,
+        )?
         .ok_or_else(|| {
             ApiError::not_found("provider not found", json!({ "provider_id": provider_id }))
         })?;
@@ -867,6 +894,8 @@ fn to_provider_item(provider: openjax_store::ProviderRecord) -> ProviderItem {
         base_url: provider.base_url,
         model_name: provider.model_name,
         api_key_set: !provider.api_key.trim().is_empty(),
+        provider_type: provider.provider_type,
+        context_window_size: provider.context_window_size,
         created_at: provider.created_at,
         updated_at: provider.updated_at,
     }
@@ -876,6 +905,7 @@ fn to_active_provider_item(active: openjax_store::ActiveProviderRecord) -> Activ
     ActiveProviderItem {
         provider_id: active.provider_id,
         model_name: active.model_name,
+        context_window_size: active.context_window_size,
         updated_at: active.updated_at,
     }
 }
@@ -903,6 +933,54 @@ async fn clear_runtime(
     let config = state.runtime_config();
     let mut session = session_runtime.lock().await;
     session.clear_context_with_config(config);
+}
+
+// ---- Catalog ----
+
+#[derive(Debug, Serialize)]
+pub struct CatalogModelItem {
+    model_id: &'static str,
+    display_name: &'static str,
+    context_window: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CatalogProviderItem {
+    catalog_key: &'static str,
+    display_name: &'static str,
+    base_url: &'static str,
+    protocol: &'static str,
+    default_model: &'static str,
+    models: Vec<CatalogModelItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CatalogResponse {
+    providers: Vec<CatalogProviderItem>,
+}
+
+pub async fn get_catalog() -> impl IntoResponse {
+    use openjax_core::BUILTIN_CATALOG;
+    let providers = BUILTIN_CATALOG
+        .iter()
+        .map(|p| CatalogProviderItem {
+            catalog_key: p.catalog_key,
+            display_name: p.display_name,
+            base_url: p.base_url,
+            protocol: p.protocol,
+            default_model: p.default_model,
+            models: p
+                .models
+                .iter()
+                .map(|m| CatalogModelItem {
+                    model_id: m.model_id,
+                    display_name: m.display_name,
+                    context_window: m.context_window,
+                })
+                .collect(),
+        })
+        .collect();
+    Json(CatalogResponse { providers })
 }
 
 #[cfg(test)]

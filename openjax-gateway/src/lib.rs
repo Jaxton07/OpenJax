@@ -129,6 +129,7 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
     let mut app = Router::new()
         .route("/healthz", get(handlers::healthz))
         .route("/readyz", get(handlers::readyz))
+        .route("/api/v1/catalog", get(handlers::get_catalog))
         .merge(login_auth)
         .merge(auth_protected)
         .merge(auth_public)
