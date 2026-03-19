@@ -279,6 +279,7 @@ mod tests {
                 supports_reasoning: Some(true),
                 supports_tool_call: Some(false),
                 supports_json_mode: Some(false),
+                context_window_size: None,
             },
         );
         let mut fallbacks = HashMap::new();
@@ -325,6 +326,7 @@ mod tests {
                 supports_reasoning: None,
                 supports_tool_call: None,
                 supports_json_mode: None,
+                context_window_size: None,
             },
         );
 
@@ -370,6 +372,7 @@ mod tests {
                 supports_reasoning: None,
                 supports_tool_call: None,
                 supports_json_mode: None,
+                context_window_size: None,
             },
         );
 

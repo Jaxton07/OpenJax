@@ -1,5 +1,6 @@
 mod agent;
 pub mod approval;
+pub mod builtin_catalog;
 mod config;
 pub mod dispatcher;
 mod logger;
@@ -13,6 +14,7 @@ pub mod tools;
 
 use agent::state::{RateLimitConfig, ToolCallRecord};
 pub use approval::{ApprovalHandler, ApprovalRequest, StdinApprovalHandler};
+pub use builtin_catalog::{BUILTIN_CATALOG, CatalogModel, CatalogProvider};
 pub use approval::{DEFAULT_APPROVAL_TIMEOUT_MS, approval_timeout_ms_from_env};
 pub use config::AgentConfig;
 pub use config::Config;
