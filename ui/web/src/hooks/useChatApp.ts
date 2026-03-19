@@ -16,6 +16,7 @@ import type { ChatMessage, ChatSession, ChatState, MessageRole, PendingApproval 
 import type {
   AppSettings,
   AuthSessionItem,
+  CatalogProvider,
   GatewaySessionSummary,
   GatewayConnection,
   GatewayError,
@@ -825,6 +826,8 @@ export function useChatApp() {
       baseUrl: string;
       modelName: string;
       apiKey: string;
+      providerType?: "built_in" | "custom";
+      contextWindowSize?: number;
     }): Promise<LlmProvider> => {
       const data = await withAuthRetry(() => client.createProvider(payload));
       return data.provider;
@@ -840,6 +843,8 @@ export function useChatApp() {
         baseUrl: string;
         modelName: string;
         apiKey?: string;
+        providerType?: "built_in" | "custom";
+        contextWindowSize?: number;
       }
     ): Promise<LlmProvider> => {
       const data = await withAuthRetry(() => client.updateProvider(providerId, payload));
@@ -866,6 +871,10 @@ export function useChatApp() {
     }
     return providersData.providers.find((item) => item.provider_id === providerId) ?? null;
   }, [client, withAuthRetry]);
+
+  const fetchCatalog = useCallback(async (): Promise<CatalogProvider[]> => {
+    return client.fetchCatalog();
+  }, [client]);
 
   const setActiveProvider = useCallback(
     async (providerId: string): Promise<LlmProvider> => {
@@ -930,6 +939,7 @@ export function useChatApp() {
     deleteProvider,
     getActiveProvider,
     setActiveProvider,
+    fetchCatalog,
     dismissGlobalError,
     dismissToast
   };

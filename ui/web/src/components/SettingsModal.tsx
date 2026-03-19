@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AppSettings, LlmProvider } from "../types/gateway";
+import type { AppSettings, CatalogProvider, LlmProvider } from "../types/gateway";
 import GeneralSettingsPanel, { type GeneralStatus } from "./settings/GeneralSettingsPanel";
 import ProviderEditorPanel from "./settings/ProviderEditorPanel";
 import type { ProviderFormValue } from "./settings/ProviderForm";
@@ -20,6 +20,7 @@ interface SettingsModalProps {
   onDeleteProvider: (providerId: string) => Promise<void>;
   onGetActiveProvider: () => Promise<LlmProvider | null>;
   onSetActiveProvider: (providerId: string) => Promise<LlmProvider>;
+  onFetchCatalog: () => Promise<CatalogProvider[]>;
 }
 
 const IDLE_GENERAL_STATUS: GeneralStatus = {
@@ -48,6 +49,8 @@ export default function SettingsModal(props: SettingsModalProps) {
   );
   const [providerPanelMode, setProviderPanelMode] = useState<"none" | "create" | "edit">("none");
   const [closingProviderPanel, setClosingProviderPanel] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
+  const [pendingCatalogEntry, setPendingCatalogEntry] = useState<CatalogProvider | null>(null);
   const wasOpenRef = useRef(false);
 
   useEffect(() => {
@@ -101,13 +104,15 @@ export default function SettingsModal(props: SettingsModalProps) {
     setLoadingProviders(true);
     setProviderError("");
     try {
-      const [items, activeProvider] = await Promise.all([
+      const [items, activeProvider, catalogData] = await Promise.all([
         props.onListProviders(),
-        props.onGetActiveProvider()
+        props.onGetActiveProvider(),
+        props.onFetchCatalog()
       ]);
       const activeId = activeProvider?.provider_id ?? null;
       setProviders(items);
       setActiveProviderId(activeId);
+      setCatalog(catalogData);
       setSelectedProviderId((current) => {
         if (current && items.some((item) => item.provider_id === current)) {
           return current;
@@ -156,26 +161,39 @@ export default function SettingsModal(props: SettingsModalProps) {
   );
 
   const providerFormInitialValue: ProviderFormValue =
-    providerPanelMode === "create"
+    providerPanelMode === "create" && pendingCatalogEntry
       ? {
-        providerName: "",
-        baseUrl: "",
-        modelName: "",
-        apiKey: ""
-      }
+          providerName: pendingCatalogEntry.display_name,
+          baseUrl: pendingCatalogEntry.base_url,
+          modelName: pendingCatalogEntry.default_model,
+          apiKey: "",
+          providerType: "built_in",
+          contextWindowSize:
+            pendingCatalogEntry.models.find(
+              (m) => m.model_id === pendingCatalogEntry.default_model
+            )?.context_window ?? 0,
+          catalogModels: pendingCatalogEntry.models
+        }
+      : providerPanelMode === "create"
+      ? { providerName: "", baseUrl: "", modelName: "", apiKey: "", providerType: "custom", contextWindowSize: 0 }
       : selectedProvider
         ? {
             providerName: selectedProvider.provider_name,
             baseUrl: selectedProvider.base_url,
             modelName: selectedProvider.model_name,
-            apiKey: ""
+            apiKey: "",
+            providerType: selectedProvider.provider_type,
+            contextWindowSize: selectedProvider.context_window_size,
+            catalogModels:
+              selectedProvider.provider_type === "built_in"
+                ? catalog.find(
+                    (e) =>
+                      e.base_url.replace(/\/+$/, "") ===
+                      selectedProvider.base_url.replace(/\/+$/, "")
+                  )?.models
+                : undefined
           }
-        : {
-            providerName: "",
-            baseUrl: "",
-            modelName: "",
-            apiKey: ""
-          };
+        : { providerName: "", baseUrl: "", modelName: "", apiKey: "", providerType: "custom", contextWindowSize: 0 };
 
   const handleSaveSettings = async (settings: AppSettings) => {
     setSavingGeneral(true);
@@ -292,6 +310,40 @@ export default function SettingsModal(props: SettingsModalProps) {
     }
   };
 
+  const handleSwitchModel = async (
+    providerId: string,
+    modelId: string,
+    contextWindow: number
+  ) => {
+    const provider = providers.find((p) => p.provider_id === providerId);
+    if (!provider) return;
+    try {
+      const updated = await props.onUpdateProvider(providerId, {
+        providerName: provider.provider_name,
+        baseUrl: provider.base_url,
+        modelName: modelId,
+        apiKey: "",
+        providerType: provider.provider_type,
+        contextWindowSize: contextWindow
+      });
+      setProviders((prev) =>
+        prev.map((p) => (p.provider_id === updated.provider_id ? updated : p))
+      );
+      if (activeProviderId === updated.provider_id) {
+        syncSelectedProviderSettings(updated, true);
+      }
+    } catch (error) {
+      setProviderError((error as Error).message);
+    }
+  };
+
+  const handleConfigureCatalogEntry = (entry: CatalogProvider) => {
+    openProviderPanel("create");
+    setProviderError("");
+    setProviderSuccess("");
+    setPendingCatalogEntry(entry);
+  };
+
   useEffect(() => {
     if (providerPanelMode === "edit" && !selectedProvider) {
       setClosingProviderPanel(true);
@@ -308,6 +360,7 @@ export default function SettingsModal(props: SettingsModalProps) {
       return;
     }
     setClosingProviderPanel(true);
+    setPendingCatalogEntry(null);
   };
 
   const providerNoticeMessage = providerError || providerSuccess;
@@ -358,6 +411,7 @@ export default function SettingsModal(props: SettingsModalProps) {
                   providers={providers}
                   loading={loadingProviders}
                   selectedProviderId={activeProviderId}
+                  catalog={catalog}
                   noticeMessage={providerNoticeMessage}
                   noticeTone={providerNoticeTone}
                   onRefresh={refreshProviders}
@@ -365,6 +419,7 @@ export default function SettingsModal(props: SettingsModalProps) {
                     openProviderPanel("create");
                     setProviderError("");
                     setProviderSuccess("");
+                    setPendingCatalogEntry(null);
                   }}
                   onSelect={(provider) => void activateProvider(provider)}
                   onEdit={(provider) => {
@@ -374,6 +429,8 @@ export default function SettingsModal(props: SettingsModalProps) {
                     setProviderSuccess("");
                   }}
                   onDelete={removeProvider}
+                  onSwitchModel={handleSwitchModel}
+                  onConfigureCatalogEntry={handleConfigureCatalogEntry}
                 />
                 {providerPanelMode !== "none" ? (
                   <ProviderEditorPanel

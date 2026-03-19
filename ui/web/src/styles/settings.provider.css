@@ -400,3 +400,115 @@
     transform: translateX(36px);
   }
 }
+
+/* 内置 badge */
+.provider-builtin-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--settings-bg-hover, #eff6ff);
+  color: var(--settings-accent, #2563eb);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* 模型切换下拉 */
+.provider-model-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.provider-model-switch select {
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--settings-border, #e5e7eb);
+  border-radius: 5px;
+  background: var(--settings-bg-hover, #f9fafb);
+  color: var(--settings-text-primary, #374151);
+  cursor: pointer;
+}
+
+.provider-switch-tip {
+  font-size: 11px;
+  color: var(--settings-success, #16a34a);
+  animation: fade-out 2s forwards;
+}
+
+@keyframes fade-out {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 上下文窗口展示 */
+.provider-cw {
+  font-size: 11px;
+  color: var(--settings-text-secondary, #9ca3af);
+}
+
+/* 只读字段 */
+.field-readonly {
+  background: var(--settings-bg-hover, #f9fafb) !important;
+  color: var(--settings-text-secondary, #6b7280) !important;
+  cursor: default;
+}
+
+/* 目录区 */
+.catalog-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--settings-border, #e5e7eb);
+}
+
+.catalog-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--settings-text-secondary, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.catalog-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.catalog-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px dashed var(--settings-border, #d1d5db);
+  border-radius: 8px;
+  background: var(--settings-bg-hover, #fafafa);
+}
+
+.catalog-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.catalog-info strong {
+  font-size: 13px;
+  color: var(--settings-text-primary, #374151);
+}
+
+.catalog-info span {
+  font-size: 11px;
+  color: var(--settings-text-secondary, #9ca3af);
+}
+
+.catalog-add-btn {
+  font-size: 12px;
+  white-space: nowrap;
+}

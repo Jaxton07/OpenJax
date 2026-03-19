@@ -10,7 +10,9 @@ const providerItem = {
   model_name: "gpt-4.1-mini",
   api_key_set: true,
   created_at: "2026-01-01T00:00:00Z",
-  updated_at: "2026-01-01T00:00:00Z"
+  updated_at: "2026-01-01T00:00:00Z",
+  provider_type: "custom" as const,
+  context_window_size: 128000
 };
 
 afterEach(() => {
@@ -42,6 +44,7 @@ describe("SettingsModal", () => {
         onDeleteProvider={async () => {}}
         onGetActiveProvider={async () => providerItem}
         onSetActiveProvider={async () => providerItem}
+        onFetchCatalog={async () => []}
       />
     );
 
@@ -60,7 +63,9 @@ describe("SettingsModal", () => {
       model_name: "glm-4.7",
       api_key_set: true,
       created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-01T00:00:00Z"
+      updated_at: "2026-01-01T00:00:00Z",
+      provider_type: "custom" as const,
+      context_window_size: 0
     });
 
     render(
@@ -83,6 +88,7 @@ describe("SettingsModal", () => {
         onDeleteProvider={async () => {}}
         onGetActiveProvider={async () => null}
         onSetActiveProvider={async () => providerItem}
+        onFetchCatalog={async () => []}
       />
     );
 
@@ -94,6 +100,7 @@ describe("SettingsModal", () => {
       "https://open.bigmodel.cn/api/anthropic"
     );
     await userEvent.type(screen.getByLabelText("模型名称"), "glm-4.7");
+    await userEvent.type(screen.getByLabelText("上下文窗口大小"), "128000");
     await userEvent.type(screen.getByLabelText("API Key"), "key-a");
     await userEvent.click(screen.getByRole("button", { name: "新增 Provider" }));
 
@@ -102,7 +109,9 @@ describe("SettingsModal", () => {
         providerName: "glm-main",
         baseUrl: "https://open.bigmodel.cn/api/anthropic",
         modelName: "glm-4.7",
-        apiKey: "key-a"
+        apiKey: "key-a",
+        providerType: "custom",
+        contextWindowSize: 128000
       })
     );
   });
@@ -132,6 +141,7 @@ describe("SettingsModal", () => {
         onDeleteProvider={async () => {}}
         onGetActiveProvider={async () => null}
         onSetActiveProvider={onSetActiveProvider}
+        onFetchCatalog={async () => []}
       />
     );
 
@@ -174,6 +184,7 @@ describe("SettingsModal", () => {
         onDeleteProvider={async () => {}}
         onGetActiveProvider={async () => providerItem}
         onSetActiveProvider={async () => providerItem}
+        onFetchCatalog={async () => []}
       />
     );
 
@@ -192,7 +203,9 @@ describe("SettingsModal", () => {
         providerName: "openai-main",
         baseUrl: "https://api.openai.com/v1",
         modelName: "gpt-4.1",
-        apiKey: ""
+        apiKey: "",
+        providerType: "custom",
+        contextWindowSize: 128000
       })
     );
   });
@@ -223,6 +236,7 @@ describe("SettingsModal", () => {
         onDeleteProvider={onDeleteProvider}
         onGetActiveProvider={async () => providerItem}
         onSetActiveProvider={async () => providerItem}
+        onFetchCatalog={async () => []}
       />
     );
 
