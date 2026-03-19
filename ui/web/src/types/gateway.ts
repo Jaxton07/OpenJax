@@ -15,6 +15,23 @@ export interface LlmProvider {
   api_key_set: boolean;
   created_at: string;
   updated_at: string;
+  provider_type: "built_in" | "custom";
+  context_window_size: number;
+}
+
+export interface CatalogModel {
+  model_id: string;
+  display_name: string;
+  context_window: number;
+}
+
+export interface CatalogProvider {
+  catalog_key: string;
+  display_name: string;
+  base_url: string;
+  protocol: string;
+  default_model: string;
+  models: CatalogModel[];
 }
 
 export interface AuthState {

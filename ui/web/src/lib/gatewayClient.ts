@@ -3,6 +3,7 @@ import type {
   AuthLoginResponse,
   AuthRevokeResponse,
   AuthSessionsResponse,
+  CatalogProvider,
   GatewaySessionListResponse,
   GatewaySessionMessagesResponse,
   GatewaySessionTimelineResponse,
@@ -210,6 +211,13 @@ export class GatewayClient {
       method: "PUT",
       body: JSON.stringify({ provider_id: providerId })
     });
+  }
+
+  async fetchCatalog(): Promise<CatalogProvider[]> {
+    const res = await fetch(`${normalizeBaseUrl(this.settings.baseUrl)}/api/v1/catalog`);
+    if (!res.ok) throw new Error(`fetchCatalog failed: ${res.status}`);
+    const data = await res.json();
+    return data.providers as CatalogProvider[];
   }
 
   async healthCheck(): Promise<{ status: string }> {
