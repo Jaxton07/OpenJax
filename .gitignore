@@ -18,3 +18,4 @@ __pycache__/
 .ruff_cache/
 .tmp
 scripts/api_test/response.log
+.superpowers/
