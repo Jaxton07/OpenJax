@@ -38,6 +38,10 @@ impl SqliteStore {
             conn: Arc::new(Mutex::new(conn)),
         };
         store.init_schema()?;
+        {
+            let conn = store.conn.lock().expect("store db mutex poisoned");
+            Self::migrate_schema(&conn).context("migrate store schema")?;
+        }
         Ok(store)
     }
 
@@ -47,6 +51,10 @@ impl SqliteStore {
             conn: Arc::new(Mutex::new(conn)),
         };
         store.init_schema()?;
+        {
+            let conn = store.conn.lock().expect("store db mutex poisoned");
+            Self::migrate_schema(&conn).context("migrate store schema")?;
+        }
         Ok(store)
     }
 
@@ -121,6 +129,58 @@ impl SqliteStore {
             "#,
         )
         .context("init store schema")?;
+        Ok(())
+    }
+
+    pub(crate) fn migrate_schema(conn: &rusqlite::Connection) -> anyhow::Result<()> {
+        // llm_providers: add provider_type
+        let has_provider_type: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('llm_providers') WHERE name = 'provider_type'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_provider_type {
+            conn.execute_batch(
+                "ALTER TABLE llm_providers ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'custom'",
+            )
+            .context("migrate: add provider_type to llm_providers")?;
+        }
+
+        // llm_providers: add context_window_size
+        let has_provider_cw: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('llm_providers') WHERE name = 'context_window_size'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_provider_cw {
+            conn.execute_batch(
+                "ALTER TABLE llm_providers ADD COLUMN context_window_size INTEGER NOT NULL DEFAULT 0",
+            )
+            .context("migrate: add context_window_size to llm_providers")?;
+        }
+
+        // llm_runtime_settings: add context_window_size
+        let has_settings_cw: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('llm_runtime_settings') WHERE name = 'context_window_size'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_settings_cw {
+            conn.execute_batch(
+                "ALTER TABLE llm_runtime_settings ADD COLUMN context_window_size INTEGER NOT NULL DEFAULT 0",
+            )
+            .context("migrate: add context_window_size to llm_runtime_settings")?;
+        }
+
         Ok(())
     }
 
@@ -412,15 +472,18 @@ impl ProviderRepository for SqliteStore {
         base_url: &str,
         model_name: &str,
         api_key: &str,
+        provider_type: &str,
+        context_window_size: u32,
     ) -> Result<ProviderRecord> {
         let provider_id = format!("provider_{}", Uuid::new_v4().simple());
         let now = now_rfc3339();
         {
             let conn = self.conn.lock().expect("store db mutex poisoned");
             conn.execute(
-                "INSERT INTO llm_providers (provider_id, provider_name, base_url, model_name, api_key, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-                params![provider_id, provider_name, base_url, model_name, api_key, now],
+                "INSERT INTO llm_providers
+                 (provider_id, provider_name, base_url, model_name, api_key, provider_type, context_window_size, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                params![provider_id, provider_name, base_url, model_name, api_key, provider_type, context_window_size, now],
             )
             .with_context(|| format!("insert provider {}", provider_name))?;
         }
@@ -435,29 +498,32 @@ impl ProviderRepository for SqliteStore {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        context_window_size: u32,
     ) -> Result<Option<ProviderRecord>> {
         let now = now_rfc3339();
         let changed = {
             let conn = self.conn.lock().expect("store db mutex poisoned");
             let sql = if api_key.is_some() {
                 "UPDATE llm_providers
-                 SET provider_name = ?1, base_url = ?2, model_name = ?3, api_key = ?4, updated_at = ?5
-                 WHERE provider_id = ?6"
+                 SET provider_name = ?1, base_url = ?2, model_name = ?3, api_key = ?4,
+                     context_window_size = ?5, updated_at = ?6
+                 WHERE provider_id = ?7"
             } else {
                 "UPDATE llm_providers
-                 SET provider_name = ?1, base_url = ?2, model_name = ?3, updated_at = ?4
-                 WHERE provider_id = ?5"
+                 SET provider_name = ?1, base_url = ?2, model_name = ?3,
+                     context_window_size = ?4, updated_at = ?5
+                 WHERE provider_id = ?6"
             };
             if let Some(api_key) = api_key {
                 conn.execute(
                     sql,
-                    params![provider_name, base_url, model_name, api_key, now, provider_id],
+                    params![provider_name, base_url, model_name, api_key, context_window_size, now, provider_id],
                 )
                 .with_context(|| format!("update provider {}", provider_id))?
             } else {
                 conn.execute(
                     sql,
-                    params![provider_name, base_url, model_name, now, provider_id],
+                    params![provider_name, base_url, model_name, context_window_size, now, provider_id],
                 )
                 .with_context(|| format!("update provider {}", provider_id))?
             }
@@ -465,17 +531,17 @@ impl ProviderRepository for SqliteStore {
         if changed == 0 {
             return Ok(None);
         }
+        // sync active provider snapshot
         {
             let conn = self.conn.lock().expect("store db mutex poisoned");
             let now = now_rfc3339();
             conn.execute(
                 "UPDATE llm_runtime_settings
-                 SET model_name = ?1, updated_at = ?2
-                 WHERE setting_key = 'active_provider'
-                   AND provider_id = ?3",
-                params![model_name, now, provider_id],
+                 SET model_name = ?1, context_window_size = ?2, updated_at = ?3
+                 WHERE setting_key = 'active_provider' AND provider_id = ?4",
+                params![model_name, context_window_size, now, provider_id],
             )
-            .with_context(|| format!("sync active provider model {}", provider_id))?;
+            .with_context(|| format!("sync active provider snapshot {}", provider_id))?;
         }
         self.get_provider(provider_id)
     }
@@ -495,7 +561,8 @@ impl ProviderRepository for SqliteStore {
     fn get_provider(&self, provider_id: &str) -> Result<Option<ProviderRecord>> {
         let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.query_row(
-            "SELECT provider_id, provider_name, base_url, model_name, api_key, created_at, updated_at
+            "SELECT provider_id, provider_name, base_url, model_name, api_key,
+                    provider_type, context_window_size, created_at, updated_at
              FROM llm_providers
              WHERE provider_id = ?1",
             params![provider_id],
@@ -506,8 +573,10 @@ impl ProviderRepository for SqliteStore {
                     base_url: row.get(2)?,
                     model_name: row.get(3)?,
                     api_key: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    provider_type: row.get(5)?,
+                    context_window_size: row.get::<_, u32>(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             },
         )
@@ -519,7 +588,8 @@ impl ProviderRepository for SqliteStore {
         let conn = self.conn.lock().expect("store db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT provider_id, provider_name, base_url, model_name, api_key, created_at, updated_at
+                "SELECT provider_id, provider_name, base_url, model_name, api_key,
+                        provider_type, context_window_size, created_at, updated_at
                  FROM llm_providers
                  ORDER BY created_at DESC",
             )
@@ -532,8 +602,10 @@ impl ProviderRepository for SqliteStore {
                     base_url: row.get(2)?,
                     model_name: row.get(3)?,
                     api_key: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    provider_type: row.get(5)?,
+                    context_window_size: row.get::<_, u32>(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })
             .context("query list providers")?;
@@ -548,7 +620,7 @@ impl ProviderRepository for SqliteStore {
     fn get_active_provider(&self) -> Result<Option<ActiveProviderRecord>> {
         let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.query_row(
-            "SELECT provider_id, model_name, updated_at
+            "SELECT provider_id, model_name, context_window_size, updated_at
              FROM llm_runtime_settings
              WHERE setting_key = 'active_provider'
                AND provider_id IS NOT NULL
@@ -558,7 +630,8 @@ impl ProviderRepository for SqliteStore {
                 Ok(ActiveProviderRecord {
                     provider_id: row.get(0)?,
                     model_name: row.get(1)?,
-                    updated_at: row.get(2)?,
+                    context_window_size: row.get::<_, u32>(2)?,
+                    updated_at: row.get(3)?,
                 })
             },
         )
@@ -575,13 +648,15 @@ impl ProviderRepository for SqliteStore {
         {
             let conn = self.conn.lock().expect("store db mutex poisoned");
             conn.execute(
-                "INSERT INTO llm_runtime_settings (setting_key, provider_id, model_name, updated_at)
-                 VALUES ('active_provider', ?1, ?2, ?3)
+                "INSERT INTO llm_runtime_settings
+                 (setting_key, provider_id, model_name, context_window_size, updated_at)
+                 VALUES ('active_provider', ?1, ?2, ?3, ?4)
                  ON CONFLICT(setting_key)
                  DO UPDATE SET provider_id = excluded.provider_id,
                                model_name = excluded.model_name,
+                               context_window_size = excluded.context_window_size,
                                updated_at = excluded.updated_at",
-                params![provider.provider_id, provider.model_name, now],
+                params![provider.provider_id, provider.model_name, provider.context_window_size, now],
             )
             .context("set active provider")?;
         }
@@ -674,20 +749,20 @@ mod tests {
     #[test]
     fn provider_name_has_unique_constraint() {
         let store = setup_store();
-        store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1", "sk-1").expect("create first");
-        let dup = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-2");
+        store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1", "sk-1", "built_in", 128000).expect("create first");
+        let dup = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-2", "built_in", 128000);
         assert!(dup.is_err());
     }
 
     #[test]
     fn can_update_and_delete_provider() {
         let store = setup_store();
-        let created = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4", "key-a").expect("create");
-        let updated = store.update_provider(&created.provider_id, "glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4-plus", Some("key-b")).expect("update").expect("exists");
+        let created = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4", "key-a", "custom", 0).expect("create");
+        let updated = store.update_provider(&created.provider_id, "glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4-plus", Some("key-b"), 0).expect("update").expect("exists");
         assert_eq!(updated.model_name, "glm-4-plus");
         assert_eq!(updated.api_key, "key-b");
 
-        let updated2 = store.update_provider(&created.provider_id, "glm-main-2", "https://open.bigmodel.cn/api/paas/v4", "glm-4-air", None).expect("update no key").expect("exists");
+        let updated2 = store.update_provider(&created.provider_id, "glm-main-2", "https://open.bigmodel.cn/api/paas/v4", "glm-4-air", None, 0).expect("update no key").expect("exists");
         assert_eq!(updated2.provider_name, "glm-main-2");
         assert_eq!(updated2.api_key, "key-b");
 
@@ -698,8 +773,8 @@ mod tests {
     #[test]
     fn can_set_and_get_active_provider() {
         let store = setup_store();
-        let first = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-1").expect("create first");
-        let second = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4.7", "sk-2").expect("create second");
+        let first = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-1", "built_in", 128000).expect("create first");
+        let second = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4.7", "sk-2", "built_in", 128000).expect("create second");
 
         let selected = store.set_active_provider(&second.provider_id).expect("set active").expect("exists");
         assert_eq!(selected.provider_id, second.provider_id);
@@ -717,5 +792,67 @@ mod tests {
 
         let reselect = store.set_active_provider(&first.provider_id).expect("reselect").expect("exists");
         assert_eq!(reselect.provider_id, first.provider_id);
+    }
+
+    #[test]
+    fn provider_new_fields_roundtrip() {
+        let store = setup_store();
+
+        let p = store
+            .create_provider("OpenAI", "https://api.openai.com/v1", "gpt-4o", "sk-test", "built_in", 128000)
+            .expect("create provider");
+
+        assert_eq!(p.provider_type, "built_in");
+        assert_eq!(p.context_window_size, 128000);
+
+        let updated = store
+            .update_provider(&p.provider_id, "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", None, 128000)
+            .expect("update provider")
+            .expect("provider exists");
+
+        assert_eq!(updated.model_name, "gpt-4o-mini");
+        assert_eq!(updated.context_window_size, 128000);
+        // provider_type is not mutated by update
+        assert_eq!(updated.provider_type, "built_in");
+    }
+
+    #[test]
+    fn active_provider_snapshot_includes_context_window() {
+        let store = setup_store();
+        let p = store
+            .create_provider("Kimi", "https://api.kimi.com/coding", "k2.5", "key", "built_in", 256000)
+            .expect("create");
+        store.set_active_provider(&p.provider_id).expect("set active");
+
+        let active = store.get_active_provider().expect("get active").expect("has active");
+        assert_eq!(active.context_window_size, 256000);
+    }
+
+    #[test]
+    fn active_snapshot_updated_when_provider_model_switches() {
+        let store = setup_store();
+        let p = store
+            .create_provider("OpenAI", "https://api.openai.com/v1", "gpt-4o", "key", "built_in", 128000)
+            .expect("create");
+        store.set_active_provider(&p.provider_id).expect("set active");
+
+        // switch model
+        store
+            .update_provider(&p.provider_id, "OpenAI", "https://api.openai.com/v1", "gpt-5.3-codex", None, 200000)
+            .expect("update");
+
+        let active = store.get_active_provider().expect("get").expect("active");
+        assert_eq!(active.model_name, "gpt-5.3-codex");
+        assert_eq!(active.context_window_size, 200000);
+    }
+
+    #[test]
+    fn migration_is_idempotent() {
+        let store = setup_store();
+        let _ = store.create_provider("X", "https://x.com/v1", "m", "k", "custom", 0).expect("create");
+        // Call migrate_schema twice on the same connection — must not error
+        let conn = store.conn.lock().expect("lock");
+        SqliteStore::migrate_schema(&conn).expect("first migrate ok");
+        SqliteStore::migrate_schema(&conn).expect("second migrate ok (idempotent)");
     }
 }
