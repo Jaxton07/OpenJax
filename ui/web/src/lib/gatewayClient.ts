@@ -215,9 +215,9 @@ export class GatewayClient {
 
   async fetchCatalog(): Promise<CatalogProvider[]> {
     const res = await fetch(`${normalizeBaseUrl(this.settings.baseUrl)}/api/v1/catalog`);
-    if (!res.ok) throw new Error(`fetchCatalog failed: ${res.status}`);
+    if (!res.ok) throw await parseGatewayError(res);
     const data = await res.json();
-    return data.providers as CatalogProvider[];
+    return (data.providers ?? []) as CatalogProvider[];
   }
 
   async healthCheck(): Promise<{ status: string }> {
