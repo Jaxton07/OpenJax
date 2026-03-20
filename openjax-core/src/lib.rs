@@ -85,6 +85,8 @@ pub struct Agent {
     tool_batch_v2_enabled: bool,
     approval_handler: Arc<dyn approval::ApprovalHandler>,
     event_sink: Option<UnboundedSender<Event>>,
+    context_window_size: u32,
+    last_input_tokens: Option<u64>,
 }
 
 impl Agent {}
