@@ -1,244 +1,39 @@
-//! JSONL stdio daemon mode — used by `openjaxd` (thin shim) and the Python SDK.
-//!
-//! Entry point: `run_stdio()`. Reads JSONL from stdin, writes JSONL to stdout.
+//! Message dispatch and I/O helpers for the JSONL stdio daemon.
 
 use std::collections::HashMap;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, atomic::Ordering};
 
-use async_trait::async_trait;
-use openjax_core::{
-    Agent, ApprovalHandler, ApprovalRequest, approval_timeout_ms_from_env, init_logger,
-    load_runtime_config,
-};
+use openjax_core::{load_runtime_config, Agent};
 use openjax_protocol::{Event, Op};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{Mutex, mpsc, oneshot};
-use tokio::time::{Duration, timeout};
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-const PROTOCOL_VERSION: &str = "v1";
-const KIND_REQUEST: &str = "request";
-const KIND_RESPONSE: &str = "response";
-const KIND_EVENT: &str = "event";
-const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
+use super::daemon::{DaemonApprovalHandler, SessionState};
+use super::protocol::{
+    ApprovalLogEvent, ErrorBody, EventEnvelope, RequestEnvelope, ResponseEnvelope,
+};
+use super::protocol::log_approval_event;
 
-fn approval_bool_field(value: Option<bool>) -> &'static str {
-    match value {
-        Some(true) => "true",
-        Some(false) => "false",
-        None => "-",
-    }
-}
+pub const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
 
-fn approval_text_field(value: Option<&str>) -> String {
-    let raw = value.unwrap_or("-").trim();
-    if raw.is_empty() {
-        return "-".to_string();
-    }
-    raw.split_whitespace().collect::<Vec<_>>().join("_")
-}
-
-struct ApprovalLogEvent<'a> {
-    action: &'a str,
-    request_id: Option<&'a str>,
-    turn_id: Option<&'a str>,
-    target: Option<&'a str>,
-    approved: Option<bool>,
-    resolved: Option<bool>,
-    session_id: Option<&'a str>,
-    detail: Option<&'a str>,
-}
-
-fn log_approval_event(event: ApprovalLogEvent<'_>) {
-    info!(
-        "approval_event action={} request_id={} turn_id={} target={} approved={} resolved={} session_id={} detail={}",
-        approval_text_field(Some(event.action)),
-        approval_text_field(event.request_id),
-        approval_text_field(event.turn_id),
-        approval_text_field(event.target),
-        approval_bool_field(event.approved),
-        approval_bool_field(event.resolved),
-        approval_text_field(event.session_id),
-        approval_text_field(event.detail),
-    );
-}
-
-#[derive(Debug, Deserialize)]
-struct RequestEnvelope {
-    protocol_version: String,
-    kind: String,
-    request_id: String,
-    #[serde(default)]
-    session_id: Option<String>,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct ResponseEnvelope {
-    protocol_version: &'static str,
-    kind: &'static str,
-    request_id: String,
-    ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<ErrorBody>,
-}
-
-#[derive(Debug, Serialize)]
-struct EventEnvelope {
-    protocol_version: &'static str,
-    kind: &'static str,
-    session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    turn_id: Option<String>,
-    event_type: String,
-    payload: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorBody {
-    code: String,
-    message: String,
-    retriable: bool,
-    details: Value,
-}
-
-struct SessionState {
-    agent: Arc<Mutex<Agent>>,
-    streaming_enabled: Arc<AtomicBool>,
-    approval_handler: Arc<DaemonApprovalHandler>,
-}
-
-#[derive(Default)]
-struct DaemonApprovalHandler {
-    pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
-}
-
-impl DaemonApprovalHandler {
-    async fn resolve(&self, request_id: &str, approved: bool) -> bool {
-        let tx = {
-            let mut pending = self.pending.lock().await;
-            pending.remove(request_id)
-        };
-        match tx {
-            Some(tx) => tx.send(approved).is_ok(),
-            None => {
-                warn!(approval_request_id = %request_id, "approval request not found");
-                log_approval_event(ApprovalLogEvent {
-                    action: "resolve_missing",
-                    request_id: Some(request_id),
-                    turn_id: None,
-                    target: None,
-                    approved: Some(approved),
-                    resolved: Some(false),
-                    session_id: None,
-                    detail: Some("request_not_found"),
-                });
-                false
-            }
-        }
-    }
-}
-
-#[async_trait]
-impl ApprovalHandler for DaemonApprovalHandler {
-    async fn request_approval(
-        &self,
-        request: ApprovalRequest,
-    ) -> std::result::Result<bool, String> {
-        let request_id = request.request_id.clone();
-        let timeout_ms = approval_timeout_ms_from_env();
-        let (tx, rx) = oneshot::channel();
-        {
-            let mut pending = self.pending.lock().await;
-            pending.insert(request_id.clone(), tx);
-        }
-        info!(approval_request_id = %request_id, "approval requested");
-        log_approval_event(ApprovalLogEvent {
-            action: "requested",
-            request_id: Some(&request_id),
-            turn_id: None,
-            target: Some(&request.target),
-            approved: None,
-            resolved: None,
-            session_id: None,
-            detail: Some("handler_waiting"),
-        });
-
-        let decision = timeout(Duration::from_millis(timeout_ms), rx).await;
-        let mut pending = self.pending.lock().await;
-        pending.remove(&request_id);
-
-        match decision {
-            Ok(Ok(approved)) => {
-                log_approval_event(ApprovalLogEvent {
-                    action: "handler_decided",
-                    request_id: Some(&request_id),
-                    turn_id: None,
-                    target: Some(&request.target),
-                    approved: Some(approved),
-                    resolved: Some(true),
-                    session_id: None,
-                    detail: Some("decision_received"),
-                });
-                Ok(approved)
-            }
-            Ok(Err(_)) => {
-                warn!(approval_request_id = %request_id, "approval channel closed");
-                log_approval_event(ApprovalLogEvent {
-                    action: "handler_error",
-                    request_id: Some(&request_id),
-                    turn_id: None,
-                    target: Some(&request.target),
-                    approved: None,
-                    resolved: Some(false),
-                    session_id: None,
-                    detail: Some("channel_closed"),
-                });
-                Err("approval channel closed".to_string())
-            }
-            Err(_) => {
-                warn!(approval_request_id = %request_id, timeout_ms = timeout_ms, "approval timed out");
-                log_approval_event(ApprovalLogEvent {
-                    action: "handler_timeout",
-                    request_id: Some(&request_id),
-                    turn_id: None,
-                    target: Some(&request.target),
-                    approved: None,
-                    resolved: Some(false),
-                    session_id: None,
-                    detail: Some("timeout"),
-                });
-                Err("approval timed out".to_string())
-            }
-        }
-    }
-}
-
-/// Run the JSONL stdio daemon loop. Reads from stdin, writes to stdout.
-/// Loads provider config from the database (same source as the WebUI).
 pub async fn run_stdio() -> anyhow::Result<()> {
+    use openjax_core::init_logger;
     init_logger();
     info!(
         component = "openjaxd",
-        protocol_version = PROTOCOL_VERSION,
+        protocol_version = super::protocol::PROTOCOL_VERSION,
         "daemon started"
     );
 
-    let stdin = BufReader::new(io::stdin());
+    let stdin = BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
-    let writer = Arc::new(Mutex::new(io::stdout()));
+    let writer = Arc::new(Mutex::new(tokio::io::stdout()));
 
-    let sessions: Arc<Mutex<HashMap<String, SessionState>>> = Arc::new(Mutex::new(HashMap::new()));
+    let sessions: Arc<Mutex<HashMap<String, SessionState>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(line) = lines.next_line().await? {
         if line.trim().is_empty() {
@@ -254,9 +49,9 @@ pub async fn run_stdio() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_line(
+pub async fn handle_line(
     line: &str,
-    writer: Arc<Mutex<io::Stdout>>,
+    writer: Arc<Mutex<tokio::io::Stdout>>,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
 ) {
     debug!(raw_line_len = line.len(), "received line");
@@ -270,7 +65,7 @@ async fn handle_line(
                 "INVALID_REQUEST",
                 format!("invalid JSON: {err}"),
                 false,
-                json!({}),
+                serde_json::json!({}),
             )
             .await;
             return;
@@ -293,14 +88,14 @@ async fn handle_line(
                 "INVALID_REQUEST",
                 format!("invalid request envelope: {err}"),
                 false,
-                json!({}),
+                serde_json::json!({}),
             )
             .await;
             return;
         }
     };
 
-    if req.protocol_version != PROTOCOL_VERSION || req.kind != KIND_REQUEST {
+    if req.protocol_version != super::protocol::PROTOCOL_VERSION || req.kind != super::protocol::KIND_REQUEST {
         warn!(
             request_id = %req.request_id,
             protocol_version = %req.protocol_version,
@@ -313,7 +108,7 @@ async fn handle_line(
             "INVALID_REQUEST",
             "unsupported protocol_version or kind".to_string(),
             false,
-            json!({
+            serde_json::json!({
                 "protocol_version": req.protocol_version,
                 "kind": req.kind
             }),
@@ -326,7 +121,6 @@ async fn handle_line(
         "start_session" => {
             info!(request_id = %req.request_id, method = "start_session", "handling request");
             let session_id = format!("sess_{}", Uuid::new_v4().simple());
-            // Load provider config from DB (same source as WebUI).
             let config = load_runtime_config();
             let mut agent = Agent::with_config(config);
             let approval_handler = Arc::new(DaemonApprovalHandler::default());
@@ -334,13 +128,13 @@ async fn handle_line(
 
             let state = SessionState {
                 agent: Arc::new(Mutex::new(agent)),
-                streaming_enabled: Arc::new(AtomicBool::new(false)),
+                streaming_enabled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 approval_handler,
             };
 
             sessions.lock().await.insert(session_id.clone(), state);
             info!(request_id = %req.request_id, session_id = %session_id, "session started");
-            let result = json!({
+            let result = serde_json::json!({
                 "session_id": session_id,
                 "created_at": unix_now_str(),
             });
@@ -355,7 +149,7 @@ async fn handle_line(
                     "INVALID_PARAMS",
                     "session_id is required".to_string(),
                     false,
-                    json!({}),
+                    serde_json::json!({}),
                 )
                 .await;
                 return;
@@ -369,14 +163,14 @@ async fn handle_line(
                     "SESSION_NOT_FOUND",
                     "session not found".to_string(),
                     false,
-                    json!({ "session_id": session_id }),
+                    serde_json::json!({ "session_id": session_id }),
                 )
                 .await;
                 return;
             };
             state.streaming_enabled.store(true, Ordering::Relaxed);
             info!(request_id = %req.request_id, session_id = %session_id, "stream enabled");
-            let _ = send_ok(writer, req.request_id, json!({ "subscribed": true })).await;
+            let _ = send_ok(writer, req.request_id, serde_json::json!({ "subscribed": true })).await;
         }
         "submit_turn" => {
             info!(request_id = %req.request_id, method = "submit_turn", "handling request");
@@ -387,7 +181,7 @@ async fn handle_line(
                     "INVALID_PARAMS",
                     "session_id is required".to_string(),
                     false,
-                    json!({}),
+                    serde_json::json!({}),
                 )
                 .await;
                 return;
@@ -400,7 +194,7 @@ async fn handle_line(
                     "INVALID_PARAMS",
                     "params.input is required".to_string(),
                     false,
-                    json!({}),
+                    serde_json::json!({}),
                 )
                 .await;
                 return;
@@ -425,7 +219,7 @@ async fn handle_line(
                     "SESSION_NOT_FOUND",
                     "session not found".to_string(),
                     false,
-                    json!({ "session_id": session_id }),
+                    serde_json::json!({ "session_id": session_id }),
                 )
                 .await;
                 return;
@@ -446,12 +240,7 @@ async fn handle_line(
                 let submit_task = tokio::spawn(async move {
                     let mut agent = submit_agent.lock().await;
                     agent
-                        .submit_with_sink(
-                            Op::UserTurn {
-                                input: submit_input,
-                            },
-                            event_tx,
-                        )
+                        .submit_with_sink(Op::UserTurn { input: submit_input }, event_tx)
                         .await
                 });
 
@@ -466,7 +255,7 @@ async fn handle_line(
                         let response = send_ok(
                             writer_for_events.clone(),
                             request_id.clone(),
-                            json!({"turn_id": tid_str, "accepted": true}),
+                            serde_json::json!({"turn_id": tid_str, "accepted": true}),
                         )
                         .await;
                         if response.is_err() {
@@ -493,7 +282,7 @@ async fn handle_line(
                             "INTERNAL_ERROR",
                             "submit task failed".to_string(),
                             false,
-                            json!({}),
+                            serde_json::json!({}),
                         )
                         .await;
                         return;
@@ -507,7 +296,7 @@ async fn handle_line(
                             send_ok(
                                 writer_for_events.clone(),
                                 request_id.clone(),
-                                json!({"turn_id": tid, "accepted": true}),
+                                serde_json::json!({"turn_id": tid, "accepted": true}),
                             )
                             .await
                         } else {
@@ -518,7 +307,7 @@ async fn handle_line(
                                 "INTERNAL_ERROR",
                                 "failed to infer turn_id from events".to_string(),
                                 false,
-                                json!({}),
+                                serde_json::json!({}),
                             )
                             .await
                         };
@@ -555,7 +344,7 @@ async fn handle_line(
                     "INVALID_PARAMS",
                     "session_id is required".to_string(),
                     false,
-                    json!({}),
+                    serde_json::json!({}),
                 )
                 .await;
                 return;
@@ -570,7 +359,7 @@ async fn handle_line(
                     "INVALID_PARAMS",
                     "params.request_id is required".to_string(),
                     false,
-                    json!({}),
+                    serde_json::json!({}),
                 )
                 .await;
                 return;
@@ -583,7 +372,7 @@ async fn handle_line(
                     "INVALID_PARAMS",
                     "params.approved is required".to_string(),
                     false,
-                    json!({}),
+                    serde_json::json!({}),
                 )
                 .await;
                 return;
@@ -600,7 +389,7 @@ async fn handle_line(
                         "SESSION_NOT_FOUND",
                         "session not found".to_string(),
                         false,
-                        json!({ "session_id": session_id }),
+                        serde_json::json!({ "session_id": session_id }),
                     )
                     .await;
                     return;
@@ -631,7 +420,7 @@ async fn handle_line(
             });
 
             if resolved {
-                let _ = send_ok(writer, req.request_id, json!({ "resolved": true })).await;
+                let _ = send_ok(writer, req.request_id, serde_json::json!({ "resolved": true })).await;
             } else {
                 let _ = send_error(
                     writer,
@@ -639,7 +428,7 @@ async fn handle_line(
                     "APPROVAL_NOT_FOUND",
                     "approval request not found or already resolved".to_string(),
                     false,
-                    json!({ "request_id": request_id_to_resolve }),
+                    serde_json::json!({ "request_id": request_id_to_resolve }),
                 )
                 .await;
             }
@@ -653,7 +442,7 @@ async fn handle_line(
                     "INVALID_PARAMS",
                     "session_id is required".to_string(),
                     false,
-                    json!({}),
+                    serde_json::json!({}),
                 )
                 .await;
                 return;
@@ -667,7 +456,7 @@ async fn handle_line(
                     "SESSION_NOT_FOUND",
                     "session not found".to_string(),
                     false,
-                    json!({ "session_id": session_id }),
+                    serde_json::json!({ "session_id": session_id }),
                 )
                 .await;
                 return;
@@ -679,7 +468,7 @@ async fn handle_line(
             };
             info!(request_id = %req.request_id, session_id = %session_id, "session shutdown complete");
 
-            let _ = send_ok(writer.clone(), req.request_id, json!({ "closed": true })).await;
+            let _ = send_ok(writer.clone(), req.request_id, serde_json::json!({ "closed": true })).await;
 
             if state.streaming_enabled.load(Ordering::Relaxed) {
                 for event in events {
@@ -697,7 +486,7 @@ async fn handle_line(
                 "NOT_IMPLEMENTED",
                 "unsupported method".to_string(),
                 false,
-                json!({ "method": req.method }),
+                serde_json::json!({ "method": req.method }),
             )
             .await;
         }
@@ -764,6 +553,8 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
 }
 
 fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
+    use super::protocol::{KIND_EVENT, PROTOCOL_VERSION};
+    use serde_json::json;
     match event {
         Event::TurnStarted { turn_id } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
@@ -773,12 +564,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "turn_started".to_string(),
             payload: json!({}),
         }),
-        Event::ToolCallStarted {
-            turn_id,
-            tool_name,
-            target,
-            ..
-        } => Some(EventEnvelope {
+        Event::ToolCallStarted { turn_id, tool_name, target, .. } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -786,13 +572,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_started".to_string(),
             payload: json!({ "tool_name": tool_name, "target": target }),
         }),
-        Event::ToolCallCompleted {
-            turn_id,
-            tool_name,
-            ok,
-            output,
-            ..
-        } => Some(EventEnvelope {
+        Event::ToolCallCompleted { turn_id, tool_name, ok, output, .. } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -800,12 +580,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_completed".to_string(),
             payload: json!({ "tool_name": tool_name, "ok": ok, "output": output }),
         }),
-        Event::ToolCallArgsDelta {
-            turn_id,
-            tool_name,
-            args_delta,
-            ..
-        } => Some(EventEnvelope {
+        Event::ToolCallArgsDelta { turn_id, tool_name, args_delta, .. } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -813,12 +588,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_args_delta".to_string(),
             payload: json!({ "tool_name": tool_name, "args_delta": args_delta }),
         }),
-        Event::ToolCallProgress {
-            turn_id,
-            tool_name,
-            progress_message,
-            ..
-        } => Some(EventEnvelope {
+        Event::ToolCallProgress { turn_id, tool_name, progress_message, .. } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -826,11 +596,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_progress".to_string(),
             payload: json!({ "tool_name": tool_name, "progress_message": progress_message }),
         }),
-        Event::ToolCallReady {
-            turn_id,
-            tool_name,
-            ..
-        } => Some(EventEnvelope {
+        Event::ToolCallReady { turn_id, tool_name, .. } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -838,21 +604,16 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_ready".to_string(),
             payload: json!({ "tool_name": tool_name }),
         }),
-        Event::ToolCallFailed {
-            turn_id,
-            tool_name,
-            code,
-            message,
-            retryable,
-            ..
-        } => Some(EventEnvelope {
-            protocol_version: PROTOCOL_VERSION,
-            kind: KIND_EVENT,
-            session_id: session_id.to_string(),
-            turn_id: Some(turn_id.to_string()),
-            event_type: "tool_call_failed".to_string(),
-            payload: json!({ "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
-        }),
+        Event::ToolCallFailed { turn_id, tool_name, code, message, retryable, .. } => {
+            Some(EventEnvelope {
+                protocol_version: PROTOCOL_VERSION,
+                kind: KIND_EVENT,
+                session_id: session_id.to_string(),
+                turn_id: Some(turn_id.to_string()),
+                event_type: "tool_call_failed".to_string(),
+                payload: json!({ "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
+            })
+        }
         Event::AssistantMessage { turn_id, content } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -861,10 +622,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "assistant_message".to_string(),
             payload: json!({ "content": content }),
         }),
-        Event::ResponseStarted {
-            turn_id,
-            stream_source,
-        } => Some(EventEnvelope {
+        Event::ResponseStarted { turn_id, stream_source } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -872,23 +630,17 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_started".to_string(),
             payload: json!({ "stream_source": stream_source }),
         }),
-        Event::ResponseTextDelta {
-            turn_id,
-            content_delta,
-            stream_source,
-        } => Some(EventEnvelope {
-            protocol_version: PROTOCOL_VERSION,
-            kind: KIND_EVENT,
-            session_id: session_id.to_string(),
-            turn_id: Some(turn_id.to_string()),
-            event_type: "response_text_delta".to_string(),
-            payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
-        }),
-        Event::ReasoningDelta {
-            turn_id,
-            content_delta,
-            stream_source,
-        } => Some(EventEnvelope {
+        Event::ResponseTextDelta { turn_id, content_delta, stream_source } => {
+            Some(EventEnvelope {
+                protocol_version: PROTOCOL_VERSION,
+                kind: KIND_EVENT,
+                session_id: session_id.to_string(),
+                turn_id: Some(turn_id.to_string()),
+                event_type: "response_text_delta".to_string(),
+                payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
+            })
+        }
+        Event::ReasoningDelta { turn_id, content_delta, stream_source } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -896,11 +648,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "reasoning_delta".to_string(),
             payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
         }),
-        Event::ResponseCompleted {
-            turn_id,
-            content,
-            stream_source,
-        } => Some(EventEnvelope {
+        Event::ResponseCompleted { turn_id, content, stream_source } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -908,12 +656,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_completed".to_string(),
             payload: json!({ "content": content, "stream_source": stream_source }),
         }),
-        Event::ResponseError {
-            turn_id,
-            code,
-            message,
-            retryable,
-        } => Some(EventEnvelope {
+        Event::ResponseError { turn_id, code, message, retryable } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -921,10 +664,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_error".to_string(),
             payload: json!({ "code": code, "message": message, "retryable": retryable }),
         }),
-        Event::ResponseResumed {
-            turn_id,
-            stream_source,
-        } => Some(EventEnvelope {
+        Event::ResponseResumed { turn_id, stream_source } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -932,10 +672,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_resumed".to_string(),
             payload: json!({ "stream_source": stream_source }),
         }),
-        Event::ToolCallsProposed {
-            turn_id,
-            tool_calls,
-        } => Some(EventEnvelope {
+        Event::ToolCallsProposed { turn_id, tool_calls } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -943,12 +680,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_calls_proposed".to_string(),
             payload: json!({ "tool_calls": tool_calls }),
         }),
-        Event::ToolBatchCompleted {
-            turn_id,
-            total,
-            succeeded,
-            failed,
-        } => Some(EventEnvelope {
+        Event::ToolBatchCompleted { turn_id, total, succeeded, failed } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -972,7 +704,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "approval_requested".to_string(),
-            payload: json!({
+            payload: serde_json::json!({
                 "request_id": request_id,
                 "target": target,
                 "reason": reason,
@@ -983,11 +715,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
                 "degrade_reason": degrade_reason
             }),
         }),
-        Event::ApprovalResolved {
-            turn_id,
-            request_id,
-            approved,
-        } => Some(EventEnvelope {
+        Event::ApprovalResolved { turn_id, request_id, approved } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -1024,10 +752,11 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
 }
 
 async fn send_ok(
-    writer: Arc<Mutex<io::Stdout>>,
+    writer: Arc<Mutex<tokio::io::Stdout>>,
     request_id: String,
     result: Value,
 ) -> anyhow::Result<()> {
+    use super::protocol::{KIND_RESPONSE, PROTOCOL_VERSION};
     let envelope = ResponseEnvelope {
         protocol_version: PROTOCOL_VERSION,
         kind: KIND_RESPONSE,
@@ -1040,13 +769,14 @@ async fn send_ok(
 }
 
 async fn send_error(
-    writer: Arc<Mutex<io::Stdout>>,
+    writer: Arc<Mutex<tokio::io::Stdout>>,
     request_id: String,
     code: &str,
     message: String,
     retriable: bool,
     details: Value,
 ) -> anyhow::Result<()> {
+    use super::protocol::{KIND_RESPONSE, PROTOCOL_VERSION};
     let envelope = ResponseEnvelope {
         protocol_version: PROTOCOL_VERSION,
         kind: KIND_RESPONSE,
@@ -1064,14 +794,14 @@ async fn send_error(
 }
 
 async fn send_event(
-    writer: Arc<Mutex<io::Stdout>>,
+    writer: Arc<Mutex<tokio::io::Stdout>>,
     event: EventEnvelope,
 ) -> anyhow::Result<()> {
     write_line(writer, &event).await
 }
 
-async fn write_line<T: Serialize>(
-    writer: Arc<Mutex<io::Stdout>>,
+async fn write_line<T: serde::Serialize>(
+    writer: Arc<Mutex<tokio::io::Stdout>>,
     value: &T,
 ) -> anyhow::Result<()> {
     let mut out = writer.lock().await;
@@ -1134,12 +864,7 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
         }
     }
 
-    (
-        response_text_deltas,
-        assistant_messages,
-        tool_calls,
-        approvals,
-    )
+    (response_text_deltas, assistant_messages, tool_calls, approvals)
 }
 
 async fn cleanup_sessions(sessions: Arc<Mutex<HashMap<String, SessionState>>>) {
