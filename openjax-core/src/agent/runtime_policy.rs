@@ -1,7 +1,11 @@
 use crate::{Config, tools};
 
-const DEFAULT_MAX_TOOL_CALLS_PER_TURN: usize = 10;
-const DEFAULT_MAX_PLANNER_ROUNDS_PER_TURN: usize = 20;
+/// 单回合最大工具调用次数，也是单回合最大规划轮次。
+/// 同时作为 LoopDetector 滑动窗口的基础容量。
+pub const MAX_TURN_BUDGET: usize = 300;
+
+const DEFAULT_MAX_TOOL_CALLS_PER_TURN: usize = MAX_TURN_BUDGET;
+const DEFAULT_MAX_PLANNER_ROUNDS_PER_TURN: usize = MAX_TURN_BUDGET;
 
 pub(crate) fn parse_approval_policy(value: &str) -> Option<tools::ApprovalPolicy> {
     match value.trim().to_ascii_lowercase().as_str() {
