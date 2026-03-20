@@ -291,6 +291,21 @@ fn extract_delta_reasoning_from_body(body: &serde_json::Value) -> Option<String>
         .map(ToString::to_string)
 }
 
+fn extract_usage_from_payload(payload: &serde_json::Value) -> Option<ModelUsage> {
+    let usage_val = payload.get("usage")?;
+    Some(ModelUsage {
+        input_tokens: usage_val
+            .get("prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .or_else(|| usage_val.get("input_tokens").and_then(|v| v.as_u64())),
+        output_tokens: usage_val
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .or_else(|| usage_val.get("output_tokens").and_then(|v| v.as_u64())),
+        total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
+    })
+}
+
 #[async_trait]
 impl ModelClient for ChatCompletionsClient {
     async fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
@@ -528,18 +543,8 @@ impl ModelClient for ChatCompletionsClient {
                     let _ = sender.send(StreamDelta::Reasoning(reasoning_delta));
                 }
 
-                if let Some(usage_val) = payload.get("usage") {
-                    last_usage = Some(ModelUsage {
-                        input_tokens: usage_val
-                            .get("prompt_tokens")
-                            .and_then(|v| v.as_u64())
-                            .or_else(|| usage_val.get("input_tokens").and_then(|v| v.as_u64())),
-                        output_tokens: usage_val
-                            .get("completion_tokens")
-                            .and_then(|v| v.as_u64())
-                            .or_else(|| usage_val.get("output_tokens").and_then(|v| v.as_u64())),
-                        total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
-                    });
+                if let Some(usage) = extract_usage_from_payload(&payload) {
+                    last_usage = Some(usage);
                 }
             }
         }
@@ -583,18 +588,8 @@ impl ModelClient for ChatCompletionsClient {
                 let _ = sender.send(StreamDelta::Reasoning(reasoning_delta));
             }
 
-            if let Some(usage_val) = payload.get("usage") {
-                last_usage = Some(ModelUsage {
-                    input_tokens: usage_val
-                        .get("prompt_tokens")
-                        .and_then(|v| v.as_u64())
-                        .or_else(|| usage_val.get("input_tokens").and_then(|v| v.as_u64())),
-                    output_tokens: usage_val
-                        .get("completion_tokens")
-                        .and_then(|v| v.as_u64())
-                        .or_else(|| usage_val.get("output_tokens").and_then(|v| v.as_u64())),
-                    total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
-                });
+            if let Some(usage) = extract_usage_from_payload(&payload) {
+                last_usage = Some(usage);
             }
         }
 
