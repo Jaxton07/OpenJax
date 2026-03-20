@@ -205,6 +205,12 @@ pub enum Event {
         thread_id: ThreadId,
         status: AgentStatus,
     },
+    ContextCompacted {
+        turn_id: u64,
+        compressed_turns: u32,   // 被压缩替换的 Turn 条数
+        retained_turns: u32,     // 保留的最近 Turn 条数
+        summary_preview: String, // 摘要前 120 字，供前端展示
+    },
     TurnCompleted {
         turn_id: u64,
     },

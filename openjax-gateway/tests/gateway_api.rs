@@ -286,7 +286,7 @@ async fn clear_command_submit_and_polling_flow() {
 }
 
 #[tokio::test]
-async fn compact_endpoint_returns_not_implemented() {
+async fn compact_endpoint_succeeds() {
     let api_key = "test-key";
     let (app, _state) = app_with_api_key(api_key);
     let (access_token, _, _) = login(&app, api_key).await;
@@ -319,9 +319,9 @@ async fn compact_endpoint_returns_not_implemented() {
         )
         .await
         .expect("compact response");
-    assert_eq!(compact_response.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(compact_response.status(), StatusCode::OK);
     let compact_body = response_json(compact_response).await;
-    assert_eq!(compact_body["error"]["code"], "NOT_IMPLEMENTED");
+    assert_eq!(compact_body["status"], "compacted");
 }
 
 #[tokio::test]
