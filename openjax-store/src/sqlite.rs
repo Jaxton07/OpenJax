@@ -32,8 +32,8 @@ impl SqliteStore {
             fs::create_dir_all(parent)
                 .with_context(|| format!("create store db dir {}", parent.display()))?;
         }
-        let conn = Connection::open(path)
-            .with_context(|| format!("open store db {}", path.display()))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("open store db {}", path.display()))?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -387,11 +387,16 @@ impl SessionRepository for SqliteStore {
         })
     }
 
-    fn list_events(&self, session_id: &str, after_event_seq: Option<u64>) -> Result<Vec<EventRecord>> {
+    fn list_events(
+        &self,
+        session_id: &str,
+        after_event_seq: Option<u64>,
+    ) -> Result<Vec<EventRecord>> {
         let conn = self.conn.lock().expect("store db mutex poisoned");
-        let (sql, params_vec): (&str, Vec<rusqlite::types::Value>) =
-            if let Some(after) = after_event_seq {
-                (
+        let (sql, params_vec): (&str, Vec<rusqlite::types::Value>) = if let Some(after) =
+            after_event_seq
+        {
+            (
                     "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
                      FROM biz_events
                      WHERE session_id = ?1 AND event_seq > ?2
@@ -401,15 +406,15 @@ impl SessionRepository for SqliteStore {
                         rusqlite::types::Value::from(after as i64),
                     ],
                 )
-            } else {
-                (
+        } else {
+            (
                     "SELECT id, session_id, event_seq, turn_seq, turn_id, event_type, payload_json, timestamp, stream_source, created_at
                      FROM biz_events
                      WHERE session_id = ?1
                      ORDER BY event_seq ASC",
                     vec![rusqlite::types::Value::from(session_id.to_string())],
                 )
-            };
+        };
         let mut stmt = conn
             .prepare(sql)
             .with_context(|| format!("prepare list events for session {}", session_id))?;
@@ -528,13 +533,28 @@ impl ProviderRepository for SqliteStore {
             if let Some(api_key) = api_key {
                 conn.execute(
                     sql,
-                    params![provider_name, base_url, model_name, api_key, context_window_size, now, provider_id],
+                    params![
+                        provider_name,
+                        base_url,
+                        model_name,
+                        api_key,
+                        context_window_size,
+                        now,
+                        provider_id
+                    ],
                 )
                 .with_context(|| format!("update provider {}", provider_id))?
             } else {
                 conn.execute(
                     sql,
-                    params![provider_name, base_url, model_name, context_window_size, now, provider_id],
+                    params![
+                        provider_name,
+                        base_url,
+                        model_name,
+                        context_window_size,
+                        now,
+                        provider_id
+                    ],
                 )
                 .with_context(|| format!("update provider {}", provider_id))?
             }
@@ -667,7 +687,12 @@ impl ProviderRepository for SqliteStore {
                                model_name = excluded.model_name,
                                context_window_size = excluded.context_window_size,
                                updated_at = excluded.updated_at",
-                params![provider.provider_id, provider.model_name, provider.context_window_size, now],
+                params![
+                    provider.provider_id,
+                    provider.model_name,
+                    provider.context_window_size,
+                    now
+                ],
             )
             .context("set active provider")?;
         }
@@ -720,14 +745,26 @@ mod tests {
             .expect("create session");
         store
             .append_event(
-                "sess_evt_1", 1, 0, None, "user_message",
-                r#"{"content":"hello"}"#, "2026-01-01T00:00:01Z", "synthetic",
+                "sess_evt_1",
+                1,
+                0,
+                None,
+                "user_message",
+                r#"{"content":"hello"}"#,
+                "2026-01-01T00:00:01Z",
+                "synthetic",
             )
             .expect("append event 1");
         store
             .append_event(
-                "sess_evt_1", 2, 1, Some("turn_1"), "response_started",
-                "{}", "2026-01-01T00:00:02Z", "model_live",
+                "sess_evt_1",
+                2,
+                1,
+                Some("turn_1"),
+                "response_started",
+                "{}",
+                "2026-01-01T00:00:02Z",
+                "model_live",
             )
             .expect("append event 2");
         let all = store.list_events("sess_evt_1", None).expect("list all");
@@ -745,14 +782,51 @@ mod tests {
     #[test]
     fn can_query_last_event_and_turn_sequences() {
         let store = setup_store();
-        store.create_session("sess_evt_2", Some("events")).expect("create session");
-        store.append_event("sess_evt_2", 10, 1, Some("turn_1"), "response_started", "{}", "2026-01-01T00:00:01Z", "model_live").expect("append 10");
-        store.append_event("sess_evt_2", 11, 2, Some("turn_1"), "response_completed", r#"{"content":"ok"}"#, "2026-01-01T00:00:02Z", "model_live").expect("append 11");
-        store.append_event("sess_evt_2", 12, 1, Some("turn_2"), "response_started", "{}", "2026-01-01T00:00:03Z", "model_live").expect("append 12");
+        store
+            .create_session("sess_evt_2", Some("events"))
+            .expect("create session");
+        store
+            .append_event(
+                "sess_evt_2",
+                10,
+                1,
+                Some("turn_1"),
+                "response_started",
+                "{}",
+                "2026-01-01T00:00:01Z",
+                "model_live",
+            )
+            .expect("append 10");
+        store
+            .append_event(
+                "sess_evt_2",
+                11,
+                2,
+                Some("turn_1"),
+                "response_completed",
+                r#"{"content":"ok"}"#,
+                "2026-01-01T00:00:02Z",
+                "model_live",
+            )
+            .expect("append 11");
+        store
+            .append_event(
+                "sess_evt_2",
+                12,
+                1,
+                Some("turn_2"),
+                "response_started",
+                "{}",
+                "2026-01-01T00:00:03Z",
+                "model_live",
+            )
+            .expect("append 12");
 
         let last = store.last_event_seq("sess_evt_2").expect("last event seq");
         assert_eq!(last, Some(12));
-        let turn_seq = store.last_turn_seq_by_turn("sess_evt_2").expect("turn seq by turn");
+        let turn_seq = store
+            .last_turn_seq_by_turn("sess_evt_2")
+            .expect("turn seq by turn");
         assert!(turn_seq.contains(&(String::from("turn_1"), 2)));
         assert!(turn_seq.contains(&(String::from("turn_2"), 1)));
     }
@@ -760,48 +834,140 @@ mod tests {
     #[test]
     fn provider_name_has_unique_constraint() {
         let store = setup_store();
-        store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1", "sk-1", "built_in", 128000).expect("create first");
-        let dup = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-2", "built_in", 128000);
+        store
+            .create_provider(
+                "openai-main",
+                "https://api.openai.com/v1",
+                "gpt-4.1",
+                "sk-1",
+                "built_in",
+                128000,
+            )
+            .expect("create first");
+        let dup = store.create_provider(
+            "openai-main",
+            "https://api.openai.com/v1",
+            "gpt-4.1-mini",
+            "sk-2",
+            "built_in",
+            128000,
+        );
         assert!(dup.is_err());
     }
 
     #[test]
     fn can_update_and_delete_provider() {
         let store = setup_store();
-        let created = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4", "key-a", "custom", 0).expect("create");
-        let updated = store.update_provider(&created.provider_id, "glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4-plus", Some("key-b"), 0).expect("update").expect("exists");
+        let created = store
+            .create_provider(
+                "glm-main",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "glm-4",
+                "key-a",
+                "custom",
+                0,
+            )
+            .expect("create");
+        let updated = store
+            .update_provider(
+                &created.provider_id,
+                "glm-main",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "glm-4-plus",
+                Some("key-b"),
+                0,
+            )
+            .expect("update")
+            .expect("exists");
         assert_eq!(updated.model_name, "glm-4-plus");
         assert_eq!(updated.api_key, "key-b");
 
-        let updated2 = store.update_provider(&created.provider_id, "glm-main-2", "https://open.bigmodel.cn/api/paas/v4", "glm-4-air", None, 0).expect("update no key").expect("exists");
+        let updated2 = store
+            .update_provider(
+                &created.provider_id,
+                "glm-main-2",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "glm-4-air",
+                None,
+                0,
+            )
+            .expect("update no key")
+            .expect("exists");
         assert_eq!(updated2.provider_name, "glm-main-2");
         assert_eq!(updated2.api_key, "key-b");
 
         assert!(store.delete_provider(&created.provider_id).expect("delete"));
-        assert!(store.get_provider(&created.provider_id).expect("get after delete").is_none());
+        assert!(
+            store
+                .get_provider(&created.provider_id)
+                .expect("get after delete")
+                .is_none()
+        );
     }
 
     #[test]
     fn can_set_and_get_active_provider() {
         let store = setup_store();
-        let first = store.create_provider("openai-main", "https://api.openai.com/v1", "gpt-4.1-mini", "sk-1", "built_in", 128000).expect("create first");
-        let second = store.create_provider("glm-main", "https://open.bigmodel.cn/api/paas/v4", "glm-4.7", "sk-2", "built_in", 128000).expect("create second");
+        let first = store
+            .create_provider(
+                "openai-main",
+                "https://api.openai.com/v1",
+                "gpt-4.1-mini",
+                "sk-1",
+                "built_in",
+                128000,
+            )
+            .expect("create first");
+        let second = store
+            .create_provider(
+                "glm-main",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "glm-4.7",
+                "sk-2",
+                "built_in",
+                128000,
+            )
+            .expect("create second");
 
-        let selected = store.set_active_provider(&second.provider_id).expect("set active").expect("exists");
+        let selected = store
+            .set_active_provider(&second.provider_id)
+            .expect("set active")
+            .expect("exists");
         assert_eq!(selected.provider_id, second.provider_id);
         assert_eq!(selected.model_name, "glm-4.7");
 
-        let loaded = store.get_active_provider().expect("load active").expect("exists");
+        let loaded = store
+            .get_active_provider()
+            .expect("load active")
+            .expect("exists");
         assert_eq!(loaded.provider_id, second.provider_id);
 
-        assert!(store.set_active_provider("provider_missing").expect("set missing").is_none());
-        let unchanged = store.get_active_provider().expect("load after missing").expect("still exists");
+        assert!(
+            store
+                .set_active_provider("provider_missing")
+                .expect("set missing")
+                .is_none()
+        );
+        let unchanged = store
+            .get_active_provider()
+            .expect("load after missing")
+            .expect("still exists");
         assert_eq!(unchanged.provider_id, second.provider_id);
 
-        store.delete_provider(&second.provider_id).expect("delete active");
-        assert!(store.get_active_provider().expect("load after delete").is_none());
+        store
+            .delete_provider(&second.provider_id)
+            .expect("delete active");
+        assert!(
+            store
+                .get_active_provider()
+                .expect("load after delete")
+                .is_none()
+        );
 
-        let reselect = store.set_active_provider(&first.provider_id).expect("reselect").expect("exists");
+        let reselect = store
+            .set_active_provider(&first.provider_id)
+            .expect("reselect")
+            .expect("exists");
         assert_eq!(reselect.provider_id, first.provider_id);
     }
 
@@ -810,14 +976,28 @@ mod tests {
         let store = setup_store();
 
         let p = store
-            .create_provider("OpenAI", "https://api.openai.com/v1", "gpt-4o", "sk-test", "built_in", 128000)
+            .create_provider(
+                "OpenAI",
+                "https://api.openai.com/v1",
+                "gpt-4o",
+                "sk-test",
+                "built_in",
+                128000,
+            )
             .expect("create provider");
 
         assert_eq!(p.provider_type, "built_in");
         assert_eq!(p.context_window_size, 128000);
 
         let updated = store
-            .update_provider(&p.provider_id, "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", None, 128000)
+            .update_provider(
+                &p.provider_id,
+                "OpenAI",
+                "https://api.openai.com/v1",
+                "gpt-4o-mini",
+                None,
+                128000,
+            )
             .expect("update provider")
             .expect("provider exists");
 
@@ -831,11 +1011,23 @@ mod tests {
     fn active_provider_snapshot_includes_context_window() {
         let store = setup_store();
         let p = store
-            .create_provider("Kimi", "https://api.kimi.com/coding", "k2.5", "key", "built_in", 256000)
+            .create_provider(
+                "Kimi",
+                "https://api.kimi.com/coding",
+                "k2.5",
+                "key",
+                "built_in",
+                256000,
+            )
             .expect("create");
-        store.set_active_provider(&p.provider_id).expect("set active");
+        store
+            .set_active_provider(&p.provider_id)
+            .expect("set active");
 
-        let active = store.get_active_provider().expect("get active").expect("has active");
+        let active = store
+            .get_active_provider()
+            .expect("get active")
+            .expect("has active");
         assert_eq!(active.context_window_size, 256000);
     }
 
@@ -843,13 +1035,29 @@ mod tests {
     fn active_snapshot_updated_when_provider_model_switches() {
         let store = setup_store();
         let p = store
-            .create_provider("OpenAI", "https://api.openai.com/v1", "gpt-4o", "key", "built_in", 128000)
+            .create_provider(
+                "OpenAI",
+                "https://api.openai.com/v1",
+                "gpt-4o",
+                "key",
+                "built_in",
+                128000,
+            )
             .expect("create");
-        store.set_active_provider(&p.provider_id).expect("set active");
+        store
+            .set_active_provider(&p.provider_id)
+            .expect("set active");
 
         // switch model
         store
-            .update_provider(&p.provider_id, "OpenAI", "https://api.openai.com/v1", "gpt-5.3-codex", None, 200000)
+            .update_provider(
+                &p.provider_id,
+                "OpenAI",
+                "https://api.openai.com/v1",
+                "gpt-5.3-codex",
+                None,
+                200000,
+            )
             .expect("update");
 
         let active = store.get_active_provider().expect("get").expect("active");
@@ -860,7 +1068,9 @@ mod tests {
     #[test]
     fn migration_is_idempotent() {
         let store = setup_store();
-        let _ = store.create_provider("X", "https://x.com/v1", "m", "k", "custom", 0).expect("create");
+        let _ = store
+            .create_provider("X", "https://x.com/v1", "m", "k", "custom", 0)
+            .expect("create");
         // Call migrate_schema twice on the same connection — must not error
         let conn = store.conn.lock().expect("lock");
         SqliteStore::migrate_schema(&conn).expect("first migrate ok");

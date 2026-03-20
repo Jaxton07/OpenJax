@@ -45,9 +45,7 @@ impl LoopDetector {
             self.window.pop_front();
         }
 
-        let consecutive_count = self.window.iter().rev()
-            .take_while(|k| *k == &key)
-            .count();
+        let consecutive_count = self.window.iter().rev().take_while(|k| *k == &key).count();
 
         if consecutive_count >= self.warn_threshold {
             self.state = LoopSignal::Warned;
@@ -60,7 +58,9 @@ impl LoopDetector {
 
     pub fn recovery_prompt(&self) -> Option<&'static str> {
         if self.state == LoopSignal::Warned {
-            Some("[系统警告] 检测到你最近连续多次以完全相同的参数调用了同一工具，这可能是陷入了循环。请评估当前执行策略是否有效，并明确下一步将如何调整（可更换工具、改变参数、或给出阶段性结论）。")
+            Some(
+                "[系统警告] 检测到你最近连续多次以完全相同的参数调用了同一工具，这可能是陷入了循环。请评估当前执行策略是否有效，并明确下一步将如何调整（可更换工具、改变参数、或给出阶段性结论）。",
+            )
         } else {
             None
         }
@@ -101,7 +101,10 @@ mod tests {
     fn test_normal_calls_return_none() {
         let mut d = fresh();
         assert_eq!(d.check_and_advance("read_file", "hash_a"), LoopSignal::None);
-        assert_eq!(d.check_and_advance("write_file", "hash_b"), LoopSignal::None);
+        assert_eq!(
+            d.check_and_advance("write_file", "hash_b"),
+            LoopSignal::None
+        );
         assert_eq!(d.check_and_advance("grep", "hash_c"), LoopSignal::None);
         assert_eq!(d.check_and_advance("read_file", "hash_d"), LoopSignal::None);
         assert_eq!(d.check_and_advance("bash", "hash_e"), LoopSignal::None);
@@ -113,7 +116,10 @@ mod tests {
         for _ in 0..4 {
             assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::None);
         }
-        assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::Warned);
+        assert_eq!(
+            d.check_and_advance("read_file", "hash_x"),
+            LoopSignal::Warned
+        );
         assert_eq!(d.current_state(), &LoopSignal::Warned);
     }
 
@@ -123,7 +129,10 @@ mod tests {
         for _ in 0..5 {
             d.check_and_advance("read_file", "hash_x");
         }
-        assert_eq!(d.check_and_advance("write_file", "hash_y"), LoopSignal::None);
+        assert_eq!(
+            d.check_and_advance("write_file", "hash_y"),
+            LoopSignal::None
+        );
         assert_eq!(d.current_state(), &LoopSignal::None);
     }
 
@@ -160,7 +169,10 @@ mod tests {
         for _ in 0..4 {
             assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::None);
         }
-        assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::Warned);
+        assert_eq!(
+            d.check_and_advance("read_file", "hash_x"),
+            LoopSignal::Warned
+        );
     }
 
     #[test]

@@ -46,10 +46,7 @@ pub(crate) fn build_planner_input(
                     };
                     format!(
                         "[Turn {}]\nUser: {}{}\nAssistant: {}",
-                        turn_num,
-                        r.user_input,
-                        tools_section,
-                        r.assistant_output
+                        turn_num, r.user_input, tools_section, r.assistant_output
                     )
                 }
                 HistoryItem::Summary(s) => s.clone(),

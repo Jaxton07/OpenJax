@@ -61,15 +61,23 @@ pub enum PatchLineKind {
 
 #[derive(Debug, Clone)]
 pub enum PlannedAction {
-    Create { path: PathBuf, content: String },
+    Create {
+        path: PathBuf,
+        content: String,
+    },
     Update {
         path: PathBuf,
         content: String,
         changed_ranges: Vec<HunkResultRange>,
         warnings: Vec<HunkWarning>,
     },
-    Delete { path: PathBuf },
-    Move { from: PathBuf, to: PathBuf },
+    Delete {
+        path: PathBuf,
+    },
+    Move {
+        from: PathBuf,
+        to: PathBuf,
+    },
 }
 
 impl PlannedAction {

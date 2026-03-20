@@ -101,7 +101,10 @@ impl Agent {
                         call.name,
                         ok,
                         serde_json::to_string(&call.args).unwrap_or_default(),
-                        crate::agent::prompt::truncate_for_prompt(&output, crate::MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT)
+                        crate::agent::prompt::truncate_for_prompt(
+                            &output,
+                            crate::MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT
+                        )
                     );
                     return Some((vec![trace], output));
                 }

@@ -112,9 +112,8 @@ pub fn build_edit_range_response(
         format!("Δ{delta}")
     };
 
-    let header = format!(
-        "edit applied successfully\nUPDATE {file_path} (file: {total} lines, {delta_str})"
-    );
+    let header =
+        format!("edit applied successfully\nUPDATE {file_path} (file: {total} lines, {delta_str})");
 
     if lines.is_empty() {
         return header;
@@ -187,15 +186,15 @@ fn build_context_snippets(
         .into_iter()
         .enumerate()
         .map(|(i, (ws, we, es, ee))| {
-            let label = format!(
-                "--- hunk {} (lines {}-{}) ---",
-                i + 1,
-                ws + 1,
-                we
-            );
+            let label = format!("--- hunk {} (lines {}-{}) ---", i + 1, ws + 1, we);
             let mut s = label;
             s.push('\n');
-            s.push_str(&format_lines_with_edit_markers(&lines[ws..we], ws + 1, es, ee));
+            s.push_str(&format_lines_with_edit_markers(
+                &lines[ws..we],
+                ws + 1,
+                es,
+                ee,
+            ));
             s
         })
         .collect()
