@@ -3,6 +3,7 @@ pub(crate) mod decision;
 pub(crate) mod events;
 pub(crate) mod execution;
 pub(crate) mod lifecycle;
+pub(crate) mod loop_detector;
 pub(crate) mod planner;
 pub(crate) mod planner_stream_flow;
 pub(crate) mod planner_tool_action;
