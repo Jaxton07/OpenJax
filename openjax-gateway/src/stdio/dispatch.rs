@@ -838,7 +838,9 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "loop_warning".to_string(),
             payload: json!({ "tool_name": tool_name, "consecutive_count": consecutive_count }),
         }),
-        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } | Event::ContextCompacted { .. } => None,
+        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => None,
+        // TODO: emit proper SSE envelope for ContextCompacted (gateway HTTP path handled in event_mapper)
+        Event::ContextCompacted { .. } => None,
     }
 }
 
