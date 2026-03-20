@@ -129,7 +129,8 @@ mod tests {
     #[test]
     fn slash_palette_height_includes_border_for_single_match() {
         let mut app = App::default();
-        app.append_input("/c");
+        // Use /cle to match only 'clear' (cls doesn't start with 'cle')
+        app.append_input("/cle");
 
         assert!(app.is_slash_palette_active());
         assert_eq!(app.state.slash_palette.matches.len(), 1);

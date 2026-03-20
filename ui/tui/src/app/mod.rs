@@ -18,7 +18,7 @@ pub use layout_metrics::{BottomLayout, FooterMode, TransientKind};
 pub use render_model::TransientPanel;
 pub use slash_palette::SlashAcceptResult;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct App {
     pub state: AppState,
     viewport_reset_requested: bool,
