@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, atomic::Ordering};
 
-use openjax_core::{load_runtime_config, Agent};
+use openjax_core::{Agent, load_runtime_config};
 use openjax_protocol::{Event, Op};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -12,10 +12,10 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use super::daemon::{DaemonApprovalHandler, SessionState};
+use super::protocol::log_approval_event;
 use super::protocol::{
     ApprovalLogEvent, ErrorBody, EventEnvelope, RequestEnvelope, ResponseEnvelope,
 };
-use super::protocol::log_approval_event;
 
 pub const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
 
@@ -32,8 +32,7 @@ pub async fn run_stdio() -> anyhow::Result<()> {
     let mut lines = stdin.lines();
     let writer = Arc::new(Mutex::new(tokio::io::stdout()));
 
-    let sessions: Arc<Mutex<HashMap<String, SessionState>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let sessions: Arc<Mutex<HashMap<String, SessionState>>> = Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(line) = lines.next_line().await? {
         if line.trim().is_empty() {
@@ -95,7 +94,9 @@ pub async fn handle_line(
         }
     };
 
-    if req.protocol_version != super::protocol::PROTOCOL_VERSION || req.kind != super::protocol::KIND_REQUEST {
+    if req.protocol_version != super::protocol::PROTOCOL_VERSION
+        || req.kind != super::protocol::KIND_REQUEST
+    {
         warn!(
             request_id = %req.request_id,
             protocol_version = %req.protocol_version,
@@ -170,7 +171,12 @@ pub async fn handle_line(
             };
             state.streaming_enabled.store(true, Ordering::Relaxed);
             info!(request_id = %req.request_id, session_id = %session_id, "stream enabled");
-            let _ = send_ok(writer, req.request_id, serde_json::json!({ "subscribed": true })).await;
+            let _ = send_ok(
+                writer,
+                req.request_id,
+                serde_json::json!({ "subscribed": true }),
+            )
+            .await;
         }
         "submit_turn" => {
             info!(request_id = %req.request_id, method = "submit_turn", "handling request");
@@ -240,7 +246,12 @@ pub async fn handle_line(
                 let submit_task = tokio::spawn(async move {
                     let mut agent = submit_agent.lock().await;
                     agent
-                        .submit_with_sink(Op::UserTurn { input: submit_input }, event_tx)
+                        .submit_with_sink(
+                            Op::UserTurn {
+                                input: submit_input,
+                            },
+                            event_tx,
+                        )
                         .await
                 });
 
@@ -248,9 +259,7 @@ pub async fn handle_line(
                 let mut response_turn_id: Option<String> = None;
 
                 while let Some(event) = event_rx.recv().await {
-                    if !response_sent
-                        && let Some(tid) = turn_id_from_event(&event)
-                    {
+                    if !response_sent && let Some(tid) = turn_id_from_event(&event) {
                         let tid_str = tid.to_string();
                         let response = send_ok(
                             writer_for_events.clone(),
@@ -290,27 +299,28 @@ pub async fn handle_line(
                 };
 
                 if !response_sent {
-                    let response =
-                        if let Some(tid) = first_turn_id(&events).map(|tid| tid.to_string()) {
-                            response_turn_id = Some(tid.clone());
-                            send_ok(
-                                writer_for_events.clone(),
-                                request_id.clone(),
-                                serde_json::json!({"turn_id": tid, "accepted": true}),
-                            )
-                            .await
-                        } else {
-                            error!(request_id = %request_id, session_id = %session_id_for_events, "failed to infer turn_id");
-                            send_error(
-                                writer_for_events.clone(),
-                                request_id.clone(),
-                                "INTERNAL_ERROR",
-                                "failed to infer turn_id from events".to_string(),
-                                false,
-                                serde_json::json!({}),
-                            )
-                            .await
-                        };
+                    let response = if let Some(tid) =
+                        first_turn_id(&events).map(|tid| tid.to_string())
+                    {
+                        response_turn_id = Some(tid.clone());
+                        send_ok(
+                            writer_for_events.clone(),
+                            request_id.clone(),
+                            serde_json::json!({"turn_id": tid, "accepted": true}),
+                        )
+                        .await
+                    } else {
+                        error!(request_id = %request_id, session_id = %session_id_for_events, "failed to infer turn_id");
+                        send_error(
+                            writer_for_events.clone(),
+                            request_id.clone(),
+                            "INTERNAL_ERROR",
+                            "failed to infer turn_id from events".to_string(),
+                            false,
+                            serde_json::json!({}),
+                        )
+                        .await
+                    };
                     if response.is_err() {
                         return;
                     }
@@ -350,8 +360,7 @@ pub async fn handle_line(
                 return;
             };
 
-            let Some(request_id_to_resolve) =
-                req.params.get("request_id").and_then(Value::as_str)
+            let Some(request_id_to_resolve) = req.params.get("request_id").and_then(Value::as_str)
             else {
                 let _ = send_error(
                     writer,
@@ -420,7 +429,12 @@ pub async fn handle_line(
             });
 
             if resolved {
-                let _ = send_ok(writer, req.request_id, serde_json::json!({ "resolved": true })).await;
+                let _ = send_ok(
+                    writer,
+                    req.request_id,
+                    serde_json::json!({ "resolved": true }),
+                )
+                .await;
             } else {
                 let _ = send_error(
                     writer,
@@ -468,7 +482,12 @@ pub async fn handle_line(
             };
             info!(request_id = %req.request_id, session_id = %session_id, "session shutdown complete");
 
-            let _ = send_ok(writer.clone(), req.request_id, serde_json::json!({ "closed": true })).await;
+            let _ = send_ok(
+                writer.clone(),
+                req.request_id,
+                serde_json::json!({ "closed": true }),
+            )
+            .await;
 
             if state.streaming_enabled.load(Ordering::Relaxed) {
                 for event in events {
@@ -546,9 +565,9 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
         | Event::ApprovalResolved { turn_id, .. }
         | Event::LoopWarning { turn_id, .. }
         | Event::TurnCompleted { turn_id } => Some(*turn_id),
-        Event::AgentSpawned { .. }
-        | Event::AgentStatusChanged { .. }
-        | Event::ShutdownComplete => None,
+        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } | Event::ShutdownComplete => {
+            None
+        }
     }
 }
 
@@ -564,7 +583,12 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "turn_started".to_string(),
             payload: json!({}),
         }),
-        Event::ToolCallStarted { turn_id, tool_name, target, .. } => Some(EventEnvelope {
+        Event::ToolCallStarted {
+            turn_id,
+            tool_name,
+            target,
+            ..
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -572,7 +596,13 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_started".to_string(),
             payload: json!({ "tool_name": tool_name, "target": target }),
         }),
-        Event::ToolCallCompleted { turn_id, tool_name, ok, output, .. } => Some(EventEnvelope {
+        Event::ToolCallCompleted {
+            turn_id,
+            tool_name,
+            ok,
+            output,
+            ..
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -580,7 +610,12 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_completed".to_string(),
             payload: json!({ "tool_name": tool_name, "ok": ok, "output": output }),
         }),
-        Event::ToolCallArgsDelta { turn_id, tool_name, args_delta, .. } => Some(EventEnvelope {
+        Event::ToolCallArgsDelta {
+            turn_id,
+            tool_name,
+            args_delta,
+            ..
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -588,7 +623,12 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_args_delta".to_string(),
             payload: json!({ "tool_name": tool_name, "args_delta": args_delta }),
         }),
-        Event::ToolCallProgress { turn_id, tool_name, progress_message, .. } => Some(EventEnvelope {
+        Event::ToolCallProgress {
+            turn_id,
+            tool_name,
+            progress_message,
+            ..
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -596,7 +636,9 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_progress".to_string(),
             payload: json!({ "tool_name": tool_name, "progress_message": progress_message }),
         }),
-        Event::ToolCallReady { turn_id, tool_name, .. } => Some(EventEnvelope {
+        Event::ToolCallReady {
+            turn_id, tool_name, ..
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -604,16 +646,21 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_call_ready".to_string(),
             payload: json!({ "tool_name": tool_name }),
         }),
-        Event::ToolCallFailed { turn_id, tool_name, code, message, retryable, .. } => {
-            Some(EventEnvelope {
-                protocol_version: PROTOCOL_VERSION,
-                kind: KIND_EVENT,
-                session_id: session_id.to_string(),
-                turn_id: Some(turn_id.to_string()),
-                event_type: "tool_call_failed".to_string(),
-                payload: json!({ "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
-            })
-        }
+        Event::ToolCallFailed {
+            turn_id,
+            tool_name,
+            code,
+            message,
+            retryable,
+            ..
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "tool_call_failed".to_string(),
+            payload: json!({ "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
+        }),
         Event::AssistantMessage { turn_id, content } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -622,7 +669,10 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "assistant_message".to_string(),
             payload: json!({ "content": content }),
         }),
-        Event::ResponseStarted { turn_id, stream_source } => Some(EventEnvelope {
+        Event::ResponseStarted {
+            turn_id,
+            stream_source,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -630,17 +680,23 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_started".to_string(),
             payload: json!({ "stream_source": stream_source }),
         }),
-        Event::ResponseTextDelta { turn_id, content_delta, stream_source } => {
-            Some(EventEnvelope {
-                protocol_version: PROTOCOL_VERSION,
-                kind: KIND_EVENT,
-                session_id: session_id.to_string(),
-                turn_id: Some(turn_id.to_string()),
-                event_type: "response_text_delta".to_string(),
-                payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
-            })
-        }
-        Event::ReasoningDelta { turn_id, content_delta, stream_source } => Some(EventEnvelope {
+        Event::ResponseTextDelta {
+            turn_id,
+            content_delta,
+            stream_source,
+        } => Some(EventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            kind: KIND_EVENT,
+            session_id: session_id.to_string(),
+            turn_id: Some(turn_id.to_string()),
+            event_type: "response_text_delta".to_string(),
+            payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
+        }),
+        Event::ReasoningDelta {
+            turn_id,
+            content_delta,
+            stream_source,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -648,7 +704,11 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "reasoning_delta".to_string(),
             payload: json!({ "content_delta": content_delta, "stream_source": stream_source }),
         }),
-        Event::ResponseCompleted { turn_id, content, stream_source } => Some(EventEnvelope {
+        Event::ResponseCompleted {
+            turn_id,
+            content,
+            stream_source,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -656,7 +716,12 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_completed".to_string(),
             payload: json!({ "content": content, "stream_source": stream_source }),
         }),
-        Event::ResponseError { turn_id, code, message, retryable } => Some(EventEnvelope {
+        Event::ResponseError {
+            turn_id,
+            code,
+            message,
+            retryable,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -664,7 +729,10 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_error".to_string(),
             payload: json!({ "code": code, "message": message, "retryable": retryable }),
         }),
-        Event::ResponseResumed { turn_id, stream_source } => Some(EventEnvelope {
+        Event::ResponseResumed {
+            turn_id,
+            stream_source,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -672,7 +740,10 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "response_resumed".to_string(),
             payload: json!({ "stream_source": stream_source }),
         }),
-        Event::ToolCallsProposed { turn_id, tool_calls } => Some(EventEnvelope {
+        Event::ToolCallsProposed {
+            turn_id,
+            tool_calls,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -680,7 +751,12 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "tool_calls_proposed".to_string(),
             payload: json!({ "tool_calls": tool_calls }),
         }),
-        Event::ToolBatchCompleted { turn_id, total, succeeded, failed } => Some(EventEnvelope {
+        Event::ToolBatchCompleted {
+            turn_id,
+            total,
+            succeeded,
+            failed,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -715,7 +791,11 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
                 "degrade_reason": degrade_reason
             }),
         }),
-        Event::ApprovalResolved { turn_id, request_id, approved } => Some(EventEnvelope {
+        Event::ApprovalResolved {
+            turn_id,
+            request_id,
+            approved,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -739,7 +819,11 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "session_shutdown_complete".to_string(),
             payload: json!({}),
         }),
-        Event::LoopWarning { turn_id, tool_name, consecutive_count } => Some(EventEnvelope {
+        Event::LoopWarning {
+            turn_id,
+            tool_name,
+            consecutive_count,
+        } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
@@ -864,7 +948,12 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
         }
     }
 
-    (response_text_deltas, assistant_messages, tool_calls, approvals)
+    (
+        response_text_deltas,
+        assistant_messages,
+        tool_calls,
+        approvals,
+    )
 }
 
 async fn cleanup_sessions(sessions: Arc<Mutex<HashMap<String, SessionState>>>) {

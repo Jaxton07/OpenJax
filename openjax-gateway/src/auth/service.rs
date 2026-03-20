@@ -7,7 +7,7 @@ use openjax_core::OpenJaxPaths;
 use time::Duration;
 
 use crate::auth::rate_limit::SlidingWindowRateLimiter;
-use crate::auth::store::{AuthStore, RotateOutcome, CreateSessionParams};
+use crate::auth::store::{AuthStore, CreateSessionParams, RotateOutcome};
 use crate::auth::token::{generate_token, hash_token};
 use crate::auth::types::{
     AuthScope, AuthSessionStatus, LoginResult, NewSessionInput, RefreshResult, SessionRecord,
@@ -258,6 +258,8 @@ impl AuthService {
     }
 
     pub fn cleanup_expired(&self) -> AnyResult<()> {
-        self.store.cleanup_expired().context("cleanup expired tokens")
+        self.store
+            .cleanup_expired()
+            .context("cleanup expired tokens")
     }
 }

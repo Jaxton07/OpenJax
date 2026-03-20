@@ -14,8 +14,8 @@ pub use stdio::run_stdio;
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::http::{HeaderValue, Method};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE};
+use axum::http::{HeaderValue, Method};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, patch, post};
 use tower_http::cors::CorsLayer;
@@ -73,8 +73,7 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             middleware::access_token_middleware,
         ));
 
-    let auth_public = Router::new()
-        .route("/api/v1/auth/refresh", post(auth_handlers::refresh));
+    let auth_public = Router::new().route("/api/v1/auth/refresh", post(auth_handlers::refresh));
 
     let protected = Router::new()
         .route(

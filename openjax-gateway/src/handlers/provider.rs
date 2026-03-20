@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -190,7 +190,10 @@ pub async fn set_active_provider(
         ));
     }
     let selected = state.set_active_provider(provider_id)?.ok_or_else(|| {
-        ApiError::not_found("provider not found", serde_json::json!({ "provider_id": provider_id }))
+        ApiError::not_found(
+            "provider not found",
+            serde_json::json!({ "provider_id": provider_id }),
+        )
     })?;
     Ok(Json(ActiveProviderResponse {
         request_id: ctx.request_id,
@@ -263,7 +266,10 @@ pub async fn update_provider(
             payload.context_window_size,
         )?
         .ok_or_else(|| {
-            ApiError::not_found("provider not found", serde_json::json!({ "provider_id": provider_id }))
+            ApiError::not_found(
+                "provider not found",
+                serde_json::json!({ "provider_id": provider_id }),
+            )
         })?;
     Ok(Json(ProviderMutationResponse {
         request_id: ctx.request_id,
