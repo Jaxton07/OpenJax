@@ -1011,7 +1011,9 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "session_shutdown_complete".to_string(),
             payload: json!({}),
         }),
-        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } | Event::ContextCompacted { .. } => None,
+        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => None,
+        // TODO: emit proper SSE envelope for ContextCompacted (gateway HTTP path handled in event_mapper)
+        Event::ContextCompacted { .. } => None,
     }
 }
 
