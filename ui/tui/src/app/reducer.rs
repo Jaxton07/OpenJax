@@ -48,16 +48,17 @@ impl App {
                 self.state.live_messages.clear();
             }
             Event::ToolCallStarted {
-                tool_name, target, ..
+                tool_name, target, display_name, ..
             } => {
+                let display = display_name.as_ref().unwrap_or(&tool_name);
                 let suffix = target
                     .as_deref()
                     .map(|raw| sanitize_target_for_title(raw, 120))
                     .unwrap_or_default();
                 let cell = self.tool_cell(if suffix.is_empty() {
-                    format!("Run {}", tool_name)
+                    format!("Run {}", display)
                 } else {
-                    format!("Run {} ({})", tool_name, suffix)
+                    format!("Run {} ({})", display, suffix)
                 });
                 self.queue_history_cell(cell);
                 info!(

@@ -9,6 +9,7 @@ fn tool_started_renders_shell_command_target() {
         tool_call_id: "tc_1".to_string(),
         tool_name: "shell".to_string(),
         target: Some("ps aux | head -5".to_string()),
+        display_name: None,
     });
 
     let cells = app.drain_history_cells();
