@@ -78,7 +78,7 @@ pub struct Agent {
     last_api_call_time: Option<std::time::Instant>,
     rate_limit_config: RateLimitConfig,
     max_tool_calls_per_turn: usize,
-    loop_detector: agent::loop_detector::LoopDetector,
+    loop_detector: crate::agent::loop_detector::LoopDetector,
     max_planner_rounds_per_turn: usize,
     recent_tool_calls: Vec<ToolCallRecord>,
     state_epoch: u64,
