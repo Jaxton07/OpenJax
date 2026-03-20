@@ -1,5 +1,5 @@
 use crate::slash_commands::{all_commands, find_exact, match_commands};
-use crate::state::{SlashCommandKind, SlashLocalAction, SlashPaletteState};
+use crate::state::{SlashPaletteState, SlashCommandKind};
 
 use super::App;
 
@@ -83,16 +83,43 @@ impl App {
             return false;
         };
 
-        match matched.kind {
-            SlashCommandKind::LocalAction(action) => {
-                self.handle_local_slash_action(action);
+        match &matched.kind {
+            SlashCommandKind::Builtin { .. } => {
+                let Some((msg, replaces)) = matched.execute_builtin() else {
+                    return false;
+                };
+                match matched.command_name {
+                    "help" => {
+                        // Help displays in status area without modifying input
+                        self.set_live_status(msg);
+                        self.state.input.clear();
+                        self.state.input_cursor = 0;
+                        self.dismiss_slash_palette();
+                    }
+                    "clear" => {
+                        // Clear wipes history/state and resets input
+                        self.clear();
+                    }
+                    _ => {
+                        // Prompt templates (explain, review) replace input when flagged
+                        if replaces {
+                            self.state.input = msg;
+                            self.state.input_cursor = self.state.input.len();
+                        } else {
+                            // Other builtins: show message without replacing input
+                            self.set_live_status(msg);
+                            self.state.input.clear();
+                            self.state.input_cursor = 0;
+                            self.dismiss_slash_palette();
+                        }
+                        self.refresh_slash_palette();
+                    }
+                }
                 true
             }
-            SlashCommandKind::PromptTemplate => {
-                self.state.input = matched.replacement;
-                self.state.input_cursor = self.state.input.len();
-                self.refresh_slash_palette();
-                true
+            SlashCommandKind::SessionAction { .. } | SlashCommandKind::Skill { .. } => {
+                // Not handled locally; will be handled by the UI/agent separately
+                false
             }
         }
     }
@@ -102,19 +129,6 @@ impl App {
             .iter()
             .map(|command| format!("/{:<8} {}", command.name, command.description))
             .collect()
-    }
-
-    fn handle_local_slash_action(&mut self, action: SlashLocalAction) {
-        match action {
-            SlashLocalAction::Clear => self.clear(),
-            SlashLocalAction::Help => {
-                let help = self.slash_help_lines().join("\n");
-                self.set_live_status(help);
-                self.state.input.clear();
-                self.state.input_cursor = 0;
-                self.dismiss_slash_palette();
-            }
-        }
     }
 
     fn active_slash_query(&self) -> Option<String> {

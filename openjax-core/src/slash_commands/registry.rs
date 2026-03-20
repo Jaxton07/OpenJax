@@ -135,7 +135,14 @@ impl SlashCommandRegistry {
         let normalized = query.trim().strip_prefix('/').unwrap_or(query);
         let mut matches: Vec<SlashMatch> = Self::all_commands()
             .into_iter()
-            .filter(|c| c.name.starts_with(normalized) || c.description.to_lowercase().contains(&normalized.to_lowercase()))
+            .filter(|c| {
+                // Exclude SessionActions - they are not handled via prefix matching
+                if matches!(c.kind, SlashCommandKind::SessionAction { .. }) {
+                    return false;
+                }
+                // Match by name prefix only (consistent with old TUI behavior)
+                c.name.starts_with(normalized)
+            })
             .map(|c| {
                 let usage_hint = format!("/{} <args>", c.name);
                 let replacement = format!("/{} ", c.name);
