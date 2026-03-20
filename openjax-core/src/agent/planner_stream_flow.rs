@@ -5,7 +5,7 @@ use tracing::{info, warn};
 
 use crate::agent::decision::{DecisionJsonStreamParser, parse_model_decision};
 use crate::logger::AFTER_DISPATCH_LOG_TARGET;
-use crate::model::{ModelRequest, StreamDelta};
+use crate::model::{ModelRequest, ModelUsage, StreamDelta};
 use crate::streaming::{
     ResponseStreamOrchestrator, emit_synthetic_response_deltas, run_stream_with_delta_handler,
 };
@@ -25,6 +25,7 @@ pub(super) struct PlannerStreamResult {
     pub(super) streamed_message: String,
     pub(super) live_streamed: bool,
     pub(super) action_hint: Option<String>,
+    pub(super) usage: Option<ModelUsage>,
 }
 
 impl Agent {
@@ -108,9 +109,11 @@ impl Agent {
             })
             .await;
 
+        let mut captured_usage: Option<ModelUsage> = None;
         let mut fallback_reason: Option<&'static str> = None;
         let model_output = match stream_result {
             Ok(response) => {
+                captured_usage = response.usage;
                 let output = response.text;
                 if parse_model_decision(&output).is_some() {
                     output
@@ -167,6 +170,7 @@ impl Agent {
             let fallback_started_at = Instant::now();
             let fallback = self.model_client.complete(planner_request).await?;
             fallback_complete_ms = Some(fallback_started_at.elapsed().as_millis() as u64);
+            captured_usage = fallback.usage;
             fallback.text
         };
 
@@ -188,6 +192,7 @@ impl Agent {
             streamed_message,
             live_streamed: response_started,
             action_hint: parser.action().map(ToOwned::to_owned),
+            usage: captured_usage,
         })
     }
 
