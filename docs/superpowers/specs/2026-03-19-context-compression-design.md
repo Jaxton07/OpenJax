@@ -100,7 +100,8 @@ last_input_tokens: Option<u64>, // 上次请求的实际 prompt tokens（来自 
   - **recent**：保留最后 6 条（约 3 轮对话，保持完整上下文细节）
   - **to_summarize**：其余所有条目
 - 若 `to_summarize` 为空或 history 总条数 <= 8，直接返回原 history（不压缩）
-- 构造 compression prompt，调用 model 生成混合格式摘要
+- 构造 compression prompt，调用 model（非流式 `complete`）生成混合格式摘要
+- **失败降级**：若模型调用失败，记录 `warn!` 日志并返回原 history（不中断任务，跳过本次压缩）
 - 返回：`[summary_entry] + recent_entries`
 
 compression prompt 示例：
@@ -177,6 +178,7 @@ ContextCompacted {
 | `openjax-core/src/lib.rs` | 修改 | Agent struct 新增 context_window_size / last_input_tokens |
 | `openjax-core/src/agent/bootstrap.rs` | 修改 | 注入 context_window_size |
 | `openjax-core/src/agent/context_compressor.rs` | 新建 | 压缩逻辑主体 |
+| `openjax-core/src/agent/mod.rs` | 修改 | 新增 `mod context_compressor` 声明 |
 | `openjax-core/src/agent/planner.rs` | 修改 | 每轮 usage 更新 + 触发压缩检查 |
 | `openjax-protocol/src/` | 修改 | 新增 ContextCompacted 事件 |
 | `openjax-gateway/src/handlers.rs` | 修改 | 实现 /compact action |

@@ -158,6 +158,14 @@ impl AppState {
         self.sessions.write().await.remove(session_id)
     }
 
+    pub async fn delete_session(&self, session_id: &str) -> Result<(), ApiError> {
+        self.sessions.write().await.remove(session_id);
+        self.store
+            .delete_session(session_id)
+            .map_err(map_store_error)?;
+        Ok(())
+    }
+
     pub fn list_persisted_sessions(
         &self,
     ) -> Result<Vec<openjax_store::SessionRecord>, ApiError> {

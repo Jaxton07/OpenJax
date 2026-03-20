@@ -258,6 +258,17 @@ impl SessionRepository for SqliteStore {
         Ok(sessions)
     }
 
+    fn delete_session(&self, session_id: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("store db mutex poisoned");
+        let affected = conn
+            .execute(
+                "DELETE FROM biz_sessions WHERE session_id = ?1",
+                params![session_id],
+            )
+            .context("delete session")?;
+        Ok(affected > 0)
+    }
+
     fn append_message(
         &self,
         session_id: &str,

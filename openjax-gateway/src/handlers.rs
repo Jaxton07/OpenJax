@@ -603,7 +603,7 @@ pub async fn shutdown_session(
         let mut session = session_runtime.lock().await;
         session.status = SessionStatus::Closed;
     }
-    state.remove_session(&session_id).await;
+    state.delete_session(&session_id).await?;
 
     Ok(Json(SessionActionResponse {
         request_id: ctx.request_id,
