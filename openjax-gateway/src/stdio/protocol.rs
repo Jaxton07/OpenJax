@@ -1,8 +1,8 @@
 //! Protocol types and constants for the JSONL stdio daemon.
 
 use serde::{Deserialize, Serialize};
-use tracing::info;
 use serde_json::Value;
+use tracing::info;
 
 pub const PROTOCOL_VERSION: &str = "v1";
 pub const KIND_REQUEST: &str = "request";

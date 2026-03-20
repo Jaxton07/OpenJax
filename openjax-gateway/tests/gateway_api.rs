@@ -808,5 +808,9 @@ async fn session_timeline_endpoint_returns_persisted_events() {
     let events = timeline_body["events"].as_array().expect("events");
     assert!(!events.is_empty());
     assert_eq!(events[0]["type"], "user_message");
-    assert!(events.iter().any(|event| event["type"] == "response_completed"));
+    assert!(
+        events
+            .iter()
+            .any(|event| event["type"] == "response_completed")
+    );
 }

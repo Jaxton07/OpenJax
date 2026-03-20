@@ -1,8 +1,8 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use axum::extract::{Extension, Path, State};
 use axum::Json;
+use axum::extract::{Extension, Path, State};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -11,11 +11,9 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::error::{ApiError, now_rfc3339};
-use crate::middleware::RequestContext;
-use crate::state::{
-    AppState, SessionStatus, TurnRuntime, TurnStatus, run_turn_task,
-};
 use crate::handlers::stream::publish_event_for_session;
+use crate::middleware::RequestContext;
+use crate::state::{AppState, SessionStatus, TurnRuntime, TurnStatus, run_turn_task};
 
 static STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
 

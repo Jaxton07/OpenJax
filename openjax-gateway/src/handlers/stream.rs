@@ -52,7 +52,10 @@ pub struct SessionTimelineResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub fn resolve_resume_seq(after_event_seq: Option<u64>, last_event_id: Option<&str>) -> Option<u64> {
+pub fn resolve_resume_seq(
+    after_event_seq: Option<u64>,
+    last_event_id: Option<&str>,
+) -> Option<u64> {
     after_event_seq.or_else(|| last_event_id.and_then(|value| value.parse::<u64>().ok()))
 }
 
@@ -123,9 +126,14 @@ pub async fn stream_events(
     let session_runtime = state.get_session(&session_id).await?;
     let (replay, mut rx) = {
         let session = session_runtime.lock().await;
-        let last_event_id = headers.get("Last-Event-ID").and_then(|value| value.to_str().ok());
+        let last_event_id = headers
+            .get("Last-Event-ID")
+            .and_then(|value| value.to_str().ok());
         let after_event_seq = resolve_resume_seq(query.after_event_seq, last_event_id);
-        (session.replay_from(after_event_seq)?, session.event_tx.subscribe())
+        (
+            session.replay_from(after_event_seq)?,
+            session.event_tx.subscribe(),
+        )
     };
 
     let session_runtime_for_recovery = session_runtime.clone();

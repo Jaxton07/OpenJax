@@ -1,15 +1,10 @@
 //! Daemon session state and approval handler.
 
 use std::collections::HashMap;
-use std::sync::{
-    Arc,
-    atomic::AtomicBool,
-};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use async_trait::async_trait;
-use openjax_core::{
-    Agent, ApprovalHandler, ApprovalRequest, approval_timeout_ms_from_env,
-};
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, approval_timeout_ms_from_env};
 use tokio::sync::{Mutex, oneshot};
 use tokio::time::{Duration, timeout};
 use tracing::{info, warn};

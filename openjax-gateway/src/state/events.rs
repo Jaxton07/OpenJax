@@ -14,11 +14,16 @@ use crate::auth::load_api_keys_from_env;
 use crate::auth::{AuthConfig, AuthService};
 use crate::error::ApiError;
 use crate::event_mapper::map_core_event_payload;
-use openjax_store::{ProviderRepository, SessionRepository};
 use openjax_store::SqliteStore;
+use openjax_store::{ProviderRepository, SessionRepository};
 
-use super::config::{build_runtime_config, gateway_db_path, map_store_error, migrate_providers_from_config_if_needed};
-use super::runtime::{ApiTurnError, gateway_stream_debug_enabled, log_preview, reasoning_preview, SessionRuntime, StreamEventEnvelope, TurnRuntime, TurnStatus};
+use super::config::{
+    build_runtime_config, gateway_db_path, map_store_error, migrate_providers_from_config_if_needed,
+};
+use super::runtime::{
+    ApiTurnError, SessionRuntime, StreamEventEnvelope, TurnRuntime, TurnStatus,
+    gateway_stream_debug_enabled, log_preview, reasoning_preview,
+};
 
 const AFTER_DISPATCH_LOG_TARGET: &str = "openjax_after_dispatcher";
 const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
@@ -137,9 +142,7 @@ impl AppState {
         Ok(())
     }
 
-    pub fn list_persisted_sessions(
-        &self,
-    ) -> Result<Vec<openjax_store::SessionRecord>, ApiError> {
+    pub fn list_persisted_sessions(&self) -> Result<Vec<openjax_store::SessionRecord>, ApiError> {
         self.store.list_sessions().map_err(map_store_error)
     }
 
@@ -176,8 +179,8 @@ impl AppState {
     }
 
     pub fn append_event(&self, event: &StreamEventEnvelope) -> Result<(), ApiError> {
-        let payload_json =
-            serde_json::to_string(&event.payload).map_err(|err| ApiError::internal(err.to_string()))?;
+        let payload_json = serde_json::to_string(&event.payload)
+            .map_err(|err| ApiError::internal(err.to_string()))?;
         self.store
             .append_event(
                 &event.session_id,
@@ -222,7 +225,14 @@ impl AppState {
         context_window_size: u32,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
         self.store
-            .create_provider(provider_name, base_url, model_name, api_key, provider_type, context_window_size)
+            .create_provider(
+                provider_name,
+                base_url,
+                model_name,
+                api_key,
+                provider_type,
+                context_window_size,
+            )
             .map_err(map_store_error)
     }
 
@@ -236,7 +246,14 @@ impl AppState {
         context_window_size: u32,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         self.store
-            .update_provider(provider_id, provider_name, base_url, model_name, api_key, context_window_size)
+            .update_provider(
+                provider_id,
+                provider_name,
+                base_url,
+                model_name,
+                api_key,
+                context_window_size,
+            )
             .map_err(map_store_error)
     }
 
@@ -262,7 +279,10 @@ impl AppState {
         session_id: &str,
     ) -> anyhow::Result<Arc<Mutex<SessionRuntime>>> {
         let providers = self.store.list_providers().unwrap_or_default();
-        let active_provider_id = self.store.get_active_provider()?.map(|item| item.provider_id);
+        let active_provider_id = self
+            .store
+            .get_active_provider()?
+            .map(|item| item.provider_id);
         let config = build_runtime_config(providers, active_provider_id.as_deref());
         let mut runtime = SessionRuntime::new_with_config(config);
         runtime.active_provider_id = active_provider_id;
@@ -274,7 +294,8 @@ impl AppState {
         }
         let events = self.store.list_events(session_id, None)?;
         for row in events {
-            let payload = serde_json::from_str::<Value>(&row.payload_json).unwrap_or_else(|_| json!({}));
+            let payload =
+                serde_json::from_str::<Value>(&row.payload_json).unwrap_or_else(|_| json!({}));
             let envelope = StreamEventEnvelope {
                 request_id: format!("req_replay_{}", row.id),
                 session_id: row.session_id.clone(),
@@ -288,7 +309,10 @@ impl AppState {
             };
             let _ = runtime.event_log.push(envelope);
             if let Some(turn_id) = row.turn_id {
-                let turn = runtime.turns.entry(turn_id).or_insert_with(TurnRuntime::queued);
+                let turn = runtime
+                    .turns
+                    .entry(turn_id)
+                    .or_insert_with(TurnRuntime::queued);
                 apply_turn_runtime_event(turn, &row.event_type, &payload);
             }
         }
