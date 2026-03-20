@@ -89,7 +89,7 @@ impl Agent {
             _output: output.to_string(),
         });
 
-        if self.recent_tool_calls.len() > 16 {
+        while self.recent_tool_calls.len() > 16 {
             self.recent_tool_calls.remove(0);
         }
     }
