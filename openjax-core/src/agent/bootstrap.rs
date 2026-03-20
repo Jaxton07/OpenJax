@@ -46,6 +46,17 @@ impl Agent {
         cwd: PathBuf,
     ) -> Self {
         let model_client = model::build_model_client_with_config(config.model.as_ref());
+        let context_window_size: u32 = config
+            .model
+            .as_ref()
+            .and_then(|mc| {
+                mc.routing
+                    .as_ref()
+                    .and_then(|r| r.planner.as_ref())
+                    .and_then(|id| mc.models.get(id.as_str()))
+                    .and_then(|m| m.context_window_size)
+            })
+            .unwrap_or(0);
         let dispatcher_config = DispatcherConfig::from_env();
         let max_tool_calls_per_turn = resolve_max_tool_calls_per_turn(&config);
         let max_planner_rounds_per_turn = resolve_max_planner_rounds_per_turn(&config);
@@ -113,6 +124,8 @@ impl Agent {
             tool_batch_v2_enabled: true,
             approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
             event_sink: None,
+            context_window_size,
+            last_input_tokens: None,
         }
     }
 
