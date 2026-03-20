@@ -173,6 +173,8 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 2. `payload` 字段按事件类型扩展。
 3. 所有事件必须携带 `session_id`，turn 相关事件必须携带 `turn_id`。
 
+> **注意**：所有工具调用事件（`tool_call_started`、`tool_call_completed`、`tool_args_delta`、`tool_call_progress`、`tool_call_ready`、`tool_call_failed`）均包含一个可选的 `display_name` 字段（`Option<String>`），用于 UI 显示的友好名称。JSON 序列化时可省略。
+
 与 `openjax-protocol::Event` 的建议映射：
 
 | Rust Event 变体 | v1 `event_type` |
