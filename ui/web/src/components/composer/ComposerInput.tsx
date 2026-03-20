@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 import { SendIcon } from "../../pic/icon";
+import type { SlashCommandDto } from "../../types/gateway";
 
 interface ComposerInputProps {
   value: string;
@@ -7,6 +8,11 @@ interface ComposerInputProps {
   textareaRef: RefObject<HTMLTextAreaElement>;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  showSlashDropdown?: boolean;
+  slashCommands?: SlashCommandDto[];
+  slashSelectedIndex?: number;
+  onSlashIndexChange?: (index: number) => void;
+  onSlashClose?: () => void;
 }
 
 export default function ComposerInput({
@@ -15,6 +21,10 @@ export default function ComposerInput({
   textareaRef,
   onChange,
   onSubmit,
+  showSlashDropdown,
+  slashSelectedIndex,
+  onSlashIndexChange,
+  onSlashClose,
 }: ComposerInputProps) {
   const hasContent = value.trim().length > 0;
 
@@ -34,6 +44,19 @@ export default function ComposerInput({
           if (event.key === "Enter" && !event.shiftKey && !disabled) {
             event.preventDefault();
             onSubmit();
+          }
+          if (showSlashDropdown && onSlashIndexChange && onSlashClose) {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              onSlashIndexChange((slashSelectedIndex ?? 0) + 1);
+            }
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              onSlashIndexChange((slashSelectedIndex ?? 0) - 1);
+            }
+            if (event.key === "Escape") {
+              onSlashClose();
+            }
           }
         }}
       />
