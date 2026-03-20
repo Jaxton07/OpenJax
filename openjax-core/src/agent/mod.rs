@@ -16,3 +16,4 @@ pub(crate) mod tool_lifecycle;
 pub(crate) mod tool_policy;
 pub(crate) mod turn;
 pub(crate) mod turn_engine;
+pub(crate) mod context_compressor;
