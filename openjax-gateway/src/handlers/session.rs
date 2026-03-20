@@ -292,7 +292,6 @@ pub async fn submit_turn(
             timestamp: now_rfc3339(),
         }));
     }
-
     let (turn_id_tx, turn_id_rx) = oneshot::channel();
     tokio::spawn(run_turn_task(
         state.clone(),
@@ -510,7 +509,7 @@ pub fn parse_session_action(session_action: &str) -> Result<(&str, &str), ApiErr
     })
 }
 
-pub async fn handle_compact_action(
+pub(crate) async fn handle_compact_action(
     state: &AppState,
     session_runtime: &tokio::sync::Mutex<crate::state::SessionRuntime>,
     request_id: &str,
