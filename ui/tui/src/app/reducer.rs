@@ -214,6 +214,7 @@ impl App {
             Event::ReasoningDelta { .. } => {}
             Event::LoopWarning { .. } => {}
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
+            Event::ContextCompacted { .. } => {}
         }
     }
 
