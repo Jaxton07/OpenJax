@@ -40,6 +40,9 @@ pub use provider_store::{
 pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
 
+// Re-export loop detector types for integration tests
+pub use agent::loop_detector::{LoopDetector, LoopSignal};
+
 // Re-export protocol types for external use
 pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 
