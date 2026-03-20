@@ -728,6 +728,7 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::TurnCompleted { turn_id } => return Some(*turn_id),
             Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
+            | Event::ContextCompacted { .. }
             | Event::ShutdownComplete => {}
         }
     }
@@ -757,6 +758,7 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
         | Event::TurnCompleted { turn_id } => Some(*turn_id),
         Event::AgentSpawned { .. }
         | Event::AgentStatusChanged { .. }
+        | Event::ContextCompacted { .. }
         | Event::ShutdownComplete => None,
     }
 }
@@ -1009,7 +1011,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "session_shutdown_complete".to_string(),
             payload: json!({}),
         }),
-        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => None,
+        Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } | Event::ContextCompacted { .. } => None,
     }
 }
 
@@ -1119,6 +1121,7 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
             | Event::ToolBatchCompleted { .. }
             | Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
+            | Event::ContextCompacted { .. }
             | Event::ShutdownComplete => {}
         }
     }

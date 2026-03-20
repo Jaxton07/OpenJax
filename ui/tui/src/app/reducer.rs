@@ -212,6 +212,7 @@ impl App {
             }
             Event::ReasoningDelta { .. } => {}
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
+            Event::ContextCompacted { .. } => {}
         }
     }
 
