@@ -126,6 +126,115 @@ impl Agent {
             });
         }
     }
+
+    /// 公开接口：手动触发压缩（gateway /compact 调用）
+    pub async fn compact(&mut self, events: &mut Vec<openjax_protocol::Event>) {
+        self.do_compact(0, events).await;
+    }
+
+    /// 内部：执行一次压缩并推送事件
+    pub(crate) async fn do_compact(
+        &mut self,
+        turn_id: u64,
+        events: &mut Vec<openjax_protocol::Event>,
+    ) {
+        let turns_before = self
+            .history
+            .iter()
+            .filter(|h| matches!(h, crate::HistoryItem::Turn(_)))
+            .count();
+
+        match crate::agent::context_compressor::try_compact(
+            &self.history,
+            &*self.model_client,
+        )
+        .await
+        {
+            Some(new_history) => {
+                let turns_after = new_history
+                    .iter()
+                    .filter(|h| matches!(h, crate::HistoryItem::Turn(_)))
+                    .count();
+                let summary_preview = new_history
+                    .iter()
+                    .find_map(|h| {
+                        if let crate::HistoryItem::Summary(s) = h {
+                            Some(s.chars().take(120).collect::<String>())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+
+                self.history = new_history;
+                self.last_input_tokens = None; // 历史已变，重置估算
+
+                self.push_event(
+                    events,
+                    openjax_protocol::Event::ContextCompacted {
+                        turn_id,
+                        compressed_turns: (turns_before - turns_after) as u32,
+                        retained_turns: turns_after as u32,
+                        summary_preview,
+                    },
+                );
+                tracing::info!(
+                    turn_id = turn_id,
+                    compressed = turns_before - turns_after,
+                    retained = turns_after,
+                    "context_compacted"
+                );
+            }
+            None => {
+                tracing::info!(
+                    turn_id = turn_id,
+                    "compact_skipped_insufficient_history"
+                );
+            }
+        }
+    }
+
+    /// 内部：检查 token 用量占比，超阈值时自动触发压缩
+    pub(crate) async fn check_and_auto_compact(
+        &mut self,
+        turn_id: u64,
+        events: &mut Vec<openjax_protocol::Event>,
+    ) {
+        if self.context_window_size == 0 {
+            return; // 未知上下文窗口，跳过
+        }
+
+        let token_estimate = self.last_input_tokens.unwrap_or_else(|| {
+            // Fallback：从 history 字符数估算（1 token ≈ 3.5 chars）
+            let chars: usize = self
+                .history
+                .iter()
+                .map(|h| match h {
+                    crate::HistoryItem::Turn(r) => {
+                        r.user_input.len()
+                            + r.assistant_output.len()
+                            + r.tool_traces.iter().map(|t| t.len()).sum::<usize>()
+                    }
+                    crate::HistoryItem::Summary(s) => s.len(),
+                })
+                .sum();
+            (chars as f64 / 3.5) as u64
+        });
+
+        let ratio = token_estimate as f64 / self.context_window_size as f64;
+        if ratio < 0.75 {
+            return;
+        }
+
+        tracing::info!(
+            turn_id = turn_id,
+            token_estimate = token_estimate,
+            context_window = self.context_window_size,
+            ratio = ratio,
+            "auto_compact_triggered"
+        );
+        self.do_compact(turn_id, events).await;
+    }
 }
 
 fn should_skip_duplicate_detection(tool_name: &str) -> bool {

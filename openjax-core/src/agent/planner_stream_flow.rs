@@ -25,7 +25,6 @@ pub(super) struct PlannerStreamResult {
     pub(super) streamed_message: String,
     pub(super) live_streamed: bool,
     pub(super) action_hint: Option<String>,
-    #[allow(dead_code)] // will be consumed in planner.rs (Task 6)
     pub(super) usage: Option<ModelUsage>,
 }
 
