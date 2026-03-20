@@ -90,6 +90,7 @@ mod tests {
             manifest: SkillManifest {
                 name: name.to_string(),
                 description: description.to_string(),
+                slash_command: None,
                 instructions_markdown: body.to_string(),
                 extra: serde_json::json!({}),
             },

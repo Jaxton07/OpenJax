@@ -20,6 +20,14 @@ impl SlashCommand {
     pub fn new(name: &'static str, description: &'static str, kind: SlashCommandKind) -> Self {
         Self { name, description, kind }
     }
+
+    pub fn new_skill(skill_name: &'static str, description: &'static str) -> Self {
+        Self {
+            name: skill_name,
+            description,
+            kind: SlashCommandKind::Skill { skill_name },
+        }
+    }
 }
 
 /// 斜杠命令匹配结果
@@ -174,20 +182,13 @@ impl SlashCommandRegistry {
     }
 }
 
-/// 注册一个 skill 命令
+/// 注册一个 skill 命令（由 loader 在发现 skill 时调用）
 pub fn register_skill_command(skill_name: &'static str, description: &'static str) {
-    let mut commands = DYNAMIC_SKILL_COMMANDS.write().unwrap();
-    // 去重检查
-    if commands.iter().any(|c| c.name == skill_name) {
-        return;
+    let mut skills = DYNAMIC_SKILL_COMMANDS.write().unwrap();
+    // 去重
+    if !skills.iter().any(|c| c.name == skill_name) {
+        skills.push(SlashCommand::new_skill(skill_name, description));
     }
-    commands.push(SlashCommand {
-        name: skill_name,
-        description,
-        kind: SlashCommandKind::Skill {
-            skill_name,
-        },
-    });
 }
 
 #[cfg(test)]

@@ -29,6 +29,8 @@ impl SkillSourceScope {
 pub struct SkillManifest {
     pub name: String,
     pub description: String,
+    /// Optional slash command name declared in SKILL.md frontmatter
+    pub slash_command: Option<String>,
     pub instructions_markdown: String,
     pub extra: Value,
 }

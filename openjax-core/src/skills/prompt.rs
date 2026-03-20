@@ -80,6 +80,7 @@ mod tests {
                 manifest: SkillManifest {
                     name: "rust-debug".to_string(),
                     description: "debug rust".to_string(),
+                    slash_command: None,
                     instructions_markdown: "x".repeat(600),
                     extra: serde_json::json!({}),
                 },
@@ -103,6 +104,7 @@ mod tests {
                 manifest: SkillManifest {
                     name: "local-commit".to_string(),
                     description: "commit changes".to_string(),
+                    slash_command: None,
                     instructions_markdown: "Do commit workflow".to_string(),
                     extra: serde_json::json!({}),
                 },

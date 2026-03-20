@@ -98,8 +98,27 @@ pub fn discover_registry(skills_dir: &Path) -> SkillRegistry {
                 package_dir: skill_dir.clone(),
                 manifest_path,
                 source_scope: scope,
-                manifest,
+                manifest: manifest.clone(),
             });
+
+            // Register slash command if declared in frontmatter
+            if let Some(ref slash_cmd) = manifest.slash_command {
+                let normalized = slash_cmd.trim().to_ascii_lowercase();
+                if !normalized.is_empty() {
+                    if let Err(e) = std::panic::catch_unwind(|| {
+                        crate::slash_commands::register_skill_command(
+                            Box::leak(normalized.into_boxed_str()) as &'static str,
+                            Box::leak(manifest.description.clone().into_boxed_str()) as &'static str,
+                        );
+                    }) {
+                        warn!(
+                            skill = %file_name,
+                            error = ?e,
+                            "failed to register skill slash command"
+                        );
+                    }
+                }
+            }
         }
     }
 
