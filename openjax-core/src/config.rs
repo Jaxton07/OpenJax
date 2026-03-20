@@ -107,6 +107,8 @@ pub struct ProviderModelConfig {
     pub supports_tool_call: Option<bool>,
     #[serde(default)]
     pub supports_json_mode: Option<bool>,
+    #[serde(default)]
+    pub context_window_size: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

@@ -377,7 +377,7 @@ impl AuthStore {
         let conn = self.conn.lock().expect("auth db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT session_id, device_id, scope, device_name, platform, user_agent, status, created_at, last_seen_at, revoked_at FROM auth_sessions ORDER BY created_at DESC",
+                "SELECT session_id, device_id, scope, device_name, platform, user_agent, status, created_at, last_seen_at, revoked_at FROM auth_sessions WHERE status = 'active' ORDER BY created_at DESC",
             )
             .context("prepare list sessions")?;
         let rows = stmt

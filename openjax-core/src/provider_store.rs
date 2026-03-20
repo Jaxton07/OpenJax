@@ -98,6 +98,7 @@ pub fn build_config_from_providers(
                 supports_reasoning: Some(true),
                 supports_tool_call: Some(true),
                 supports_json_mode: Some(false),
+                context_window_size: Some(provider.context_window_size),
             },
         );
     }

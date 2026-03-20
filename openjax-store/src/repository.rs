@@ -8,6 +8,7 @@ pub trait SessionRepository {
     fn create_session(&self, session_id: &str, title: Option<&str>) -> Result<SessionRecord>;
     fn get_session(&self, session_id: &str) -> Result<Option<SessionRecord>>;
     fn list_sessions(&self) -> Result<Vec<SessionRecord>>;
+    fn delete_session(&self, session_id: &str) -> Result<bool>;
     fn append_message(
         &self,
         session_id: &str,
@@ -40,6 +41,8 @@ pub trait ProviderRepository {
         base_url: &str,
         model_name: &str,
         api_key: &str,
+        provider_type: &str,
+        context_window_size: u32,
     ) -> Result<ProviderRecord>;
     fn update_provider(
         &self,
@@ -48,6 +51,7 @@ pub trait ProviderRepository {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        context_window_size: u32,
     ) -> Result<Option<ProviderRecord>>;
     fn delete_provider(&self, provider_id: &str) -> Result<bool>;
     fn get_provider(&self, provider_id: &str) -> Result<Option<ProviderRecord>>;

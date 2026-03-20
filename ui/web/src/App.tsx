@@ -51,6 +51,7 @@ export default function App() {
     deleteProvider,
     getActiveProvider,
     setActiveProvider,
+    fetchCatalog,
     dismissGlobalError,
     dismissToast
   } = useChatApp();
@@ -219,6 +220,7 @@ export default function App() {
         onDeleteProvider={deleteProvider}
         onGetActiveProvider={getActiveProvider}
         onSetActiveProvider={setActiveProvider}
+        onFetchCatalog={fetchCatalog}
       />
     </div>
   );

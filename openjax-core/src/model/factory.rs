@@ -136,6 +136,7 @@ mod tests {
                 supports_reasoning: Some(true),
                 supports_tool_call: Some(false),
                 supports_json_mode: Some(false),
+                context_window_size: None,
             },
         );
         let config = ModelConfig {

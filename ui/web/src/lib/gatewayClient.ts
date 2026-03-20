@@ -3,6 +3,7 @@ import type {
   AuthLoginResponse,
   AuthRevokeResponse,
   AuthSessionsResponse,
+  CatalogProvider,
   GatewaySessionListResponse,
   GatewaySessionMessagesResponse,
   GatewaySessionTimelineResponse,
@@ -163,6 +164,8 @@ export class GatewayClient {
     baseUrl: string;
     modelName: string;
     apiKey: string;
+    providerType?: "built_in" | "custom";
+    contextWindowSize?: number;
   }): Promise<ProviderMutationResponse> {
     return this.request("/api/v1/providers", {
       method: "POST",
@@ -170,7 +173,9 @@ export class GatewayClient {
         provider_name: payload.providerName,
         base_url: payload.baseUrl,
         model_name: payload.modelName,
-        api_key: payload.apiKey
+        api_key: payload.apiKey,
+        provider_type: payload.providerType,
+        context_window_size: payload.contextWindowSize
       })
     });
   }
@@ -182,6 +187,8 @@ export class GatewayClient {
       baseUrl: string;
       modelName: string;
       apiKey?: string;
+      providerType?: "built_in" | "custom";
+      contextWindowSize?: number;
     }
   ): Promise<ProviderMutationResponse> {
     return this.request(`/api/v1/providers/${providerId}`, {
@@ -190,7 +197,9 @@ export class GatewayClient {
         provider_name: payload.providerName,
         base_url: payload.baseUrl,
         model_name: payload.modelName,
-        api_key: payload.apiKey
+        api_key: payload.apiKey,
+        provider_type: payload.providerType,
+        context_window_size: payload.contextWindowSize
       })
     });
   }
@@ -210,6 +219,13 @@ export class GatewayClient {
       method: "PUT",
       body: JSON.stringify({ provider_id: providerId })
     });
+  }
+
+  async fetchCatalog(): Promise<CatalogProvider[]> {
+    const res = await fetch(`${normalizeBaseUrl(this.settings.baseUrl)}/api/v1/catalog`);
+    if (!res.ok) throw await parseGatewayError(res);
+    const data = await res.json();
+    return (data.providers ?? []) as CatalogProvider[];
   }
 
   async healthCheck(): Promise<{ status: string }> {

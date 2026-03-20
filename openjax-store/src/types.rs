@@ -38,6 +38,8 @@ pub struct ProviderRecord {
     pub base_url: String,
     pub model_name: String,
     pub api_key: String,
+    pub provider_type: String,        // "built_in" | "custom"
+    pub context_window_size: u32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -46,5 +48,6 @@ pub struct ProviderRecord {
 pub struct ActiveProviderRecord {
     pub provider_id: String,
     pub model_name: String,
+    pub context_window_size: u32,
     pub updated_at: String,
 }
