@@ -62,7 +62,10 @@ impl Agent {
             }
         }
 
-        if let Some(message) = ctx.apply_patch_read_guard.block_user_message_for_tool(&tool_name) {
+        if let Some(message) = ctx
+            .apply_patch_read_guard
+            .block_user_message_for_tool(&tool_name)
+        {
             let tool_call_id = Uuid::new_v4().to_string();
             warn!(
                 turn_id = turn_id,
@@ -90,6 +93,7 @@ impl Agent {
                     code: "guard_blocked".to_string(),
                     message: message.to_string(),
                     retryable: false,
+                    display_name: self.tools.display_name_for(&tool_name),
                 },
             );
 
@@ -134,7 +138,10 @@ impl Agent {
             ctx.tool_traces.push(format!(
                 "tool={tool_name}; ok=skipped_duplicate; args={}; output={}",
                 serde_json::to_string(&args).unwrap_or_default(),
-                truncate_for_prompt(&message, self.skill_runtime_config.max_diff_chars_for_planner)
+                truncate_for_prompt(
+                    &message,
+                    self.skill_runtime_config.max_diff_chars_for_planner
+                )
             ));
             *ctx.consecutive_duplicate_skips = (*ctx.consecutive_duplicate_skips).saturating_add(1);
             if should_abort_on_consecutive_duplicate_skips(
@@ -154,7 +161,10 @@ impl Agent {
                 ctx.tool_traces.push(format!(
                     "tool={tool_name}; ok=aborted; args={}; output={}",
                     serde_json::to_string(&args).unwrap_or_default(),
-                    truncate_for_prompt(&loop_message, self.skill_runtime_config.max_diff_chars_for_planner)
+                    truncate_for_prompt(
+                        &loop_message,
+                        self.skill_runtime_config.max_diff_chars_for_planner
+                    )
                 ));
                 ctx.turn_engine.on_failed();
                 return false;
@@ -218,24 +228,36 @@ impl Agent {
                 );
                 ctx.tool_traces.push(trace);
 
-                let signal = self.loop_detector.check_and_advance(&tool_name, &serde_json::to_string(&args).unwrap_or_default());
+                let signal = self.loop_detector.check_and_advance(
+                    &tool_name,
+                    &serde_json::to_string(&args).unwrap_or_default(),
+                );
                 match signal {
                     LoopSignal::Warned => {
                         info!(turn_id, tool_name, "loop_detected: soft interrupt");
-                        self.push_event(ctx.events, Event::LoopWarning {
-                            turn_id,
-                            tool_name: tool_name.to_string(),
-                            consecutive_count: self.loop_detector.warn_threshold(),
-                        });
+                        self.push_event(
+                            ctx.events,
+                            Event::LoopWarning {
+                                turn_id,
+                                tool_name: tool_name.to_string(),
+                                consecutive_count: self.loop_detector.warn_threshold(),
+                            },
+                        );
                     }
                     LoopSignal::Halt => {
-                        warn!(turn_id, tool_name, "loop_detected: hard halt after recovery failure");
-                        self.push_event(ctx.events, Event::ResponseError {
+                        warn!(
                             turn_id,
-                            code: "loop_halt".to_string(),
-                            message: "检测到持续重复调用，已强制终止本回合。".to_string(),
-                            retryable: true,
-                        });
+                            tool_name, "loop_detected: hard halt after recovery failure"
+                        );
+                        self.push_event(
+                            ctx.events,
+                            Event::ResponseError {
+                                turn_id,
+                                code: "loop_halt".to_string(),
+                                message: "检测到持续重复调用，已强制终止本回合。".to_string(),
+                                retryable: true,
+                            },
+                        );
                         ctx.turn_engine.on_failed();
                         return false;
                     }
@@ -258,7 +280,8 @@ impl Agent {
             Err(err) => {
                 let duration_ms = start_time.elapsed().as_millis();
                 let err_text = err.to_string();
-                ctx.apply_patch_read_guard.on_tool_failure(&tool_name, &err_text);
+                ctx.apply_patch_read_guard
+                    .on_tool_failure(&tool_name, &err_text);
                 info!(
                     turn_id = turn_id,
                     tool_call_id = %tool_call_id,
@@ -278,7 +301,13 @@ impl Agent {
                 ctx.tool_traces.push(trace);
 
                 self.record_tool_call(&tool_name, &args, false, &err_text);
-                self.emit_tool_call_failed(turn_id, &tool_call_id, &tool_name, &err_text, ctx.events);
+                self.emit_tool_call_failed(
+                    turn_id,
+                    &tool_call_id,
+                    &tool_name,
+                    &err_text,
+                    ctx.events,
+                );
                 self.emit_tool_call_completed(
                     turn_id,
                     &tool_call_id,
