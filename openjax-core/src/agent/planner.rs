@@ -518,9 +518,8 @@ impl Agent {
                         saw_git_diff_stat: &mut saw_git_diff_stat,
                         diff_strategy: &mut diff_strategy,
                     };
-                    let should_continue = self
-                        .handle_tool_action(turn_id, &decision, &mut ctx)
-                        .await;
+                    let should_continue =
+                        self.handle_tool_action(turn_id, &decision, &mut ctx).await;
                     if should_continue {
                         continue;
                     }

@@ -29,7 +29,11 @@ pub trait SessionRepository {
         timestamp: &str,
         stream_source: &str,
     ) -> Result<EventRecord>;
-    fn list_events(&self, session_id: &str, after_event_seq: Option<u64>) -> Result<Vec<EventRecord>>;
+    fn list_events(
+        &self,
+        session_id: &str,
+        after_event_seq: Option<u64>,
+    ) -> Result<Vec<EventRecord>>;
     fn last_event_seq(&self, session_id: &str) -> Result<Option<u64>>;
     fn last_turn_seq_by_turn(&self, session_id: &str) -> Result<Vec<(String, u64)>>;
 }

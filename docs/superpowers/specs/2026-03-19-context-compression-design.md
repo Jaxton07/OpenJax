@@ -6,13 +6,15 @@
 
 ## Background
 
-OpenJax 当前对会话历史的管理是简单的消息条数截断（`MAX_CONVERSATION_HISTORY_ITEMS = 20`），超出时直接丢弃最旧的消息。对于长任务场景，这会导致：
+OpenJax 的会话历史已通过 history 重构（commit a645e9ca）升级为轮次结构：`history: Vec<HistoryItem>`，其中 `HistoryItem` 有两个 variant：`Turn(TurnRecord)` 和 `Summary(String)`。截断配额为 `MAX_CONVERSATION_HISTORY_TURNS = 100`（硬上限兜底），只计 `Turn` variant，`Summary` 不占配额。
+
+对于长任务场景，当前设计仍会导致：
 
 1. 重要的早期上下文（用户目标、已完成步骤、关键决策）被静默丢弃
 2. 模型失去对任务全貌的理解，可能重复工作或做出矛盾决策
 3. 无法感知 token 用量，不知道何时该压缩
 
-本设计在不改变现有消息条数限制语义的前提下，叠加一套 token 感知的上下文压缩机制。
+本设计在现有轮次结构的基础上，叠加一套 token 感知的上下文压缩机制，利用 `HistoryItem::Summary` variant 存储压缩摘要。
 
 ## Goals
 
@@ -24,14 +26,14 @@ OpenJax 当前对会话历史的管理是简单的消息条数截断（`MAX_CONV
 ## Non-Goals
 
 - 不实现多级摘要（压缩后再压缩的递归场景留待后续）
-- 不持久化摘要到数据库（摘要仅存在于内存 session，会话重建不恢复）
-- 不修改 `MAX_CONVERSATION_HISTORY_ITEMS` 的条数截断逻辑（两套机制并存）
+- 不持久化摘要到数据库（摘要仅存在于内存 session，会话重建不恢复）；当前系统连普通历史都不持久化，单独为压缩摘要开口会产生不一致。完整的历史持久化（含会话快照）是独立的后续工作
+- `MAX_CONVERSATION_HISTORY_TURNS = 100` 为硬上限兜底，正常流程由压缩接管，硬截断几乎不触发；`Summary` 不占配额，压缩不会导致摘要被逐出
 
 ## Design
 
 ### 1. 摘要格式（混合式）
 
-压缩时，旧历史被替换为一条结构化的摘要 HistoryEntry（role: "system"）：
+压缩时，旧的 `Turn` 条目被替换为一个 `HistoryItem::Summary(String)`，摘要文本格式如下：
 
 ```
 [CONTEXT SUMMARY - covers turns 1~N, 2026-03-19 14:30]
@@ -95,14 +97,15 @@ last_input_tokens: Option<u64>, // 上次请求的实际 prompt tokens（来自 
 路径：`openjax-core/src/agent/context_compressor.rs`
 
 职责：
-- 接收当前 `history: &[HistoryEntry]` 和 `model_client`
-- 将 history 分为两部分：
-  - **recent**：保留最后 6 条（约 3 轮对话，保持完整上下文细节）
-  - **to_summarize**：其余所有条目
-- 若 `to_summarize` 为空或 history 总条数 <= 8，直接返回原 history（不压缩）
-- 构造 compression prompt，调用 model（非流式 `complete`）生成混合格式摘要
+- 接收当前 `history: &[HistoryItem]` 和 `model_client`
+- 将 history 分为两部分，**以 `Turn` variant 计数为边界**：
+  - **recent**：从 history 末尾往前数，保留最后 3 个 `Turn` variant（及其间穿插的任何 `Summary`）
+  - **to_summarize**：3rd-from-last `Turn` 之前的所有条目（包含旧的 `Summary`）
+- 若 `to_summarize` 中 `Turn` 数量为 0，或整个 history 中 `Turn` 总数 <= 4，直接返回原 history（不压缩）
+- 构造 compression prompt（序列化 `to_summarize` 部分：`Turn` 展开为 user/tool/assistant，旧 `Summary` 直接插入），调用 model（非流式 `complete`）生成混合格式摘要
+- **多次压缩策略**：采用**合并策略**——新摘要替代 `to_summarize` 中所有旧 `Summary` 条目，最终 history 中始终只有 0 或 1 个 `Summary`，避免链式堆积
 - **失败降级**：若模型调用失败，记录 `warn!` 日志并返回原 history（不中断任务，跳过本次压缩）
-- 返回：`[summary_entry] + recent_entries`
+- 返回：`[HistoryItem::Summary(text)] + recent_items`
 
 compression prompt 示例：
 
@@ -178,7 +181,7 @@ ContextCompacted {
 | `openjax-core/src/lib.rs` | 修改 | Agent struct 新增 context_window_size / last_input_tokens |
 | `openjax-core/src/agent/bootstrap.rs` | 修改 | 注入 context_window_size |
 | `openjax-core/src/agent/context_compressor.rs` | 新建 | 压缩逻辑主体 |
-| `openjax-core/src/agent/mod.rs` | 修改 | 新增 `mod context_compressor` 声明 |
+| `openjax-core/src/agent/mod.rs` | 修改 | 新增 `pub(crate) mod context_compressor` 声明 |
 | `openjax-core/src/agent/planner.rs` | 修改 | 每轮 usage 更新 + 触发压缩检查 |
 | `openjax-protocol/src/` | 修改 | 新增 ContextCompacted 事件 |
 | `openjax-gateway/src/handlers.rs` | 修改 | 实现 /compact action |
@@ -187,12 +190,12 @@ ContextCompacted {
 ## Testing
 
 - 单元测试（`#[cfg(test)]`）：
-  - `context_compressor`: 测试分割逻辑（history <= 8 时不压缩、正常分割）
+  - `context_compressor`: 测试分割逻辑（Turn 总数 <= 4 时不压缩、正常分割、多次压缩合并旧 Summary）
   - `chat_completions`: 测试流式 usage 从最后一帧提取
 - 集成测试（`tests/` 下新建 `m10_context_compression.rs`）：
   - 验证 agent history 达到阈值后自动触发压缩
   - 验证 /compact 手动触发后 ContextCompacted 事件被正确推送
-  - 验证压缩后 history 长度符合预期（1 summary + 6 recent）
+  - 验证压缩后 history 结构符合预期（1 Summary + 最近 3 Turn）
 
 ## Open Questions
 

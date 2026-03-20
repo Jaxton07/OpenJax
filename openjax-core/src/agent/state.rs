@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tracing::debug;
 
-use crate::{Agent, HistoryItem, TurnRecord, MAX_CONVERSATION_HISTORY_TURNS};
+use crate::{Agent, HistoryItem, MAX_CONVERSATION_HISTORY_TURNS, TurnRecord};
 
 #[derive(Debug, Clone)]
 pub(crate) struct RateLimitConfig {
