@@ -366,17 +366,7 @@ impl ModelClient for ChatCompletionsClient {
             )
         })?;
 
-        let usage = body_json.get("usage").map(|usage| ModelUsage {
-            input_tokens: usage
-                .get("prompt_tokens")
-                .and_then(|v| v.as_u64())
-                .or_else(|| usage.get("input_tokens").and_then(|v| v.as_u64())),
-            output_tokens: usage
-                .get("completion_tokens")
-                .and_then(|v| v.as_u64())
-                .or_else(|| usage.get("output_tokens").and_then(|v| v.as_u64())),
-            total_tokens: usage.get("total_tokens").and_then(|v| v.as_u64()),
-        });
+        let usage = extract_usage_from_payload(&body_json);
 
         let finish_reason = body_json
             .get("choices")
@@ -791,19 +781,13 @@ mod tests {
 
 #[cfg(test)]
 mod streaming_usage_tests {
-    use crate::model::types::ModelUsage;
+    use super::extract_usage_from_payload;
 
     #[test]
     fn test_usage_extracted_from_last_sse_frame() {
-        // Simulate the last SSE chunk containing usage (OpenAI format)
         let frame = r#"{"id":"test","choices":[{"index":0,"finish_reason":"stop","delta":{"content":""}}],"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}}"#;
         let val: serde_json::Value = serde_json::from_str(frame).unwrap();
-        let usage_val = val.get("usage").unwrap();
-        let usage = ModelUsage {
-            input_tokens: usage_val.get("prompt_tokens").and_then(|v| v.as_u64()),
-            output_tokens: usage_val.get("completion_tokens").and_then(|v| v.as_u64()),
-            total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
-        };
+        let usage = extract_usage_from_payload(&val).unwrap();
         assert_eq!(usage.input_tokens, Some(100));
         assert_eq!(usage.output_tokens, Some(50));
         assert_eq!(usage.total_tokens, Some(150));
@@ -811,23 +795,11 @@ mod streaming_usage_tests {
 
     #[test]
     fn test_usage_extracted_from_glm_format() {
-        // Simulate GLM-style usage with input_tokens / output_tokens keys
-        let frame = r#"{"id":"test","choices":[{"index":0,"finish_reason":"stop","delta":{"content":""}}],"usage":{"input_tokens":80,"output_tokens":40,"total_tokens":120}}"#;
+        let frame = r#"{"usage":{"input_tokens":200,"output_tokens":80,"total_tokens":280}}"#;
         let val: serde_json::Value = serde_json::from_str(frame).unwrap();
-        let usage_val = val.get("usage").unwrap();
-        let usage = ModelUsage {
-            input_tokens: usage_val
-                .get("prompt_tokens")
-                .and_then(|v| v.as_u64())
-                .or_else(|| usage_val.get("input_tokens").and_then(|v| v.as_u64())),
-            output_tokens: usage_val
-                .get("completion_tokens")
-                .and_then(|v| v.as_u64())
-                .or_else(|| usage_val.get("output_tokens").and_then(|v| v.as_u64())),
-            total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
-        };
-        assert_eq!(usage.input_tokens, Some(80));
-        assert_eq!(usage.output_tokens, Some(40));
-        assert_eq!(usage.total_tokens, Some(120));
+        let usage = extract_usage_from_payload(&val).unwrap();
+        assert_eq!(usage.input_tokens, Some(200));
+        assert_eq!(usage.output_tokens, Some(80));
+        assert_eq!(usage.total_tokens, Some(280));
     }
 }
