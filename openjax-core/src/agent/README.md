@@ -70,6 +70,7 @@
 
 ## 扩展建议
 
+- [LoopDetector 循环检测机制](./docs/loop_detector_design.md)
 - 增加新回合阶段时，优先在 `planner.rs` 维护状态机，避免在 `turn.rs` 膨胀逻辑。
 - 新增事件类型后，确保 `events.rs` 的 sink 与返回路径保持一致。
 - 任何工具策略变更，应同步更新 `tool_guard.rs` / `tool_policy.rs` 与相关集成测试。
