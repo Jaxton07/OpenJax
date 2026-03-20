@@ -360,10 +360,15 @@ pub async fn submit_turn(
     }
 
     if input == "/compact" {
-        return Err(ApiError::not_implemented(
-            "compact is not implemented yet",
-            json!({ "session_id": session_id }),
-        ));
+        let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
+        let session_runtime = state.get_session(&session_id).await?;
+        handle_compact_action(&state, &session_runtime, &ctx.request_id, &session_id, &turn_id).await?;
+        return Ok(Json(SubmitTurnResponse {
+            request_id: ctx.request_id,
+            session_id,
+            turn_id,
+            timestamp: now_rfc3339(),
+        }));
     }
     if input == "/clear" {
         clear_runtime(&state, &session_runtime).await;
@@ -556,10 +561,15 @@ pub async fn session_action(
     let (session_id, action) = parse_session_action(&session_id)?;
     let normalized = normalize_session_action(action);
     if normalized == "compact" {
-        return Err(ApiError::not_implemented(
-            "compact is not implemented yet",
-            json!({ "session_id": session_id }),
-        ));
+        let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
+        let session_runtime = state.get_session(session_id).await?;
+        handle_compact_action(&state, &session_runtime, &ctx.request_id, session_id, &turn_id).await?;
+        return Ok(Json(SessionActionResponse {
+            request_id: ctx.request_id,
+            session_id: session_id.to_string(),
+            status: "compacted",
+            timestamp: now_rfc3339(),
+        }));
     }
     if normalized != "clear" {
         return Err(ApiError::not_found(
@@ -924,6 +934,84 @@ fn parse_session_action(session_action: &str) -> Result<(&str, &str), ApiError> 
             json!({ "session_action": session_action }),
         )
     })
+}
+
+async fn handle_compact_action(
+    state: &AppState,
+    session_runtime: &tokio::sync::Mutex<crate::state::SessionRuntime>,
+    request_id: &str,
+    session_id: &str,
+    turn_id: &str,
+) -> Result<(), ApiError> {
+    let agent = {
+        let session = session_runtime.lock().await;
+        session.agent.clone()
+    };
+
+    let mut events = Vec::new();
+    {
+        let mut agent = agent.lock().await;
+        agent.compact(&mut events).await;
+    }
+
+    let mut session = session_runtime.lock().await;
+
+    session.turns.insert(
+        turn_id.to_string(),
+        TurnRuntime {
+            status: TurnStatus::Completed,
+            assistant_message: Some("context compacted".to_string()),
+            error: None,
+        },
+    );
+
+    let started = session.create_gateway_event(
+        request_id,
+        session_id,
+        Some(turn_id.to_string()),
+        "turn_started",
+        json!({}),
+        None,
+    );
+    publish_event_for_session(state, &mut session, started);
+
+    // Map and publish core events emitted by compact (e.g. ContextCompacted)
+    for event in &events {
+        if let Some(mapping) = crate::event_mapper::map_core_event_payload(event) {
+            let gateway_event = session.create_gateway_event(
+                request_id,
+                session_id,
+                Some(turn_id.to_string()),
+                mapping.event_type,
+                mapping.payload,
+                mapping.stream_source,
+            );
+            publish_event_for_session(state, &mut session, gateway_event);
+        }
+    }
+
+    let response_event = session.create_gateway_event(
+        request_id,
+        session_id,
+        Some(turn_id.to_string()),
+        "response_completed",
+        json!({ "content": "context compacted", "stream_source": "synthetic" }),
+        Some("synthetic"),
+    );
+    let completed = session.create_gateway_event(
+        request_id,
+        session_id,
+        Some(turn_id.to_string()),
+        "turn_completed",
+        json!({}),
+        None,
+    );
+    publish_event_for_session(state, &mut session, response_event);
+    publish_event_for_session(state, &mut session, completed);
+
+    state.append_message(session_id, Some(turn_id), "assistant", "context compacted")?;
+
+    Ok(())
 }
 
 async fn clear_runtime(
