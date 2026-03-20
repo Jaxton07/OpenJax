@@ -45,7 +45,7 @@ pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 
 const MAX_CONSECUTIVE_DUPLICATE_SKIPS: usize = 2;
 pub(crate) const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
-pub(crate) const MAX_CONVERSATION_HISTORY_TURNS: usize = 10;
+pub(crate) const MAX_CONVERSATION_HISTORY_TURNS: usize = 100;
 pub(crate) const SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS: usize = 24;
 const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
 
