@@ -68,6 +68,16 @@ let evt = Event::TurnStarted { turn_id: 1 };
 - 同一个 `tool_call_id` 代表一次完整工具调用生命周期（开始到结束）。
 - 不同工具调用必须使用不同 `tool_call_id`，即使在同一 turn 内工具名相同。
 
+### `display_name` 字段（Tool 事件）
+
+所有工具调用事件（`ToolCallStarted`、`ToolCallCompleted`、`ToolCallArgsDelta`、`ToolCallReady`、`ToolCallProgress`、`ToolCallFailed`）均包含一个可选字段：
+
+```rust
+display_name: Option<String>
+```
+
+用途：供 UI 显示的友好名称，例如工具的中文别名或摘要描述。若无特殊显示需求，可忽略或传 `None`。序列化时使用 `#[serde(default)]`，因此 JSON 中可省略该字段。
+
 ## 测试
 
 当前 crate 未单独提供 `tests/` 目录；通常通过依赖它的 crate（如 `openjax-core`、`openjaxd`、`tui_next`）进行集成验证。
