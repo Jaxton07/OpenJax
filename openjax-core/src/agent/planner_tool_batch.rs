@@ -87,6 +87,7 @@ impl Agent {
                                 code: "guard_blocked".to_string(),
                                 message: message.to_string(),
                                 retryable: false,
+                                display_name: self.tools.display_name_for(&call.tool_name),
                             },
                         );
                         self.record_tool_call(&call.tool_name, &call.args, false, message);
@@ -319,6 +320,7 @@ impl Agent {
                         code: "dependency_unmet".to_string(),
                         message: output.clone(),
                         retryable: false,
+                        display_name: self.tools.display_name_for(&call.tool_name),
                     },
                 );
                 self.emit_tool_call_completed(

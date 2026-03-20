@@ -17,6 +17,7 @@ impl Agent {
         progress_message: &str,
         events: &mut Vec<Event>,
     ) {
+        let display_name = self.tools.display_name_for(tool_name);
         self.push_event(
             events,
             Event::ToolCallStarted {
@@ -24,6 +25,7 @@ impl Agent {
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
                 target: extract_tool_target_hint(tool_name, args),
+                display_name: display_name.clone(),
             },
         );
         if let Some(args_delta) = tool_args_delta_payload(args) {
@@ -34,6 +36,7 @@ impl Agent {
                     tool_call_id: tool_call_id.to_string(),
                     tool_name: tool_name.to_string(),
                     args_delta,
+                    display_name: display_name.clone(),
                 },
             );
         }
@@ -43,6 +46,7 @@ impl Agent {
                 turn_id,
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
+                display_name: display_name.clone(),
             },
         );
         self.push_event(
@@ -52,6 +56,7 @@ impl Agent {
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
                 progress_message: progress_message.to_string(),
+                display_name,
             },
         );
     }
@@ -64,6 +69,7 @@ impl Agent {
         error_text: &str,
         events: &mut Vec<Event>,
     ) {
+        let display_name = self.tools.display_name_for(tool_name);
         self.push_event(
             events,
             Event::ToolCallFailed {
@@ -73,6 +79,7 @@ impl Agent {
                 code: tool_failure_code(error_text).to_string(),
                 message: error_text.to_string(),
                 retryable: tool_failure_retryable(error_text),
+                display_name,
             },
         );
     }
@@ -86,6 +93,7 @@ impl Agent {
         output: &str,
         events: &mut Vec<Event>,
     ) {
+        let display_name = self.tools.display_name_for(tool_name);
         self.push_event(
             events,
             Event::ToolCallCompleted {
@@ -94,6 +102,7 @@ impl Agent {
                 tool_name: tool_name.to_string(),
                 ok,
                 output: output.to_string(),
+                display_name,
             },
         );
     }
