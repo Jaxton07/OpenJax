@@ -7,6 +7,7 @@ pub enum LoopSignal {
     Halt,
 }
 
+#[derive(Clone)]
 pub struct LoopDetector {
     window: VecDeque<(String, String)>,
     state: LoopSignal,
