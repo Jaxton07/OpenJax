@@ -153,10 +153,10 @@ impl Agent {
                 }
             };
             // 更新 last_input_tokens（来自流式 usage 或 fallback usage）
-            if let Some(ref usage) = planner_stream.usage {
-                if let Some(tokens) = usage.input_tokens {
-                    self.last_input_tokens = Some(tokens);
-                }
+            if let Some(ref usage) = planner_stream.usage
+                && let Some(tokens) = usage.input_tokens
+            {
+                self.last_input_tokens = Some(tokens);
             }
             // 检查是否需要自动压缩
             self.check_and_auto_compact(turn_id, events).await;
