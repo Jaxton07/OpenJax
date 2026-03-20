@@ -68,6 +68,29 @@ openjax-gateway/
 
 受保护业务路由需 `Authorization: Bearer <access_token>`。`/api/v1/auth/login` 使用 owner key。
 
+## 特殊命令
+
+### `/compact` 上下文压缩
+
+触发上下文压缩，手动将历史轮次合并为 LLM 摘要：
+
+- **方式一**：提交 turn 时 input 设为 `/compact`
+  ```bash
+  curl -X POST .../sessions/:id/turns \
+    -d '{"input": "/compact"}'
+  ```
+- **方式二**：session action
+  ```bash
+  curl -X POST .../sessions/:id \
+    -d '{"action": "compact"}'
+  ```
+
+压缩完成后推送 `context_compacted` 事件，前端可展示摘要预览。
+
+### `/clear` 清空会话
+
+重置会话状态，清空历史记录。
+
 ## 关键实现映射
 
 - `src/lib.rs`：组装 Axum Router、CORS、全局中间件与受保护路由。
@@ -133,6 +156,7 @@ zsh -lc "cargo run -p openjax-gateway"
 - `response_completed`
 - `tool_call_started/tool_args_delta/tool_call_ready/tool_call_progress/tool_call_completed/tool_call_failed`
 - `approval_requested/approval_resolved`
+- `context_compacted`（上下文压缩事件，payload 含 `compressed_turns`、`retained_turns`、`summary_preview`）
 5. 若收到 `response_error.code=REPLAY_WINDOW_EXCEEDED`，应提示前端重新发起会话流连接。
 
 ## Timeline 接口（冷启动恢复）

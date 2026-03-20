@@ -5,6 +5,7 @@
 ## 目录与职责
 
 - `bootstrap.rs`: `Agent::new/with_config/with_runtime/with_config_and_runtime`，组装模型客户端、工具路由与运行时策略。
+- `context_compressor.rs`: 上下文压缩模块，负责 history 分割与 LLM 摘要生成。
 - `turn.rs`: `submit`/`submit_with_sink` 入口，分发工具直调模式或自然语言规划模式。
 - `planner.rs`: 自然语言回合主循环（orchestration），驱动 `planner -> tool/final` 决策与回合收敛。
 - `planner_stream_flow.rs`: planner/final 的流式编排（stream request、delta 处理、fallback 收敛、synthetic delta 发射）。
@@ -42,7 +43,8 @@
 - 每回合最多工具调用次数（默认）：`10`（可配置）。
 - 每回合最多 planner 轮数（默认）：`20`（可配置）。
 - 连续重复调用跳过上限：`MAX_CONSECUTIVE_DUPLICATE_SKIPS = 2`。
-- 历史窗口上限：`MAX_CONVERSATION_HISTORY_ITEMS = 20`。
+- 历史窗口上限：`MAX_CONVERSATION_HISTORY_TURNS = 100`（仅计 Turn 变体，Summary 不占配额）。
+- 自动压缩阈值：`0.75`（prompt tokens / context_window_size），低于此值不触发压缩。
 - 默认请求限速：模型请求间隔最少 `1000ms`。
 
 ## 事件语义
