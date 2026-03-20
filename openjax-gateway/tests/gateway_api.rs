@@ -251,38 +251,25 @@ async fn clear_command_submit_and_polling_flow() {
     let create_body = response_json(create_response).await;
     let session_id = create_body["session_id"].as_str().expect("session_id");
 
-    let submit_response = app
+    // Use the new /slash endpoint instead of submit_turn with /clear
+    let slash_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/v1/sessions/{}/turns", session_id))
+                .uri(format!("/api/v1/sessions/{}/slash", session_id))
                 .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"input":"/clear"}"#))
-                .expect("submit request"),
+                .body(Body::from(r#"{"command":"clear"}"#))
+                .expect("slash request"),
         )
         .await
-        .expect("submit response");
-    assert_eq!(submit_response.status(), StatusCode::OK);
-    let submit_body = response_json(submit_response).await;
-    let turn_id = submit_body["turn_id"].as_str().expect("turn_id");
-
-    let turn_response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/api/v1/sessions/{}/turns/{}", session_id, turn_id))
-                .header("Authorization", auth_header(&access_token))
-                .body(Body::empty())
-                .expect("turn request"),
-        )
-        .await
-        .expect("turn response");
-    assert_eq!(turn_response.status(), StatusCode::OK);
-    let turn_body = response_json(turn_response).await;
-    assert_eq!(turn_body["status"], "completed");
-    assert_eq!(turn_body["assistant_message"], "session cleared");
+        .expect("slash response");
+    assert_eq!(slash_response.status(), StatusCode::OK);
+    let slash_body = response_json(slash_response).await;
+    assert_eq!(slash_body["status"], "ok");
+    assert_eq!(slash_body["message"], "clearing context...");
+    // No turn_id or polling needed - /slash does not create turn events
 }
 
 #[tokio::test]
@@ -719,6 +706,7 @@ async fn session_messages_endpoint_returns_persisted_messages() {
         .expect("session_id")
         .to_string();
 
+    // Submit a regular turn (not /clear via slash) to create messages
     let submit_response = app
         .clone()
         .oneshot(
@@ -727,7 +715,7 @@ async fn session_messages_endpoint_returns_persisted_messages() {
                 .uri(format!("/api/v1/sessions/{}/turns", session_id))
                 .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"input":"/clear"}"#))
+                .body(Body::from(r#"{"input":"hello"}"#))
                 .expect("submit request"),
         )
         .await
@@ -747,8 +735,8 @@ async fn session_messages_endpoint_returns_persisted_messages() {
         .expect("messages response");
     assert_eq!(messages_response.status(), StatusCode::OK);
     let messages_body = response_json(messages_response).await;
+    // Only user message is created with submit_turn (no LLM for assistant response)
     assert_eq!(messages_body["messages"][0]["role"], "user");
-    assert_eq!(messages_body["messages"][1]["role"], "assistant");
 }
 
 #[tokio::test]
@@ -777,6 +765,7 @@ async fn session_timeline_endpoint_returns_persisted_events() {
         .expect("session_id")
         .to_string();
 
+    // Submit a regular turn (not /clear via slash) to create events
     let submit_response = app
         .clone()
         .oneshot(
@@ -785,7 +774,7 @@ async fn session_timeline_endpoint_returns_persisted_events() {
                 .uri(format!("/api/v1/sessions/{}/turns", session_id))
                 .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"input":"/clear"}"#))
+                .body(Body::from(r#"{"input":"hello"}"#))
                 .expect("submit request"),
         )
         .await
@@ -806,11 +795,7 @@ async fn session_timeline_endpoint_returns_persisted_events() {
     assert_eq!(timeline_response.status(), StatusCode::OK);
     let timeline_body = response_json(timeline_response).await;
     let events = timeline_body["events"].as_array().expect("events");
+    // Only user_message event is created with submit_turn (no LLM for response_completed)
     assert!(!events.is_empty());
     assert_eq!(events[0]["type"], "user_message");
-    assert!(
-        events
-            .iter()
-            .any(|event| event["type"] == "response_completed")
-    );
 }
