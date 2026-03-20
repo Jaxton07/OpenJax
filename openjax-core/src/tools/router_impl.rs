@@ -6,6 +6,7 @@ use super::context::SandboxPolicy;
 use super::orchestrator::ToolOrchestrator;
 use super::registry::ToolHandler;
 use super::router::{ToolCall, ToolRuntimeConfig};
+use super::spec::ToolSpec;
 use super::tool_builder::{
     CreateToolInvocationParams, build_tool_registry_with_config, create_tool_invocation,
 };
@@ -20,6 +21,7 @@ pub struct ToolExecOutcome {
 #[derive(Clone)]
 pub struct ToolRouter {
     orchestrator: Arc<ToolOrchestrator>,
+    specs: Vec<ToolSpec>,
 }
 
 pub struct ToolExecutionRequest<'a> {
@@ -34,29 +36,36 @@ pub struct ToolExecutionRequest<'a> {
 
 impl ToolRouter {
     pub fn new() -> Self {
-        let (registry, _) =
+        let (registry, specs) =
             build_tool_registry_with_config(&crate::tools::spec::ToolsConfig::default());
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
+            specs,
         }
     }
 
     pub fn with_config(config: &crate::tools::spec::ToolsConfig) -> Self {
-        let (registry, _) = build_tool_registry_with_config(config);
+        let (registry, specs) = build_tool_registry_with_config(config);
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
+            specs,
         }
     }
 
     pub fn with_runtime_config(config: ToolRuntimeConfig) -> Self {
-        let (registry, _) = build_tool_registry_with_config(&config.tools_config);
+        let (registry, specs) = build_tool_registry_with_config(&config.tools_config);
         Self {
             orchestrator: Arc::new(ToolOrchestrator::new(Arc::new(registry))),
+            specs,
         }
     }
 
     pub fn register_tool(&self, name: String, handler: Arc<dyn ToolHandler>) {
         self.orchestrator.register_tool(name, handler);
+    }
+
+    pub fn display_name_for(&self, tool_name: &str) -> Option<String> {
+        self.specs.iter().find(|s| s.name == tool_name).map(|s| s.display_name.clone())
     }
 
     pub async fn execute(&self, request: ToolExecutionRequest<'_>) -> Result<ToolExecOutcome> {
