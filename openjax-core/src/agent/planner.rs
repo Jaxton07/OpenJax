@@ -99,6 +99,7 @@ impl Agent {
                 &tool_traces,
                 remaining,
                 &skills_context,
+                None, // loop_recovery, to be filled in Task 6
             );
 
             info!(

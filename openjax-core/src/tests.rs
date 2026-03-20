@@ -497,14 +497,14 @@ fn duplicate_detection_resets_after_mutation_epoch_change() {
 
 #[test]
 fn planner_prompt_contains_apply_patch_verification_rule() {
-    let prompt = build_planner_input("update file", &[], &[], 3, "(none)");
+    let prompt = build_planner_input("update file", &[], &[], 3, "(none)", None);
     assert!(prompt.contains("verification already shows the requested content/changes are present"));
     assert!(prompt.contains("return final immediately"));
 }
 
 #[test]
 fn planner_prompt_contains_skills_section() {
-    let prompt = build_planner_input("update file", &[], &[], 3, "- name: rust-debug");
+    let prompt = build_planner_input("update file", &[], &[], 3, "- name: rust-debug", None);
     assert!(prompt.contains("Available skills (auto-selected):"));
     assert!(prompt.contains("- name: rust-debug"));
 }

@@ -28,6 +28,7 @@ pub(crate) fn build_planner_input(
     tool_traces: &[String],
     remaining_calls: usize,
     skills_context: &str,
+    loop_recovery: Option<&str>,
 ) -> String {
     let history_context = if history.is_empty() {
         "(no prior turns)".to_string()
@@ -63,7 +64,7 @@ pub(crate) fn build_planner_input(
         tool_traces.join("\n")
     };
 
-    format!(
+    let mut prompt = format!(
         "You are OpenJax's planning layer.\n\
 Return ONLY valid JSON with one of two shapes:\n\
 1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
@@ -112,7 +113,14 @@ Prior turns (most recent last):\n{history_context}\n\
 User request:\n{user_input}\n\
 \n\
 Tool execution history:\n{tool_context}\n"
-    )
+    );
+
+    if let Some(recovery) = loop_recovery {
+        prompt.push_str("\n\n");
+        prompt.push_str(recovery);
+    }
+
+    prompt
 }
 
 pub(crate) fn build_json_repair_prompt(previous_output: &str) -> String {
