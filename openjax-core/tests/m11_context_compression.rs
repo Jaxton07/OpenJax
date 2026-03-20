@@ -48,7 +48,7 @@ async fn test_split_for_compression_skips_short_history() {
     for i in 0..4 {
         let events = agent
             .submit(Op::UserTurn {
-                input: format!("tool:read_file path=file.txt"),
+                input: "tool:read_file path=file.txt".to_string(),
             })
             .await;
 
