@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LoopSignal {
     None,
     Warned,
     Halt,
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct LoopDetector {
     window: VecDeque<(String, String)>,
     state: LoopSignal,
@@ -72,8 +72,9 @@ impl LoopDetector {
         self.warned_tool = None;
     }
 
-    pub fn current_state(&self) -> LoopSignal {
-        self.state
+    #[allow(dead_code)]
+    pub fn current_state(&self) -> &LoopSignal {
+        &self.state
     }
 
     #[allow(dead_code)]
@@ -113,7 +114,7 @@ mod tests {
             assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::None);
         }
         assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::Warned);
-        assert_eq!(d.current_state(), LoopSignal::Warned);
+        assert_eq!(d.current_state(), &LoopSignal::Warned);
     }
 
     #[test]
@@ -123,7 +124,7 @@ mod tests {
             d.check_and_advance("read_file", "hash_x");
         }
         assert_eq!(d.check_and_advance("write_file", "hash_y"), LoopSignal::None);
-        assert_eq!(d.current_state(), LoopSignal::None);
+        assert_eq!(d.current_state(), &LoopSignal::None);
     }
 
     #[test]
@@ -133,7 +134,7 @@ mod tests {
             d.check_and_advance("read_file", "hash_x");
         }
         assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::Halt);
-        assert_eq!(d.current_state(), LoopSignal::Halt);
+        assert_eq!(d.current_state(), &LoopSignal::Halt);
     }
 
     #[test]
@@ -143,7 +144,7 @@ mod tests {
             d.check_and_advance("read_file", "hash_x");
         }
         d.reset();
-        assert_eq!(d.current_state(), LoopSignal::None);
+        assert_eq!(d.current_state(), &LoopSignal::None);
         assert!(d.window.is_empty());
     }
 
