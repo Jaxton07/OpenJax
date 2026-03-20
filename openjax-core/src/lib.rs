@@ -9,6 +9,7 @@ mod paths;
 mod provider_store;
 pub mod sandbox;
 pub mod skills;
+pub mod slash_commands;
 pub mod streaming;
 pub mod tools;
 
