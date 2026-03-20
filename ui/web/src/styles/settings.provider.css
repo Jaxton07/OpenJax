@@ -26,11 +26,21 @@
   border-radius: 14px;
   padding: 12px;
   background: #ffffff;
-  min-height: var(--provider-content-height);
+  height: var(--provider-content-height);
   display: flex;
   flex-direction: column;
   gap: 10px;
   overflow: hidden;
+}
+
+.provider-list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .provider-list-header {
@@ -93,8 +103,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow: auto;
-  min-height: 0;
 }
 
 .provider-row {
@@ -142,24 +150,36 @@
 .provider-card-main {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   overflow: hidden;
 }
 
-.provider-card-main strong {
-  font-size: 18px;
+.provider-card-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-card-row1 strong {
+  font-size: 16px;
   color: #11182a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.provider-card-main span {
+.provider-card-row2 {
+  font-size: 12px;
   color: #5f6877;
-  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.provider-model-name {
+  font-size: 12px;
+  color: #5f6877;
 }
 
 .provider-card-actions {
@@ -416,20 +436,20 @@
 
 /* 模型切换下拉 */
 .provider-model-switch {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
 }
 
 .provider-model-switch select {
   font-size: 12px;
   padding: 2px 6px;
-  border: 1px solid var(--settings-border, #e5e7eb);
-  border-radius: 5px;
-  background: var(--settings-bg-hover, #f9fafb);
-  color: var(--settings-text-primary, #374151);
+  border: 1px solid #d1d8e8;
+  border-radius: 6px;
+  background: #f4f6fb;
+  color: #2b3a55;
   cursor: pointer;
+  outline: none;
 }
 
 .provider-switch-tip {
