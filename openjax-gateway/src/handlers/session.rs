@@ -226,73 +226,6 @@ pub async fn submit_turn(
         }
     }
 
-    if input == "/compact" {
-        let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
-        handle_compact_action(&state, &session_runtime, &ctx.request_id, &session_id, &turn_id).await?;
-        return Ok(Json(SubmitTurnResponse {
-            request_id: ctx.request_id,
-            session_id,
-            turn_id,
-            timestamp: now_rfc3339(),
-        }));
-    }
-    if input == "/clear" {
-        clear_runtime(&state, &session_runtime).await;
-        let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
-        let mut session = session_runtime.lock().await;
-        session.turns.insert(
-            turn_id.clone(),
-            TurnRuntime {
-                status: TurnStatus::Completed,
-                assistant_message: Some("session cleared".to_string()),
-                error: None,
-            },
-        );
-        let started = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "turn_started",
-            json!({}),
-            None,
-        );
-        let message = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "response_started",
-            json!({ "stream_source": "synthetic" }),
-            Some("synthetic"),
-        );
-        let completed_response = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "response_completed",
-            json!({ "content": "session cleared", "stream_source": "synthetic" }),
-            Some("synthetic"),
-        );
-        let completed = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "turn_completed",
-            json!({}),
-            None,
-        );
-        publish_event_for_session(&state, &mut session, started);
-        publish_event_for_session(&state, &mut session, message);
-        publish_event_for_session(&state, &mut session, completed_response);
-        publish_event_for_session(&state, &mut session, completed);
-        state.append_message(&session_id, Some(&turn_id), "assistant", "session cleared")?;
-        return Ok(Json(SubmitTurnResponse {
-            request_id: ctx.request_id,
-            session_id,
-            turn_id,
-            timestamp: now_rfc3339(),
-        }));
-    }
-
     let (turn_id_tx, turn_id_rx) = oneshot::channel();
     tokio::spawn(run_turn_task(
         state.clone(),
@@ -492,7 +425,7 @@ pub async fn shutdown_session(
 // Compact / Clear helpers
 // ---------------------------------------------------------------------------
 
-async fn handle_compact_action(
+pub(crate) async fn handle_compact_action(
     state: &AppState,
     session_runtime: &tokio::sync::Mutex<crate::state::SessionRuntime>,
     request_id: &str,

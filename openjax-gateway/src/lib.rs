@@ -81,8 +81,16 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             post(handlers::create_session).get(handlers::list_sessions),
         )
         .route(
+            "/api/v1/sessions/:session_id/slash",
+            post(handlers::exec_slash_command),
+        )
+        .route(
             "/api/v1/sessions/:session_id",
             post(handlers::session_action).delete(handlers::shutdown_session),
+        )
+        .route(
+            "/api/v1/slash_commands",
+            get(handlers::list_slash_commands),
         )
         .route(
             "/api/v1/sessions/:session_id/messages",
