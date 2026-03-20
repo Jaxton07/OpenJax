@@ -5,7 +5,7 @@
 ## 目录职责
 
 - 页面级组件：`LoginPage`、`SettingsModal`
-- 聊天核心组件：`Sidebar`、`MessageList`、`Composer`
+- 聊天核心组件：`Sidebar`、`MessageList`、`composer/`（输入区子模块）
 - 设置子模块：`settings/*`
 - Tool Step 子模块：`tool-steps/*`
 
@@ -30,6 +30,7 @@
 
 - 新增设置相关 UI，优先放在 `settings/` 子目录。
 - Tool Step 相关改动尽量限制在 `tool-steps/`，减少对聊天主渲染链路的影响。
+- Composer 相关改动统一在 `composer/` 子目录操作，避免影响其他聊天主链路。
 
 ## 上层文档
 
