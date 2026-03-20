@@ -201,7 +201,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
     return {
       id: resolveToolStepId(event, "tool_call_started"),
       type: "tool",
-      title: String(event.payload.tool_name ?? "tool"),
+      title: (event.payload.display_name as string | undefined) ?? String(event.payload.tool_name ?? "tool"),
       subtitle: String(event.payload.target ?? ""),
       status: "running",
       time: event.timestamp,
@@ -217,7 +217,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
     return {
       id: resolveToolStepId(event, "tool_call_completed"),
       type: "tool",
-      title: String(event.payload.tool_name ?? "tool"),
+      title: (event.payload.display_name as string | undefined) ?? String(event.payload.tool_name ?? "tool"),
       status: "success",
       output: String(event.payload.output ?? ""),
       time: event.timestamp,
