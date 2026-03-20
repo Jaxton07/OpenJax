@@ -587,6 +587,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             turn_id,
             tool_name,
             target,
+            display_name,
             ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
@@ -594,13 +595,14 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_started".to_string(),
-            payload: json!({ "tool_name": tool_name, "target": target }),
+            payload: json!({ "tool_name": tool_name, "target": target, "display_name": display_name }),
         }),
         Event::ToolCallCompleted {
             turn_id,
             tool_name,
             ok,
             output,
+            display_name,
             ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
@@ -608,12 +610,13 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_completed".to_string(),
-            payload: json!({ "tool_name": tool_name, "ok": ok, "output": output }),
+            payload: json!({ "tool_name": tool_name, "ok": ok, "output": output, "display_name": display_name }),
         }),
         Event::ToolCallArgsDelta {
             turn_id,
             tool_name,
             args_delta,
+            display_name,
             ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
@@ -621,12 +624,13 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_args_delta".to_string(),
-            payload: json!({ "tool_name": tool_name, "args_delta": args_delta }),
+            payload: json!({ "tool_name": tool_name, "args_delta": args_delta, "display_name": display_name }),
         }),
         Event::ToolCallProgress {
             turn_id,
             tool_name,
             progress_message,
+            display_name,
             ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
@@ -634,17 +638,17 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_progress".to_string(),
-            payload: json!({ "tool_name": tool_name, "progress_message": progress_message }),
+            payload: json!({ "tool_name": tool_name, "progress_message": progress_message, "display_name": display_name }),
         }),
         Event::ToolCallReady {
-            turn_id, tool_name, ..
+            turn_id, tool_name, display_name, ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_ready".to_string(),
-            payload: json!({ "tool_name": tool_name }),
+            payload: json!({ "tool_name": tool_name, "display_name": display_name }),
         }),
         Event::ToolCallFailed {
             turn_id,
@@ -652,6 +656,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             code,
             message,
             retryable,
+            display_name,
             ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
@@ -659,7 +664,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_failed".to_string(),
-            payload: json!({ "tool_name": tool_name, "code": code, "message": message, "retryable": retryable }),
+            payload: json!({ "tool_name": tool_name, "code": code, "message": message, "retryable": retryable, "display_name": display_name }),
         }),
         Event::AssistantMessage { turn_id, content } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
@@ -1005,6 +1010,7 @@ mod tests {
                 tool_call_id: "tc_1".to_string(),
                 tool_name: "read_file".to_string(),
                 target: None,
+                display_name: None,
             },
             Event::ToolCallCompleted {
                 turn_id: 1,
@@ -1012,6 +1018,7 @@ mod tests {
                 tool_name: "read_file".to_string(),
                 ok: true,
                 output: "ok".to_string(),
+                display_name: None,
             },
             Event::ApprovalRequested {
                 turn_id: 1,
