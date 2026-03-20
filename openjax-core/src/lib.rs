@@ -45,14 +45,22 @@ pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 
 const MAX_CONSECUTIVE_DUPLICATE_SKIPS: usize = 2;
 pub(crate) const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
-pub(crate) const MAX_CONVERSATION_HISTORY_ITEMS: usize = 20;
+pub(crate) const MAX_CONVERSATION_HISTORY_TURNS: usize = 10;
 pub(crate) const SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS: usize = 24;
 const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
 
 #[derive(Debug, Clone)]
-pub(crate) struct HistoryEntry {
-    pub(crate) role: &'static str,
-    pub(crate) content: String,
+pub(crate) struct TurnRecord {
+    pub(crate) user_input: String,
+    pub(crate) tool_traces: Vec<String>,
+    pub(crate) assistant_output: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum HistoryItem {
+    Turn(TurnRecord),
+    #[allow(dead_code)]
+    Summary(String),
 }
 
 pub struct Agent {
@@ -63,7 +71,7 @@ pub struct Agent {
     skill_registry: skills::SkillRegistry,
     skill_runtime_config: skills::SkillRuntimeConfig,
     cwd: PathBuf,
-    history: Vec<HistoryEntry>,
+    history: Vec<HistoryItem>,
     thread_id: ThreadId,
     parent_thread_id: Option<ThreadId>,
     depth: i32,

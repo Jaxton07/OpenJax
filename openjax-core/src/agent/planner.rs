@@ -467,7 +467,7 @@ impl Agent {
                         "final_response"
                     );
                     turn_engine.on_completed();
-                    self.record_history("assistant", message);
+                    self.commit_turn(user_input.to_string(), tool_traces, message);
                     return;
                 }
                 DispatchOutcome::Tool { meta, decision } => {

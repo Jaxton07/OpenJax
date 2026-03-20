@@ -130,10 +130,10 @@ impl Agent {
                     retryable: true,
                 },
             );
-            self.record_history("assistant", message);
             ctx.tool_traces.push(format!(
-                "tool={tool_name}; ok=skipped_duplicate; args={}",
-                serde_json::to_string(&args).unwrap_or_default()
+                "tool={tool_name}; ok=skipped_duplicate; args={}; output={}",
+                serde_json::to_string(&args).unwrap_or_default(),
+                truncate_for_prompt(&message, self.skill_runtime_config.max_diff_chars_for_planner)
             ));
             *ctx.consecutive_duplicate_skips = (*ctx.consecutive_duplicate_skips).saturating_add(1);
             if should_abort_on_consecutive_duplicate_skips(
@@ -150,8 +150,12 @@ impl Agent {
                         retryable: true,
                     },
                 );
+                ctx.tool_traces.push(format!(
+                    "tool={tool_name}; ok=aborted; args={}; output={}",
+                    serde_json::to_string(&args).unwrap_or_default(),
+                    truncate_for_prompt(&loop_message, self.skill_runtime_config.max_diff_chars_for_planner)
+                ));
                 ctx.turn_engine.on_failed();
-                self.record_history("assistant", loop_message);
                 return false;
             }
             return true;
