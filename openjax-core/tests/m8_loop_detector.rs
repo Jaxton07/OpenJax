@@ -39,11 +39,10 @@ fn test_loop_detector_full_flow() {
 }
 
 #[test]
-fn test_max_turn_budget_is_300() {
-    // Verify the constant is correctly applied in runtime_policy
-    // This is a compile-time check via type usage; actual value tested via config
+fn test_diverse_calls_never_trigger() {
+    // LoopDetector with window_capacity=16 should not trigger
+    // even with many diverse calls (unique hashes each time)
     let mut detector = LoopDetector::new();
-    // Should be able to handle window_capacity of 16
     for i in 0..20 {
         detector.check_and_advance("bash", &format!("hash_{}", i));
     }
