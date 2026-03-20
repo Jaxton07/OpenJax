@@ -43,12 +43,19 @@ pub(crate) struct ChatCompletionsClient {
 }
 
 #[derive(Debug, Serialize)]
+struct StreamOptions {
+    include_usage: bool,
+}
+
+#[derive(Debug, Serialize)]
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     temperature: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
 }
 
 #[derive(Debug, Serialize)]
@@ -304,6 +311,7 @@ impl ModelClient for ChatCompletionsClient {
             ],
             temperature: 0.2,
             stream: None,
+            stream_options: None,
         };
 
         let resp = self
@@ -394,6 +402,7 @@ impl ModelClient for ChatCompletionsClient {
             ],
             temperature: 0.2,
             stream: Some(true),
+            stream_options: Some(StreamOptions { include_usage: true }),
         };
 
         let resp = self
@@ -419,6 +428,7 @@ impl ModelClient for ChatCompletionsClient {
         }
 
         let mut assembled = String::new();
+        let mut last_usage: Option<ModelUsage> = None;
         let mut parser = OpenAiSseParser::default();
         let stream_debug = model_stream_debug_enabled();
         let stream_started_at = Instant::now();
@@ -517,6 +527,20 @@ impl ModelClient for ChatCompletionsClient {
                 {
                     let _ = sender.send(StreamDelta::Reasoning(reasoning_delta));
                 }
+
+                if let Some(usage_val) = payload.get("usage") {
+                    last_usage = Some(ModelUsage {
+                        input_tokens: usage_val
+                            .get("prompt_tokens")
+                            .and_then(|v| v.as_u64())
+                            .or_else(|| usage_val.get("input_tokens").and_then(|v| v.as_u64())),
+                        output_tokens: usage_val
+                            .get("completion_tokens")
+                            .and_then(|v| v.as_u64())
+                            .or_else(|| usage_val.get("output_tokens").and_then(|v| v.as_u64())),
+                        total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
+                    });
+                }
             }
         }
 
@@ -557,6 +581,20 @@ impl ModelClient for ChatCompletionsClient {
                 && let Some(sender) = &delta_sender
             {
                 let _ = sender.send(StreamDelta::Reasoning(reasoning_delta));
+            }
+
+            if let Some(usage_val) = payload.get("usage") {
+                last_usage = Some(ModelUsage {
+                    input_tokens: usage_val
+                        .get("prompt_tokens")
+                        .and_then(|v| v.as_u64())
+                        .or_else(|| usage_val.get("input_tokens").and_then(|v| v.as_u64())),
+                    output_tokens: usage_val
+                        .get("completion_tokens")
+                        .and_then(|v| v.as_u64())
+                        .or_else(|| usage_val.get("output_tokens").and_then(|v| v.as_u64())),
+                    total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
+                });
             }
         }
 
@@ -618,7 +656,7 @@ impl ModelClient for ChatCompletionsClient {
         Ok(ModelResponse {
             text: assembled,
             reasoning: None,
-            usage: None,
+            usage: last_usage,
             finish_reason: None,
             raw: None,
         })
@@ -753,5 +791,48 @@ mod tests {
             extract_delta_reasoning_from_body(&body).as_deref(),
             Some("thinking")
         );
+    }
+}
+
+#[cfg(test)]
+mod streaming_usage_tests {
+    use crate::model::types::ModelUsage;
+
+    #[test]
+    fn test_usage_extracted_from_last_sse_frame() {
+        // Simulate the last SSE chunk containing usage (OpenAI format)
+        let frame = r#"{"id":"test","choices":[{"index":0,"finish_reason":"stop","delta":{"content":""}}],"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}}"#;
+        let val: serde_json::Value = serde_json::from_str(frame).unwrap();
+        let usage_val = val.get("usage").unwrap();
+        let usage = ModelUsage {
+            input_tokens: usage_val.get("prompt_tokens").and_then(|v| v.as_u64()),
+            output_tokens: usage_val.get("completion_tokens").and_then(|v| v.as_u64()),
+            total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
+        };
+        assert_eq!(usage.input_tokens, Some(100));
+        assert_eq!(usage.output_tokens, Some(50));
+        assert_eq!(usage.total_tokens, Some(150));
+    }
+
+    #[test]
+    fn test_usage_extracted_from_glm_format() {
+        // Simulate GLM-style usage with input_tokens / output_tokens keys
+        let frame = r#"{"id":"test","choices":[{"index":0,"finish_reason":"stop","delta":{"content":""}}],"usage":{"input_tokens":80,"output_tokens":40,"total_tokens":120}}"#;
+        let val: serde_json::Value = serde_json::from_str(frame).unwrap();
+        let usage_val = val.get("usage").unwrap();
+        let usage = ModelUsage {
+            input_tokens: usage_val
+                .get("prompt_tokens")
+                .and_then(|v| v.as_u64())
+                .or_else(|| usage_val.get("input_tokens").and_then(|v| v.as_u64())),
+            output_tokens: usage_val
+                .get("completion_tokens")
+                .and_then(|v| v.as_u64())
+                .or_else(|| usage_val.get("output_tokens").and_then(|v| v.as_u64())),
+            total_tokens: usage_val.get("total_tokens").and_then(|v| v.as_u64()),
+        };
+        assert_eq!(usage.input_tokens, Some(80));
+        assert_eq!(usage.output_tokens, Some(40));
+        assert_eq!(usage.total_tokens, Some(120));
     }
 }
