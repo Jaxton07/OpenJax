@@ -19,7 +19,7 @@
 - `base.css`：全局基础规则。
 - `layout.css`：主布局与侧栏布局。
 - `messages.css`：消息区与 reasoning/tool steps 展示样式。
-- `composer.css`：输入区样式。
+- `composer.css`：输入区样式（已迁移至 `components/composer/composer.css`）。
 - `login.css`：登录页样式。
 - `responsive.css`：响应式覆盖规则。
 

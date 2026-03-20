@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tracing::debug;
 
-use crate::{Agent, MAX_CONVERSATION_HISTORY_ITEMS};
+use crate::{Agent, HistoryItem, TurnRecord, MAX_CONVERSATION_HISTORY_TURNS};
 
 #[derive(Debug, Clone)]
 pub(crate) struct RateLimitConfig {
@@ -89,16 +89,41 @@ impl Agent {
             _output: output.to_string(),
         });
 
-        if self.recent_tool_calls.len() > 10 {
+        while self.recent_tool_calls.len() > 16 {
             self.recent_tool_calls.remove(0);
         }
     }
 
-    pub(crate) fn record_history(&mut self, role: &'static str, content: String) {
-        self.history.push(crate::HistoryEntry { role, content });
-        if self.history.len() > MAX_CONVERSATION_HISTORY_ITEMS {
-            let overflow = self.history.len() - MAX_CONVERSATION_HISTORY_ITEMS;
-            self.history.drain(0..overflow);
+    pub(crate) fn commit_turn(
+        &mut self,
+        user_input: String,
+        tool_traces: Vec<String>,
+        assistant_output: String,
+    ) {
+        self.history.push(HistoryItem::Turn(TurnRecord {
+            user_input,
+            tool_traces,
+            assistant_output,
+        }));
+
+        // Only count Turn items; Summary items don't count against the quota
+        let turn_count = self
+            .history
+            .iter()
+            .filter(|h| matches!(h, HistoryItem::Turn(_)))
+            .count();
+
+        if turn_count > MAX_CONVERSATION_HISTORY_TURNS {
+            let overflow = turn_count - MAX_CONVERSATION_HISTORY_TURNS;
+            let mut removed = 0;
+            self.history.retain(|h| {
+                if removed < overflow && matches!(h, HistoryItem::Turn(_)) {
+                    removed += 1;
+                    false
+                } else {
+                    true
+                }
+            });
         }
     }
 }

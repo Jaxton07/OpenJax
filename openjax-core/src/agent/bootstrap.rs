@@ -105,6 +105,7 @@ impl Agent {
             last_api_call_time: None,
             rate_limit_config: RateLimitConfig::default(),
             max_tool_calls_per_turn,
+            loop_detector: crate::agent::loop_detector::LoopDetector::new(),
             max_planner_rounds_per_turn,
             recent_tool_calls: Vec::new(),
             state_epoch: 0,

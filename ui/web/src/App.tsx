@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import Composer from "./components/Composer";
+import Composer from "./components/composer";
 import LoginPage from "./components/LoginPage";
 import MessageList from "./components/MessageList";
 import SettingsModal from "./components/SettingsModal";

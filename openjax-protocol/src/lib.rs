@@ -151,6 +151,11 @@ pub enum Event {
         content: String,
         stream_source: StreamSource,
     },
+    LoopWarning {
+        turn_id: u64,
+        tool_name: String,
+        consecutive_count: usize,
+    },
     ResponseError {
         turn_id: u64,
         code: String,

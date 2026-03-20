@@ -1,4 +1,4 @@
-use crate::{HistoryEntry, MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT};
+use crate::{HistoryItem, MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT};
 
 pub(crate) fn truncate_for_prompt(text: &str, max_chars: usize) -> String {
     let limit = max_chars.clamp(256, MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT);
@@ -24,19 +24,38 @@ pub(crate) fn summarize_user_input(input: &str, preview_limit: usize) -> (String
 
 pub(crate) fn build_planner_input(
     user_input: &str,
-    history: &[HistoryEntry],
+    history: &[HistoryItem],
     tool_traces: &[String],
     remaining_calls: usize,
     skills_context: &str,
+    loop_recovery: Option<&str>,
 ) -> String {
     let history_context = if history.is_empty() {
         "(no prior turns)".to_string()
     } else {
+        let mut turn_num = 0usize;
         history
             .iter()
-            .map(|item| format!("{}: {}", item.role, item.content))
-            .collect::<Vec<String>>()
-            .join("\n")
+            .map(|item| match item {
+                HistoryItem::Turn(r) => {
+                    turn_num += 1;
+                    let tools_section = if r.tool_traces.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\nTools:\n  {}", r.tool_traces.join("\n  "))
+                    };
+                    format!(
+                        "[Turn {}]\nUser: {}{}\nAssistant: {}",
+                        turn_num,
+                        r.user_input,
+                        tools_section,
+                        r.assistant_output
+                    )
+                }
+                HistoryItem::Summary(s) => s.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
     };
 
     let tool_context = if tool_traces.is_empty() {
@@ -45,7 +64,7 @@ pub(crate) fn build_planner_input(
         tool_traces.join("\n")
     };
 
-    format!(
+    let mut prompt = format!(
         "You are OpenJax's planning layer.\n\
 Return ONLY valid JSON with one of two shapes:\n\
 1) Tool call: {{\"action\":\"tool\",\"tool\":\"read_file|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|edit_file_range\",\"args\":{{...}}}}\n\
@@ -89,12 +108,19 @@ Rules:\n\
 Available skills (auto-selected):\n\
 {skills_context}\n\
 \n\
-Conversation history (most recent last):\n{history_context}\n\
+Prior turns (most recent last):\n{history_context}\n\
 \n\
 User request:\n{user_input}\n\
 \n\
 Tool execution history:\n{tool_context}\n"
-    )
+    );
+
+    if let Some(recovery) = loop_recovery {
+        prompt.push_str("\n\n");
+        prompt.push_str(recovery);
+    }
+
+    prompt
 }
 
 pub(crate) fn build_json_repair_prompt(previous_output: &str) -> String {

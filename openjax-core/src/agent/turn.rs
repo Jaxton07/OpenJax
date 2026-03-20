@@ -28,7 +28,6 @@ impl Agent {
                     input_truncated = input_truncated,
                     "user_turn received"
                 );
-                self.record_history("user", input.clone());
                 // Duplicate-call protection should only apply within one user turn.
                 // Keeping records across turns can incorrectly block legitimate reads/writes.
                 self.recent_tool_calls.clear();
@@ -38,9 +37,17 @@ impl Agent {
                 self.push_event(&mut events, Event::TurnStarted { turn_id });
 
                 if let Some(call) = tools::parse_tool_call(&input) {
-                    self.execute_single_tool_call(turn_id, call, &mut events)
-                        .await;
+                    // parse_tool_call only borrows &input, input ownership is preserved
+                    if let Some((traces, output)) = self
+                        .execute_single_tool_call(turn_id, call, &mut events)
+                        .await
+                    {
+                        self.commit_turn(input.clone(), traces, output);
+                    }
+                    // None path: all retries exhausted, turn failed, not committed to history
                 } else {
+                    // else branch (natural language path): history write is entirely handled by planner.rs commit_turn,
+                    // turn.rs does no history operations here
                     self.execute_natural_language_turn(turn_id, &input, &mut events)
                         .await;
                 }

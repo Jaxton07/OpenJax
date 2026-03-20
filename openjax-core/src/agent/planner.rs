@@ -75,6 +75,8 @@ impl Agent {
             "natural_language_turn started"
         );
 
+        self.loop_detector.reset();
+
         while executed_count < self.max_tool_calls_per_turn
             && planner_rounds < self.max_planner_rounds_per_turn
         {
@@ -93,12 +95,14 @@ impl Agent {
             } else {
                 "(skills disabled)".to_string()
             };
+            let loop_recovery = self.loop_detector.recovery_prompt();
             let planner_input = build_planner_input(
                 user_input,
                 &self.history,
                 &tool_traces,
                 remaining,
                 &skills_context,
+                loop_recovery,
             );
 
             info!(
@@ -467,7 +471,7 @@ impl Agent {
                         "final_response"
                     );
                     turn_engine.on_completed();
-                    self.record_history("assistant", message);
+                    self.commit_turn(user_input.to_string(), tool_traces, message);
                     return;
                 }
                 DispatchOutcome::Tool { meta, decision } => {

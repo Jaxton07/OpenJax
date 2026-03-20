@@ -80,5 +80,6 @@ zsh -lc "cargo test -p openjax-core --test m6_submit_stream"
 zsh -lc "cargo test -p openjax-core --test m7_backward_compat_submit"
 zsh -lc "cargo test -p openjax-core --test m8_approval_event_emission"
 zsh -lc "cargo test -p openjax-core --test m9_system_tools"
+zsh -lc "cargo test -p openjax-core --test m10_context_compression"
 zsh -lc "bash openjax-core/tests/tool/test_apply_patch_e2e.sh"
 ```

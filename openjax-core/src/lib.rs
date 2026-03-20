@@ -40,19 +40,30 @@ pub use provider_store::{
 pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
 
+// Re-export loop detector types for integration tests
+pub use agent::loop_detector::{LoopDetector, LoopSignal};
+
 // Re-export protocol types for external use
 pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
 
 const MAX_CONSECUTIVE_DUPLICATE_SKIPS: usize = 2;
 pub(crate) const MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT: usize = 4_000;
-pub(crate) const MAX_CONVERSATION_HISTORY_ITEMS: usize = 20;
+pub(crate) const MAX_CONVERSATION_HISTORY_TURNS: usize = 100;
 pub(crate) const SYNTHETIC_ASSISTANT_DELTA_CHUNK_CHARS: usize = 24;
 const USER_INPUT_LOG_PREVIEW_CHARS: usize = 200;
 
 #[derive(Debug, Clone)]
-pub(crate) struct HistoryEntry {
-    pub(crate) role: &'static str,
-    pub(crate) content: String,
+pub(crate) struct TurnRecord {
+    pub(crate) user_input: String,
+    pub(crate) tool_traces: Vec<String>,
+    pub(crate) assistant_output: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum HistoryItem {
+    Turn(TurnRecord),
+    #[allow(dead_code)]
+    Summary(String),
 }
 
 pub struct Agent {
@@ -63,13 +74,14 @@ pub struct Agent {
     skill_registry: skills::SkillRegistry,
     skill_runtime_config: skills::SkillRuntimeConfig,
     cwd: PathBuf,
-    history: Vec<HistoryEntry>,
+    history: Vec<HistoryItem>,
     thread_id: ThreadId,
     parent_thread_id: Option<ThreadId>,
     depth: i32,
     last_api_call_time: Option<std::time::Instant>,
     rate_limit_config: RateLimitConfig,
     max_tool_calls_per_turn: usize,
+    loop_detector: crate::agent::loop_detector::LoopDetector,
     max_planner_rounds_per_turn: usize,
     recent_tool_calls: Vec<ToolCallRecord>,
     state_epoch: u64,

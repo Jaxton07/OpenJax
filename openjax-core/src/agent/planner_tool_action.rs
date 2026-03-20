@@ -5,6 +5,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::agent::decision::ModelDecision;
+use crate::agent::loop_detector::LoopSignal;
 use crate::agent::planner::ToolActionContext;
 use crate::agent::planner_utils::{
     detect_diff_strategy, is_git_diff_stat, is_git_status_short, is_mutating_tool,
@@ -130,10 +131,10 @@ impl Agent {
                     retryable: true,
                 },
             );
-            self.record_history("assistant", message);
             ctx.tool_traces.push(format!(
-                "tool={tool_name}; ok=skipped_duplicate; args={}",
-                serde_json::to_string(&args).unwrap_or_default()
+                "tool={tool_name}; ok=skipped_duplicate; args={}; output={}",
+                serde_json::to_string(&args).unwrap_or_default(),
+                truncate_for_prompt(&message, self.skill_runtime_config.max_diff_chars_for_planner)
             ));
             *ctx.consecutive_duplicate_skips = (*ctx.consecutive_duplicate_skips).saturating_add(1);
             if should_abort_on_consecutive_duplicate_skips(
@@ -150,8 +151,12 @@ impl Agent {
                         retryable: true,
                     },
                 );
+                ctx.tool_traces.push(format!(
+                    "tool={tool_name}; ok=aborted; args={}; output={}",
+                    serde_json::to_string(&args).unwrap_or_default(),
+                    truncate_for_prompt(&loop_message, self.skill_runtime_config.max_diff_chars_for_planner)
+                ));
                 ctx.turn_engine.on_failed();
-                self.record_history("assistant", loop_message);
                 return false;
             }
             return true;
@@ -212,6 +217,30 @@ impl Agent {
                     )
                 );
                 ctx.tool_traces.push(trace);
+
+                let signal = self.loop_detector.check_and_advance(&tool_name, &serde_json::to_string(&args).unwrap_or_default());
+                match signal {
+                    LoopSignal::Warned => {
+                        info!(turn_id, tool_name, "loop_detected: soft interrupt");
+                        self.push_event(ctx.events, Event::LoopWarning {
+                            turn_id,
+                            tool_name: tool_name.to_string(),
+                            consecutive_count: self.loop_detector.warn_threshold(),
+                        });
+                    }
+                    LoopSignal::Halt => {
+                        warn!(turn_id, tool_name, "loop_detected: hard halt after recovery failure");
+                        self.push_event(ctx.events, Event::ResponseError {
+                            turn_id,
+                            code: "loop_halt".to_string(),
+                            message: "检测到持续重复调用，已强制终止本回合。".to_string(),
+                            retryable: true,
+                        });
+                        ctx.turn_engine.on_failed();
+                        return false;
+                    }
+                    LoopSignal::None => {}
+                }
 
                 self.record_tool_call(&tool_name, &args, ok, &output);
 

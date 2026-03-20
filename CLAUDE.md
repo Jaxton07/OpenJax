@@ -44,7 +44,9 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - [openjaxd/README.md](openjaxd/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
 
+### 工具参考
 
+- [.claude/docs/reference/cmux.md](.claude/docs/reference/cmux.md) — cmux 命令行工具快速参考
 
 ## 3) 命令执行策略
 - 从仓库根目录运行命令。

@@ -29,7 +29,7 @@ impl Agent {
         turn_id: u64,
         call: tools::ToolCall,
         events: &mut Vec<Event>,
-    ) {
+    ) -> Option<(Vec<String>, String)> {
         let retry_config = RetryConfig::default();
         let start_time = Instant::now();
         let tool_call_id = Uuid::new_v4().to_string();
@@ -95,7 +95,15 @@ impl Agent {
                         &output,
                         events,
                     );
-                    return;
+                    // Both ok=true and ok=false return Some — tool executed, result goes to history
+                    let trace = format!(
+                        "tool={}; ok={}; args={}; output={}",
+                        call.name,
+                        ok,
+                        serde_json::to_string(&call.args).unwrap_or_default(),
+                        crate::agent::prompt::truncate_for_prompt(&output, crate::MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT)
+                    );
+                    return Some((vec![trace], output));
                 }
                 Err(err) => {
                     last_error = Some(err);
@@ -152,6 +160,7 @@ impl Agent {
                 },
             );
         }
+        None
     }
 
     pub(crate) fn drain_tool_events(
