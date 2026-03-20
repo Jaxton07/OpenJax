@@ -211,6 +211,7 @@ impl App {
                 self.set_live_status(format!("Response failed: {message}"));
             }
             Event::ReasoningDelta { .. } => {}
+            Event::LoopWarning { .. } => {}
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
         }
     }
