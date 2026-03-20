@@ -202,6 +202,7 @@ export default function App() {
 
         <Composer
           disabled={state.loading}
+          sessionId={activeSession?.id}
           onSend={sendMessage}
           onNewChat={() => void newChat()}
           onCompact={() => void compactConversation()}
