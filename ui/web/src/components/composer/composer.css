@@ -136,7 +136,7 @@
   padding: 8px 12px;
   cursor: pointer;
   display: flex;
-  gap: 12px;
+  gap: 0.5em;
   align-items: center;
 }
 .slash-dropdown-item.selected,
@@ -144,11 +144,18 @@
   background: var(--bg-hover);
 }
 .slash-dropdown-name {
+  flex: 0 0 auto;
   font-weight: 500;
   color: var(--text-primary);
   font-family: monospace;
+  white-space: nowrap;
 }
 .slash-dropdown-desc {
-  color: var(--text-secondary);
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-4);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
