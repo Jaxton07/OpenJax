@@ -138,18 +138,61 @@ impl SlashCommandRegistry {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillCommandRegistrationError {
+    InvalidName,
+    ReservedName,
+}
+
+pub fn normalize_skill_command_name(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    let without_slash = trimmed.strip_prefix('/').unwrap_or(trimmed);
+    let lowered = without_slash.to_ascii_lowercase();
+    if lowered.is_empty() {
+        return None;
+    }
+    if lowered
+        .chars()
+        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_')
+    {
+        Some(lowered)
+    } else {
+        None
+    }
+}
+
+fn conflicts_with_builtin_or_alias(name: &str) -> bool {
+    SlashCommandRegistry::builtin_commands()
+        .iter()
+        .any(|c| c.name == name || c.aliases.contains(&name))
+}
+
 /// 注册一个 skill 命令（由 loader 在发现 skill 时调用）
-pub fn register_skill_command(skill_name: &'static str, description: &'static str) {
+pub fn register_skill_command(
+    skill_name: &str,
+    description: &str,
+) -> Result<(), SkillCommandRegistrationError> {
+    let Some(normalized_name) = normalize_skill_command_name(skill_name) else {
+        return Err(SkillCommandRegistrationError::InvalidName);
+    };
+    if conflicts_with_builtin_or_alias(&normalized_name) {
+        return Err(SkillCommandRegistrationError::ReservedName);
+    }
     let mut skills = DYNAMIC_SKILL_COMMANDS.write().unwrap();
-    if !skills.iter().any(|c| c.name == skill_name) {
+    if !skills.iter().any(|c| c.name == normalized_name) {
+        let leaked_name: &'static str = Box::leak(normalized_name.into_boxed_str());
+        let leaked_description: &'static str = Box::leak(description.to_string().into_boxed_str());
         skills.push(SlashCommand {
-            name: skill_name,
+            name: leaked_name,
             aliases: &[],
-            description,
-            usage_hint: Box::leak(format!("/{}", skill_name).into_boxed_str()),
-            kind: SlashCommandKind::Skill { skill_name },
+            description: leaked_description,
+            usage_hint: Box::leak(format!("/{}", leaked_name).into_boxed_str()),
+            kind: SlashCommandKind::Skill {
+                skill_name: leaked_name,
+            },
         });
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -230,5 +273,28 @@ mod tests {
                 cmd.usage_hint
             );
         }
+    }
+
+    #[test]
+    fn test_normalize_skill_command_name() {
+        assert_eq!(
+            normalize_skill_command_name("  /My-Skill_1 "),
+            Some("my-skill_1".to_string())
+        );
+        assert_eq!(normalize_skill_command_name(""), None);
+        assert_eq!(normalize_skill_command_name("bad name"), None);
+    }
+
+    #[test]
+    fn test_register_skill_command_rejects_reserved_name_or_alias() {
+        SlashCommandRegistry::clear_dynamic_commands();
+        assert_eq!(
+            register_skill_command("help", "desc"),
+            Err(SkillCommandRegistrationError::ReservedName)
+        );
+        assert_eq!(
+            register_skill_command("cls", "desc"),
+            Err(SkillCommandRegistrationError::ReservedName)
+        );
     }
 }

@@ -459,9 +459,7 @@ async fn handle_line(
                 let mut response_turn_id: Option<String> = None;
 
                 while let Some(event) = event_rx.recv().await {
-                    if !response_sent
-                        && let Some(tid) = turn_id_from_event(&event)
-                    {
+                    if !response_sent && let Some(tid) = turn_id_from_event(&event) {
                         let tid_str = tid.to_string();
                         let response = send_ok(
                             writer_for_events.clone(),
@@ -501,27 +499,28 @@ async fn handle_line(
                 };
 
                 if !response_sent {
-                    let response =
-                        if let Some(tid) = first_turn_id(&events).map(|tid| tid.to_string()) {
-                            response_turn_id = Some(tid.clone());
-                            send_ok(
-                                writer_for_events.clone(),
-                                request_id.clone(),
-                                json!({"turn_id": tid, "accepted": true}),
-                            )
-                            .await
-                        } else {
-                            error!(request_id = %request_id, session_id = %session_id_for_events, "failed to infer turn_id");
-                            send_error(
-                                writer_for_events.clone(),
-                                request_id.clone(),
-                                "INTERNAL_ERROR",
-                                "failed to infer turn_id from events".to_string(),
-                                false,
-                                json!({}),
-                            )
-                            .await
-                        };
+                    let response = if let Some(tid) =
+                        first_turn_id(&events).map(|tid| tid.to_string())
+                    {
+                        response_turn_id = Some(tid.clone());
+                        send_ok(
+                            writer_for_events.clone(),
+                            request_id.clone(),
+                            json!({"turn_id": tid, "accepted": true}),
+                        )
+                        .await
+                    } else {
+                        error!(request_id = %request_id, session_id = %session_id_for_events, "failed to infer turn_id");
+                        send_error(
+                            writer_for_events.clone(),
+                            request_id.clone(),
+                            "INTERNAL_ERROR",
+                            "failed to infer turn_id from events".to_string(),
+                            false,
+                            json!({}),
+                        )
+                        .await
+                    };
                     if response.is_err() {
                         return;
                     }
@@ -561,8 +560,7 @@ async fn handle_line(
                 return;
             };
 
-            let Some(request_id_to_resolve) =
-                req.params.get("request_id").and_then(Value::as_str)
+            let Some(request_id_to_resolve) = req.params.get("request_id").and_then(Value::as_str)
             else {
                 let _ = send_error(
                     writer,
@@ -829,9 +827,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             payload: json!({ "tool_name": tool_name, "progress_message": progress_message }),
         }),
         Event::ToolCallReady {
-            turn_id,
-            tool_name,
-            ..
+            turn_id, tool_name, ..
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -1060,17 +1056,11 @@ async fn send_error(
     write_line(writer, &envelope).await
 }
 
-async fn send_event(
-    writer: Arc<Mutex<io::Stdout>>,
-    event: EventEnvelope,
-) -> anyhow::Result<()> {
+async fn send_event(writer: Arc<Mutex<io::Stdout>>, event: EventEnvelope) -> anyhow::Result<()> {
     write_line(writer, &event).await
 }
 
-async fn write_line<T: Serialize>(
-    writer: Arc<Mutex<io::Stdout>>,
-    value: &T,
-) -> anyhow::Result<()> {
+async fn write_line<T: Serialize>(writer: Arc<Mutex<io::Stdout>>, value: &T) -> anyhow::Result<()> {
     let mut out = writer.lock().await;
     let mut line = serde_json::to_vec(value)?;
     line.push(b'\n');

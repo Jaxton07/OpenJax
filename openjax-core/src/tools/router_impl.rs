@@ -65,7 +65,10 @@ impl ToolRouter {
     }
 
     pub fn display_name_for(&self, tool_name: &str) -> Option<String> {
-        self.specs.iter().find(|s| s.name == tool_name).map(|s| s.display_name.clone())
+        self.specs
+            .iter()
+            .find(|s| s.name == tool_name)
+            .map(|s| s.display_name.clone())
     }
 
     pub async fn execute(&self, request: ToolExecutionRequest<'_>) -> Result<ToolExecOutcome> {

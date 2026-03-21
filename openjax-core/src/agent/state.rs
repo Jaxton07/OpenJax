@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use tracing::debug;
 
@@ -62,7 +62,7 @@ impl Agent {
 
         let key = ToolCallKey {
             name: tool_name.to_string(),
-            args: serde_json::to_string(args).unwrap_or_default(),
+            args: stable_args_json(args),
         };
 
         self.recent_tool_calls
@@ -79,7 +79,7 @@ impl Agent {
     ) {
         let key = ToolCallKey {
             name: tool_name.to_string(),
-            args: serde_json::to_string(args).unwrap_or_default(),
+            args: stable_args_json(args),
         };
 
         self.recent_tool_calls.push(ToolCallRecord {
@@ -144,11 +144,8 @@ impl Agent {
             .filter(|h| matches!(h, crate::HistoryItem::Turn(_)))
             .count();
 
-        match crate::agent::context_compressor::try_compact(
-            &self.history,
-            &*self.model_client,
-        )
-        .await
+        match crate::agent::context_compressor::try_compact(&self.history, &*self.model_client)
+            .await
         {
             Some(new_history) => {
                 let turns_after = new_history
@@ -186,10 +183,7 @@ impl Agent {
                 );
             }
             None => {
-                tracing::info!(
-                    turn_id = turn_id,
-                    "compact_skipped_insufficient_history"
-                );
+                tracing::info!(turn_id = turn_id, "compact_skipped_insufficient_history");
             }
         }
     }
@@ -242,4 +236,30 @@ fn should_skip_duplicate_detection(tool_name: &str) -> bool {
         tool_name,
         "read_file" | "list_dir" | "grep_files" | "process_snapshot" | "system_load" | "disk_usage"
     )
+}
+
+fn stable_args_json(args: &HashMap<String, String>) -> String {
+    let ordered: BTreeMap<&str, &str> =
+        args.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    serde_json::to_string(&ordered).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::stable_args_json;
+
+    #[test]
+    fn stable_args_json_is_order_insensitive() {
+        let mut first = HashMap::new();
+        first.insert("a".to_string(), "1".to_string());
+        first.insert("b".to_string(), "2".to_string());
+
+        let mut second = HashMap::new();
+        second.insert("b".to_string(), "2".to_string());
+        second.insert("a".to_string(), "1".to_string());
+
+        assert_eq!(stable_args_json(&first), stable_args_json(&second));
+    }
 }

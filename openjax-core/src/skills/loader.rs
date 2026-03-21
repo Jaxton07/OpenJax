@@ -14,6 +14,7 @@ pub fn default_skill_roots(skills_dir: &Path) -> Vec<(SkillSourceScope, PathBuf)
 }
 
 pub fn discover_registry(skills_dir: &Path) -> SkillRegistry {
+    crate::slash_commands::SlashCommandRegistry::clear_dynamic_commands();
     let roots = default_skill_roots(skills_dir);
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
@@ -101,22 +102,33 @@ pub fn discover_registry(skills_dir: &Path) -> SkillRegistry {
                 manifest: manifest.clone(),
             });
 
-            // Register slash command if declared in frontmatter
-            if let Some(ref slash_cmd) = manifest.slash_command {
-                let normalized = slash_cmd.trim().to_ascii_lowercase();
-                if !normalized.is_empty() {
-                    if let Err(e) = std::panic::catch_unwind(|| {
-                        crate::slash_commands::register_skill_command(
-                            Box::leak(normalized.into_boxed_str()) as &'static str,
-                            Box::leak(manifest.description.clone().into_boxed_str()) as &'static str,
-                        );
-                    }) {
+            // Register slash command:
+            // 1) explicit frontmatter slash_command (if any)
+            // 2) fallback to skill directory name for compatibility
+            let slash_source = manifest
+                .slash_command
+                .as_deref()
+                .unwrap_or(file_name.as_str());
+            match crate::slash_commands::normalize_skill_command_name(slash_source) {
+                Some(normalized) => {
+                    if let Err(err) = crate::slash_commands::register_skill_command(
+                        &normalized,
+                        &manifest.description,
+                    ) {
                         warn!(
                             skill = %file_name,
-                            error = ?e,
-                            "failed to register skill slash command"
+                            slash_command = %slash_source,
+                            error = ?err,
+                            "ignored invalid or conflicting slash command"
                         );
                     }
+                }
+                None => {
+                    warn!(
+                        skill = %file_name,
+                        slash_command = %slash_source,
+                        "ignored invalid slash command format"
+                    );
                 }
             }
         }
@@ -185,5 +197,65 @@ mod tests {
         fs::create_dir_all(root.join("no_manifest")).expect("create skill dir");
         let registry = discover_registry(&root);
         assert!(registry.entries.is_empty());
+    }
+
+    #[test]
+    fn default_slash_command_uses_directory_name() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("home/.openjax/skills");
+        fs::create_dir_all(root.join("my-skill")).expect("create skill dir");
+        fs::write(
+            root.join("my-skill/SKILL.md"),
+            "---\ndescription: test\n---\nbody",
+        )
+        .expect("write skill");
+
+        let _registry = discover_registry(&root);
+        let m = crate::slash_commands::SlashCommandRegistry::find("my-skill")
+            .expect("slash command should fallback to directory name");
+        assert_eq!(m.command_name, "my-skill");
+    }
+
+    #[test]
+    fn slash_command_with_leading_slash_is_normalized() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("home/.openjax/skills");
+        fs::create_dir_all(root.join("skill-a")).expect("create skill dir");
+        fs::write(
+            root.join("skill-a/SKILL.md"),
+            "---\ndescription: test\nslash_command: /Foo-Bar\n---\nbody",
+        )
+        .expect("write skill");
+
+        let _registry = discover_registry(&root);
+        let m = crate::slash_commands::SlashCommandRegistry::find("/foo-bar")
+            .expect("slash command should be normalized");
+        assert_eq!(m.command_name, "foo-bar");
+    }
+
+    #[test]
+    fn slash_command_conflicting_with_builtin_alias_is_ignored() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("home/.openjax/skills");
+        fs::create_dir_all(root.join("bad-skill")).expect("create skill dir");
+        fs::write(
+            root.join("bad-skill/SKILL.md"),
+            "---\ndescription: test\nslash_command: cls\n---\nbody",
+        )
+        .expect("write skill");
+
+        let _registry = discover_registry(&root);
+        let m = crate::slash_commands::SlashCommandRegistry::find("cls")
+            .expect("builtin alias should still resolve");
+        assert_eq!(m.command_name, "clear");
+        assert!(
+            !crate::slash_commands::SlashCommandRegistry::all_commands()
+                .iter()
+                .any(|c| c.name == "cls"
+                    && matches!(
+                        c.kind,
+                        crate::slash_commands::SlashCommandKind::Skill { .. }
+                    ))
+        );
     }
 }

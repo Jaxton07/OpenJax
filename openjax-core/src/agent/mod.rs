@@ -1,4 +1,5 @@
 pub(crate) mod bootstrap;
+pub(crate) mod context_compressor;
 pub(crate) mod decision;
 pub(crate) mod events;
 pub(crate) mod execution;
@@ -17,4 +18,3 @@ pub(crate) mod tool_lifecycle;
 pub(crate) mod tool_policy;
 pub(crate) mod turn;
 pub(crate) mod turn_engine;
-pub(crate) mod context_compressor;

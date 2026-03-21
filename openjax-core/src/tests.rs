@@ -2,9 +2,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use openjax_protocol::{Event, Op};
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::time::{Duration, sleep};
 
 use super::{
     Agent, ApprovalHandler, ApprovalPolicy, ApprovalRequest, Config, SandboxMode,
@@ -20,6 +22,9 @@ use super::{
     },
     model::{ModelClient, ModelRequest, ModelResponse, StreamDelta},
 };
+use crate::tools::context::{FunctionCallOutputBody, ToolOutput};
+use crate::tools::error::FunctionCallError;
+use crate::tools::registry::{ToolHandler, ToolKind};
 
 #[derive(Clone)]
 struct ScriptedStreamingModel {
@@ -49,6 +54,13 @@ struct DuplicateToolLoopModel;
 #[derive(Clone)]
 struct ApprovalBlockedBatchModel {
     stream_calls: Arc<Mutex<usize>>,
+}
+
+#[derive(Clone)]
+struct ApprovalCancellationBatchModel;
+
+struct SlowProbeTool {
+    marker_path: PathBuf,
 }
 
 #[derive(Debug, Default)]
@@ -344,6 +356,55 @@ impl ModelClient for ApprovalBlockedBatchModel {
 
     fn name(&self) -> &'static str {
         "approval-blocked-batch"
+    }
+}
+
+#[async_trait]
+impl ModelClient for ApprovalCancellationBatchModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        Ok(ModelResponse {
+            text: r#"{"action":"final","message":"should not be reached"}"#.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    async fn complete_stream(
+        &self,
+        _request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
+    ) -> Result<ModelResponse> {
+        let text = r#"{"action":"tool_batch","tool_calls":[{"tool_call_id":"call_approve","tool_name":"edit_file_range","arguments":{"file_path":"todo.txt","start_line":"1","end_line":"1","new_text":"x"}},{"tool_call_id":"call_slow","tool_name":"system_load","arguments":{}}]}"#;
+        if let Some(sender) = delta_sender {
+            let _ = sender.send(StreamDelta::Text(text.to_string()));
+        }
+        Ok(ModelResponse {
+            text: text.to_string(),
+            ..ModelResponse::default()
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "approval-cancellation-batch"
+    }
+}
+
+#[async_trait]
+impl ToolHandler for SlowProbeTool {
+    fn kind(&self) -> ToolKind {
+        ToolKind::Function
+    }
+
+    async fn handle(
+        &self,
+        _invocation: crate::tools::context::ToolInvocation,
+    ) -> Result<ToolOutput, FunctionCallError> {
+        sleep(Duration::from_millis(250)).await;
+        fs::write(&self.marker_path, "ran")
+            .map_err(|e| FunctionCallError::Internal(format!("marker write failed: {e}")))?;
+        Ok(ToolOutput::Function {
+            body: FunctionCallOutputBody::Text("slow probe done".to_string()),
+            success: Some(true),
+        })
     }
 }
 
@@ -876,4 +937,72 @@ async fn tool_batch_approval_blocked_stops_followup_scheduling_and_rounds() {
     assert!(!saw_final_response_completed);
     assert!(!saw_call_3_started);
     assert_eq!(model_probe.stream_call_count(), 1);
+}
+
+#[tokio::test]
+async fn tool_batch_approval_blocked_cancels_pending_parallel_tool() {
+    let workspace =
+        std::env::temp_dir().join(format!("openjax-tool-batch-cancel-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&workspace);
+    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
+
+    let mut agent = Agent::with_runtime(
+        ApprovalPolicy::OnRequest,
+        SandboxMode::WorkspaceWrite,
+        workspace.clone(),
+    );
+    agent.model_client = Box::new(ApprovalCancellationBatchModel);
+    let marker_path = workspace.join("slow_probe_marker.txt");
+    agent.tools.register_tool(
+        "system_load".to_string(),
+        Arc::new(SlowProbeTool {
+            marker_path: marker_path.clone(),
+        }),
+    );
+    agent.set_approval_handler(Arc::new(RejectApprovalHandler));
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "trigger batch cancellation".to_string(),
+        })
+        .await;
+
+    assert!(
+        events.iter().any(
+            |evt| matches!(evt, Event::ResponseError { code, .. } if code == "approval_blocked")
+        )
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|evt| matches!(evt, Event::ResponseCompleted { .. })),
+        "turn should not continue to final after approval blocked"
+    );
+    let slow_completed = events.iter().find(|evt| {
+        matches!(
+            evt,
+            Event::ToolCallCompleted {
+                tool_call_id,
+                ..
+            } if tool_call_id == "call_slow"
+        )
+    });
+    match slow_completed {
+        Some(Event::ToolCallCompleted { ok, output, .. }) => {
+            assert!(!ok, "slow tool should be canceled");
+            assert!(
+                output.contains("canceled by approval decision"),
+                "unexpected cancel output: {output}"
+            );
+        }
+        _ => panic!("expected canceled ToolCallCompleted event for call_slow"),
+    }
+
+    assert!(
+        !marker_path.exists(),
+        "slow tool side-effect should not be committed after cancellation"
+    );
+
+    let _ = fs::remove_dir_all(workspace);
 }

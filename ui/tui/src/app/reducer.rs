@@ -48,7 +48,10 @@ impl App {
                 self.state.live_messages.clear();
             }
             Event::ToolCallStarted {
-                tool_name, target, display_name, ..
+                tool_name,
+                target,
+                display_name,
+                ..
             } => {
                 let display = display_name.as_ref().unwrap_or(&tool_name);
                 let suffix = target
