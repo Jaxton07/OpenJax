@@ -14,8 +14,8 @@ pub use stdio::run_stdio;
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::http::{HeaderValue, Method};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE};
+use axum::http::{HeaderValue, Method};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, patch, post};
 use tower_http::cors::CorsLayer;
@@ -73,8 +73,7 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             middleware::access_token_middleware,
         ));
 
-    let auth_public = Router::new()
-        .route("/api/v1/auth/refresh", post(auth_handlers::refresh));
+    let auth_public = Router::new().route("/api/v1/auth/refresh", post(auth_handlers::refresh));
 
     let protected = Router::new()
         .route(
@@ -82,8 +81,16 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             post(handlers::create_session).get(handlers::list_sessions),
         )
         .route(
+            "/api/v1/sessions/:session_id/slash",
+            post(handlers::exec_slash_command),
+        )
+        .route(
             "/api/v1/sessions/:session_id",
             post(handlers::session_action).delete(handlers::shutdown_session),
+        )
+        .route(
+            "/api/v1/slash_commands",
+            get(handlers::list_slash_commands),
         )
         .route(
             "/api/v1/sessions/:session_id/messages",

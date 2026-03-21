@@ -44,8 +44,7 @@ pub async fn apply_patch_actions(actions: &[PlannedAction]) -> Result<()> {
 
 async fn apply_single_patch_action(action: &PlannedAction) -> Result<()> {
     match action {
-        PlannedAction::Create { path, content }
-        | PlannedAction::Update { path, content, .. } => {
+        PlannedAction::Create { path, content } | PlannedAction::Update { path, content, .. } => {
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.with_context(|| {
                     format!("failed to create parent dir: {}", parent.display())
@@ -175,7 +174,10 @@ pub fn apply_hunks_to_content(original: &str, hunks: &[PatchHunk]) -> Result<Hun
         }
 
         let hunk_end = new_lines.len(); // 1-indexed inclusive
-        changed_ranges.push(HunkResultRange { start: hunk_start, end: hunk_end });
+        changed_ranges.push(HunkResultRange {
+            start: hunk_start,
+            end: hunk_end,
+        });
         cursor = source_index;
     }
 
@@ -189,8 +191,8 @@ pub fn apply_hunks_to_content(original: &str, hunks: &[PatchHunk]) -> Result<Hun
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::PatchHunkLine;
+    use super::*;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -415,7 +417,10 @@ mod tests {
         let result = apply_hunks_to_content(original, &hunks);
         assert!(result.is_err(), "expected error for mismatched context");
         assert!(
-            result.unwrap_err().to_string().contains("hunk context not found"),
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("hunk context not found"),
             "error should mention 'hunk context not found'"
         );
     }

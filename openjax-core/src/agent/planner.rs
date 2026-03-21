@@ -156,6 +156,14 @@ impl Agent {
                     return;
                 }
             };
+            // 更新 last_input_tokens（来自流式 usage 或 fallback usage）
+            if let Some(ref usage) = planner_stream.usage
+                && let Some(tokens) = usage.input_tokens
+            {
+                self.last_input_tokens = Some(tokens);
+            }
+            // 检查是否需要自动压缩
+            self.check_and_auto_compact(turn_id, events).await;
             let model_output = planner_stream.model_output;
             let mut routed = dispatcher::route_model_output(
                 ProbeInput {
@@ -518,9 +526,8 @@ impl Agent {
                         saw_git_diff_stat: &mut saw_git_diff_stat,
                         diff_strategy: &mut diff_strategy,
                     };
-                    let should_continue = self
-                        .handle_tool_action(turn_id, &decision, &mut ctx)
-                        .await;
+                    let should_continue =
+                        self.handle_tool_action(turn_id, &decision, &mut ctx).await;
                     if should_continue {
                         continue;
                     }

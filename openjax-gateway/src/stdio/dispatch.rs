@@ -725,10 +725,11 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::ToolBatchCompleted { turn_id, .. }
             | Event::ApprovalRequested { turn_id, .. }
             | Event::ApprovalResolved { turn_id, .. }
-            | Event::LoopWarning { turn_id, .. }
             | Event::TurnCompleted { turn_id } => return Some(*turn_id),
             Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
+            | Event::ContextCompacted { .. }
+            | Event::LoopWarning { .. }
             | Event::ShutdownComplete => {}
         }
     }
@@ -755,10 +756,11 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
         | Event::ToolBatchCompleted { turn_id, .. }
         | Event::ApprovalRequested { turn_id, .. }
         | Event::ApprovalResolved { turn_id, .. }
-        | Event::LoopWarning { turn_id, .. }
         | Event::TurnCompleted { turn_id } => Some(*turn_id),
         Event::AgentSpawned { .. }
         | Event::AgentStatusChanged { .. }
+        | Event::ContextCompacted { .. }
+        | Event::LoopWarning { .. }
         | Event::ShutdownComplete => None,
     }
 }
@@ -1011,15 +1013,10 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             event_type: "session_shutdown_complete".to_string(),
             payload: json!({}),
         }),
-        Event::LoopWarning { turn_id, tool_name, consecutive_count } => Some(EventEnvelope {
-            protocol_version: PROTOCOL_VERSION,
-            kind: KIND_EVENT,
-            session_id: session_id.to_string(),
-            turn_id: Some(turn_id.to_string()),
-            event_type: "loop_warning".to_string(),
-            payload: json!({ "tool_name": tool_name, "consecutive_count": consecutive_count }),
-        }),
         Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => None,
+        // TODO: emit proper SSE envelope for ContextCompacted (gateway HTTP path handled in event_mapper)
+        Event::ContextCompacted { .. } => None,
+        Event::LoopWarning { .. } => None,
     }
 }
 
@@ -1129,6 +1126,7 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
             | Event::ToolBatchCompleted { .. }
             | Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
+            | Event::ContextCompacted { .. }
             | Event::LoopWarning { .. }
             | Event::ShutdownComplete => {}
         }
@@ -1191,6 +1189,7 @@ mod tests {
                 tool_call_id: "tc_1".to_string(),
                 tool_name: "read_file".to_string(),
                 target: None,
+                display_name: None,
             },
             Event::ToolCallCompleted {
                 turn_id: 1,
@@ -1198,6 +1197,7 @@ mod tests {
                 tool_name: "read_file".to_string(),
                 ok: true,
                 output: "ok".to_string(),
+                display_name: None,
             },
             Event::ApprovalRequested {
                 turn_id: 1,

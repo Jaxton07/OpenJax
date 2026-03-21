@@ -28,6 +28,21 @@ fn map_misc(event: &Event) -> Option<CoreEventMapping> {
             payload: json!({}),
             stream_source: None,
         }),
+        Event::ContextCompacted {
+            turn_id,
+            compressed_turns,
+            retained_turns,
+            summary_preview,
+        } => Some(CoreEventMapping {
+            core_turn_id: Some(*turn_id),
+            event_type: "context_compacted",
+            payload: json!({
+                "compressed_turns": compressed_turns,
+                "retained_turns": retained_turns,
+                "summary_preview": summary_preview,
+            }),
+            stream_source: None,
+        }),
         Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => None,
         _ => None,
     }

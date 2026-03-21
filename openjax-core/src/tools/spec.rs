@@ -7,6 +7,7 @@ pub struct ToolSpec {
     pub description: String,
     pub input_schema: Value,
     pub output_schema: Option<Value>,
+    pub display_name: String,
 }
 
 /// 工具配置
@@ -79,6 +80,7 @@ pub fn create_apply_patch_freeform_spec() -> ToolSpec {
             "type": "string",
             "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
         })),
+        display_name: "Apply Patch".to_string(),
     }
 }
 
@@ -116,6 +118,7 @@ pub fn create_grep_files_spec() -> ToolSpec {
             "type": "string",
             "description": "List of matching file paths, one per line"
         })),
+        display_name: "Search Files".to_string(),
     }
 }
 
@@ -188,6 +191,7 @@ pub fn create_read_file_spec() -> ToolSpec {
             "type": "string",
             "description": "File contents with line numbers, one per line"
         })),
+        display_name: "Read File".to_string(),
     }
 }
 
@@ -228,6 +232,7 @@ pub fn create_list_dir_spec() -> ToolSpec {
             "type": "string",
             "description": "Directory entries with indentation and type markers"
         })),
+        display_name: "List Directory".to_string(),
     }
 }
 
@@ -261,6 +266,7 @@ pub fn create_shell_spec() -> ToolSpec {
             "type": "string",
             "description": "Command execution result with exit_code, stdout, and stderr sections"
         })),
+        display_name: "Run Shell".to_string(),
     }
 }
 
@@ -268,6 +274,7 @@ pub fn create_shell_spec() -> ToolSpec {
 pub fn create_exec_command_spec() -> ToolSpec {
     let mut spec = create_shell_spec();
     spec.name = "exec_command".to_string();
+    spec.display_name = "Run Shell".to_string();
     spec
 }
 
@@ -290,6 +297,7 @@ pub fn create_apply_patch_spec() -> ToolSpec {
             "type": "string",
             "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
         })),
+        display_name: "Apply Patch".to_string(),
     }
 }
 
@@ -326,6 +334,7 @@ pub fn create_edit_file_range_spec() -> ToolSpec {
             "type": "string",
             "description": "Summary of applied edit"
         })),
+        display_name: "Edit File".to_string(),
     }
 }
 
@@ -357,6 +366,7 @@ pub fn create_process_snapshot_spec() -> ToolSpec {
         output_schema: Some(serde_json::json!({
             "type": "object"
         })),
+        display_name: "Process Snapshot".to_string(),
     }
 }
 
@@ -382,6 +392,7 @@ pub fn create_system_load_spec() -> ToolSpec {
         output_schema: Some(serde_json::json!({
             "type": "object"
         })),
+        display_name: "System Load".to_string(),
     }
 }
 
@@ -408,6 +419,7 @@ pub fn create_disk_usage_spec() -> ToolSpec {
         output_schema: Some(serde_json::json!({
             "type": "object"
         })),
+        display_name: "Disk Usage".to_string(),
     }
 }
 

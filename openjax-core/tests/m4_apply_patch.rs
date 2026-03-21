@@ -202,7 +202,10 @@ async fn apply_patch_fuzzy_level1_trailing_whitespace() {
 
     match tool_completion(&events, "apply_patch") {
         Event::ToolCallCompleted { ok, output, .. } => {
-            assert!(*ok, "expected success with fuzzy level-1 match; output: {output}");
+            assert!(
+                *ok,
+                "expected success with fuzzy level-1 match; output: {output}"
+            );
             assert!(output.contains("patch applied successfully"));
         }
         _ => unreachable!(),
@@ -248,7 +251,10 @@ async fn apply_patch_fuzzy_level3_unicode_normalization() {
 
     match tool_completion(&events, "apply_patch") {
         Event::ToolCallCompleted { ok, output, .. } => {
-            assert!(*ok, "expected success with fuzzy level-3 match; output: {output}");
+            assert!(
+                *ok,
+                "expected success with fuzzy level-3 match; output: {output}"
+            );
             assert!(output.contains("patch applied successfully"));
         }
         _ => unreachable!(),
@@ -265,11 +271,7 @@ async fn apply_patch_fuzzy_level3_unicode_normalization() {
 async fn apply_patch_ambiguous_match_applies_to_first() {
     let workspace = create_workspace();
     // Duplicate context block appears twice; patch should apply to the first occurrence.
-    fs::write(
-        workspace.join("dup.txt"),
-        "x = 1\ny = 2\n\nx = 1\ny = 2",
-    )
-    .expect("seed file");
+    fs::write(workspace.join("dup.txt"), "x = 1\ny = 2\n\nx = 1\ny = 2").expect("seed file");
 
     let mut agent = Agent::with_runtime(
         ApprovalPolicy::Never,
@@ -293,7 +295,10 @@ async fn apply_patch_ambiguous_match_applies_to_first() {
 
     match tool_completion(&events, "apply_patch") {
         Event::ToolCallCompleted { ok, output, .. } => {
-            assert!(*ok, "expected success despite ambiguous match; output: {output}");
+            assert!(
+                *ok,
+                "expected success despite ambiguous match; output: {output}"
+            );
             assert!(output.contains("patch applied successfully"));
             // Warning about multiple matches should be present in the response.
             assert!(

@@ -10,6 +10,7 @@ pub fn parse_skill_manifest(
     let (frontmatter, body) = split_frontmatter(content)?;
     let mut name = fallback_name.trim().to_string();
     let mut description = String::new();
+    let mut slash_command: Option<String> = None;
     let mut extra = Value::Object(Map::new());
 
     if let Some(raw_frontmatter) = frontmatter.as_deref() {
@@ -24,6 +25,9 @@ pub fn parse_skill_manifest(
             if let Some(v) = map.remove("description").and_then(value_as_string) {
                 description = v;
             }
+            if let Some(v) = map.remove("slash_command").and_then(value_as_string) {
+                slash_command = Some(v);
+            }
             extra = Value::Object(map.clone());
         }
     }
@@ -31,6 +35,7 @@ pub fn parse_skill_manifest(
     Ok(SkillManifest {
         name,
         description,
+        slash_command,
         instructions_markdown: body,
         extra,
     })

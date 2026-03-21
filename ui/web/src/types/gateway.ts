@@ -227,3 +227,26 @@ export interface StreamEvent {
     | "error";
   payload: Record<string, unknown>;
 }
+
+export interface SlashCommandDto {
+  name: string;
+  aliases: string[];
+  description: string;
+  usage_hint: string;
+  kind: "builtin" | "session_action" | "skill";
+  replaces_input: boolean;
+}
+
+export interface SlashCommandsResponse {
+  commands: SlashCommandDto[];
+}
+
+export interface SlashExecRequest {
+  command: string;
+}
+
+export interface SlashExecResponse {
+  status: "ok" | "pending" | string;
+  message?: string;
+  action?: string | null;
+}

@@ -18,7 +18,7 @@ pub use layout_metrics::{BottomLayout, FooterMode, TransientKind};
 pub use render_model::TransientPanel;
 pub use slash_palette::SlashAcceptResult;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct App {
     pub state: AppState,
     viewport_reset_requested: bool,
@@ -184,6 +184,24 @@ impl App {
 
         if input.starts_with('/') && self.submit_slash_command_if_exact() {
             return None;
+        }
+
+        // SessionAction 命令的 TUI 侧处理（不走 gateway HTTP）
+        if input.starts_with('/') {
+            if let Some(matched) = crate::slash_commands::find_exact(&input) {
+                if matched.kind.session_action_name() == Some("compact") {
+                    self.state.input.clear();
+                    self.state.input_cursor = 0;
+                    self.dismiss_slash_palette();
+                    self.set_status_running("Compacting");
+                    return Some(SubmitAction::CompactSession);
+                }
+                // clear 在 TUI 侧做本地 clear（不走 gateway）
+                if matched.kind.session_action_name() == Some("clear") {
+                    self.clear();
+                    return None;
+                }
+            }
         }
 
         let user_cell = self.user_cell(&input);
@@ -382,6 +400,13 @@ impl App {
 
 #[derive(Debug)]
 pub enum SubmitAction {
-    UserTurn { input: String },
-    ApprovalDecision { request_id: String, approved: bool },
+    UserTurn {
+        input: String,
+    },
+    ApprovalDecision {
+        request_id: String,
+        approved: bool,
+    },
+    /// TUI compact：直接调用 agent.compact()，不走 gateway HTTP
+    CompactSession,
 }

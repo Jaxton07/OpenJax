@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/openjax-core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/openjax-core/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/openjax-gateway/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/openjax-gateway/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/openjax-protocol/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/openjax-store/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/openjaxd/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/openjaxd/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/ui/tui/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ui/tui/tests" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

@@ -32,7 +32,11 @@ openjax-gateway/
 │   │   ├── tool.rs
 │   │   └── approval.rs
 │   ├── error.rs
-│   ├── handlers.rs
+│   ├── handlers/
+│   │   ├── mod.rs
+│   │   ├── session.rs
+│   │   ├── stream.rs
+│   │   └── provider.rs
 │   ├── lib.rs
 │   ├── main.rs
 │   ├── middleware.rs
@@ -41,7 +45,16 @@ openjax-gateway/
 │   │   ├── repository.rs
 │   │   ├── sqlite.rs
 │   │   └── types.rs
-│   └── state.rs
+│   ├── state/
+│   │   ├── mod.rs
+│   │   ├── runtime.rs
+│   │   ├── events.rs
+│   │   └── config.rs
+│   ├── stdio/
+│   │   ├── mod.rs
+│   │   ├── protocol.rs
+│   │   ├── daemon.rs
+│   │   └── dispatch.rs
 └── tests
     └── gateway_api.rs
 ```
@@ -55,7 +68,9 @@ openjax-gateway/
 - `POST /api/v1/sessions`
 - `POST /api/v1/sessions/:session_id/turns`
 - `GET /api/v1/sessions/:session_id/turns/:turn_id`
-- `POST /api/v1/sessions/:session_id`（当前用于 `:clear` / `:compact` action 语法）
+- `POST /api/v1/sessions/:session_id/slash`
+- `GET /api/v1/slash_commands`
+- `POST /api/v1/sessions/:session_id`（当前用于 `:compact` / `:clear` 的 `:action` 路径语法）
 - `DELETE /api/v1/sessions/:session_id`
 - `POST /api/v1/sessions/:session_id/approvals/*approval_action`
 - `GET /api/v1/sessions/:session_id/events`
@@ -79,10 +94,14 @@ openjax-gateway/
   curl -X POST .../sessions/:id/turns \
     -d '{"input": "/compact"}'
   ```
-- **方式二**：session action
+- **方式二**：session action 路径语法
   ```bash
-  curl -X POST .../sessions/:id \
-    -d '{"action": "compact"}'
+  curl -X POST .../sessions/:id:compact
+  ```
+- **方式三**：slash endpoint
+  ```bash
+  curl -X POST .../sessions/:id/slash \
+    -d '{"command": "compact"}'
   ```
 
 压缩完成后推送 `context_compacted` 事件，前端可展示摘要预览。
@@ -91,18 +110,38 @@ openjax-gateway/
 
 重置会话状态，清空历史记录。
 
+- **方式一**：session action 路径语法
+  ```bash
+  curl -X POST .../sessions/:id:clear
+  ```
+- **方式二**：slash endpoint
+  ```bash
+  curl -X POST .../sessions/:id/slash \
+    -d '{"command": "clear"}'
+  ```
+
 ## 关键实现映射
 
 - `src/lib.rs`：组装 Axum Router、CORS、全局中间件与受保护路由。
 - `src/main.rs`：网关启动入口，读取 `OPENJAX_GATEWAY_BIND`（默认 `127.0.0.1:8765`）。
-- `src/state.rs`：`AppState`/`SessionRuntime`、事件缓存回放、turn 与审批状态管理、会话重建（`next_event_seq`/`turn_event_seq`）。
+- `src/state/`：状态管理模块
+  - `state/runtime.rs`：`SessionRuntime`、`TurnRuntime`、状态枚举、`GatewayApprovalHandler`
+  - `state/events.rs`：`AppState`、事件映射（`map_core_event`）、`run_turn_task`、会话重建
+  - `state/config.rs`：配置构建、provider 迁移、环境变量解析
 - `src/event_mapper/`：core 事件到 gateway 事件的薄映射层（response/tool/approval）。
-- `src/handlers.rs`：HTTP 处理函数与 core 事件映射到网关事件，统一发布+落盘入口。
+- `src/handlers/`：HTTP 处理函数模块
+  - `handlers/session.rs`：会话 API（create_session、submit_turn、get_turn、resolve_approval 等）
+  - `handlers/stream.rs`：SSE 流（stream_events、list_session_timeline）
+  - `handlers/provider.rs`：Provider CRUD 和 catalog
 - `src/auth_handlers.rs`：登录、刷新、登出、撤销、会话查询接口。
 - `src/middleware.rs`：请求 ID、鉴权、访问日志。
 - `src/error.rs`：统一错误响应结构（`code/message/retryable/details`）。
 - `src/auth/`：owner key 加载、token 生成哈希、SQLite 持久化、限流与 cookie 逻辑。
 - `src/persistence/`：`biz_sessions`/`biz_messages`/`biz_events` 持久化仓储实现。
+- `src/stdio/`：JSONL stdio daemon 模块
+  - `stdio/protocol.rs`：协议信封类型（Request/Response/EventEnvelope）
+  - `stdio/daemon.rs`：`SessionState`、`DaemonApprovalHandler`
+  - `stdio/dispatch.rs`：消息分发、I/O helpers
 - `tests/gateway_api.rs`：鉴权、`/clear`、审批幂等、SSE 回放窗口等集成测试。
 
 ## 事件持久化模型

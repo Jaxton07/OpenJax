@@ -27,12 +27,36 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         protocol: "chat_completions",
         default_model: "gpt-5.3-codex",
         models: &[
-            CatalogModel { model_id: "gpt-5.3-codex",  display_name: "GPT-5.3 Codex",  context_window: 200000 },
-            CatalogModel { model_id: "gpt-5.4",        display_name: "GPT-5.4",         context_window: 200000 },
-            CatalogModel { model_id: "gpt-4o",         display_name: "GPT-4o",          context_window: 128000 },
-            CatalogModel { model_id: "gpt-4o-mini",    display_name: "GPT-4o mini",     context_window: 128000 },
-            CatalogModel { model_id: "gpt-4.1",        display_name: "GPT-4.1",         context_window: 1047576 },
-            CatalogModel { model_id: "gpt-4.1-mini",   display_name: "GPT-4.1 mini",    context_window: 1047576 },
+            CatalogModel {
+                model_id: "gpt-5.3-codex",
+                display_name: "GPT-5.3 Codex",
+                context_window: 200000,
+            },
+            CatalogModel {
+                model_id: "gpt-5.4",
+                display_name: "GPT-5.4",
+                context_window: 200000,
+            },
+            CatalogModel {
+                model_id: "gpt-4o",
+                display_name: "GPT-4o",
+                context_window: 128000,
+            },
+            CatalogModel {
+                model_id: "gpt-4o-mini",
+                display_name: "GPT-4o mini",
+                context_window: 128000,
+            },
+            CatalogModel {
+                model_id: "gpt-4.1",
+                display_name: "GPT-4.1",
+                context_window: 1047576,
+            },
+            CatalogModel {
+                model_id: "gpt-4.1-mini",
+                display_name: "GPT-4.1 mini",
+                context_window: 1047576,
+            },
         ],
     },
     CatalogProvider {
@@ -42,9 +66,21 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         protocol: "anthropic_messages",
         default_model: "claude-sonnet-4-6",
         models: &[
-            CatalogModel { model_id: "claude-opus-4-6",   display_name: "Claude Opus 4.6",   context_window: 200000 },
-            CatalogModel { model_id: "claude-sonnet-4-6", display_name: "Claude Sonnet 4.6", context_window: 200000 },
-            CatalogModel { model_id: "claude-haiku-4-5",  display_name: "Claude Haiku 4.5",  context_window: 200000 },
+            CatalogModel {
+                model_id: "claude-opus-4-6",
+                display_name: "Claude Opus 4.6",
+                context_window: 200000,
+            },
+            CatalogModel {
+                model_id: "claude-sonnet-4-6",
+                display_name: "Claude Sonnet 4.6",
+                context_window: 200000,
+            },
+            CatalogModel {
+                model_id: "claude-haiku-4-5",
+                display_name: "Claude Haiku 4.5",
+                context_window: 200000,
+            },
         ],
     },
     CatalogProvider {
@@ -53,9 +89,11 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         base_url: "https://open.bigmodel.cn/api/coding/paas/v4",
         protocol: "chat_completions",
         default_model: "glm-4.7",
-        models: &[
-            CatalogModel { model_id: "glm-4.7", display_name: "GLM-4.7", context_window: 200000 },
-        ],
+        models: &[CatalogModel {
+            model_id: "glm-4.7",
+            display_name: "GLM-4.7",
+            context_window: 200000,
+        }],
     },
     CatalogProvider {
         catalog_key: "kimi_coding",
@@ -63,9 +101,11 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         base_url: "https://api.kimi.com/coding",
         protocol: "chat_completions",
         default_model: "k2.5",
-        models: &[
-            CatalogModel { model_id: "k2.5", display_name: "K2.5", context_window: 256000 },
-        ],
+        models: &[CatalogModel {
+            model_id: "k2.5",
+            display_name: "K2.5",
+            context_window: 256000,
+        }],
     },
     CatalogProvider {
         catalog_key: "minimax_coding",
@@ -73,9 +113,11 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         base_url: "https://api.minimaxi.com/v1",
         protocol: "chat_completions",
         default_model: "MiniMax-M2.7",
-        models: &[
-            CatalogModel { model_id: "MiniMax-M2.7", display_name: "MiniMax M2.7", context_window: 200000 },
-        ],
+        models: &[CatalogModel {
+            model_id: "MiniMax-M2.7",
+            display_name: "MiniMax M2.7",
+            context_window: 200000,
+        }],
     },
 ];
 
@@ -91,12 +133,14 @@ mod tests {
     #[test]
     fn each_provider_has_default_model_in_list() {
         for provider in BUILTIN_CATALOG {
-            let found = provider.models.iter().any(|m| m.model_id == provider.default_model);
+            let found = provider
+                .models
+                .iter()
+                .any(|m| m.model_id == provider.default_model);
             assert!(
                 found,
                 "Provider '{}' default_model '{}' not found in models list",
-                provider.catalog_key,
-                provider.default_model
+                provider.catalog_key, provider.default_model
             );
         }
     }

@@ -202,6 +202,9 @@ export default function App() {
 
         <Composer
           disabled={state.loading}
+          baseUrl={state.settings.baseUrl}
+          accessToken={state.auth.accessToken}
+          sessionId={activeSession?.id}
           onSend={sendMessage}
           onNewChat={() => void newChat()}
           onCompact={() => void compactConversation()}

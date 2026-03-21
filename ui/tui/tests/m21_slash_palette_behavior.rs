@@ -99,20 +99,17 @@ fn second_enter_executes_exact_local_command() {
 }
 
 #[test]
-fn prompt_template_requires_second_enter_to_expand() {
+fn help_requires_second_enter_to_execute_builtin_action() {
     let mut app = App::default();
-    app.append_input("/rev");
+    app.append_input("/he");
 
     let result = app.complete_slash_selection();
 
     assert_eq!(result, tui_next::app::SlashAcceptResult::CompletedInput);
-    assert_eq!(app.state.input, "/review");
+    assert_eq!(app.state.input, "/help");
     assert!(!app.is_slash_palette_active());
 
     let action = app.submit_input();
     assert!(action.is_none());
-    assert_eq!(
-        app.state.input,
-        "Review the current changes, prioritize findings, and keep the summary brief."
-    );
+    assert_eq!(app.state.input, "");
 }

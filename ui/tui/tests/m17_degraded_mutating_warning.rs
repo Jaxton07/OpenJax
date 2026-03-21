@@ -8,6 +8,7 @@ fn degraded_mutating_shell_output_shows_high_risk_warning() {
         turn_id: 1,
         tool_call_id: "tc_1".to_string(),
         tool_name: "shell".to_string(),
+        display_name: None,
         ok: true,
         output: "result_class=success\ncommand=git add -A && git commit -m \"x\"\nexit_code=0\nbackend=none_escalated\ndegrade_reason=macos_seatbelt: denied\npolicy_decision=AskApproval\nruntime_allowed=true\nruntime_deny_reason=none\nstdout:\nok\nstderr:\n".to_string(),
     });

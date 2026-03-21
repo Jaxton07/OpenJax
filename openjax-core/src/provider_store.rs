@@ -86,8 +86,12 @@ pub fn build_config_from_providers(
         models.insert(
             model_id,
             ProviderModelConfig {
-                provider: Some(provider_vendor(&provider.base_url, &provider.provider_name).to_string()),
-                protocol: Some(provider_protocol(&provider.base_url, &provider.provider_name).to_string()),
+                provider: Some(
+                    provider_vendor(&provider.base_url, &provider.provider_name).to_string(),
+                ),
+                protocol: Some(
+                    provider_protocol(&provider.base_url, &provider.provider_name).to_string(),
+                ),
                 model: Some(provider.model_name),
                 base_url: Some(provider.base_url),
                 api_key: Some(provider.api_key),

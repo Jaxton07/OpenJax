@@ -79,6 +79,8 @@ pub enum Event {
         tool_call_id: String,
         tool_name: String,
         target: Option<String>,
+        #[serde(default)]
+        display_name: Option<String>,
     },
     ToolCallCompleted {
         turn_id: u64,
@@ -88,23 +90,31 @@ pub enum Event {
         tool_name: String,
         ok: bool,
         output: String,
+        #[serde(default)]
+        display_name: Option<String>,
     },
     ToolCallArgsDelta {
         turn_id: u64,
         tool_call_id: String,
         tool_name: String,
         args_delta: String,
+        #[serde(default)]
+        display_name: Option<String>,
     },
     ToolCallReady {
         turn_id: u64,
         tool_call_id: String,
         tool_name: String,
+        #[serde(default)]
+        display_name: Option<String>,
     },
     ToolCallProgress {
         turn_id: u64,
         tool_call_id: String,
         tool_name: String,
         progress_message: String,
+        #[serde(default)]
+        display_name: Option<String>,
     },
     ToolCallFailed {
         turn_id: u64,
@@ -113,6 +123,8 @@ pub enum Event {
         code: String,
         message: String,
         retryable: bool,
+        #[serde(default)]
+        display_name: Option<String>,
     },
     AssistantMessage {
         turn_id: u64,
@@ -192,6 +204,12 @@ pub enum Event {
     AgentStatusChanged {
         thread_id: ThreadId,
         status: AgentStatus,
+    },
+    ContextCompacted {
+        turn_id: u64,
+        compressed_turns: u32,   // 被压缩替换的 Turn 条数
+        retained_turns: u32,     // 保留的最近 Turn 条数
+        summary_preview: String, // 摘要前 120 字，供前端展示
     },
     TurnCompleted {
         turn_id: u64,

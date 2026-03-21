@@ -102,7 +102,10 @@ impl AuthStore {
         Ok(())
     }
 
-    pub fn create_session_and_tokens(&self, params: CreateSessionParams<'_>) -> Result<CreatedTokens> {
+    pub fn create_session_and_tokens(
+        &self,
+        params: CreateSessionParams<'_>,
+    ) -> Result<CreatedTokens> {
         let access_expires_in = params.access_ttl.whole_seconds().max(0) as u64;
         let session_id = format!("authsess_{}", Uuid::new_v4().simple());
         {

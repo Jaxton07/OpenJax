@@ -199,6 +199,18 @@ pub(crate) async fn handle_submit_action(
                 app.state.pending_approval = None;
             }
         }
+        SubmitAction::CompactSession => {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            turn_task.replace(tokio::spawn(async move {
+                let mut guard = agent.lock().await;
+                let mut events = Vec::new();
+                guard.compact(&mut events).await;
+                for event in events {
+                    let _ = tx.send(event);
+                }
+            }));
+            core_event_rx.replace(rx);
+        }
     }
 }
 

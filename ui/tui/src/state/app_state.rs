@@ -1,34 +1,35 @@
 use crate::history_cell::HistoryCell;
+use openjax_core::slash_commands::SlashMatch;
 use std::time::Instant;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SlashMatch {
-    pub command_name: &'static str,
-    pub description: &'static str,
-    pub usage_hint: &'static str,
-    pub replacement: String,
-    pub kind: SlashCommandKind,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SlashCommandKind {
-    LocalAction(SlashLocalAction),
-    PromptTemplate,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SlashLocalAction {
-    Clear,
-    Help,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Default)]
 pub struct SlashPaletteState {
     pub visible: bool,
     pub query: String,
     pub matches: Vec<SlashMatch>,
     pub selected_index: usize,
 }
+
+impl std::fmt::Debug for SlashPaletteState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SlashPaletteState")
+            .field("visible", &self.visible)
+            .field("query", &self.query)
+            .field("matches", &self.matches.len())
+            .field("selected_index", &self.selected_index)
+            .finish()
+    }
+}
+
+impl PartialEq for SlashPaletteState {
+    fn eq(&self, other: &Self) -> bool {
+        self.visible == other.visible
+            && self.query == other.query
+            && self.selected_index == other.selected_index
+    }
+}
+
+impl Eq for SlashPaletteState {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveMessage {
@@ -80,7 +81,6 @@ impl ApprovalSelection {
     }
 }
 
-#[derive(Debug)]
 pub struct AppState {
     pub banner_printed: bool,
     pub input: String,
