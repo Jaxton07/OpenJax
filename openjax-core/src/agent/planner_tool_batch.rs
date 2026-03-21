@@ -146,12 +146,17 @@ impl Agent {
                     tasks.push((call, handle));
                 }
 
-                for (call, handle) in tasks {
+                let mut pending = tasks.into_iter().peekable();
+                while let Some((call, handle)) = pending.next() {
                     match handle.await {
                         Ok(Ok(outcome)) => {
                             let ok = outcome.success;
                             let output = outcome.output;
-                            apply_patch_read_guard.on_tool_success(&call.tool_name);
+                            if ok {
+                                apply_patch_read_guard.on_tool_success(&call.tool_name);
+                            } else {
+                                apply_patch_read_guard.on_tool_failure(&call.tool_name, &output);
+                            }
                             if is_mutating_tool(&call.tool_name) {
                                 self.state_epoch = self.state_epoch.saturating_add(1);
                             }
@@ -225,6 +230,46 @@ impl Agent {
                                 }
                                 turn_engine.on_failed();
                                 aborted_by_approval = true;
+                                for (pending_call, pending_handle) in pending {
+                                    pending_handle.abort();
+                                    let canceled_output =
+                                        "tool execution canceled by approval decision".to_string();
+                                    apply_patch_read_guard
+                                        .on_tool_failure(&pending_call.tool_name, &canceled_output);
+                                    self.emit_tool_call_failed(
+                                        turn_id,
+                                        &pending_call.tool_call_id,
+                                        &pending_call.tool_name,
+                                        &canceled_output,
+                                        events,
+                                    );
+                                    self.emit_tool_call_completed(
+                                        turn_id,
+                                        &pending_call.tool_call_id,
+                                        &pending_call.tool_name,
+                                        false,
+                                        &canceled_output,
+                                        events,
+                                    );
+                                    self.record_tool_call(
+                                        &pending_call.tool_name,
+                                        &pending_call.args,
+                                        false,
+                                        &canceled_output,
+                                    );
+                                    tool_traces.push(format!(
+                                        "tool={}; ok=false; output={}",
+                                        pending_call.tool_name,
+                                        truncate_for_prompt(
+                                            &canceled_output,
+                                            self.skill_runtime_config.max_diff_chars_for_planner
+                                        )
+                                    ));
+                                    completed_ids.insert(pending_call.tool_call_id);
+                                    executed += 1;
+                                    failed += 1;
+                                }
+                                break;
                             } else if err_text_lower.contains("timed out") {
                                 self.push_event(
                                     events,
