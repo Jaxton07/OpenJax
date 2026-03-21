@@ -1,4 +1,4 @@
-use axum::{Extension, Json, extract::Path, extract::State};
+use axum::{extract::State, extract::Path, Json, Extension};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -18,8 +18,6 @@ pub struct SlashCommandDto {
     pub description: String,
     pub usage_hint: String,
     pub kind: String,
-    /// 仅对 builtin 类型有意义：true 表示执行结果应替换输入框内容
-    pub replaces_input: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,25 +37,28 @@ pub async fn list_slash_commands(
     State(_state): State<AppState>,
     Extension(_ctx): Extension<crate::middleware::RequestContext>,
 ) -> Result<Json<SlashCommandsResponse>, ApiError> {
-    use openjax_core::slash_commands::{SlashCommandKind, SlashCommandRegistry};
+    use openjax_core::slash_commands::SlashCommandRegistry;
 
     let commands = SlashCommandRegistry::all_commands();
     let dtos = commands
         .into_iter()
         .map(|cmd| {
-            let kind_str = match &cmd.kind {
-                SlashCommandKind::Builtin { .. } => "builtin",
-                SlashCommandKind::SessionAction { .. } => "session_action",
-                SlashCommandKind::Skill { .. } => "skill",
+            let aliases = match cmd.name {
+                "?" => vec!["help".to_string()],
+                "cls" => vec!["clear".to_string()],
+                _ => vec![],
             };
-            let replaces_input = cmd.kind.replaces_input();
+            let kind = match cmd.kind {
+                openjax_core::slash_commands::SlashCommandKind::Builtin { .. } => "builtin",
+                openjax_core::slash_commands::SlashCommandKind::SessionAction { .. } => "session_action",
+                openjax_core::slash_commands::SlashCommandKind::Skill { .. } => "skill",
+            };
             SlashCommandDto {
                 name: cmd.name.to_string(),
-                aliases: cmd.aliases.iter().map(|s| s.to_string()).collect(),
+                aliases,
                 description: cmd.description.to_string(),
-                usage_hint: cmd.usage_hint.to_string(),
-                kind: kind_str.to_string(),
-                replaces_input,
+                usage_hint: format!("/{} <args>", cmd.name),
+                kind: kind.to_string(),
             }
         })
         .collect::<Vec<_>>();
@@ -72,7 +73,7 @@ pub async fn exec_slash_command(
     Extension(ctx): Extension<crate::middleware::RequestContext>,
     Json(payload): Json<SlashExecRequest>,
 ) -> Result<Json<SlashExecResponse>, ApiError> {
-    use openjax_core::slash_commands::{SlashCommandRegistry, dispatch_slash_command};
+    use openjax_core::slash_commands::{dispatch_slash_command, SlashCommandRegistry};
 
     let result = dispatch_slash_command(&payload.command);
 

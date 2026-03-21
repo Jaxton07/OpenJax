@@ -14,9 +14,6 @@ pub fn default_skill_roots(skills_dir: &Path) -> Vec<(SkillSourceScope, PathBuf)
 }
 
 pub fn discover_registry(skills_dir: &Path) -> SkillRegistry {
-    // 清空上一轮注册的 skill slash 命令，防止重复调用时条目积累
-    crate::slash_commands::SlashCommandRegistry::clear_dynamic_commands();
-
     let roots = default_skill_roots(skills_dir);
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
@@ -111,8 +108,7 @@ pub fn discover_registry(skills_dir: &Path) -> SkillRegistry {
                     if let Err(e) = std::panic::catch_unwind(|| {
                         crate::slash_commands::register_skill_command(
                             Box::leak(normalized.into_boxed_str()) as &'static str,
-                            Box::leak(manifest.description.clone().into_boxed_str())
-                                as &'static str,
+                            Box::leak(manifest.description.clone().into_boxed_str()) as &'static str,
                         );
                     }) {
                         warn!(

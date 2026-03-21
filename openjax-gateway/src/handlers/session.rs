@@ -11,6 +11,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::error::{ApiError, now_rfc3339};
+use crate::event_mapper;
 use crate::handlers::stream::publish_event_for_session;
 use crate::middleware::RequestContext;
 use crate::state::{AppState, SessionStatus, TurnRuntime, TurnStatus, run_turn_task};
@@ -225,73 +226,6 @@ pub async fn submit_turn(
         }
     }
 
-    if input == "/compact" {
-        let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
-        handle_compact_action(&state, &session_runtime, &ctx.request_id, &session_id, &turn_id)
-            .await?;
-        return Ok(Json(SubmitTurnResponse {
-            request_id: ctx.request_id,
-            session_id,
-            turn_id,
-            timestamp: now_rfc3339(),
-        }));
-    }
-    if input == "/clear" {
-        clear_runtime(&state, &session_runtime).await;
-        let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
-        let mut session = session_runtime.lock().await;
-        session.turns.insert(
-            turn_id.clone(),
-            TurnRuntime {
-                status: TurnStatus::Completed,
-                assistant_message: Some("session cleared".to_string()),
-                error: None,
-            },
-        );
-        let started = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "turn_started",
-            json!({}),
-            None,
-        );
-        let message = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "response_started",
-            json!({ "stream_source": "synthetic" }),
-            Some("synthetic"),
-        );
-        let completed_response = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "response_completed",
-            json!({ "content": "session cleared", "stream_source": "synthetic" }),
-            Some("synthetic"),
-        );
-        let completed = session.create_gateway_event(
-            &ctx.request_id,
-            &session_id,
-            Some(turn_id.clone()),
-            "turn_completed",
-            json!({}),
-            None,
-        );
-        publish_event_for_session(&state, &mut session, started);
-        publish_event_for_session(&state, &mut session, message);
-        publish_event_for_session(&state, &mut session, completed_response);
-        publish_event_for_session(&state, &mut session, completed);
-        state.append_message(&session_id, Some(&turn_id), "assistant", "session cleared")?;
-        return Ok(Json(SubmitTurnResponse {
-            request_id: ctx.request_id,
-            session_id,
-            turn_id,
-            timestamp: now_rfc3339(),
-        }));
-    }
     let (turn_id_tx, turn_id_rx) = oneshot::channel();
     tokio::spawn(run_turn_task(
         state.clone(),
@@ -425,11 +359,10 @@ pub async fn session_action(
 ) -> Result<Json<SessionActionResponse>, ApiError> {
     let (session_id, action) = parse_session_action(&session_id)?;
     let normalized = normalize_session_action(action);
+    let session_runtime = state.get_session(session_id).await?;
     if normalized == "compact" {
-        let turn_id = format!("turn_cmd_{}", Uuid::new_v4().simple());
-        let session_runtime = state.get_session(session_id).await?;
-        handle_compact_action(&state, &session_runtime, &ctx.request_id, session_id, &turn_id)
-            .await?;
+        let turn_id = format!("turn_action_{}", Uuid::new_v4().simple());
+        handle_compact_action(&state, &session_runtime, &ctx.request_id, session_id, &turn_id).await?;
         return Ok(Json(SessionActionResponse {
             request_id: ctx.request_id,
             session_id: session_id.to_string(),
@@ -443,7 +376,6 @@ pub async fn session_action(
             json!({ "action": action }),
         ));
     }
-    let session_runtime = state.get_session(session_id).await?;
     clear_runtime(&state, &session_runtime).await;
     Ok(Json(SessionActionResponse {
         request_id: ctx.request_id,
@@ -490,24 +422,8 @@ pub async fn shutdown_session(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Compact / Clear helpers
 // ---------------------------------------------------------------------------
-
-pub fn normalize_session_action(action: &str) -> String {
-    action
-        .trim_start_matches('/')
-        .trim_start_matches(':')
-        .to_string()
-}
-
-pub fn parse_session_action(session_action: &str) -> Result<(&str, &str), ApiError> {
-    session_action.split_once(':').ok_or_else(|| {
-        ApiError::not_found(
-            "invalid session action route",
-            json!({ "session_action": session_action }),
-        )
-    })
-}
 
 pub(crate) async fn handle_compact_action(
     state: &AppState,
@@ -528,6 +444,7 @@ pub(crate) async fn handle_compact_action(
     }
 
     let mut session = session_runtime.lock().await;
+
     session.turns.insert(
         turn_id.to_string(),
         TurnRuntime {
@@ -547,8 +464,9 @@ pub(crate) async fn handle_compact_action(
     );
     publish_event_for_session(state, &mut session, started);
 
+    // Map and publish core events emitted by compact (e.g. ContextCompacted)
     for event in &events {
-        if let Some(mapping) = crate::event_mapper::map_core_event_payload(event) {
+        if let Some(mapping) = event_mapper::map_core_event_payload(event) {
             let gateway_event = session.create_gateway_event(
                 request_id,
                 session_id,
@@ -581,7 +499,28 @@ pub(crate) async fn handle_compact_action(
     publish_event_for_session(state, &mut session, completed);
 
     state.append_message(session_id, Some(turn_id), "assistant", "context compacted")?;
+
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+pub fn normalize_session_action(action: &str) -> String {
+    action
+        .trim_start_matches('/')
+        .trim_start_matches(':')
+        .to_string()
+}
+
+pub fn parse_session_action(session_action: &str) -> Result<(&str, &str), ApiError> {
+    session_action.split_once(':').ok_or_else(|| {
+        ApiError::not_found(
+            "invalid session action route",
+            json!({ "session_action": session_action }),
+        )
+    })
 }
 
 pub async fn clear_runtime(
