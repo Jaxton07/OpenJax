@@ -190,6 +190,7 @@ fn classify_macos_seatbelt_error(stderr: &str) -> String {
     format!("macos_seatbelt_runtime_error: {}", normalized)
 }
 
+#[cfg(target_os = "macos")]
 fn render_macos_profile(cwd: &std::path::Path, allow_network: bool) -> String {
     let cwd_literal = cwd.display().to_string().replace('\"', "\\\"");
     let mut profile = format!(

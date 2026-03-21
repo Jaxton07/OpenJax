@@ -205,6 +205,7 @@ pub(crate) fn wrap_command_for_shell(shell: &Shell, command: &str) -> String {
     }
 }
 
+#[cfg(any(test, target_os = "macos"))]
 pub(crate) fn wrap_command_for_runner(runner: &str, command: &str) -> String {
     if runner.ends_with("/sh") || runner == "sh" {
         // Avoid redirection to /dev/null under strict seatbelt profiles; plain sh may not
@@ -214,6 +215,7 @@ pub(crate) fn wrap_command_for_runner(runner: &str, command: &str) -> String {
     command.to_string()
 }
 
+#[cfg(any(test, target_os = "macos"))]
 pub(crate) fn summarize_preview(text: &str, limit: usize) -> String {
     let normalized = text.replace('\n', "\\n").replace('\r', "\\r");
     let total = normalized.chars().count();
