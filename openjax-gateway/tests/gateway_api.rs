@@ -268,7 +268,7 @@ async fn clear_command_submit_and_polling_flow() {
     assert_eq!(slash_response.status(), StatusCode::OK);
     let slash_body = response_json(slash_response).await;
     assert_eq!(slash_body["status"], "ok");
-    assert_eq!(slash_body["message"], "clearing context...");
+    assert_eq!(slash_body["message"], "session cleared");
     // No turn_id or polling needed - /slash does not create turn events
 }
 
