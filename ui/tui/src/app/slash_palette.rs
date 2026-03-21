@@ -1,5 +1,5 @@
 use crate::slash_commands::{all_commands, find_exact, match_commands};
-use crate::state::{SlashPaletteState, SlashCommandKind};
+use crate::state::{SlashCommandKind, SlashPaletteState};
 
 use super::App;
 
@@ -95,10 +95,6 @@ impl App {
                         self.state.input.clear();
                         self.state.input_cursor = 0;
                         self.dismiss_slash_palette();
-                    }
-                    "clear" => {
-                        // Clear wipes history/state and resets input
-                        self.clear();
                     }
                     _ => {
                         // Prompt templates (explain, review) replace input when flagged
