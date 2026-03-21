@@ -13,7 +13,7 @@
 .settings-row {
   border: 1px solid var(--settings-border);
   border-radius: 14px;
-  background: #ffffff;
+  background: var(--settings-row-bg);
   padding: 14px;
   display: grid;
   gap: 10px;
@@ -29,7 +29,7 @@
 .settings-row-meta span {
   font-size: 16px;
   font-weight: 540;
-  color: #1e2737;
+  color: var(--settings-row-strong-text);
 }
 
 .settings-row-meta p {
@@ -53,24 +53,24 @@
   border: 1px solid var(--settings-border);
   border-radius: 999px;
   padding: 8px 12px;
-  background: #fff;
-  color: #263144;
+  background: var(--settings-button-secondary-bg);
+  color: var(--settings-button-secondary-text);
   transition:
     background-color 0.14s ease,
     border-color 0.14s ease;
 }
 
 .output-mode-group button.active {
-  background: #eaf0fb;
-  border-color: #cad6ea;
-  color: #1d2940;
+  background: var(--settings-nav-active-bg);
+  border-color: var(--settings-nav-active-border);
+  color: var(--settings-nav-active-text);
 }
 
 .settings-action-bar {
   margin-top: auto;
   border: 1px solid var(--settings-border);
   border-radius: 14px;
-  background: #ffffff;
+  background: var(--settings-row-bg);
   padding: 12px;
   display: flex;
   justify-content: space-between;

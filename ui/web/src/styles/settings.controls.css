@@ -16,7 +16,7 @@
 
 .btn-primary {
   background: var(--settings-primary);
-  color: #ffffff;
+  color: var(--settings-primary-text);
   border-color: var(--settings-primary);
 }
 
@@ -26,33 +26,33 @@
 }
 
 .btn-secondary {
-  background: #ffffff;
-  color: #223047;
+  background: var(--settings-button-secondary-bg);
+  color: var(--settings-button-secondary-text);
   border-color: var(--settings-border);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #f4f6fb;
+  background: var(--settings-button-secondary-hover-bg);
 }
 
 .btn-ghost {
   background: transparent;
-  color: #2b3344;
+  color: var(--settings-button-ghost-text);
   border-color: var(--settings-border);
 }
 
 .btn-ghost:hover:not(:disabled) {
-  background: #f6f8fc;
+  background: var(--settings-button-ghost-hover-bg);
 }
 
 .btn-danger {
   background: var(--settings-danger-bg);
   color: var(--settings-danger);
-  border-color: #f0c8c4;
+  border-color: var(--settings-button-danger-border);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #fee4e2;
+  background: var(--settings-button-danger-hover-bg);
 }
 
 .btn-primary:disabled,
@@ -74,13 +74,13 @@
 }
 
 .settings-modal .status-info {
-  color: #3a4f77;
+  color: var(--settings-status-info);
 }
 
 .settings-modal .status-success {
-  color: #166534;
+  color: var(--settings-status-success);
 }
 
 .settings-modal .status-error {
-  color: #b5302a;
+  color: var(--settings-status-error);
 }

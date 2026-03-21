@@ -1,14 +1,61 @@
 :root {
-  --settings-bg: #fbfbfc;
-  --settings-card: #ffffff;
-  --settings-border: #e4e7ee;
-  --settings-text-main: #141821;
-  --settings-text-subtle: #667085;
+  --settings-bg: var(--bg-sub);
+  --settings-card: var(--bg);
+  --settings-border: var(--border);
+  --settings-text-main: var(--ink);
+  --settings-text-subtle: var(--ink-3);
   --settings-primary: #1c2433;
   --settings-primary-hover: #111827;
+  --settings-primary-text: #ffffff;
   --settings-danger: #cc3b32;
   --settings-danger-bg: #fff1f0;
   --settings-focus: rgba(77, 109, 176, 0.26);
+  --settings-shadow: 0 20px 56px rgba(12, 18, 30, 0.2);
+  --settings-backdrop: rgba(15, 15, 15, 0.35);
+
+  --settings-input-bg: var(--bg);
+  --settings-input-text: var(--ink);
+  --settings-sidebar-bg: linear-gradient(180deg, #f8f9fb 0%, #f4f6fa 100%);
+  --settings-nav-text: #2b3343;
+  --settings-nav-hover-bg: #edf1f8;
+  --settings-nav-active-bg: #e9eef8;
+  --settings-nav-active-border: #cfdae9;
+  --settings-nav-active-text: #1a2742;
+  --settings-row-bg: var(--bg);
+  --settings-row-strong-text: #1e2737;
+  --settings-bg-hover: var(--bg-hover);
+  --settings-accent: var(--accent);
+  --settings-success: var(--green);
+  --settings-text-primary: var(--ink-2);
+  --settings-text-secondary: var(--ink-3);
+  --settings-button-secondary-bg: var(--bg);
+  --settings-button-secondary-text: #223047;
+  --settings-button-secondary-hover-bg: #f4f6fb;
+  --settings-button-ghost-text: #2b3344;
+  --settings-button-ghost-hover-bg: #f6f8fc;
+  --settings-button-danger-border: #f0c8c4;
+  --settings-button-danger-hover-bg: #fee4e2;
+  --settings-status-info: #3a4f77;
+  --settings-status-success: #166534;
+  --settings-status-error: #b5302a;
+
+  --settings-provider-row-bg: var(--bg);
+  --settings-provider-card-hover: #f6f8fc;
+  --settings-provider-card-text-main: #11182a;
+  --settings-provider-card-text-subtle: #5f6877;
+  --settings-provider-action-bg: var(--bg);
+  --settings-provider-action-text: #3d4759;
+  --settings-provider-action-hover-bg: #f5f7fb;
+  --settings-provider-action-hover-border: #c8d2e3;
+  --settings-provider-action-danger-text: #d4504f;
+  --settings-provider-action-danger-border: #efc0c0;
+  --settings-provider-action-danger-hover-bg: #fff3f3;
+  --settings-provider-action-danger-hover-border: #e9a4a4;
+  --settings-provider-action-selected-border: #c7ead6;
+  --settings-provider-form-close-hover-bg: #f4f6fb;
+  --settings-provider-model-select-border: #d1d8e8;
+  --settings-provider-model-select-bg: #f4f6fb;
+  --settings-provider-model-select-text: #2b3a55;
 
   --provider-motion-ms: 580ms;
   --provider-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -22,4 +69,53 @@
   --provider-notice-success: #2da961;
   --provider-notice-error: #cc4e4d;
   --provider-notice-info: #617087;
+}
+
+[data-theme="dark"] {
+  --settings-primary: #e8e2da;
+  --settings-primary-hover: #c8c0b6;
+  --settings-primary-text: #141412;
+  --settings-danger: #f87171;
+  --settings-danger-bg: #2a1616;
+  --settings-focus: rgba(79, 134, 247, 0.3);
+  --settings-shadow: 0 20px 56px rgba(0, 0, 0, 0.45);
+  --settings-backdrop: rgba(6, 6, 6, 0.55);
+
+  --settings-input-bg: var(--bg-sub);
+  --settings-sidebar-bg: linear-gradient(180deg, #1d1b19 0%, #171614 100%);
+  --settings-nav-text: var(--ink-2);
+  --settings-nav-hover-bg: #24211f;
+  --settings-nav-active-bg: #2a2623;
+  --settings-nav-active-border: #3a3531;
+  --settings-nav-active-text: #f0e9df;
+  --settings-row-bg: var(--bg-sub);
+  --settings-row-strong-text: var(--ink-2);
+  --settings-button-secondary-bg: var(--bg-sub);
+  --settings-button-secondary-text: var(--ink-2);
+  --settings-button-secondary-hover-bg: #23201d;
+  --settings-button-ghost-text: var(--ink-2);
+  --settings-button-ghost-hover-bg: #23201d;
+  --settings-button-danger-border: #5b2a2a;
+  --settings-button-danger-hover-bg: #3a1d1d;
+  --settings-status-info: #8fb1ff;
+  --settings-status-success: #56d49a;
+  --settings-status-error: #ff8f8f;
+
+  --settings-provider-card-hover: #23201d;
+  --settings-provider-card-text-main: var(--ink-2);
+  --settings-provider-card-text-subtle: var(--ink-3);
+  --settings-provider-action-text: var(--ink-3);
+  --settings-provider-action-hover-bg: #23201d;
+  --settings-provider-action-hover-border: #3b3632;
+  --settings-provider-action-danger-text: #ff8f8f;
+  --settings-provider-action-danger-border: #5d2d2d;
+  --settings-provider-action-danger-hover-bg: #3a1d1d;
+  --settings-provider-action-danger-hover-border: #6b3a3a;
+  --settings-provider-action-selected-border: #2f5a45;
+  --settings-provider-form-close-hover-bg: #23201d;
+  --settings-provider-model-select-border: #3b3632;
+  --settings-provider-model-select-bg: #23201d;
+  --settings-provider-model-select-text: var(--ink-2);
+
+  --provider-selected-hover-bg: #1f2b24;
 }
