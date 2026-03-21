@@ -147,6 +147,7 @@ ui/web/
 - 处理方式：`useChatApp` 将 timeline 事件交给 `applySessionEvents` 统一归并重建会话。
 - 主排序键：`event_seq`（`timestamp` 仅兜底）。
 - 事件覆盖：`user_message`、`reasoning_delta`、tool/approval、`response_text_delta`、`response_completed` 等。
+- `assistant_message` 仅作为历史兼容输入保留，不应单独驱动 turn finalized。
 - 说明：`/messages` 仍保留用于兼容展示，但不再作为时间线恢复主入口。
 
 

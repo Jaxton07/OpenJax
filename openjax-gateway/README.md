@@ -193,6 +193,7 @@ zsh -lc "cargo run -p openjax-gateway"
 - `response_text_delta`
 - `response_resumed`
 - `response_completed`
+- `assistant_message`（legacy compatibility only，不应作为新链路的权威完成态）
 - `tool_call_started/tool_args_delta/tool_call_ready/tool_call_progress/tool_call_completed/tool_call_failed`
 - `approval_requested/approval_resolved`
 - `context_compacted`（上下文压缩事件，payload 含 `compressed_turns`、`retained_turns`、`summary_preview`）

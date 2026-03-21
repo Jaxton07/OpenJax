@@ -40,12 +40,11 @@ impl App {
                 self.state.live_messages.clear();
             }
             Event::AssistantMessage { turn_id, content } => {
+                // Legacy fallback only: seed stream text for older timelines.
+                // Authoritative commit should happen on TurnCompleted (prefer ResponseCompleted content).
                 self.state.stream_turn_id = Some(turn_id);
-                self.state.stream_text = content.clone();
-                if self.state.last_assistant_committed_turn != Some(turn_id) {
-                    let cell = self.assistant_cell(&content);
-                    self.queue_history_cell(cell);
-                    self.state.last_assistant_committed_turn = Some(turn_id);
+                if self.state.stream_text.is_empty() {
+                    self.state.stream_text = content;
                 }
                 self.state.live_messages.clear();
             }
@@ -292,11 +291,14 @@ mod tests {
             turn_id: 1,
             content: "hello".to_string(),
         });
-        assert_eq!(app.drain_history_cells().len(), 1);
+        assert!(
+            app.drain_history_cells().is_empty(),
+            "assistant_message should seed stream only before turn completion"
+        );
 
         app.apply_core_event(Event::TurnCompleted { turn_id: 1 });
         assert!(app.state.status_bar.is_none());
-        assert!(app.drain_history_cells().is_empty());
+        assert_eq!(app.drain_history_cells().len(), 1);
     }
 
     #[test]
@@ -325,12 +327,12 @@ mod tests {
     #[test]
     fn assistant_message_duplicate_turn_is_idempotent() {
         let mut app = App::default();
+        app.apply_core_event(Event::TurnStarted { turn_id: 7 });
 
         app.apply_core_event(Event::AssistantMessage {
             turn_id: 7,
             content: "hello".to_string(),
         });
-        assert_eq!(app.drain_history_cells().len(), 1);
 
         app.apply_core_event(Event::AssistantMessage {
             turn_id: 7,
@@ -338,7 +340,14 @@ mod tests {
         });
         assert!(
             app.drain_history_cells().is_empty(),
-            "duplicate assistant event for same turn should not enqueue a second history cell",
+            "assistant_message events should not enqueue history before turn completion",
+        );
+
+        app.apply_core_event(Event::TurnCompleted { turn_id: 7 });
+        assert_eq!(
+            app.drain_history_cells().len(),
+            1,
+            "duplicate assistant_message events for one turn should still commit once"
         );
     }
 

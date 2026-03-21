@@ -107,7 +107,7 @@ describe("session-events/reducer", () => {
       payload: { content: "hi there" }
     });
     expect(done.turnPhase).toBe("completed");
-    expect(done.messages.find((message) => message.turnId === "turn_2")?.content).toBe("hi");
+    expect(done.messages.find((message) => message.turnId === "turn_2")?.content).toBe("hi there");
   });
 
   it("applies batched events and keeps seq monotonic", () => {
@@ -161,7 +161,7 @@ describe("session-events/reducer", () => {
       }
     ]);
     expect(next.lastEventSeq).toBe(2);
-    expect(next.messages.find((message) => message.turnId === "turn_4")?.content).toBe("你");
+    expect(next.messages.find((message) => message.turnId === "turn_4")?.content).toBe("你好");
   });
 
   it("drops mapped legacy response_text_delta when canonical v2 delta already exists", () => {

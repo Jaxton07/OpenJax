@@ -146,7 +146,7 @@ export function useChatApp() {
       return;
     }
 
-    if (event.type === "response_completed" || event.type === "assistant_message") {
+    if (event.type === "response_completed") {
       const payloadContent = String(event.payload.content ?? "");
       streamRenderStore.complete(sessionId, event.turn_id, payloadContent, event.event_seq);
       const snapshot = streamRenderStore.getSnapshot(sessionId, event.turn_id);

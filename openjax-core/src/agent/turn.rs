@@ -1,4 +1,4 @@
-use openjax_protocol::{Event, Op, ThreadId};
+use openjax_protocol::{Event, Op, StreamSource, ThreadId};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::info;
 
@@ -62,13 +62,22 @@ impl Agent {
             } => {
                 // Check depth limit
                 if self.depth >= tools::MAX_AGENT_DEPTH {
-                    return vec![Event::AssistantMessage {
-                        turn_id: self.next_turn_id,
-                        content: format!(
-                            "Cannot spawn sub-agent: max depth {} reached",
-                            tools::MAX_AGENT_DEPTH
-                        ),
-                    }];
+                    let turn_id = self.next_turn_id;
+                    self.next_turn_id += 1;
+                    return vec![
+                        Event::ResponseStarted {
+                            turn_id,
+                            stream_source: StreamSource::Synthetic,
+                        },
+                        Event::ResponseCompleted {
+                            turn_id,
+                            content: format!(
+                                "Cannot spawn sub-agent: max depth {} reached",
+                                tools::MAX_AGENT_DEPTH
+                            ),
+                            stream_source: StreamSource::Synthetic,
+                        },
+                    ];
                 }
 
                 let new_thread_id = ThreadId::new();
@@ -84,27 +93,54 @@ impl Agent {
                 input: _,
             } => {
                 // 预留扩展：向指定代理发送消息
-                vec![Event::AssistantMessage {
-                    turn_id: self.next_turn_id,
-                    content: "SendToAgent not yet implemented".to_string(),
-                }]
+                let turn_id = self.next_turn_id;
+                self.next_turn_id += 1;
+                vec![
+                    Event::ResponseStarted {
+                        turn_id,
+                        stream_source: StreamSource::Synthetic,
+                    },
+                    Event::ResponseCompleted {
+                        turn_id,
+                        content: "SendToAgent not yet implemented".to_string(),
+                        stream_source: StreamSource::Synthetic,
+                    },
+                ]
             }
             Op::InterruptAgent { thread_id: _ } => {
                 // 预留扩展：中断指定代理
-                vec![Event::AssistantMessage {
-                    turn_id: self.next_turn_id,
-                    content: "InterruptAgent not yet implemented".to_string(),
-                }]
+                let turn_id = self.next_turn_id;
+                self.next_turn_id += 1;
+                vec![
+                    Event::ResponseStarted {
+                        turn_id,
+                        stream_source: StreamSource::Synthetic,
+                    },
+                    Event::ResponseCompleted {
+                        turn_id,
+                        content: "InterruptAgent not yet implemented".to_string(),
+                        stream_source: StreamSource::Synthetic,
+                    },
+                ]
             }
             Op::ResumeAgent {
                 rollout_path: _,
                 source: _,
             } => {
                 // 预留扩展：从持久化状态恢复代理
-                vec![Event::AssistantMessage {
-                    turn_id: self.next_turn_id,
-                    content: "ResumeAgent not yet implemented".to_string(),
-                }]
+                let turn_id = self.next_turn_id;
+                self.next_turn_id += 1;
+                vec![
+                    Event::ResponseStarted {
+                        turn_id,
+                        stream_source: StreamSource::Synthetic,
+                    },
+                    Event::ResponseCompleted {
+                        turn_id,
+                        content: "ResumeAgent not yet implemented".to_string(),
+                        stream_source: StreamSource::Synthetic,
+                    },
+                ]
             }
             Op::Shutdown => vec![Event::ShutdownComplete],
         }

@@ -322,6 +322,7 @@ export function finalizeAssistantMessageFallback(
   timestamp: string,
   event: StreamEvent
 ): void {
+  // Legacy compat: assistant_message can seed draft text, but it should not finalize the turn.
   const draftIdx = messages.findIndex(
     (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant" && message.isDraft
   );
@@ -369,7 +370,7 @@ export function finalizeAssistantMessageFallback(
     textLastEventSeq: event.event_seq,
     textEndEventSeq: event.event_seq,
     turnId,
-    isDraft: false
+    isDraft: true
   });
 }
 
@@ -394,6 +395,7 @@ export function sealAssistantMessage(
     }
     messages[draftIdx] = {
       ...messages[draftIdx],
+      content: content || messages[draftIdx].content,
       isDraft: false,
       timestamp,
       lastEventSeq: Math.max(messages[draftIdx].lastEventSeq ?? event.event_seq, event.event_seq),
@@ -410,6 +412,10 @@ export function sealAssistantMessage(
   if (existingIdx >= 0) {
     messages[existingIdx] = {
       ...messages[existingIdx],
+      content: content || messages[existingIdx].content,
+      isDraft: false,
+      timestamp,
+      lastEventSeq: Math.max(messages[existingIdx].lastEventSeq ?? event.event_seq, event.event_seq),
       textStartEventSeq: messages[existingIdx].textStartEventSeq ?? event.event_seq,
       textLastEventSeq: Math.max(messages[existingIdx].textLastEventSeq ?? event.event_seq, event.event_seq),
       textEndEventSeq: Math.max(messages[existingIdx].textEndEventSeq ?? event.event_seq, event.event_seq)

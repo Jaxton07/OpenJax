@@ -8,6 +8,7 @@ A minimal backend compatible with `ui/webui` protocol to isolate frontend stream
 - `POST /api/v1/sessions/{session_id}/turns`
 - `GET /api/v1/sessions/{session_id}/events` (SSE with replay via `after_event_seq`)
 - Event types: `response_started`, `response_text_delta`, `response_completed`, `assistant_message`, `turn_completed`, `response_error`
+- `assistant_message` is legacy compatibility only; authoritative finalization should follow `response_completed`.
 
 ## Run
 ```bash

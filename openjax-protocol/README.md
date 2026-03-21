@@ -21,7 +21,7 @@ openjax-protocol/
 | `ThreadId` | 线程/agent 唯一标识，使用原子计数器生成 |
 | `AgentSource` | agent 来源信息（`Root` 或 `SubAgent`） |
 | `Op` | 上行操作类型（`UserTurn`、`SpawnAgent`、`SendToAgent`、`InterruptAgent`、`ResumeAgent`、`Shutdown`） |
-| `Event` | 下行事件类型（turn 生命周期、工具调用、assistant 输出、审批事件、agent 状态） |
+| `Event` | 下行事件类型（turn 生命周期、工具调用、`ResponseCompleted` 为主链路，`AssistantMessage` 为 `deprecated` 兼容事件，审批事件、agent 状态） |
 | `AgentStatus` | agent 运行状态枚举（`Running`、`Completed`、`Errored` 等） |
 
 ## 协议类型说明
@@ -45,10 +45,16 @@ openjax-protocol/
 | `ToolCallStarted` / `ToolCallCompleted` | 工具调用开始/完成及执行结果 |
 | `ToolCallArgsDelta` / `ToolCallProgress` / `ToolCallFailed` | 工具参数增量、过程更新、失败语义 |
 | `ResponseStarted` / `ResponseTextDelta` / `ResponseCompleted` | v2 主链路流式文本事件（推荐） |
-| `AssistantMessage` | 最终回复提交事件 |
+| `AssistantMessage` | `deprecated` 兼容事件；A/B/C 迁移期保留，正文推荐使用 `ResponseCompleted` |
 | `ApprovalRequested` / `ApprovalResolved` | 审批请求与决策结果 |
 | `AgentSpawned` / `AgentStatusChanged` | 多 agent 预留事件 |
 | `ShutdownComplete` | 关闭完成事件 |
+
+### `AssistantMessage` 的废弃语义（A/B/C）
+
+- A：兼容桥接阶段，旧消费者仍可接收 `AssistantMessage`，但新生产者应优先发 `ResponseCompleted`。
+- B：兼容回退阶段，`AssistantMessage` 只作为 legacy fallback 保留。
+- C：移除目标阶段，`AssistantMessage` 不再作为推荐协议面向新实现。
 
 ## 使用示例
 

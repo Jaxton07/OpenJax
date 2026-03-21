@@ -28,6 +28,10 @@ This crate is now the only maintained Rust UI runtime under `ui/`.
 - [Inline Runtime Notes](docs/architecture/inline-runtime-notes.md)
 - [System Overview](docs/architecture/system-overview.md)
 
+## Event Finalization Contract
+- TUI 应以 `ResponseCompleted` 作为 assistant 最终文本的权威完成信号。
+- `AssistantMessage` 分支仅保留 legacy compatibility fallback，不应成为新链路主路径。
+
 ## File Tree
 ```text
 ui/tui                                   # crate root
