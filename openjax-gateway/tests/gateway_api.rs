@@ -268,8 +268,52 @@ async fn clear_command_submit_and_polling_flow() {
     assert_eq!(slash_response.status(), StatusCode::OK);
     let slash_body = response_json(slash_response).await;
     assert_eq!(slash_body["status"], "ok");
-    assert_eq!(slash_body["message"], "clearing context...");
+    assert_eq!(slash_body["message"], "session cleared");
     // No turn_id or polling needed - /slash does not create turn events
+}
+
+#[tokio::test]
+async fn slash_commands_endpoint_returns_aliases_and_replaces_input() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/v1/slash_commands")
+                .header("Authorization", auth_header(&access_token))
+                .body(Body::empty())
+                .expect("slash commands request"),
+        )
+        .await
+        .expect("slash commands response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await;
+
+    let commands = body["commands"].as_array().expect("commands array");
+    let help = commands
+        .iter()
+        .find(|item| item["name"] == "help")
+        .expect("help command present");
+    assert_eq!(help["usage_hint"], "/help");
+    assert_eq!(help["replaces_input"], false);
+    assert_eq!(
+        help["aliases"].as_array().expect("help aliases"),
+        &vec![Value::String("?".to_string())]
+    );
+
+    let clear = commands
+        .iter()
+        .find(|item| item["name"] == "clear")
+        .expect("clear command present");
+    assert_eq!(clear["usage_hint"], "/clear");
+    assert_eq!(clear["replaces_input"], false);
+    assert_eq!(
+        clear["aliases"].as_array().expect("clear aliases"),
+        &vec![Value::String("cls".to_string())]
+    );
 }
 
 #[tokio::test]

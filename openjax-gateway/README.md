@@ -68,7 +68,9 @@ openjax-gateway/
 - `POST /api/v1/sessions`
 - `POST /api/v1/sessions/:session_id/turns`
 - `GET /api/v1/sessions/:session_id/turns/:turn_id`
-- `POST /api/v1/sessions/:session_id`（当前用于 `:clear` / `:compact` action 语法）
+- `POST /api/v1/sessions/:session_id/slash`
+- `GET /api/v1/slash_commands`
+- `POST /api/v1/sessions/:session_id`（当前用于 `:compact` / `:clear` 的 `:action` 路径语法）
 - `DELETE /api/v1/sessions/:session_id`
 - `POST /api/v1/sessions/:session_id/approvals/*approval_action`
 - `GET /api/v1/sessions/:session_id/events`
@@ -92,10 +94,14 @@ openjax-gateway/
   curl -X POST .../sessions/:id/turns \
     -d '{"input": "/compact"}'
   ```
-- **方式二**：session action
+- **方式二**：session action 路径语法
   ```bash
-  curl -X POST .../sessions/:id \
-    -d '{"action": "compact"}'
+  curl -X POST .../sessions/:id:compact
+  ```
+- **方式三**：slash endpoint
+  ```bash
+  curl -X POST .../sessions/:id/slash \
+    -d '{"command": "compact"}'
   ```
 
 压缩完成后推送 `context_compacted` 事件，前端可展示摘要预览。
@@ -103,6 +109,16 @@ openjax-gateway/
 ### `/clear` 清空会话
 
 重置会话状态，清空历史记录。
+
+- **方式一**：session action 路径语法
+  ```bash
+  curl -X POST .../sessions/:id:clear
+  ```
+- **方式二**：slash endpoint
+  ```bash
+  curl -X POST .../sessions/:id/slash \
+    -d '{"command": "clear"}'
+  ```
 
 ## 关键实现映射
 

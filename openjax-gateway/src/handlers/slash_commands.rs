@@ -1,4 +1,4 @@
-use axum::{extract::State, extract::Path, Json, Extension};
+use axum::{Extension, Json, extract::Path, extract::State};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -18,6 +18,7 @@ pub struct SlashCommandDto {
     pub description: String,
     pub usage_hint: String,
     pub kind: String,
+    pub replaces_input: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,22 +44,25 @@ pub async fn list_slash_commands(
     let dtos = commands
         .into_iter()
         .map(|cmd| {
-            let aliases = match cmd.name {
-                "?" => vec!["help".to_string()],
-                "cls" => vec!["clear".to_string()],
-                _ => vec![],
-            };
-            let kind = match cmd.kind {
+            let replaces_input = cmd.kind.replaces_input();
+            let kind = match &cmd.kind {
                 openjax_core::slash_commands::SlashCommandKind::Builtin { .. } => "builtin",
-                openjax_core::slash_commands::SlashCommandKind::SessionAction { .. } => "session_action",
+                openjax_core::slash_commands::SlashCommandKind::SessionAction { .. } => {
+                    "session_action"
+                }
                 openjax_core::slash_commands::SlashCommandKind::Skill { .. } => "skill",
             };
             SlashCommandDto {
                 name: cmd.name.to_string(),
-                aliases,
+                aliases: cmd
+                    .aliases
+                    .iter()
+                    .map(|alias| (*alias).to_string())
+                    .collect(),
                 description: cmd.description.to_string(),
-                usage_hint: format!("/{} <args>", cmd.name),
+                usage_hint: cmd.usage_hint.to_string(),
                 kind: kind.to_string(),
+                replaces_input,
             }
         })
         .collect::<Vec<_>>();
@@ -73,7 +77,7 @@ pub async fn exec_slash_command(
     Extension(ctx): Extension<crate::middleware::RequestContext>,
     Json(payload): Json<SlashExecRequest>,
 ) -> Result<Json<SlashExecResponse>, ApiError> {
-    use openjax_core::slash_commands::{dispatch_slash_command, SlashCommandRegistry};
+    use openjax_core::slash_commands::{SlashCommandRegistry, dispatch_slash_command};
 
     let result = dispatch_slash_command(&payload.command);
 
