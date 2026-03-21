@@ -51,42 +51,100 @@ export default function Composer({ disabled, sessionId, onSend, onNewChat, onCom
   }, [input, filterCommands]);
 
   const submit = async () => {
-    // If a slash command session_action is selected, call the slash API
-    const slashMatch = input.match(/^\/(\w+)$/);
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    // 检测是否是斜杠命令（支持带尾随空格的输入，如从下拉选中后的 "/explain "）
+    const slashMatch = trimmed.match(/^\/([\w]+)$/);
     if (slashMatch) {
-      const cmdName = slashMatch[1];
-      const matched = slashMatches.find((c) => c.name === cmdName);
-      if (matched?.kind === "session_action") {
-        // Call /slash exec API then clear
-        try {
-          const baseUrl = (window as any).__GATEWAY_URL__ || import.meta.env.VITE_GATEWAY_URL;
-          await fetch(`${baseUrl}/api/v1/slash`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("openjax_token")}`,
-            },
-            body: JSON.stringify({ command: input }),
-          });
-        } catch {
-          // ignore exec errors
+      const cmdName = slashMatch[1].toLowerCase();
+      // 优先在完整命令列表中查找（不依赖 slashMatches 状态，后者可能因输入变化而过期）
+      const matched = commands.find(
+        (c) => c.name === cmdName || c.aliases.includes(cmdName)
+      );
+
+      if (matched) {
+        const baseUrl =
+          (window as any).__GATEWAY_URL__ || import.meta.env.VITE_GATEWAY_URL;
+        const token = localStorage.getItem("openjax_token");
+
+        if (matched.kind === "session_action") {
+          // clear / compact：调用 /slash API，需要 session_id
+          if (!sessionId) {
+            setInput("");
+            return;
+          }
+          try {
+            await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/slash`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ command: cmdName }),
+            });
+          } catch {
+            // 网络失败时静默忽略，避免 UI 卡住
+          }
+          setInput("");
+          const el = textareaRef.current;
+          if (el) el.style.height = "";
+          setShowSlashDropdown(false);
+          return;
         }
-        setInput("");
-        const el = textareaRef.current;
-        if (el) el.style.height = "";
-        return;
+
+        if (matched.kind === "builtin" && matched.replaces_input) {
+          // explain / review：调用 /slash 拿模板文本，填入输入框（不提交）
+          try {
+            const res = await fetch(
+              `${baseUrl}/api/v1/sessions/${sessionId}/slash`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ command: cmdName }),
+              }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              if (data.message) {
+                setInput(data.message);
+                // 光标移到末尾
+                requestAnimationFrame(() => {
+                  const el = textareaRef.current;
+                  if (el) {
+                    el.selectionStart = el.selectionEnd = el.value.length;
+                    el.focus();
+                  }
+                });
+              } else {
+                console.warn("[slash] builtin command response missing message field", data);
+              }
+            }
+          } catch {
+            // 忽略
+          }
+          setShowSlashDropdown(false);
+          return;
+        }
+
+        // builtin + replaces_input: false（如 help）和 skill 类型：
+        // 作为普通 turn 提交，agent 响应
       }
     }
 
-    const content = input.trim();
-    if (!content) {
-      return;
-    }
-    await onSend(content);
+    // 普通消息提交
+    const content = trimmed;
     setInput("");
     const el = textareaRef.current;
-    if (el) {
-      el.style.height = "";
+    if (el) el.style.height = "";
+    setShowSlashDropdown(false);
+    try {
+      await onSend(content);
+    } catch {
+      // 忽略
     }
   };
 

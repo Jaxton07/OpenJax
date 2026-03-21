@@ -234,6 +234,7 @@ export interface SlashCommandDto {
   description: string;
   usage_hint: string;
   kind: "builtin" | "session_action" | "skill";
+  replaces_input: boolean;
 }
 
 export interface SlashCommandsResponse {
