@@ -86,7 +86,9 @@ where
     // ││                            ││
     // │╰────────────────────────────╯│
     // └──────────────────────────────┘
-    queue!(writer, SetScrollRegion(1..area.top()))?;
+    // `DECSTBM` requires a valid 1-based range. When the viewport starts at row 0,
+    // clamp the end to 1 so we still emit a valid region instead of `1;0r`.
+    queue!(writer, SetScrollRegion(1..area.top().max(1)))?;
 
     // NB: we are using MoveTo instead of set_cursor_position here to avoid messing with the
     // terminal's last_known_cursor_position, which hopefully will still be accurate after we

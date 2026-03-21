@@ -1,3 +1,4 @@
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use ratatui::style::{Color, Modifier, Style};
@@ -11,14 +12,17 @@ pub(crate) enum PaletteHint {
 
 impl PaletteHint {
     pub(crate) fn detect() -> Self {
-        let hint = std::env::var("COLORTERM")
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if hint.contains("truecolor") || hint.contains("24bit") {
-            Self::TrueColor
-        } else {
-            Self::Fallback
-        }
+        static DETECTED: LazyLock<PaletteHint> = LazyLock::new(|| {
+            let hint = std::env::var("COLORTERM")
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if hint.contains("truecolor") || hint.contains("24bit") {
+                PaletteHint::TrueColor
+            } else {
+                PaletteHint::Fallback
+            }
+        });
+        *DETECTED
     }
 }
 

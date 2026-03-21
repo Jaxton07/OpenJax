@@ -42,9 +42,11 @@ impl App {
             Event::AssistantMessage { turn_id, content } => {
                 self.state.stream_turn_id = Some(turn_id);
                 self.state.stream_text = content.clone();
-                let cell = self.assistant_cell(&content);
-                self.queue_history_cell(cell);
-                self.state.last_assistant_committed_turn = Some(turn_id);
+                if self.state.last_assistant_committed_turn != Some(turn_id) {
+                    let cell = self.assistant_cell(&content);
+                    self.queue_history_cell(cell);
+                    self.state.last_assistant_committed_turn = Some(turn_id);
+                }
                 self.state.live_messages.clear();
             }
             Event::ToolCallStarted {
@@ -171,6 +173,24 @@ impl App {
                 approved,
                 ..
             } => {
+                if self
+                    .state
+                    .pending_approval
+                    .as_ref()
+                    .is_some_and(|pending| pending.request_id != request_id)
+                {
+                    info!(
+                        request_id = %request_id,
+                        pending_request_id = %self
+                            .state
+                            .pending_approval
+                            .as_ref()
+                            .map(|pending| pending.request_id.as_str())
+                            .unwrap_or(""),
+                        "ignoring stale ApprovalResolved for non-current request"
+                    );
+                    return;
+                }
                 self.state.pending_approval = None;
                 self.state.live_messages.clear();
                 let cell = self.system_cell(format!(
@@ -248,9 +268,12 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use openjax_protocol::{Event, StreamSource};
 
     use super::App;
+    use crate::state::{LiveMessage, PendingApproval};
 
     #[test]
     fn stream_commit_boundary_is_stable() {
@@ -297,5 +320,62 @@ mod tests {
         assert!(app.take_viewport_reset_requested());
         // Consumed; second call returns false.
         assert!(!app.take_viewport_reset_requested());
+    }
+
+    #[test]
+    fn assistant_message_duplicate_turn_is_idempotent() {
+        let mut app = App::default();
+
+        app.apply_core_event(Event::AssistantMessage {
+            turn_id: 7,
+            content: "hello".to_string(),
+        });
+        assert_eq!(app.drain_history_cells().len(), 1);
+
+        app.apply_core_event(Event::AssistantMessage {
+            turn_id: 7,
+            content: "hello".to_string(),
+        });
+        assert!(
+            app.drain_history_cells().is_empty(),
+            "duplicate assistant event for same turn should not enqueue a second history cell",
+        );
+    }
+
+    #[test]
+    fn stale_approval_resolved_does_not_clear_current_pending() {
+        let mut app = App::default();
+        app.state.pending_approval = Some(PendingApproval {
+            request_id: "req-current".to_string(),
+            target: "target".to_string(),
+            reason: "reason".to_string(),
+            tool_name: Some("shell".to_string()),
+            command_preview: Some("echo hi".to_string()),
+            risk_tags: vec!["write".to_string()],
+            sandbox_backend: Some("linux_native".to_string()),
+            degrade_reason: None,
+            requested_at: Instant::now(),
+            timeout_ms: 30_000,
+        });
+        app.state.live_messages = vec![LiveMessage {
+            role: "approval",
+            content: "pending (req-current)".to_string(),
+        }];
+
+        app.apply_core_event(Event::ApprovalResolved {
+            turn_id: 1,
+            request_id: "req-stale".to_string(),
+            approved: true,
+        });
+
+        assert_eq!(
+            app.state
+                .pending_approval
+                .as_ref()
+                .map(|pending| pending.request_id.as_str()),
+            Some("req-current"),
+        );
+        assert_eq!(app.state.live_messages.len(), 1);
+        assert!(app.drain_history_cells().is_empty());
     }
 }
