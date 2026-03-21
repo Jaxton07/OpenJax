@@ -28,6 +28,10 @@ This crate is now the only maintained Rust UI runtime under `ui/`.
 - [Inline Runtime Notes](docs/architecture/inline-runtime-notes.md)
 - [System Overview](docs/architecture/system-overview.md)
 
+## Event Finalization Contract
+- TUI 应以 `ResponseCompleted` 作为 assistant 最终文本的权威完成信号。
+- `AssistantMessage` 分支仅保留 legacy compatibility fallback，不应成为新链路主路径。
+
 ## File Tree
 ```text
 ui/tui                                   # crate root
@@ -79,7 +83,19 @@ ui/tui                                   # crate root
 │       └── mod.rs                       # state module re-exports
 └── tests                                # integration tests (m* quality gates)
     ├── m10_approval_panel_navigation.rs # approval panel navigation behavior
+    ├── m11_shell_target_visibility.rs   # shell tool target visibility
+    ├── m12_tool_partial_status.rs       # partial tool status rendering
+    ├── m13_input_navigation.rs           # input cursor/history navigation
+    ├── m14_shell_approval_panel_copy.rs # approval panel copy contract
+    ├── m15_approval_dedup.rs             # approval request dedup and resolve behavior
+    ├── m16_shell_multiline_target.rs     # multiline shell target sanitization
+    ├── m17_degraded_mutating_warning.rs  # degraded mutating risk warning
+    ├── m18_status_bar_replaces_live_status.rs # status bar replaces transient live status
+    ├── m19_status_bar_clears_on_turn_complete.rs # status bar clears on turn completion
     ├── m1_no_duplicate_history.rs       # no duplicate committed history cells
+    ├── m20_submit_sets_status_running.rs # submit starts running status
+    ├── m21_slash_palette_behavior.rs    # slash palette interactions and key mappings
+    ├── m22_bottom_layout_stability.rs   # bottom layout remains stable with transient UI
     ├── m2_cursor_restore_integrity.rs   # history cell identity/cursor-safe assertions
     ├── m3_stream_commit_boundary.rs     # stream-to-commit boundary behavior
     ├── m4_resize_viewport_consistency.rs# viewport/height lower-bound consistency

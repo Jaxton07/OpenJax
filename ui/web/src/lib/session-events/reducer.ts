@@ -121,6 +121,7 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   if (event.type === "assistant_message" && turnId) {
+    // Legacy compat only: assistant_message seeds draft text but does not finalize the turn.
     finalizeAssistantMessageFallback(next.messages, turnId, String(event.payload.content ?? ""), event.timestamp, event);
   }
 

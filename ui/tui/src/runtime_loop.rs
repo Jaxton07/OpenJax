@@ -9,6 +9,7 @@ use tracing::info;
 
 use crate::app::{App, SubmitAction};
 use crate::approval::TuiApprovalHandler;
+use crate::state::ApprovalSelection;
 use crate::tui::{DrawRequest, Tui};
 
 // Two-phase approval pattern:
@@ -194,9 +195,19 @@ pub(crate) async fn handle_submit_action(
             request_id,
             approved,
         } => {
-            let _ = approval_handler.resolve(&request_id, approved).await;
-            if app.state.pending_approval.is_some() {
+            let pending = app.state.pending_approval.clone();
+            let approval_selection = app.state.approval_selection;
+            let resolved = approval_handler.resolve(&request_id, approved).await;
+            if resolved {
                 app.state.pending_approval = None;
+                app.state.approval_selection = ApprovalSelection::Approve;
+                app.state.live_messages.clear();
+            } else {
+                if app.state.pending_approval.is_none() {
+                    app.state.pending_approval = pending;
+                    app.state.approval_selection = approval_selection;
+                }
+                app.set_live_status("Approval resolve failed; request remains pending");
             }
         }
         SubmitAction::CompactSession => {
@@ -216,9 +227,16 @@ pub(crate) async fn handle_submit_action(
 
 #[cfg(test)]
 mod tests {
-    use tokio::sync::mpsc;
+    use std::sync::Arc;
+    use std::time::Instant;
 
-    use crate::app::App;
+    use super::handle_submit_action;
+    use crate::app::{App, SubmitAction};
+    use crate::approval::TuiApprovalHandler;
+    use crate::state::{ApprovalSelection, PendingApproval};
+    use openjax_core::{Agent, Config};
+    use tokio::sync::Mutex;
+    use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn drain_core_events_consumes_receiver_queue() {
@@ -231,5 +249,59 @@ mod tests {
         super::drain_core_events(&mut app, &mut opt_rx);
 
         assert_eq!(app.state.active_turn_id, Some(5));
+    }
+
+    #[tokio::test]
+    async fn m10_approval_panel_navigation_resolve_failure_keeps_pending() {
+        let mut app = App::default();
+        app.state.pending_approval = Some(PendingApproval {
+            request_id: "req-1".to_string(),
+            target: "修改文件 test.txt".to_string(),
+            reason: "需要写入文件".to_string(),
+            tool_name: Some("shell".to_string()),
+            command_preview: Some("echo hi > test.txt".to_string()),
+            risk_tags: vec!["write".to_string()],
+            sandbox_backend: Some("linux_native".to_string()),
+            degrade_reason: None,
+            requested_at: Instant::now(),
+            timeout_ms: 300_000,
+        });
+        app.state.approval_selection = ApprovalSelection::Deny;
+
+        let agent = Arc::new(Mutex::new(Agent::with_config(Config::default())));
+        let approval_handler = Arc::new(TuiApprovalHandler::new());
+        let mut turn_task = None;
+        let mut core_event_rx = None;
+
+        handle_submit_action(
+            &mut app,
+            SubmitAction::ApprovalDecision {
+                request_id: "req-1".to_string(),
+                approved: true,
+            },
+            agent,
+            approval_handler,
+            &mut turn_task,
+            &mut core_event_rx,
+        )
+        .await;
+
+        let pending = app
+            .state
+            .pending_approval
+            .as_ref()
+            .expect("approval should remain pending after resolve failure");
+        assert_eq!(pending.request_id, "req-1");
+        assert_eq!(app.state.approval_selection, ApprovalSelection::Deny);
+        let status = app
+            .state
+            .live_messages
+            .first()
+            .expect("failure should surface a live status");
+        assert_eq!(status.role, "status");
+        assert!(
+            status.content.contains("failed"),
+            "failure should not look like a successful approval submit",
+        );
     }
 }

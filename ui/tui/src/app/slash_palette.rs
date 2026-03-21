@@ -138,7 +138,14 @@ impl App {
         if !trimmed.starts_with('/') {
             return None;
         }
-        if trimmed.split_whitespace().count() > 1 {
+        let command_token_len = trimmed.split_whitespace().next().map_or(0, str::len);
+        if command_token_len == 0 {
+            return None;
+        }
+        if trimmed[command_token_len..]
+            .chars()
+            .any(char::is_whitespace)
+        {
             return None;
         }
         if cursor < leading_ws {
@@ -195,5 +202,15 @@ mod tests {
         assert!(action);
         assert_eq!(app.state.input, "");
         assert_eq!(app.state.input_cursor, 0);
+    }
+
+    #[test]
+    fn palette_closes_after_command_followed_by_space() {
+        let mut app = App::default();
+        app.append_input("/clear ");
+        assert!(
+            !app.is_slash_palette_active(),
+            "palette should close after command token is completed and followed by whitespace",
+        );
     }
 }

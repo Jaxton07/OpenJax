@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use openjax_protocol::Event as CoreEvent;
 use tui_next::app::App;
 use tui_next::history_cell::CellRole;
@@ -65,6 +65,42 @@ fn tab_and_escape_map_to_slash_actions() {
 }
 
 #[test]
+fn char_input_only_appends_without_modifiers_or_with_shift() {
+    let plain = map_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('a'),
+        KeyModifiers::empty(),
+    )));
+    let shifted = map_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('A'),
+        KeyModifiers::SHIFT,
+    )));
+    let ctrl = map_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    )));
+
+    assert_eq!(plain, InputAction::Append("a".to_string()));
+    assert_eq!(shifted, InputAction::Append("A".to_string()));
+    assert_eq!(ctrl, InputAction::None);
+}
+
+#[test]
+fn release_events_are_ignored_and_ctrl_c_still_quits() {
+    let release = map_event(Event::Key(KeyEvent::new_with_kind(
+        KeyCode::Char('a'),
+        KeyModifiers::empty(),
+        KeyEventKind::Release,
+    )));
+    let ctrl_c = map_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    )));
+
+    assert_eq!(release, InputAction::None);
+    assert_eq!(ctrl_c, InputAction::Quit);
+}
+
+#[test]
 fn first_completion_does_not_execute_local_command() {
     let mut app = App::default();
     app.append_input("hello");
@@ -112,4 +148,24 @@ fn help_requires_second_enter_to_execute_builtin_action() {
     let action = app.submit_input();
     assert!(action.is_none());
     assert_eq!(app.state.input, "");
+}
+
+#[test]
+fn trailing_space_after_exact_command_allows_single_enter_submit() {
+    let mut app = App::default();
+    app.append_input("hello");
+    let _ = app.submit_input();
+    app.append_input("/clear ");
+
+    assert!(!app.is_slash_palette_active());
+    let action = app.submit_input();
+
+    assert!(action.is_none());
+    assert_eq!(app.state.input, "");
+    assert!(
+        app.state
+            .history_cells
+            .iter()
+            .any(|cell| matches!(cell.role, CellRole::Banner))
+    );
 }

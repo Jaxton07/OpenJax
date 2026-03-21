@@ -1,5 +1,6 @@
 use openjax_protocol::Event;
-use tui_next::app::App;
+use tui_next::app::{App, SubmitAction};
+use tui_next::state::ApprovalSelection;
 
 #[test]
 fn approval_panel_supports_up_down_and_submit() {
@@ -24,9 +25,27 @@ fn approval_panel_supports_up_down_and_submit() {
     assert!(lines.iter().any(|l| l.to_string().contains("› Deny")));
 
     let action = app.submit_input();
-    assert!(action.is_some());
+    assert!(matches!(
+        action,
+        Some(SubmitAction::ApprovalDecision {
+            request_id,
+            approved: false
+        }) if request_id == "req-1"
+    ));
+    let pending = app
+        .state
+        .pending_approval
+        .as_ref()
+        .expect("approval should remain pending until resolve completes");
+    assert_eq!(pending.request_id, "req-1");
+    assert_eq!(app.state.approval_selection, ApprovalSelection::Deny);
+    let live_message = app
+        .state
+        .live_messages
+        .first()
+        .expect("approval live message should remain visible");
     assert!(
-        app.state.live_messages.is_empty(),
-        "approval submit should clear transient approval live message",
+        live_message.content.contains("pending (req-1)"),
+        "approval submit should not clear the pending live message early",
     );
 }
