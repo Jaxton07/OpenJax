@@ -38,7 +38,11 @@ pub async fn list_slash_commands(
     State(_state): State<AppState>,
     Extension(_ctx): Extension<crate::middleware::RequestContext>,
 ) -> Result<Json<SlashCommandsResponse>, ApiError> {
+    use openjax_core::skills::SkillRegistry;
     use openjax_core::slash_commands::SlashCommandRegistry;
+
+    // Ensure dynamic skill commands are refreshed before listing.
+    let _ = SkillRegistry::load_from_default_locations();
 
     let commands = SlashCommandRegistry::all_commands();
     let dtos = commands

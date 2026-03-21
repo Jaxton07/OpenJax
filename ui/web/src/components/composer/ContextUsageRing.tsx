@@ -33,16 +33,11 @@ export default function ContextUsageRing({ contextUsage }: ContextUsageRingProps
   const tokenLabel = hasUsage
     ? `${formatCount(contextUsage.inputTokens)} / ${formatCount(contextUsage.contextWindowSize)} tokens`
     : "暂无上下文数据";
-  const title = hasUsage ? `上下文使用 ${percentLabel} · ${tokenLabel}` : "上下文用量暂无数据";
+  const tooltipText = hasUsage ? `上下文使用 ${percentLabel} · ${tokenLabel}` : "上下文用量暂无数据";
   const strokeRatio = hasUsage ? ratio : 0;
 
   return (
-    <div
-      className={`context-usage-ring${hasUsage ? "" : " is-empty"}`}
-      aria-label={title}
-      title={title}
-      role="img"
-    >
+    <div className={`context-usage-ring${hasUsage ? "" : " is-empty"}`} aria-label={tooltipText} role="img">
       <svg viewBox="0 0 36 36" aria-hidden="true" focusable="false">
         <circle className="context-usage-ring-track" cx="18" cy="18" r="14" pathLength="100" />
         <circle
@@ -55,6 +50,9 @@ export default function ContextUsageRing({ contextUsage }: ContextUsageRingProps
           strokeDasharray={`${strokeRatio * 100} ${100 - strokeRatio * 100}`}
         />
       </svg>
+      <div className="context-usage-tooltip" role="tooltip">
+        {tooltipText}
+      </div>
     </div>
   );
 }

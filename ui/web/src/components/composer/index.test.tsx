@@ -82,7 +82,7 @@ describe("Composer slash commands", () => {
       />
     );
 
-    expect(screen.getByTitle("上下文使用 62.5% · 5,000 / 8,000 tokens")).toBeInTheDocument();
+    expect(screen.getByText("上下文使用 62.5% · 5,000 / 8,000 tokens")).toBeInTheDocument();
   });
 
   it("stores context usage updates in session state", () => {
