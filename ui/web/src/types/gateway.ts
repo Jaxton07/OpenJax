@@ -120,6 +120,7 @@ export interface TurnStatusResponse {
   session_id: string;
   turn_id: string;
   status: "queued" | "running" | "completed" | "failed";
+  /** @deprecated Legacy compat only. Prefer response_completed events. */
   assistant_message?: string;
   error?: GatewayErrorBody;
   timestamp: string;
@@ -209,7 +210,7 @@ export interface StreamEvent {
   type:
     | "user_message"
     | "turn_started"
-    | "assistant_message"
+    | AssistantMessageCompatType
     | "response_started"
     | "reasoning_delta"
     | "response_text_delta"
@@ -228,6 +229,9 @@ export interface StreamEvent {
     | "error";
   payload: Record<string, unknown>;
 }
+
+/** @deprecated Legacy compat only. Prefer response_completed events. */
+export type AssistantMessageCompatType = "assistant_message";
 
 export interface SlashCommandDto {
   name: string;

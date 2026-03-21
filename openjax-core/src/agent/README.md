@@ -57,7 +57,7 @@
 4. `ToolCallArgsDelta` / `ToolCallProgress`（工具流式增量）
 5. `ApprovalRequested` / `ApprovalResolved`（按策略触发）
 6. `ToolCallCompleted` 或 `ToolCallFailed`
-7. `AssistantMessage` / `ResponseCompleted`
+7. `ResponseCompleted`（`AssistantMessage` 仅兼容旧链路）
 8. `TurnCompleted`
 
 `submit_with_sink` 会在返回 `Vec<Event>` 的同时，将同样的事件流实时推送到外部 sink。

@@ -126,6 +126,12 @@ pub enum Event {
         #[serde(default)]
         display_name: Option<String>,
     },
+    /// Deprecated compatibility-only assistant message event.
+    ///
+    /// A: legacy bridge stage, where producers may still emit this alongside
+    /// `ResponseCompleted` for older consumers.
+    /// B: legacy fallback stage, where new logic should treat it as optional.
+    /// C: removal target for the compatibility surface.
     AssistantMessage {
         turn_id: u64,
         content: String,

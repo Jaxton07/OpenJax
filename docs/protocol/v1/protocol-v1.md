@@ -158,7 +158,7 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 7. `response_started`
 8. `response_text_delta`
 9. `response_completed`
-10. `assistant_message`
+10. `assistant_message`（deprecated compatibility only）
 11. `approval_requested`
 12. `approval_resolved`
 13. `turn_completed`
@@ -167,6 +167,10 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 
 说明：
 1. `assistant_delta` 已移除，客户端应仅使用 `response_*` 事件作为流式正文来源。
+2. `assistant_message` 已标记为 `deprecated`，仅作为兼容旧消费者的事件保留。
+3. A 阶段：保留兼容桥接，允许旧实现继续读写 `assistant_message`。
+4. B 阶段：新实现默认只以 `response_*` 作为正文主链路，`assistant_message` 仅在 legacy fallback 中出现。
+5. C 阶段：移除 `assistant_message` 的推荐生产路径，仅保留文档与旧数据兼容说明。
 
 事件字段原则：
 1. `event_type` 固定字符串枚举。
@@ -188,7 +192,7 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
 | `ResponseStarted` | `response_started` |
 | `ResponseTextDelta` | `response_text_delta` |
 | `ResponseCompleted` | `response_completed` |
-| `AssistantMessage` | `assistant_message` |
+| `AssistantMessage` | `assistant_message`（deprecated compatibility only） |
 | `ApprovalRequested` | `approval_requested` |
 | `ApprovalResolved` | `approval_resolved` |
 | `TurnCompleted` | `turn_completed` |
@@ -261,7 +265,7 @@ v1 固定使用：`stdio + JSONL`（每行一个完整 JSON 对象）。
    - `response_started`
    - `response_text_delta`（可多次）
    - `response_completed`
-   - `assistant_message`
+   - `assistant_message`（deprecated compatibility only，非权威完成态）
    - `turn_completed`
 5. `shutdown_session` -> `session_shutdown_complete`
 

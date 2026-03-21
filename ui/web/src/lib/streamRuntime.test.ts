@@ -91,7 +91,7 @@ describe("streamRuntime", () => {
   });
 
   it("accepts only designated text stream event types", () => {
-    expect(isTextStreamEvent(event({ type: "assistant_message", event_seq: 0 }))).toBe(true);
+    expect(isTextStreamEvent(event({ type: "assistant_message", event_seq: 0 }))).toBe(false);
     expect(isTextStreamEvent(event({ type: "response_started", event_seq: 1 }))).toBe(true);
     expect(isTextStreamEvent(event({ type: "response_text_delta", event_seq: 2 }))).toBe(true);
     expect(isTextStreamEvent(event({ type: "response_completed", event_seq: 3 }))).toBe(true);
@@ -99,7 +99,7 @@ describe("streamRuntime", () => {
     expect(isTextStreamEvent(event({ type: "tool_call_started", event_seq: 5 }))).toBe(false);
   });
 
-  it("treats assistant_message as completion when streaming exists", () => {
+  it("ignores assistant_message for completion semantics", () => {
     let session = baseSession();
     session = applyTextStreamEvent(
       session,
@@ -115,9 +115,9 @@ describe("streamRuntime", () => {
     );
 
     const assistant = session.messages.find((message) => message.turnId === "turn_1");
-    expect(session.turnPhase).toBe("completed");
-    expect(session.streaming?.active).toBe(false);
-    expect(assistant?.isDraft).toBe(false);
-    expect(assistant?.content).toBe("你好！有什么我可以帮你的吗？");
+    expect(session.turnPhase).toBe("streaming");
+    expect(session.streaming?.active).toBe(true);
+    expect(assistant?.isDraft).toBe(true);
+    expect(assistant?.content).toBe("你有什");
   });
 });

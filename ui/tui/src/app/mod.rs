@@ -159,9 +159,6 @@ impl App {
             match selected {
                 Some(ApprovalSelection::Approve) | Some(ApprovalSelection::Deny) => {
                     let approved = matches!(selected, Some(ApprovalSelection::Approve));
-                    self.state.pending_approval = None;
-                    self.state.approval_selection = ApprovalSelection::Approve;
-                    self.state.live_messages.clear();
                     return Some(SubmitAction::ApprovalDecision {
                         request_id: pending.request_id,
                         approved,

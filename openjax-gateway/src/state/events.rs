@@ -431,7 +431,13 @@ fn apply_turn_runtime_event(turn: &mut TurnRuntime, event_type: &str, payload: &
         });
         return;
     }
-    if (event_type == "response_completed" || event_type == "assistant_message")
+    if event_type == "assistant_message" {
+        // Intentional decommission rule:
+        // assistant_message-only history is no longer authoritative and does not
+        // populate turn.assistant_message in runtime replay.
+        return;
+    }
+    if event_type == "response_completed"
         && let Some(content) = payload.get("content").and_then(|value| value.as_str())
     {
         turn.assistant_message = Some(content.to_string());
@@ -711,6 +717,49 @@ mod tests {
             &mut turn_id_tx,
         );
         let turn = session.turns.get("turn_1").expect("turn exists");
+        assert_eq!(turn.assistant_message.as_deref(), Some("final"));
+    }
+
+    #[test]
+    fn response_completed_overrides_later_assistant_message() {
+        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
+        let mut session = SessionRuntime::default();
+        let mut turn_id_tx = None;
+
+        let _ = map_core_event(
+            &app_state,
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::TurnStarted { turn_id: 1 },
+            &mut turn_id_tx,
+        );
+        let _ = map_core_event(
+            &app_state,
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::ResponseCompleted {
+                turn_id: 1,
+                content: "final".to_string(),
+                stream_source: openjax_protocol::StreamSource::Synthetic,
+            },
+            &mut turn_id_tx,
+        );
+        let _ = map_core_event(
+            &app_state,
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::AssistantMessage {
+                turn_id: 1,
+                content: "legacy".to_string(),
+            },
+            &mut turn_id_tx,
+        );
+
+        let turn = session.turns.get("turn_1").expect("turn exists");
+        assert_eq!(turn.status, TurnStatus::Completed);
         assert_eq!(turn.assistant_message.as_deref(), Some("final"));
     }
 

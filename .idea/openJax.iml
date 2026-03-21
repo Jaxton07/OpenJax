@@ -12,6 +12,19 @@
       <sourceFolder url="file://$MODULE_DIR$/openjaxd/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/ui/tui/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/ui/tui/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/openjax-protocol/tests" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/.claude/worktrees" />
+      <excludeFolder url="file://$MODULE_DIR$/.openjax" />
+      <excludeFolder url="file://$MODULE_DIR$/.pnpm-store" />
+      <excludeFolder url="file://$MODULE_DIR$/.sisyphus" />
+      <excludeFolder url="file://$MODULE_DIR$/.superpowers" />
+      <excludeFolder url="file://$MODULE_DIR$/.trae" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/dist" />
+      <excludeFolder url="file://$MODULE_DIR$/docs/superpowers" />
+      <excludeFolder url="file://$MODULE_DIR$/openjaxd/.openjax" />
+      <excludeFolder url="file://$MODULE_DIR$/python/backend/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/smoke_test/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

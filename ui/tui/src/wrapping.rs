@@ -75,3 +75,41 @@ fn take_fit_prefix(text: &str, remaining_width: usize) -> (&str, usize) {
     }
     (&text[..end], end)
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::style::{Color, Style};
+    use ratatui::text::{Line, Span};
+    use unicode_width::UnicodeWidthStr;
+
+    use super::word_wrap_lines_borrowed;
+
+    #[test]
+    fn cjk_wrap_respects_width_limit() {
+        let line = Line::from("你好世界");
+        let wrapped = word_wrap_lines_borrowed([&line], 3usize);
+        assert!(
+            wrapped.len() >= 2,
+            "expected wrapping at narrow width for CJK text",
+        );
+        for row in wrapped {
+            assert!(
+                UnicodeWidthStr::width(row.to_string().as_str()) <= 3,
+                "wrapped row exceeds target width",
+            );
+        }
+    }
+
+    #[test]
+    fn cjk_wrap_preserves_span_style() {
+        let style = Style::default().fg(Color::Green);
+        let line = Line::from(vec![Span::styled("你好世界", style)]);
+        let wrapped = word_wrap_lines_borrowed([&line], 3usize);
+        assert!(wrapped.len() >= 2);
+        assert!(
+            wrapped
+                .iter()
+                .all(|row| row.spans.iter().all(|span| span.style == style))
+        );
+    }
+}

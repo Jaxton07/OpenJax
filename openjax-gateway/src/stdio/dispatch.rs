@@ -475,7 +475,7 @@ async fn handle_line(
                     }
 
                     if streaming_enabled.load(Ordering::Relaxed)
-                        && let Some(envelope) = map_event(&session_id_for_events, event)
+                        && let Some(envelope) = map_live_event(&session_id_for_events, event)
                     {
                         let _ = send_event(writer_for_events.clone(), envelope).await;
                     }
@@ -1019,6 +1019,14 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
     }
 }
 
+fn map_live_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
+    let envelope = map_event(session_id, event)?;
+    if envelope.event_type == "assistant_message" {
+        return None;
+    }
+    Some(envelope)
+}
+
 async fn send_ok(
     writer: Arc<Mutex<io::Stdout>>,
     request_id: String,
@@ -1148,7 +1156,7 @@ async fn cleanup_sessions(sessions: Arc<Mutex<HashMap<String, SessionState>>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{summarize_turn_events, summarize_user_input};
+    use super::{map_event, map_live_event, summarize_turn_events, summarize_user_input};
     use openjax_protocol::Event;
 
     #[test]
@@ -1217,5 +1225,31 @@ mod tests {
         assert_eq!(messages, 1);
         assert_eq!(tools, 2);
         assert_eq!(approvals, 2);
+    }
+
+    #[test]
+    fn normal_turn_stream_has_no_assistant_message_event() {
+        let assistant_message = Event::AssistantMessage {
+            turn_id: 7,
+            content: "final".to_string(),
+        };
+
+        let live_event = map_live_event("sess_1", assistant_message.clone());
+        assert!(live_event.is_none());
+
+        let compat_event = map_event("sess_1", assistant_message)
+            .expect("shared compatibility mapping still exists");
+        assert_eq!(compat_event.event_type, "assistant_message");
+
+        let response_completed = map_live_event(
+            "sess_1",
+            Event::ResponseCompleted {
+                turn_id: 7,
+                content: "final".to_string(),
+                stream_source: openjax_protocol::StreamSource::Synthetic,
+            },
+        )
+        .expect("response_completed still streams");
+        assert_eq!(response_completed.event_type, "response_completed");
     }
 }
