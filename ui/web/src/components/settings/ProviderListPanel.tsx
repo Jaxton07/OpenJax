@@ -7,8 +7,6 @@ interface ProviderListPanelProps {
   loading: boolean;
   selectedProviderId: string | null;
   catalog: CatalogProvider[];
-  noticeMessage?: string;
-  noticeTone?: "success" | "error" | "info";
   onRefresh: () => Promise<void>;
   onAddProvider: () => void;
   onSelect: (provider: LlmProvider) => void;
@@ -61,13 +59,6 @@ export default function ProviderListPanel(props: ProviderListPanelProps) {
       <div className="provider-list-header">
         <div className="provider-list-title">
           <h3>Provider List</h3>
-        </div>
-        <div className="provider-list-notice-slot" aria-live="polite">
-          {props.noticeMessage ? (
-            <div className={`provider-inline-notice provider-inline-notice-${props.noticeTone ?? "info"}`}>
-              {props.noticeMessage}
-            </div>
-          ) : null}
         </div>
         <div className="provider-list-actions">
           <button type="button" className="btn-secondary" onClick={props.onAddProvider}>

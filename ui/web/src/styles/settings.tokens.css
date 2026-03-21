@@ -56,6 +56,13 @@
   --settings-provider-model-select-border: #d1d8e8;
   --settings-provider-model-select-bg: #f4f6fb;
   --settings-provider-model-select-text: #2b3a55;
+  --settings-toast-bg: #ffffff;
+  --settings-toast-text: #1e293b;
+  --settings-toast-shadow: 0 16px 38px rgba(15, 23, 42, 0.22);
+  --settings-toast-track-bg: rgba(30, 41, 59, 0.1);
+  --settings-toast-success: #2da961;
+  --settings-toast-error: #cc4e4d;
+  --settings-toast-info: #617087;
 
   --provider-motion-ms: 580ms;
   --provider-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -116,6 +123,13 @@
   --settings-provider-model-select-border: #3b3632;
   --settings-provider-model-select-bg: #23201d;
   --settings-provider-model-select-text: var(--ink-2);
+  --settings-toast-bg: #181614;
+  --settings-toast-text: #ece7e1;
+  --settings-toast-shadow: 0 18px 40px rgba(0, 0, 0, 0.56);
+  --settings-toast-track-bg: rgba(236, 231, 225, 0.12);
+  --settings-toast-success: #56d49a;
+  --settings-toast-error: #ff8f8f;
+  --settings-toast-info: #9aa7ba;
 
   --provider-selected-hover-bg: #1f2b24;
 }
