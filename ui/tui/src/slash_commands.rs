@@ -1,6 +1,5 @@
 use openjax_core::slash_commands::{
-    SlashCommandRegistry, SlashMatch,
-    SlashCommand as CoreSlashCommand,
+    SlashCommand as CoreSlashCommand, SlashCommandRegistry, SlashMatch,
 };
 
 pub fn all_commands() -> Vec<CoreSlashCommand> {

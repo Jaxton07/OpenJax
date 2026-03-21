@@ -54,11 +54,14 @@ async fn test_split_for_compression_skips_short_history() {
 
         assert!(
             matches!(events.last(), Some(Event::TurnCompleted { .. })),
-            "turn {} should complete", i
+            "turn {} should complete",
+            i
         );
 
         // No ContextCompacted event should be emitted for <= 4 turns
-        let has_compacted = events.iter().any(|e| matches!(e, Event::ContextCompacted { .. }));
+        let has_compacted = events
+            .iter()
+            .any(|e| matches!(e, Event::ContextCompacted { .. }));
         assert!(
             !has_compacted,
             "turn {} should NOT trigger compression (4 or fewer turns)",
@@ -74,7 +77,9 @@ async fn test_split_for_compression_skips_short_history() {
         .await;
 
     // Still no auto-compaction should happen (context_window_size defaults to 0)
-    let has_compacted = events.iter().any(|e| matches!(e, Event::ContextCompacted { .. }));
+    let has_compacted = events
+        .iter()
+        .any(|e| matches!(e, Event::ContextCompacted { .. }));
     assert!(
         !has_compacted,
         "with context_window_size=0 (default), auto-compact should not trigger"
@@ -130,7 +135,12 @@ async fn test_compact_produces_summary_plus_recent() {
             compressed_turns,
             retained_turns,
             summary_preview,
-        } => Some((turn_id, compressed_turns, retained_turns, summary_preview.as_str())),
+        } => Some((
+            turn_id,
+            compressed_turns,
+            retained_turns,
+            summary_preview.as_str(),
+        )),
         _ => None,
     });
 
@@ -204,7 +214,9 @@ async fn test_context_window_zero_skips_auto_compact() {
 
         // No ContextCompacted event should be emitted
         // because context_window_size is 0 (default)
-        let has_compacted = events.iter().any(|e| matches!(e, Event::ContextCompacted { .. }));
+        let has_compacted = events
+            .iter()
+            .any(|e| matches!(e, Event::ContextCompacted { .. }));
         assert!(
             !has_compacted,
             "with context_window_size=0, auto-compact should not trigger even with many turns"
@@ -217,7 +229,9 @@ async fn test_context_window_zero_skips_auto_compact() {
     agent.compact(&mut events).await;
 
     // Manual compact should still work
-    let has_compacted = events.iter().any(|e| matches!(e, Event::ContextCompacted { .. }));
+    let has_compacted = events
+        .iter()
+        .any(|e| matches!(e, Event::ContextCompacted { .. }));
     assert!(
         has_compacted,
         "manual compact() should still work regardless of context_window_size"

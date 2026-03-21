@@ -407,7 +407,9 @@ impl ModelClient for ChatCompletionsClient {
             ],
             temperature: 0.2,
             stream: Some(true),
-            stream_options: Some(StreamOptions { include_usage: true }),
+            stream_options: Some(StreamOptions {
+                include_usage: true,
+            }),
         };
 
         let resp = self

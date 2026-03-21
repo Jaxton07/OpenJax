@@ -1,7 +1,7 @@
 use tracing::warn;
 
-use crate::model::{ModelClient, ModelRequest, ModelStage};
 use crate::HistoryItem;
+use crate::model::{ModelClient, ModelRequest, ModelStage};
 
 /// 将 history 分割为「待摘要」和「保留」两部分。
 /// 保留最后 3 个 Turn（含其间的 Summary）。
@@ -117,26 +117,44 @@ mod tests {
 
     #[test]
     fn test_no_split_with_four_or_fewer_turns() {
-        let h: Vec<HistoryItem> = (0..4).map(|i| turn(&format!("u{i}"), &format!("a{i}"))).collect();
+        let h: Vec<HistoryItem> = (0..4)
+            .map(|i| turn(&format!("u{i}"), &format!("a{i}")))
+            .collect();
         assert!(split_for_compression(&h).is_none());
     }
 
     #[test]
     fn test_split_with_five_turns_keeps_3_recent() {
-        let h: Vec<HistoryItem> = (0..5).map(|i| turn(&format!("u{i}"), &format!("a{i}"))).collect();
+        let h: Vec<HistoryItem> = (0..5)
+            .map(|i| turn(&format!("u{i}"), &format!("a{i}")))
+            .collect();
         let (old, recent) = split_for_compression(&h).unwrap();
-        let old_turns = old.iter().filter(|x| matches!(x, HistoryItem::Turn(_))).count();
-        let recent_turns = recent.iter().filter(|x| matches!(x, HistoryItem::Turn(_))).count();
+        let old_turns = old
+            .iter()
+            .filter(|x| matches!(x, HistoryItem::Turn(_)))
+            .count();
+        let recent_turns = recent
+            .iter()
+            .filter(|x| matches!(x, HistoryItem::Turn(_)))
+            .count();
         assert_eq!(old_turns, 2);
         assert_eq!(recent_turns, 3);
     }
 
     #[test]
     fn test_split_with_seven_turns() {
-        let h: Vec<HistoryItem> = (0..7).map(|i| turn(&format!("u{i}"), &format!("a{i}"))).collect();
+        let h: Vec<HistoryItem> = (0..7)
+            .map(|i| turn(&format!("u{i}"), &format!("a{i}")))
+            .collect();
         let (old, recent) = split_for_compression(&h).unwrap();
-        let old_turns = old.iter().filter(|x| matches!(x, HistoryItem::Turn(_))).count();
-        let recent_turns = recent.iter().filter(|x| matches!(x, HistoryItem::Turn(_))).count();
+        let old_turns = old
+            .iter()
+            .filter(|x| matches!(x, HistoryItem::Turn(_)))
+            .count();
+        let recent_turns = recent
+            .iter()
+            .filter(|x| matches!(x, HistoryItem::Turn(_)))
+            .count();
         assert_eq!(old_turns, 4);
         assert_eq!(recent_turns, 3);
     }
@@ -144,12 +162,17 @@ mod tests {
     #[test]
     fn test_existing_summary_stays_in_old_by_position() {
         // Summary 在边界之前 → 进入 old 部分
-        let mut h: Vec<HistoryItem> = (0..5).map(|i| turn(&format!("u{i}"), &format!("a{i}"))).collect();
+        let mut h: Vec<HistoryItem> = (0..5)
+            .map(|i| turn(&format!("u{i}"), &format!("a{i}")))
+            .collect();
         h.insert(0, summary("old summary"));
         let (old, recent) = split_for_compression(&h).unwrap();
         // old 包含 summary + 2 turns, recent 包含 3 turns
         assert!(old.iter().any(|x| matches!(x, HistoryItem::Summary(_))));
-        let recent_turns = recent.iter().filter(|x| matches!(x, HistoryItem::Turn(_))).count();
+        let recent_turns = recent
+            .iter()
+            .filter(|x| matches!(x, HistoryItem::Turn(_)))
+            .count();
         assert_eq!(recent_turns, 3);
     }
 

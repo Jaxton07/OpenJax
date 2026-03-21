@@ -362,7 +362,14 @@ pub async fn session_action(
     let session_runtime = state.get_session(session_id).await?;
     if normalized == "compact" {
         let turn_id = format!("turn_action_{}", Uuid::new_v4().simple());
-        handle_compact_action(&state, &session_runtime, &ctx.request_id, session_id, &turn_id).await?;
+        handle_compact_action(
+            &state,
+            &session_runtime,
+            &ctx.request_id,
+            session_id,
+            &turn_id,
+        )
+        .await?;
         return Ok(Json(SessionActionResponse {
             request_id: ctx.request_id,
             session_id: session_id.to_string(),
