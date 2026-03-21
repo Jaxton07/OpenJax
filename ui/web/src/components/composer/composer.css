@@ -50,11 +50,11 @@
 .composer {
   border: 0.8px solid var(--border);
   border-radius: 22px;
-  background: var(--bg-sub);
+  background: #fff;
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 18px 18px;
+  padding: 10px 18px 26px;
   max-width: var(--composer-max-width);
   margin: 0 auto;
   position: relative;
@@ -78,10 +78,10 @@
   min-height: 56px;
   max-height: 180px;
   background: transparent;
-  padding-top: 6px;
-  padding-bottom: 6px;
+  padding-top: 0px;
+  padding-bottom: 11px;
   padding-right: 64px;
-  padding-left: 4px;
+  padding-left: 38px;
   font-size: 15px;
   font-weight: 400;
   line-height: 1.5;
@@ -117,6 +117,45 @@
 .composer-send-btn svg {
   width: 34px;
   height: 34px;
+}
+
+.context-usage-ring {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(15, 23, 42, 0.82);
+  pointer-events: auto;
+}
+
+.context-usage-ring.is-empty {
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.context-usage-ring svg {
+  width: 28px;
+  height: 28px;
+  overflow: visible;
+}
+
+.context-usage-ring-track,
+.context-usage-ring-progress {
+  fill: none;
+  stroke-width: 3.25;
+}
+
+.context-usage-ring-track {
+  stroke: currentColor;
+  opacity: 0.14;
+}
+
+.context-usage-ring-progress {
+  stroke: currentColor;
+  stroke-linecap: round;
 }
 
 .slash-dropdown {

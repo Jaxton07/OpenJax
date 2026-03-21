@@ -4,6 +4,7 @@ import ComposerActions from "./ComposerActions";
 import ComposerInput from "./ComposerInput";
 import SlashDropdown from "./SlashDropdown";
 import { useSlashCommands } from "../../hooks/useSlashCommands";
+import type { ContextUsageState } from "../../types/chat";
 import type { SlashCommandDto } from "../../types/gateway";
 
 interface ComposerProps {
@@ -13,7 +14,7 @@ interface ComposerProps {
   sessionId?: string | null;
   onSend: (content: string) => Promise<void> | void;
   onNewChat: () => void;
-  onCompact: () => void;
+  contextUsage?: ContextUsageState | null;
 }
 
 export default function Composer({
@@ -23,7 +24,7 @@ export default function Composer({
   sessionId,
   onSend,
   onNewChat,
-  onCompact,
+  contextUsage,
 }: ComposerProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -136,7 +137,7 @@ export default function Composer({
 
   return (
     <div className="composer-wrap">
-      <ComposerActions onNewChat={onNewChat} onCompact={onCompact} />
+      <ComposerActions onNewChat={onNewChat} />
       <SlashDropdown
         visible={showSlashDropdown}
         commands={slashMatches}
@@ -149,6 +150,7 @@ export default function Composer({
         textareaRef={textareaRef}
         onChange={setInput}
         onSubmit={() => void submit()}
+        contextUsage={contextUsage}
         showSlashDropdown={showSlashDropdown}
         slashSelectedIndex={effectiveSlashIndex}
         onSlashIndexChange={(i) => setSlashSelectedIndex(i)}

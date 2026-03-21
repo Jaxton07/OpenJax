@@ -627,6 +627,7 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::TurnCompleted { turn_id } => return Some(*turn_id),
             Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
+            | Event::ContextUsageUpdated { .. }
             | Event::ContextCompacted { .. }
             | Event::ShutdownComplete => {}
         }

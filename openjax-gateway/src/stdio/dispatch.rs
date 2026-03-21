@@ -726,6 +726,7 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
             | Event::TurnCompleted { turn_id } => return Some(*turn_id),
             Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
+            | Event::ContextUsageUpdated { .. }
             | Event::ContextCompacted { .. }
             | Event::LoopWarning { .. }
             | Event::ShutdownComplete => {}
@@ -757,6 +758,7 @@ fn turn_id_from_event(event: &Event) -> Option<u64> {
         | Event::TurnCompleted { turn_id } => Some(*turn_id),
         Event::AgentSpawned { .. }
         | Event::AgentStatusChanged { .. }
+        | Event::ContextUsageUpdated { .. }
         | Event::ContextCompacted { .. }
         | Event::LoopWarning { .. }
         | Event::ShutdownComplete => None,
@@ -1010,6 +1012,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             payload: json!({}),
         }),
         Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => None,
+        Event::ContextUsageUpdated { .. } => None,
         // TODO: emit proper SSE envelope for ContextCompacted (gateway HTTP path handled in event_mapper)
         Event::ContextCompacted { .. } => None,
         Event::LoopWarning { .. } => None,
@@ -1116,6 +1119,7 @@ fn summarize_turn_events(events: &[Event]) -> (usize, usize, usize, usize) {
             | Event::ToolBatchCompleted { .. }
             | Event::AgentSpawned { .. }
             | Event::AgentStatusChanged { .. }
+            | Event::ContextUsageUpdated { .. }
             | Event::ContextCompacted { .. }
             | Event::LoopWarning { .. }
             | Event::ShutdownComplete => {}

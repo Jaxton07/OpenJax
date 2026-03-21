@@ -222,6 +222,7 @@ export interface StreamEvent {
     | "tool_call_completed"
     | "approval_requested"
     | "approval_resolved"
+    | "context_usage_updated"
     | "turn_completed"
     | "session_shutdown"
     | "error";
