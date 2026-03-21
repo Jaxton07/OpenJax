@@ -7,6 +7,16 @@ import ProviderListPanel from "./settings/ProviderListPanel";
 import SettingsSidebar from "./settings/SettingsSidebar";
 
 const PROVIDER_FORM_EXIT_MS = 580;
+const PROVIDER_TOAST_DURATION_MS = 2200;
+
+type ProviderToastTone = "success" | "error" | "info";
+
+interface ProviderToastState {
+  id: number;
+  message: string;
+  tone: ProviderToastTone;
+  durationMs: number;
+}
 
 interface SettingsModalProps {
   open: boolean;
@@ -36,8 +46,7 @@ export default function SettingsModal(props: SettingsModalProps) {
   const [testingGeneral, setTestingGeneral] = useState(false);
   const [savingGeneral, setSavingGeneral] = useState(false);
 
-  const [providerError, setProviderError] = useState<string>("");
-  const [providerSuccess, setProviderSuccess] = useState<string>("");
+  const [providerToast, setProviderToast] = useState<ProviderToastState | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
   const [providers, setProviders] = useState<LlmProvider[]>([]);
@@ -73,8 +82,7 @@ export default function SettingsModal(props: SettingsModalProps) {
       setGeneralStatus(IDLE_GENERAL_STATUS);
       setTestingGeneral(false);
       setSavingGeneral(false);
-      setProviderError("");
-      setProviderSuccess("");
+      setProviderToast(null);
       setSelectedProviderId(props.initialSettings.selectedProviderId);
       setActiveProviderId(props.initialSettings.selectedProviderId);
       setProviderPanelMode("none");
@@ -82,6 +90,30 @@ export default function SettingsModal(props: SettingsModalProps) {
     }
     wasOpenRef.current = props.open;
   }, [props.initialSettings, props.open]);
+
+  const showProviderToast = (
+    message: string,
+    tone: ProviderToastTone = "info",
+    durationMs: number = PROVIDER_TOAST_DURATION_MS
+  ) => {
+    setProviderToast({
+      id: Date.now(),
+      message,
+      tone,
+      durationMs
+    });
+  };
+
+  useEffect(() => {
+    if (!providerToast) {
+      return;
+    }
+    const { id, durationMs } = providerToast;
+    const timer = window.setTimeout(() => {
+      setProviderToast((current) => (current?.id === id ? null : current));
+    }, durationMs);
+    return () => window.clearTimeout(timer);
+  }, [providerToast]);
 
   const syncSelectedProviderSettings = (provider: LlmProvider | null, persist: boolean) => {
     const nextDraft: AppSettings = {
@@ -102,7 +134,7 @@ export default function SettingsModal(props: SettingsModalProps) {
 
   const refreshProviders = async () => {
     setLoadingProviders(true);
-    setProviderError("");
+    setProviderToast(null);
     try {
       const [items, activeProvider, catalogData] = await Promise.all([
         props.onListProviders(),
@@ -123,7 +155,7 @@ export default function SettingsModal(props: SettingsModalProps) {
         syncSelectedProviderSettings(activeProvider, false);
       }
     } catch (error) {
-      setProviderError((error as Error).message);
+      showProviderToast((error as Error).message, "error");
     } finally {
       setLoadingProviders(false);
     }
@@ -135,14 +167,6 @@ export default function SettingsModal(props: SettingsModalProps) {
     }
     void refreshProviders();
   }, [activeTab, props.open]);
-
-  useEffect(() => {
-    if (!providerSuccess) {
-      return;
-    }
-    const timer = window.setTimeout(() => setProviderSuccess(""), 2200);
-    return () => window.clearTimeout(timer);
-  }, [providerSuccess]);
 
   useEffect(() => {
     if (!closingProviderPanel) {
@@ -226,15 +250,14 @@ export default function SettingsModal(props: SettingsModalProps) {
 
   const createProvider = async (value: ProviderFormValue) => {
     setSavingProvider(true);
-    setProviderError("");
-    setProviderSuccess("");
+    setProviderToast(null);
     try {
       const created = await props.onCreateProvider(value);
       setProviders((prev) => [created, ...prev]);
       setSelectedProviderId(created.provider_id);
       setProviderPanelMode("edit");
     } catch (error) {
-      setProviderError((error as Error).message);
+      showProviderToast((error as Error).message, "error");
     } finally {
       setSavingProvider(false);
     }
@@ -245,8 +268,7 @@ export default function SettingsModal(props: SettingsModalProps) {
       return;
     }
     setSavingProvider(true);
-    setProviderError("");
-    setProviderSuccess("");
+    setProviderToast(null);
     try {
       const updated = await props.onUpdateProvider(selectedProvider.provider_id, value);
       setProviders((prev) =>
@@ -257,7 +279,7 @@ export default function SettingsModal(props: SettingsModalProps) {
         syncSelectedProviderSettings(updated, true);
       }
     } catch (error) {
-      setProviderError((error as Error).message);
+      showProviderToast((error as Error).message, "error");
     } finally {
       setSavingProvider(false);
     }
@@ -269,8 +291,7 @@ export default function SettingsModal(props: SettingsModalProps) {
       return;
     }
     setSavingProvider(true);
-    setProviderError("");
-    setProviderSuccess("");
+    setProviderToast(null);
     try {
       await props.onDeleteProvider(provider.provider_id);
       setProviders((prev) => prev.filter((item) => item.provider_id !== provider.provider_id));
@@ -283,17 +304,16 @@ export default function SettingsModal(props: SettingsModalProps) {
         setClosingProviderPanel(true);
       }
     } catch (error) {
-      setProviderError((error as Error).message);
+      showProviderToast((error as Error).message, "error");
     } finally {
       setSavingProvider(false);
     }
   };
 
   const activateProvider = async (provider: LlmProvider) => {
-    setProviderError("");
-    setProviderSuccess("");
+    setProviderToast(null);
     if (activeProviderId === provider.provider_id) {
-      setProviderSuccess("当前 Provider 已在使用中，新会话将继续使用该配置。");
+      showProviderToast("当前 Provider 已在使用中，新会话将继续使用该配置。", "info");
       return;
     }
     setSelectedProviderId(provider.provider_id);
@@ -304,9 +324,9 @@ export default function SettingsModal(props: SettingsModalProps) {
         prev.map((item) => (item.provider_id === active.provider_id ? active : item))
       );
       syncSelectedProviderSettings(active, true);
-      setProviderSuccess("已切换 Provider，将在新会话中生效。");
+      showProviderToast("已切换 Provider，将在新会话中生效。", "success");
     } catch (error) {
-      setProviderError((error as Error).message);
+      showProviderToast((error as Error).message, "error");
     }
   };
 
@@ -332,15 +352,15 @@ export default function SettingsModal(props: SettingsModalProps) {
       if (activeProviderId === updated.provider_id) {
         syncSelectedProviderSettings(updated, true);
       }
+      showProviderToast(`已切换模型为 ${modelId}，将在新会话中生效。`, "success");
     } catch (error) {
-      setProviderError((error as Error).message);
+      showProviderToast((error as Error).message, "error");
     }
   };
 
   const handleConfigureCatalogEntry = (entry: CatalogProvider) => {
     openProviderPanel("create");
-    setProviderError("");
-    setProviderSuccess("");
+    setProviderToast(null);
     setPendingCatalogEntry(entry);
   };
 
@@ -363,13 +383,6 @@ export default function SettingsModal(props: SettingsModalProps) {
     setPendingCatalogEntry(null);
   };
 
-  const providerNoticeMessage = providerError || providerSuccess;
-  const providerNoticeTone: "error" | "success" | "info" = providerError
-    ? "error"
-    : providerSuccess
-      ? "success"
-      : "info";
-
   if (!props.open) {
     return null;
   }
@@ -386,6 +399,22 @@ export default function SettingsModal(props: SettingsModalProps) {
             关闭
           </button>
         </header>
+        {providerToast && activeTab === "provider" ? (
+          <div
+            className={`provider-floating-toast provider-floating-toast-${providerToast.tone}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="provider-floating-toast__message">{providerToast.message}</span>
+            <div className="provider-floating-toast__progress-track">
+              <div
+                key={providerToast.id}
+                className="provider-floating-toast__progress-bar"
+                style={{ animationDuration: `${providerToast.durationMs}ms` }}
+              />
+            </div>
+          </div>
+        ) : null}
 
         <div className="settings-modal-body">
           <SettingsSidebar activeTab={activeTab} onChangeTab={setActiveTab} />
@@ -412,21 +441,17 @@ export default function SettingsModal(props: SettingsModalProps) {
                   loading={loadingProviders}
                   selectedProviderId={activeProviderId}
                   catalog={catalog}
-                  noticeMessage={providerNoticeMessage}
-                  noticeTone={providerNoticeTone}
                   onRefresh={refreshProviders}
                   onAddProvider={() => {
                     openProviderPanel("create");
-                    setProviderError("");
-                    setProviderSuccess("");
+                    setProviderToast(null);
                     setPendingCatalogEntry(null);
                   }}
                   onSelect={(provider) => void activateProvider(provider)}
                   onEdit={(provider) => {
                     setSelectedProviderId(provider.provider_id);
                     openProviderPanel("edit");
-                    setProviderError("");
-                    setProviderSuccess("");
+                    setProviderToast(null);
                   }}
                   onDelete={removeProvider}
                   onSwitchModel={handleSwitchModel}

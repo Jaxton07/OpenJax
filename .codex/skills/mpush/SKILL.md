@@ -62,7 +62,7 @@ git diff --staged
 ```
 <emoji> <type>: <模块>相关修改 - <简短描述>
 
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+Co-Authored-By: Codex <noreply@openai.com>
 ```
 
 示例：

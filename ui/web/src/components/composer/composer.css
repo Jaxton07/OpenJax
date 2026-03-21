@@ -50,11 +50,11 @@
 .composer {
   border: 0.8px solid var(--border);
   border-radius: 22px;
-  background: var(--bg-sub);
+  background: #fff;
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 18px 18px;
+  padding: 10px 18px 26px;
   max-width: var(--composer-max-width);
   margin: 0 auto;
   position: relative;
@@ -64,6 +64,10 @@
     border-color 0.16s ease,
     box-shadow 0.16s ease,
     transform 0.16s ease;
+}
+
+[data-theme="dark"] .composer {
+  background: var(--bg-sub);
 }
 
 .composer:focus-within {
@@ -78,10 +82,10 @@
   min-height: 56px;
   max-height: 180px;
   background: transparent;
-  padding-top: 6px;
-  padding-bottom: 6px;
+  padding-top: 0px;
+  padding-bottom: 11px;
   padding-right: 64px;
-  padding-left: 4px;
+  padding-left: 6px;
   font-size: 15px;
   font-weight: 400;
   line-height: 1.5;
@@ -119,24 +123,97 @@
   height: 34px;
 }
 
+.context-usage-ring {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(15, 23, 42, 0.82);
+  pointer-events: auto;
+}
+
+.context-usage-ring.is-empty {
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.context-usage-ring svg {
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+}
+
+.context-usage-ring-track,
+.context-usage-ring-progress {
+  fill: none;
+  stroke-width: 3.25;
+}
+
+.context-usage-ring-track {
+  stroke: currentColor;
+  opacity: 0.14;
+}
+
+.context-usage-ring-progress {
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+
+.context-usage-tooltip {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  max-width: min(420px, 72vw);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.16);
+  border: 1px solid var(--border);
+  z-index: 30;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 90ms ease, transform 90ms ease;
+  pointer-events: none;
+}
+
+[data-theme="dark"] .context-usage-tooltip {
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.26);
+  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.24);
+}
+
+.context-usage-ring:hover .context-usage-tooltip,
+.context-usage-ring:focus-within .context-usage-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .slash-dropdown {
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--bg-surface);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   max-height: 240px;
   overflow-y: auto;
   z-index: 100;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
 }
 .slash-dropdown-item {
   padding: 8px 12px;
   cursor: pointer;
   display: flex;
-  gap: 12px;
+  gap: 0.5em;
   align-items: center;
 }
 .slash-dropdown-item.selected,
@@ -144,11 +221,18 @@
   background: var(--bg-hover);
 }
 .slash-dropdown-name {
+  flex: 0 0 auto;
   font-weight: 500;
   color: var(--text-primary);
   font-family: monospace;
+  white-space: nowrap;
 }
 .slash-dropdown-desc {
-  color: var(--text-secondary);
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-4);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

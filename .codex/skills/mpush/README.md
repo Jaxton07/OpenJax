@@ -35,7 +35,7 @@ mpush 会自动执行以下步骤：
 ```
 <emoji> <type>: <模块>相关修改 - <简短描述>
 
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+Co-Authored-By: Codex <noreply@openai.com>
 ```
 
 ### 支持的提交类型

@@ -67,7 +67,7 @@ pub enum Op {
 
 // ============== Event Types ==============
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Event {
     TurnStarted {
         turn_id: u64,
@@ -194,6 +194,12 @@ pub enum Event {
         turn_id: u64,
         request_id: String,
         approved: bool,
+    },
+    ContextUsageUpdated {
+        turn_id: u64,
+        input_tokens: u64,
+        context_window_size: u32,
+        ratio: f64,
     },
     /// New agent spawned (预留扩展)
     AgentSpawned {

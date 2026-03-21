@@ -31,6 +31,23 @@ export function applySessionEvents(session: ChatSession, events: StreamEvent[]):
   return current;
 }
 
+function parseContextUsage(event: StreamEvent) {
+  const rawInputTokens = Number(event.payload.input_tokens ?? event.payload.inputTokens ?? 0);
+  const rawContextWindowSize = Number(
+    event.payload.context_window_size ?? event.payload.contextWindowSize ?? 0
+  );
+  const fallbackRatio =
+    rawContextWindowSize > 0 ? rawInputTokens / rawContextWindowSize : Number(event.payload.ratio ?? 0);
+  const ratio = Number.isFinite(fallbackRatio) ? Math.max(0, Math.min(1, fallbackRatio)) : 0;
+
+  return {
+    ratio,
+    inputTokens: Number.isFinite(rawInputTokens) ? rawInputTokens : 0,
+    contextWindowSize: Number.isFinite(rawContextWindowSize) ? rawContextWindowSize : 0,
+    updatedAt: String(event.payload.updated_at ?? event.payload.updatedAt ?? event.timestamp)
+  };
+}
+
 function applySingleSessionEvent(session: ChatSession, event: StreamEvent): ChatSession {
   if (event.event_seq <= session.lastEventSeq && !looksLikeSequenceReset(session, event)) {
     return session;
@@ -137,6 +154,10 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
   if (event.type === "approval_resolved") {
     const approvalId = String(event.payload.approval_id ?? "");
     next.pendingApprovals = next.pendingApprovals.filter((item) => item.approvalId !== approvalId);
+  }
+
+  if (event.type === "context_usage_updated") {
+    next.contextUsage = parseContextUsage(event);
   }
 
   if (event.type === "turn_completed" || event.type === "response_completed") {

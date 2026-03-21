@@ -43,7 +43,68 @@ fn map_misc(event: &Event) -> Option<CoreEventMapping> {
             }),
             stream_source: None,
         }),
+        Event::ContextUsageUpdated {
+            turn_id,
+            input_tokens,
+            context_window_size,
+            ratio,
+        } => Some(CoreEventMapping {
+            core_turn_id: Some(*turn_id),
+            event_type: "context_usage_updated",
+            payload: json!({
+                "input_tokens": input_tokens,
+                "context_window_size": context_window_size,
+                "ratio": ratio,
+            }),
+            stream_source: None,
+        }),
         Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => None,
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use openjax_protocol::Event;
+
+    use super::map_core_event_payload;
+
+    #[test]
+    fn maps_context_usage_updated_event() {
+        let mapping = map_core_event_payload(&Event::ContextUsageUpdated {
+            turn_id: 7,
+            input_tokens: 4096,
+            context_window_size: 128000,
+            ratio: 0.032,
+        })
+        .expect("mapping should exist");
+
+        assert_eq!(mapping.core_turn_id, Some(7));
+        assert_eq!(mapping.event_type, "context_usage_updated");
+        assert_eq!(
+            mapping
+                .payload
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_default(),
+            4096
+        );
+        assert_eq!(
+            mapping
+                .payload
+                .get("context_window_size")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_default(),
+            128000
+        );
+        assert!(
+            mapping
+                .payload
+                .get("ratio")
+                .and_then(|v| v.as_f64())
+                .unwrap_or_default()
+                > 0.03
+        );
+        assert_eq!(mapping.stream_source, None);
     }
 }

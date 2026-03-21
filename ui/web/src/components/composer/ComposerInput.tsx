@@ -1,6 +1,8 @@
 import type { RefObject } from "react";
 import { SendIcon } from "../../pic/icon";
+import type { ContextUsageState } from "../../types/chat";
 import type { SlashCommandDto } from "../../types/gateway";
+import ContextUsageRing from "./ContextUsageRing";
 
 interface ComposerInputProps {
   value: string;
@@ -8,6 +10,7 @@ interface ComposerInputProps {
   textareaRef: RefObject<HTMLTextAreaElement>;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  contextUsage?: ContextUsageState | null;
   showSlashDropdown?: boolean;
   slashCommands?: SlashCommandDto[];
   slashSelectedIndex?: number;
@@ -21,6 +24,7 @@ export default function ComposerInput({
   textareaRef,
   onChange,
   onSubmit,
+  contextUsage,
   showSlashDropdown,
   slashSelectedIndex,
   onSlashIndexChange,
@@ -30,11 +34,12 @@ export default function ComposerInput({
 
   return (
     <div className="composer">
+      <ContextUsageRing contextUsage={contextUsage} />
       <textarea
         ref={textareaRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="有问题，尽管问"
+        placeholder="Ask anything (type / for commands)"
         rows={1}
         disabled={disabled}
         onKeyDown={(event) => {

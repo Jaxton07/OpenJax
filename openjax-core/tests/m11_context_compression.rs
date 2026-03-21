@@ -6,7 +6,10 @@
 // 2. Manual compact produces Summary + recent turns
 // 3. Zero context_window_size skips auto-compaction
 
-use openjax_core::{Agent, ApprovalPolicy, Config, ModelConfig, SandboxMode};
+use openjax_core::{
+    Agent, ApprovalPolicy, Config, ModelConfig, ModelRoutingConfig, ProviderModelConfig,
+    SandboxMode,
+};
 use openjax_protocol::{Event, Op};
 use std::collections::HashMap;
 use std::fs;
@@ -235,6 +238,97 @@ async fn test_context_window_zero_skips_auto_compact() {
     assert!(
         has_compacted,
         "manual compact() should still work regardless of context_window_size"
+    );
+
+    let _ = fs::remove_dir_all(ws);
+}
+
+/// Verify that when context_window_size is non-zero, auto-compact checks emit ContextUsageUpdated.
+/// With a large enough window, the usage event should appear without triggering compaction.
+#[tokio::test]
+async fn test_auto_compact_emits_context_usage_updated() {
+    let ws = workspace();
+    fs::write(ws.join("file.txt"), "content").unwrap();
+
+    let _ = std::env::set_current_dir(&ws);
+
+    let mut models = HashMap::new();
+    models.insert(
+        "planner".to_string(),
+        ProviderModelConfig {
+            context_window_size: Some(100_000),
+            ..Default::default()
+        },
+    );
+
+    let model_config = ModelConfig {
+        backend: Some("echo".to_string()),
+        api_key: None,
+        base_url: None,
+        model: None,
+        models,
+        routing: Some(ModelRoutingConfig {
+            planner: Some("planner".to_string()),
+            final_writer: None,
+            tool_reasoning: None,
+            fallbacks: HashMap::new(),
+        }),
+    };
+    let config = Config {
+        model: Some(model_config),
+        ..Default::default()
+    };
+
+    let mut agent = Agent::with_config(config);
+
+    let _ = agent
+        .submit(Op::UserTurn {
+            input: "seed".to_string(),
+        })
+        .await;
+
+    let events = agent
+        .submit(Op::UserTurn {
+            input: "hello".to_string(),
+        })
+        .await;
+
+    let usage_event = events.iter().find_map(|event| match event {
+        Event::ContextUsageUpdated {
+            turn_id,
+            input_tokens,
+            context_window_size,
+            ratio,
+        } => Some((*turn_id, *input_tokens, *context_window_size, *ratio)),
+        _ => None,
+    });
+
+    assert!(
+        usage_event.is_some(),
+        "submit() should emit ContextUsageUpdated when context_window_size is non-zero"
+    );
+
+    let (turn_id, input_tokens, context_window_size, ratio) = usage_event.unwrap();
+    assert!(turn_id > 0, "usage event should reference the active turn");
+    assert!(
+        input_tokens > 0,
+        "usage event should report positive input tokens"
+    );
+    assert_eq!(
+        context_window_size, 100_000,
+        "usage event should echo the configured context window"
+    );
+    assert!(
+        ratio < 0.75,
+        "large window should keep ratio below compact threshold"
+    );
+
+    let has_compacted = events
+        .iter()
+        .any(|event| matches!(event, Event::ContextCompacted { .. }));
+    assert!(
+        !has_compacted,
+        "large window should not trigger ContextCompacted in this test"
     );
 
     let _ = fs::remove_dir_all(ws);

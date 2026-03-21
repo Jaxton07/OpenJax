@@ -39,7 +39,6 @@ export default function App() {
     deleteSession,
     sendMessage,
     resolveApproval,
-    compactConversation,
     updateSettings,
     testConnection,
     listAuthSessions,
@@ -205,9 +204,9 @@ export default function App() {
           baseUrl={state.settings.baseUrl}
           accessToken={state.auth.accessToken}
           sessionId={activeSession?.id}
+          contextUsage={activeSession?.contextUsage ?? null}
           onSend={sendMessage}
           onNewChat={() => void newChat()}
-          onCompact={() => void compactConversation()}
         />
       </main>
 

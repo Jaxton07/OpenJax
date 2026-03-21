@@ -77,6 +77,13 @@ export interface SessionStreamingState {
   active: boolean;
 }
 
+export interface ContextUsageState {
+  ratio: number;
+  inputTokens: number;
+  contextWindowSize: number;
+  updatedAt: string;
+}
+
 export interface ChatSession {
   id: string;
   title: string;
@@ -86,6 +93,7 @@ export interface ChatSession {
   lastEventSeq: number;
   messages: ChatMessage[];
   pendingApprovals: PendingApproval[];
+  contextUsage?: ContextUsageState;
   streaming?: SessionStreamingState;
 }
 

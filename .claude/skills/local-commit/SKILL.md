@@ -98,7 +98,7 @@ git diff --staged
 ```
 <emoji> <type>(<模块>): <简短描述>
 
-Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: Codex <noreply@openai.com>
 ```
 
 示例：

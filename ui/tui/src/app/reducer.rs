@@ -217,6 +217,7 @@ impl App {
             Event::ReasoningDelta { .. } => {}
             Event::LoopWarning { .. } => {}
             Event::AgentSpawned { .. } | Event::AgentStatusChanged { .. } => {}
+            Event::ContextUsageUpdated { .. } => {}
             // TODO: display context compaction notification in status bar
             Event::ContextCompacted { .. } => {}
         }

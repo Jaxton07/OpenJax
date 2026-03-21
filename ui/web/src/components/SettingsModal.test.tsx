@@ -16,10 +16,49 @@ const providerItem = {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
 describe("SettingsModal", () => {
+  it("shows provider switch toast and auto dismisses it", async () => {
+    const user = userEvent.setup();
+    const onSetActiveProvider = vi.fn().mockResolvedValue(providerItem);
+    render(
+      <SettingsModal
+        open
+        initialSettings={{
+          baseUrl: "http://127.0.0.1:8765",
+          outputMode: "sse",
+          selectedProviderId: null,
+          selectedModelName: null
+        }}
+        onClose={() => {}}
+        onSave={() => {}}
+        onTest={async () => true}
+        onListProviders={async () => [providerItem]}
+        onCreateProvider={async () => {
+          throw new Error("not used");
+        }}
+        onUpdateProvider={async () => {
+          throw new Error("not used");
+        }}
+        onDeleteProvider={async () => {}}
+        onGetActiveProvider={async () => null}
+        onSetActiveProvider={onSetActiveProvider}
+        onFetchCatalog={async () => []}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "LLM Provider" }));
+    await screen.findByText("openai-main");
+    await user.click(screen.getByRole("button", { name: /openai-main/i }));
+
+    expect(
+      await screen.findByText("已切换 Provider，将在新会话中生效。")
+    ).toBeInTheDocument();
+  });
+
   it("switches to provider tab and loads providers", async () => {
     const onListProviders = vi.fn().mockResolvedValue([providerItem]);
     render(

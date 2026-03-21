@@ -49,7 +49,7 @@ export default function ApprovalStepCard({ step, pendingApproval, onResolve }: A
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
           <div>
-            <div className="approval-card-title">需要确认 · {toolName}</div>
+            <div className="approval-card-title">Needs Confirmation · {toolName}</div>
             {(target || reason) ? (
               <div className="approval-card-sub">{reason || target}</div>
             ) : null}
@@ -68,7 +68,7 @@ export default function ApprovalStepCard({ step, pendingApproval, onResolve }: A
             onClick={() => void submitDecision(true)}
             disabled={submitting}
           >
-            确认
+            Confirm
           </button>
           <button
             type="button"
@@ -76,7 +76,7 @@ export default function ApprovalStepCard({ step, pendingApproval, onResolve }: A
             onClick={() => void submitDecision(false)}
             disabled={submitting}
           >
-            取消
+            Cancel
           </button>
         </div>
       </div>

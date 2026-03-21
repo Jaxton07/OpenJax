@@ -11,7 +11,7 @@
 ## 关键文件
 
 - `index.tsx`：对外导出入口，持有 `input` state、`submit` 逻辑、`textareaRef`，组合子组件。
-- `ComposerActions.tsx`：按钮栏（新建对话、压缩），无状态，纯展示。后续扩展点：斜杠命令触发入口、其他快捷操作。
+- `ComposerActions.tsx`：按钮栏（新建对话），无状态，纯展示。后续扩展点：斜杠命令触发入口、其他快捷操作。
 - `ComposerInput.tsx`：输入区（textarea + 发送按钮），无状态。后续扩展点：上下文用量显示、模型切换按钮。
 - `composer.css`：输入区全部样式，仅通过 `index.tsx` 的 `import` 加载。
 
@@ -22,7 +22,6 @@ interface ComposerProps {
   disabled?: boolean;
   onSend: (content: string) => Promise<void> | void;
   onNewChat: () => void;
-  onCompact: () => void;
 }
 ```
 

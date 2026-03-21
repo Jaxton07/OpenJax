@@ -117,8 +117,8 @@ describe("MessageList", () => {
       />
     );
     expect(screen.getByTestId("approval-step-card")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "确认" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
   it("matches pending approval by toolCallId when approvalId is absent", () => {
@@ -149,7 +149,7 @@ describe("MessageList", () => {
       />
     );
     expect(screen.getByTestId("approval-step-card")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "确认" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
   });
 
   it("does not render old assistant+toolSteps shape without kind", () => {

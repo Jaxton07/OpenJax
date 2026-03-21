@@ -1,7 +1,7 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 15, 15, 0.35);
+  background: var(--settings-backdrop);
   display: grid;
   place-items: center;
   backdrop-filter: blur(3px);
@@ -19,7 +19,7 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  box-shadow: 0 20px 56px rgba(12, 18, 30, 0.2);
+  box-shadow: var(--settings-shadow);
 }
 
 .modal-header {
@@ -55,8 +55,8 @@
   border: 1px solid var(--settings-border);
   border-radius: 12px;
   padding: 10px 12px;
-  background: #ffffff;
-  color: #1f1f1f;
+  background: var(--settings-input-bg);
+  color: var(--settings-input-text);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
@@ -65,7 +65,7 @@
 
 .settings-modal input:focus {
   outline: none;
-  border-color: #4d6db0;
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--settings-focus);
 }
 
@@ -82,7 +82,7 @@
   gap: 8px;
   border-right: 1px solid var(--settings-border);
   padding-right: 14px;
-  background: linear-gradient(180deg, #f8f9fb 0%, #f4f6fa 100%);
+  background: var(--settings-sidebar-bg);
   border-radius: 14px;
   padding: 10px;
   height: fit-content;
@@ -93,7 +93,7 @@
   border: 1px solid transparent;
   border-radius: 11px;
   background: transparent;
-  color: #2b3343;
+  color: var(--settings-nav-text);
   padding: 10px 12px;
   cursor: pointer;
   font-size: 15px;
@@ -104,13 +104,13 @@
 }
 
 .settings-nav-item:hover {
-  background: #edf1f8;
+  background: var(--settings-nav-hover-bg);
 }
 
 .settings-nav-item.active {
-  background: #e9eef8;
-  border-color: #cfdae9;
-  color: #1a2742;
+  background: var(--settings-nav-active-bg);
+  border-color: var(--settings-nav-active-border);
+  color: var(--settings-nav-active-text);
   font-weight: 590;
 }
 

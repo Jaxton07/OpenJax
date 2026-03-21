@@ -216,6 +216,17 @@ impl Agent {
         });
 
         let ratio = token_estimate as f64 / self.context_window_size as f64;
+
+        self.push_event(
+            events,
+            openjax_protocol::Event::ContextUsageUpdated {
+                turn_id,
+                input_tokens: token_estimate,
+                context_window_size: self.context_window_size,
+                ratio,
+            },
+        );
+
         if ratio < 0.75 {
             return;
         }
