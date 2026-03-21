@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::RwLock;
 
-use super::builtin::{builtin_explain_template, builtin_help_handler, builtin_review_template};
+use super::builtin::builtin_help_handler;
 use super::kinds::SlashCommandKind;
 
 static DYNAMIC_SKILL_COMMANDS: LazyLock<RwLock<Vec<SlashCommand>>> =
@@ -66,26 +66,6 @@ impl SlashCommandRegistry {
                 usage_hint: "/clear",
                 // clear 需要 gateway 执行 clear_runtime，不是本地 builtin
                 kind: SlashCommandKind::SessionAction { action: "clear" },
-            },
-            SlashCommand {
-                name: "explain",
-                aliases: &[],
-                description: "Insert explain prompt template into input",
-                usage_hint: "/explain",
-                kind: SlashCommandKind::Builtin {
-                    handler: Arc::new(builtin_explain_template),
-                    replaces_input: true,
-                },
-            },
-            SlashCommand {
-                name: "review",
-                aliases: &[],
-                description: "Insert code review prompt template into input",
-                usage_hint: "/review",
-                kind: SlashCommandKind::Builtin {
-                    handler: Arc::new(builtin_review_template),
-                    replaces_input: true,
-                },
             },
             SlashCommand {
                 name: "compact",
@@ -224,13 +204,6 @@ mod tests {
     fn test_match_prefix_question_matches_help_via_alias() {
         let matches = SlashCommandRegistry::match_prefix("/?", 10);
         assert!(matches.iter().any(|m| m.command_name == "help"));
-    }
-
-    #[test]
-    fn test_explain_replaces_input_true() {
-        let m = SlashCommandRegistry::find("explain").unwrap();
-        let (_, replaces) = m.execute_builtin().unwrap();
-        assert!(replaces);
     }
 
     #[test]

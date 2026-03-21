@@ -8,16 +8,26 @@ import type { SlashCommandDto } from "../../types/gateway";
 
 interface ComposerProps {
   disabled?: boolean;
+  baseUrl: string;
+  accessToken: string;
   sessionId?: string | null;
   onSend: (content: string) => Promise<void> | void;
   onNewChat: () => void;
   onCompact: () => void;
 }
 
-export default function Composer({ disabled, sessionId, onSend, onNewChat, onCompact }: ComposerProps) {
+export default function Composer({
+  disabled,
+  baseUrl,
+  accessToken,
+  sessionId,
+  onSend,
+  onNewChat,
+  onCompact,
+}: ComposerProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { commands, filterCommands } = useSlashCommands(sessionId ?? null);
+  const { commands, filterCommands } = useSlashCommands(baseUrl, accessToken);
 
   const [showSlashDropdown, setShowSlashDropdown] = useState(false);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
@@ -64,10 +74,6 @@ export default function Composer({ disabled, sessionId, onSend, onNewChat, onCom
       );
 
       if (matched) {
-        const baseUrl =
-          (window as any).__GATEWAY_URL__ || import.meta.env.VITE_GATEWAY_URL;
-        const token = localStorage.getItem("openjax_token");
-
         if (matched.kind === "session_action") {
           // clear / compact：调用 /slash API，需要 session_id
           if (!sessionId) {
@@ -79,7 +85,7 @@ export default function Composer({ disabled, sessionId, onSend, onNewChat, onCom
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${accessToken}`,
               },
               body: JSON.stringify({ command: cmdName }),
             });
@@ -93,45 +99,7 @@ export default function Composer({ disabled, sessionId, onSend, onNewChat, onCom
           return;
         }
 
-        if (matched.kind === "builtin" && matched.replaces_input) {
-          // explain / review：调用 /slash 拿模板文本，填入输入框（不提交）
-          try {
-            const res = await fetch(
-              `${baseUrl}/api/v1/sessions/${sessionId}/slash`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ command: cmdName }),
-              }
-            );
-            if (res.ok) {
-              const data = await res.json();
-              if (data.message) {
-                setInput(data.message);
-                // 光标移到末尾
-                requestAnimationFrame(() => {
-                  const el = textareaRef.current;
-                  if (el) {
-                    el.selectionStart = el.selectionEnd = el.value.length;
-                    el.focus();
-                  }
-                });
-              } else {
-                console.warn("[slash] builtin command response missing message field", data);
-              }
-            }
-          } catch {
-            // 忽略
-          }
-          setShowSlashDropdown(false);
-          return;
-        }
-
-        // builtin + replaces_input: false（如 help）和 skill 类型：
-        // 作为普通 turn 提交，agent 响应
+        // builtin（如 help）和 skill 类型：作为普通 turn 提交，agent 响应
       }
     }
 

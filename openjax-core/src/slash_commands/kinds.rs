@@ -32,7 +32,7 @@ impl SlashResult {
 pub enum SlashCommandKind {
     Builtin {
         handler: Arc<dyn Fn() -> (String, bool) + Send + Sync>,
-        /// 执行后是否用返回文本替换输入框内容（explain/review 为 true，help 为 false）
+        /// 执行后是否用返回文本替换输入框内容
         replaces_input: bool,
     },
     SessionAction {

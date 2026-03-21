@@ -1,17 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { SlashCommandDto, SlashCommandsResponse } from "../types/gateway";
 
-export function useSlashCommands(sessionId: string | null) {
+export function useSlashCommands(baseUrl: string, accessToken: string) {
   const [commands, setCommands] = useState<SlashCommandDto[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchCommands = useCallback(async () => {
-    if (!sessionId) return;
     setLoading(true);
     try {
-      const baseUrl = (window as any).__GATEWAY_URL__ || import.meta.env.VITE_GATEWAY_URL;
       const res = await fetch(`${baseUrl}/api/v1/slash_commands`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("openjax_token")}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: SlashCommandsResponse = await res.json();
@@ -21,7 +19,7 @@ export function useSlashCommands(sessionId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [accessToken, baseUrl]);
 
   useEffect(() => {
     fetchCommands();

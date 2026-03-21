@@ -97,7 +97,7 @@ impl App {
                         self.dismiss_slash_palette();
                     }
                     _ => {
-                        // Prompt templates (explain, review) replace input when flagged
+                        // Builtins can opt into replacing input via replaces_input
                         if replaces {
                             self.state.input = msg;
                             self.state.input_cursor = self.state.input.len();
@@ -166,10 +166,10 @@ mod tests {
     #[test]
     fn completing_selection_only_fills_command_name() {
         let mut app = App::default();
-        app.append_input("/rev");
+        app.append_input("/he");
         let result = app.complete_slash_selection();
         assert_eq!(result, SlashAcceptResult::CompletedInput);
-        assert_eq!(app.state.input, "/review");
+        assert_eq!(app.state.input, "/help");
         assert!(!app.is_slash_palette_active());
     }
 
@@ -188,14 +188,12 @@ mod tests {
     }
 
     #[test]
-    fn exact_prompt_template_expands_on_submit() {
+    fn exact_builtin_help_clears_input_on_submit() {
         let mut app = App::default();
-        app.append_input("/review");
+        app.append_input("/help");
         let action = app.submit_slash_command_if_exact();
         assert!(action);
-        assert_eq!(
-            app.state.input,
-            "Review the current changes, prioritize findings, and keep the summary brief."
-        );
+        assert_eq!(app.state.input, "");
+        assert_eq!(app.state.input_cursor, 0);
     }
 }
