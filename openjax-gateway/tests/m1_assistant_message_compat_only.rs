@@ -47,7 +47,7 @@ where
 }
 
 #[tokio::test]
-async fn assistant_message_alone_does_not_finalize_turn() {
+async fn assistant_message_only_history_is_intentionally_not_materialized() {
     let (status, assistant_message) = loaded_turn_state(|session_id| {
         vec![
             stream_event(

@@ -4,7 +4,6 @@ import type { StreamEvent } from "../types/gateway";
 const STREAM_DEBUG_ENABLED = resolveStreamDebugEnabled();
 
 type TextStreamEventType =
-  | "assistant_message"
   | "response_started"
   | "response_text_delta"
   | "response_completed"
@@ -12,7 +11,6 @@ type TextStreamEventType =
 
 export function isTextStreamEvent(event: StreamEvent): event is StreamEvent & { type: TextStreamEventType } {
   return (
-    event.type === "assistant_message" ||
     event.type === "response_started" ||
     event.type === "response_text_delta" ||
     event.type === "response_completed" ||
@@ -78,7 +76,7 @@ export function applyTextStreamEvent(session: ChatSession, event: StreamEvent): 
     };
   }
 
-  if (event.type === "response_completed" || event.type === "assistant_message") {
+  if (event.type === "response_completed") {
     if (STREAM_DEBUG_ENABLED) {
       console.debug("[stream_debug][runtime][complete]", {
         sessionId: event.session_id,
@@ -170,10 +168,7 @@ function onResponseCompleted(session: ChatSession, event: StreamEvent): ChatSess
   const content = String(event.payload.content ?? "");
   const message = findDraftOrAssistantMessage(session.messages, turnId);
   if (message) {
-    const resolvedContent =
-      event.type === "assistant_message"
-        ? resolveAssistantMessageContent(message.content, content)
-        : resolveCompletedContent(message.content, content);
+    const resolvedContent = resolveCompletedContent(message.content, content);
     session.messages[message.index] = {
       ...message,
       content: resolvedContent,
@@ -327,13 +322,6 @@ function resolveCompletedContent(current: string, completed: string): string {
     return completed;
   }
   return current;
-}
-
-function resolveAssistantMessageContent(current: string, completed: string): string {
-  if (!completed) {
-    return current;
-  }
-  return completed;
 }
 
 function resolveStreamDebugEnabled(): boolean {

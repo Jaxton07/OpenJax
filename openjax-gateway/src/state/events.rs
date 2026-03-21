@@ -431,6 +431,12 @@ fn apply_turn_runtime_event(turn: &mut TurnRuntime, event_type: &str, payload: &
         });
         return;
     }
+    if event_type == "assistant_message" {
+        // Intentional decommission rule:
+        // assistant_message-only history is no longer authoritative and does not
+        // populate turn.assistant_message in runtime replay.
+        return;
+    }
     if event_type == "response_completed"
         && let Some(content) = payload.get("content").and_then(|value| value.as_str())
     {
