@@ -88,7 +88,7 @@ git add <file1> <file2> ...
 git commit -m "$(cat <<'EOF'
 <生成的提交信息>
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: Codex <noreply@openai.com>
 EOF
 )"
 ```
