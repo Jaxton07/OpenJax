@@ -125,10 +125,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - 对结构化工具/领域错误使用 `thiserror` 枚举。
 - 为 IO/进程失败添加上下文（`context`、`with_context`）。
 - 在生产路径中避免 `unwrap()`。
-### Python
-- 优先使用具体异常（`OpenJaxProtocolError`、`OpenJaxResponseError`）。
-- 将 `contextlib.suppress(...)` 限制在清理/关闭路径。
-- 不要静默吞掉非清理类错误。
+
 
 ## 12) 测试期望
 - 任何行为变更都应包含测试新增/更新。
@@ -158,11 +155,6 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
   - `OPENJAX_GATEWAY_API_KEYS`（或兼容变量 `OPENJAX_API_KEYS`）
 
 
-## 17) Python SDK 调试
-- 推荐在仓库根目录执行并设置 `PYTHONPATH=python/openjax_sdk/src`。
-- SDK 测试命令：
-  - `zsh -lc "PYTHONPATH=python/openjax_sdk/src python3 -m unittest discover -s python/openjax_sdk/tests -v"`
-
 
 ## 项目级工作规则
 
@@ -178,7 +170,8 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - 必须确保方案的逻辑正确，必须经过全链路的逻辑验证。
 
 ### 其他
-- 在处理 Rust 项目文件时，优先使用 JetBrains / RustRover 的 `rustrover-index` MCP server 进行符号、引用、实现、类型层级和文本索引查询；不要先使用 `rg`、`grep`、`find` 等本地搜索。只有在确认当前会话无法使用该 MCP，或其能力不足以完成当前任务时，才允许退回本地搜索；退回前必须明确说明失败点属于“未配置 / 未连接 / 当前 agent 无工具暴露 / 其他”中的哪一类。
+- (重要)在处理 Rust 项目文件时，优先使用 JetBrains / RustRover 的 `rustrover-index` MCP server 进行符号、引用、实现、类型层级和文本索引查询；不要先使用 `rg`、`grep`、`find` 等本地搜索。只有在确认当前会话无法使用该 MCP，或其能力不足以完成当前任务时，才允许退回本地搜索；退回前必须明确说明失败点属于“未配置 / 未连接 / 当前 agent 无工具暴露 / 其他”中的哪一类。
+- (重要)在分派subagent 任务时记得告知subagent 也可以使用`rustrover-index` MCP
 - 本地开发环境通过make run-web-dev 启动前端和后台时需要预览时不要输入localhost 访问，统一输入127.0.0.1 加端口号访问
 - 在修改过程中如果发现某个文件内容过多，或者代码量很大，记得提醒用户规划拆分计划
 - 在针对某部分做修改时优先根据README 索引了解对应模块的上下文，避免自己全量搜索查看以看到太多无关内容。
