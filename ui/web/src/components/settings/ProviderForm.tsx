@@ -5,6 +5,7 @@ interface ProviderFormValue {
   providerName: string;
   baseUrl: string;
   modelName: string;
+  requestProfile: string;
   apiKey: string;
   providerType: "built_in" | "custom";
   contextWindowSize: number;
@@ -25,6 +26,7 @@ function normalizeValue(value: ProviderFormValue): ProviderFormValue {
     providerName: value.providerName.trim(),
     baseUrl: value.baseUrl.trim(),
     modelName: value.modelName.trim(),
+    requestProfile: value.requestProfile.trim(),
     apiKey: value.apiKey.trim()
   };
 }
@@ -45,6 +47,7 @@ export default function ProviderForm(props: ProviderFormProps) {
     normalizedDraft.providerName !== normalizedInitial.providerName ||
     normalizedDraft.baseUrl !== normalizedInitial.baseUrl ||
     normalizedDraft.modelName !== normalizedInitial.modelName ||
+    normalizedDraft.requestProfile !== normalizedInitial.requestProfile ||
     normalizedDraft.apiKey !== normalizedInitial.apiKey ||
     normalizedDraft.contextWindowSize !== normalizedInitial.contextWindowSize;
 
@@ -182,6 +185,20 @@ export default function ProviderForm(props: ProviderFormProps) {
           </button>
         </div>
         {props.mode === "edit" && <span className="field-tip">留空将保持现有 API Key。</span>}
+      </label>
+
+      {/* Request Profile */}
+      <label>
+        Request Profile
+        <select
+          value={draft.requestProfile}
+          onChange={(e) => setDraft((p) => ({ ...p, requestProfile: e.target.value }))}
+        >
+          <option value="">default (protocol default)</option>
+          <option value="kimi_coding_v1">kimi_coding_v1</option>
+          <option value="anthropic_default">anthropic_default</option>
+        </select>
+        <span className="field-tip">留空表示使用协议默认请求格式。</span>
       </label>
 
       <div className="provider-form-actions">

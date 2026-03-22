@@ -15,7 +15,7 @@
 当以上两个路径都不存在时，`tui_next/openjaxd` 启动会自动生成默认模板（优先写入项目级路径）。
 默认模板已预置以下 provider：
 
-1. `kimi`（默认路由，模型 `K2.5`）
+1. `kimi`（默认路由，模型 `kimi-for-coding`）
 2. `glm`
 3. `openai`
 4. `claude`（anthropic）

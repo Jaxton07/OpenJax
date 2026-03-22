@@ -19,6 +19,7 @@ pub struct ProviderItem {
     base_url: String,
     model_name: String,
     api_key_set: bool,
+    request_profile: Option<String>,
     provider_type: String,
     context_window_size: u32,
     created_at: String,
@@ -69,6 +70,8 @@ pub struct CreateProviderRequest {
     base_url: String,
     model_name: String,
     api_key: String,
+    #[serde(default)]
+    request_profile: Option<String>,
     #[serde(default = "default_provider_type")]
     provider_type: String,
     #[serde(default)]
@@ -85,6 +88,8 @@ pub struct UpdateProviderRequest {
     base_url: String,
     model_name: String,
     api_key: Option<String>,
+    #[serde(default)]
+    request_profile: Option<String>,
     #[serde(default)]
     context_window_size: u32,
 }
@@ -129,6 +134,7 @@ fn to_provider_item(provider: openjax_store::ProviderRecord) -> ProviderItem {
         base_url: provider.base_url,
         model_name: provider.model_name,
         api_key_set: !provider.api_key.trim().is_empty(),
+        request_profile: provider.request_profile,
         provider_type: provider.provider_type,
         context_window_size: provider.context_window_size,
         created_at: provider.created_at,
@@ -226,6 +232,11 @@ pub async fn create_provider(
         base_url,
         model_name,
         api_key,
+        payload
+            .request_profile
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
         &payload.provider_type,
         payload.context_window_size,
     )?;
@@ -263,6 +274,11 @@ pub async fn update_provider(
             base_url,
             model_name,
             api_key,
+            payload
+                .request_profile
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
             payload.context_window_size,
         )?
         .ok_or_else(|| {
@@ -320,4 +336,28 @@ pub async fn get_catalog() -> impl IntoResponse {
         })
         .collect();
     Json(CatalogResponse { providers })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_provider_item;
+    use openjax_store::ProviderRecord;
+
+    #[test]
+    fn provider_item_preserves_request_profile() {
+        let item = to_provider_item(ProviderRecord {
+            provider_id: "provider_1".to_string(),
+            provider_name: "Kimi".to_string(),
+            base_url: "https://api.kimi.com/coding/v1".to_string(),
+            model_name: "kimi-for-coding".to_string(),
+            api_key: "secret".to_string(),
+            request_profile: Some("kimi_coding_v1".to_string()),
+            provider_type: "built_in".to_string(),
+            context_window_size: 256000,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        });
+
+        assert_eq!(item.request_profile.as_deref(), Some("kimi_coding_v1"));
+    }
 }

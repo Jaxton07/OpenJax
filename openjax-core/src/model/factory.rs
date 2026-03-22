@@ -34,15 +34,19 @@ pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn M
 
     let mut adapters: Vec<Arc<dyn ProviderAdapter>> = Vec::new();
     for model in registry.models.values() {
-        if let Some(adapter) = build_adapter_for_registered_model(model) {
-            adapters.push(adapter);
-        } else {
-            warn!(
-                model_id = %model.id,
-                provider = %model.provider,
-                protocol = %model.protocol,
-                "unable to build provider adapter for model entry"
-            );
+        match build_adapter_for_registered_model(model) {
+            Ok(Some(adapter)) => adapters.push(adapter),
+            Ok(None) => {
+                warn!(
+                    model_id = %model.id,
+                    provider = %model.provider,
+                    protocol = %model.protocol,
+                    "unable to build provider adapter for model entry"
+                );
+            }
+            Err(err) => {
+                return Box::new(MissingConfigModelClient::new(err.to_string()));
+            }
         }
     }
 
@@ -72,13 +76,13 @@ pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn M
 
 fn build_adapter_for_registered_model(
     model: &crate::model::registry::RegisteredModel,
-) -> Option<Arc<dyn ProviderAdapter>> {
+) -> anyhow::Result<Option<Arc<dyn ProviderAdapter>>> {
     match model.protocol.as_str() {
         "anthropic_messages" => AnthropicMessagesClient::from_registered_model(model)
-            .map(|c| Arc::new(c) as Arc<dyn ProviderAdapter>),
+            .map(|adapter| adapter.map(|c| Arc::new(c) as Arc<dyn ProviderAdapter>)),
         "chat_completions" => ChatCompletionsClient::from_registered_model(model)
-            .map(|c| Arc::new(c) as Arc<dyn ProviderAdapter>),
-        _ => None,
+            .map(|adapter| adapter.map(|c| Arc::new(c) as Arc<dyn ProviderAdapter>)),
+        _ => Ok(None),
     }
 }
 
@@ -86,6 +90,8 @@ fn build_adapter_for_registered_model(
 mod tests {
     use crate::config::{ModelConfig, ModelRoutingConfig, ProviderModelConfig};
     use crate::model::factory::build_model_client_with_config;
+    use crate::model::types::{ModelRequest, ModelStage};
+    use anyhow::Result;
     use std::collections::HashMap;
 
     #[test]
@@ -130,6 +136,7 @@ mod tests {
                 base_url: Some("https://open.bigmodel.cn/api/anthropic".to_string()),
                 api_key: Some("test-key".to_string()),
                 api_key_env: None,
+                request_profile: None,
                 anthropic_version: None,
                 thinking_budget_tokens: Some(2000),
                 supports_stream: Some(true),
@@ -170,5 +177,54 @@ mod tests {
 
         let client = build_model_client_with_config(Some(&config));
         assert_eq!(client.name(), "model-router");
+    }
+
+    #[tokio::test]
+    async fn build_model_client_reports_invalid_request_profile() -> Result<()> {
+        let mut models = HashMap::new();
+        models.insert(
+            "kimi".to_string(),
+            ProviderModelConfig {
+                provider: Some("kimi".to_string()),
+                protocol: Some("chat_completions".to_string()),
+                model: Some("kimi-for-coding".to_string()),
+                base_url: Some("https://api.kimi.com/coding/v1".to_string()),
+                api_key: Some("test-key".to_string()),
+                api_key_env: None,
+                request_profile: Some("bad_profile".to_string()),
+                anthropic_version: None,
+                thinking_budget_tokens: None,
+                supports_stream: Some(true),
+                supports_reasoning: Some(false),
+                supports_tool_call: Some(false),
+                supports_json_mode: Some(false),
+                context_window_size: None,
+            },
+        );
+        let config = ModelConfig {
+            backend: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            models,
+            routing: Some(ModelRoutingConfig {
+                planner: Some("kimi".to_string()),
+                final_writer: Some("kimi".to_string()),
+                tool_reasoning: Some("kimi".to_string()),
+                fallbacks: HashMap::new(),
+            }),
+        };
+
+        let client = build_model_client_with_config(Some(&config));
+        let err = client
+            .complete(&ModelRequest::for_stage(ModelStage::Planner, "hello"))
+            .await
+            .expect_err("invalid profile should fail");
+
+        assert!(
+            err.to_string()
+                .contains("unknown chat_completions request_profile")
+        );
+        Ok(())
     }
 }

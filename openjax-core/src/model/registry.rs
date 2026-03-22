@@ -20,6 +20,7 @@ pub struct RegisteredModel {
     pub provider: String,
     pub protocol: String,
     pub model: String,
+    pub request_profile: Option<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
     pub anthropic_version: Option<String>,
@@ -108,6 +109,7 @@ impl ModelRegistry {
                 provider: provider.clone(),
                 protocol: protocol.to_string(),
                 model,
+                request_profile: None,
                 base_url: config.base_url.clone(),
                 api_key: config.api_key.clone(),
                 anthropic_version: None,
@@ -184,6 +186,7 @@ fn normalize_model_entry(
         provider,
         protocol: protocol.clone(),
         model,
+        request_profile: entry.request_profile.clone(),
         base_url: entry.base_url.clone(),
         api_key,
         anthropic_version: entry.anthropic_version.clone(),
@@ -275,6 +278,7 @@ mod tests {
                 base_url: Some("https://open.bigmodel.cn/api/anthropic".to_string()),
                 api_key: Some("test-key".to_string()),
                 api_key_env: None,
+                request_profile: None,
                 anthropic_version: None,
                 thinking_budget_tokens: Some(2000),
                 supports_stream: Some(true),
@@ -322,6 +326,7 @@ mod tests {
                 base_url: Some("https://open.bigmodel.cn/api/anthropic".to_string()),
                 api_key: None,
                 api_key_env: Some(var_name.to_string()),
+                request_profile: None,
                 anthropic_version: None,
                 thinking_budget_tokens: None,
                 supports_stream: None,
@@ -368,6 +373,7 @@ mod tests {
                 base_url: Some("https://open.bigmodel.cn/api/anthropic".to_string()),
                 api_key: Some("inline-key".to_string()),
                 api_key_env: Some(var_name.to_string()),
+                request_profile: None,
                 anthropic_version: None,
                 thinking_budget_tokens: None,
                 supports_stream: None,
@@ -395,5 +401,47 @@ mod tests {
         unsafe {
             std::env::remove_var(var_name);
         }
+    }
+
+    #[test]
+    fn preserves_request_profile_on_registered_model() {
+        let mut models = HashMap::new();
+        models.insert(
+            "kimi".to_string(),
+            ProviderModelConfig {
+                provider: Some("kimi".to_string()),
+                protocol: Some("chat_completions".to_string()),
+                model: Some("kimi-for-coding".to_string()),
+                base_url: Some("https://api.kimi.com/coding/v1".to_string()),
+                api_key: Some("test-key".to_string()),
+                api_key_env: None,
+                request_profile: Some("kimi_coding_v1".to_string()),
+                anthropic_version: None,
+                thinking_budget_tokens: None,
+                supports_stream: None,
+                supports_reasoning: None,
+                supports_tool_call: None,
+                supports_json_mode: None,
+                context_window_size: None,
+            },
+        );
+
+        let config = ModelConfig {
+            backend: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            models,
+            routing: None,
+        };
+
+        let registry = ModelRegistry::from_config(Some(&config));
+        assert_eq!(
+            registry
+                .models
+                .get("kimi")
+                .and_then(|model| model.request_profile.as_deref()),
+            Some("kimi_coding_v1")
+        );
     }
 }

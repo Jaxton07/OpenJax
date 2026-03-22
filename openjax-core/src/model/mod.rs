@@ -5,6 +5,7 @@ mod echo;
 mod factory;
 mod missing_config;
 mod registry;
+mod request_profiles;
 mod router;
 mod types;
 

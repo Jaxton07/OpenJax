@@ -113,6 +113,7 @@ impl SqliteStore {
                 base_url TEXT NOT NULL,
                 model_name TEXT NOT NULL,
                 api_key TEXT NOT NULL,
+                request_profile TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -163,6 +164,20 @@ impl SqliteStore {
                 "ALTER TABLE llm_providers ADD COLUMN context_window_size INTEGER NOT NULL DEFAULT 0",
             )
             .context("migrate: add context_window_size to llm_providers")?;
+        }
+
+        // llm_providers: add request_profile
+        let has_request_profile: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('llm_providers') WHERE name = 'request_profile'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_request_profile {
+            conn.execute_batch("ALTER TABLE llm_providers ADD COLUMN request_profile TEXT")
+                .context("migrate: add request_profile to llm_providers")?;
         }
 
         // llm_runtime_settings: add context_window_size
@@ -481,6 +496,50 @@ impl SessionRepository for SqliteStore {
     }
 }
 
+impl SqliteStore {
+    pub fn create_provider(
+        &self,
+        provider_name: &str,
+        base_url: &str,
+        model_name: &str,
+        api_key: &str,
+        provider_type: &str,
+        context_window_size: u32,
+    ) -> Result<ProviderRecord> {
+        <Self as ProviderRepository>::create_provider(
+            self,
+            provider_name,
+            base_url,
+            model_name,
+            api_key,
+            None,
+            provider_type,
+            context_window_size,
+        )
+    }
+
+    pub fn update_provider(
+        &self,
+        provider_id: &str,
+        provider_name: &str,
+        base_url: &str,
+        model_name: &str,
+        api_key: Option<&str>,
+        context_window_size: u32,
+    ) -> Result<Option<ProviderRecord>> {
+        <Self as ProviderRepository>::update_provider(
+            self,
+            provider_id,
+            provider_name,
+            base_url,
+            model_name,
+            api_key,
+            None,
+            context_window_size,
+        )
+    }
+}
+
 impl ProviderRepository for SqliteStore {
     fn create_provider(
         &self,
@@ -488,6 +547,7 @@ impl ProviderRepository for SqliteStore {
         base_url: &str,
         model_name: &str,
         api_key: &str,
+        request_profile: Option<&str>,
         provider_type: &str,
         context_window_size: u32,
     ) -> Result<ProviderRecord> {
@@ -497,9 +557,9 @@ impl ProviderRepository for SqliteStore {
             let conn = self.conn.lock().expect("store db mutex poisoned");
             conn.execute(
                 "INSERT INTO llm_providers
-                 (provider_id, provider_name, base_url, model_name, api_key, provider_type, context_window_size, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-                params![provider_id, provider_name, base_url, model_name, api_key, provider_type, context_window_size, now],
+                 (provider_id, provider_name, base_url, model_name, api_key, request_profile, provider_type, context_window_size, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                params![provider_id, provider_name, base_url, model_name, api_key, request_profile, provider_type, context_window_size, now],
             )
             .with_context(|| format!("insert provider {}", provider_name))?;
         }
@@ -514,50 +574,34 @@ impl ProviderRepository for SqliteStore {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        request_profile: Option<&str>,
         context_window_size: u32,
     ) -> Result<Option<ProviderRecord>> {
         let now = now_rfc3339();
         let changed = {
             let conn = self.conn.lock().expect("store db mutex poisoned");
-            let sql = if api_key.is_some() {
+            conn.execute(
                 "UPDATE llm_providers
-                 SET provider_name = ?1, base_url = ?2, model_name = ?3, api_key = ?4,
-                     context_window_size = ?5, updated_at = ?6
-                 WHERE provider_id = ?7"
-            } else {
-                "UPDATE llm_providers
-                 SET provider_name = ?1, base_url = ?2, model_name = ?3,
-                     context_window_size = ?4, updated_at = ?5
-                 WHERE provider_id = ?6"
-            };
-            if let Some(api_key) = api_key {
-                conn.execute(
-                    sql,
-                    params![
-                        provider_name,
-                        base_url,
-                        model_name,
-                        api_key,
-                        context_window_size,
-                        now,
-                        provider_id
-                    ],
-                )
-                .with_context(|| format!("update provider {}", provider_id))?
-            } else {
-                conn.execute(
-                    sql,
-                    params![
-                        provider_name,
-                        base_url,
-                        model_name,
-                        context_window_size,
-                        now,
-                        provider_id
-                    ],
-                )
-                .with_context(|| format!("update provider {}", provider_id))?
-            }
+                 SET provider_name = ?1,
+                     base_url = ?2,
+                     model_name = ?3,
+                     api_key = COALESCE(?4, api_key),
+                     request_profile = COALESCE(?5, request_profile),
+                     context_window_size = ?6,
+                     updated_at = ?7
+                 WHERE provider_id = ?8",
+                params![
+                    provider_name,
+                    base_url,
+                    model_name,
+                    api_key,
+                    request_profile,
+                    context_window_size,
+                    now,
+                    provider_id
+                ],
+            )
+            .with_context(|| format!("update provider {}", provider_id))?
         };
         if changed == 0 {
             return Ok(None);
@@ -593,7 +637,7 @@ impl ProviderRepository for SqliteStore {
         let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.query_row(
             "SELECT provider_id, provider_name, base_url, model_name, api_key,
-                    provider_type, context_window_size, created_at, updated_at
+                    request_profile, provider_type, context_window_size, created_at, updated_at
              FROM llm_providers
              WHERE provider_id = ?1",
             params![provider_id],
@@ -604,10 +648,11 @@ impl ProviderRepository for SqliteStore {
                     base_url: row.get(2)?,
                     model_name: row.get(3)?,
                     api_key: row.get(4)?,
-                    provider_type: row.get(5)?,
-                    context_window_size: row.get::<_, u32>(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    request_profile: row.get(5)?,
+                    provider_type: row.get(6)?,
+                    context_window_size: row.get::<_, u32>(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             },
         )
@@ -620,7 +665,7 @@ impl ProviderRepository for SqliteStore {
         let mut stmt = conn
             .prepare(
                 "SELECT provider_id, provider_name, base_url, model_name, api_key,
-                        provider_type, context_window_size, created_at, updated_at
+                        request_profile, provider_type, context_window_size, created_at, updated_at
                  FROM llm_providers
                  ORDER BY created_at DESC",
             )
@@ -633,10 +678,11 @@ impl ProviderRepository for SqliteStore {
                     base_url: row.get(2)?,
                     model_name: row.get(3)?,
                     api_key: row.get(4)?,
-                    provider_type: row.get(5)?,
-                    context_window_size: row.get::<_, u32>(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    request_profile: row.get(5)?,
+                    provider_type: row.get(6)?,
+                    context_window_size: row.get::<_, u32>(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             })
             .context("query list providers")?;
@@ -975,36 +1021,57 @@ mod tests {
     fn provider_new_fields_roundtrip() {
         let store = setup_store();
 
-        let p = store
-            .create_provider(
-                "OpenAI",
-                "https://api.openai.com/v1",
-                "gpt-4o",
-                "sk-test",
-                "built_in",
-                128000,
-            )
-            .expect("create provider");
+        let p = <SqliteStore as ProviderRepository>::create_provider(
+            &store,
+            "OpenAI",
+            "https://api.openai.com/v1",
+            "gpt-4o",
+            "sk-test",
+            Some("kimi_coding_v1"),
+            "built_in",
+            128000,
+        )
+        .expect("create provider");
 
         assert_eq!(p.provider_type, "built_in");
         assert_eq!(p.context_window_size, 128000);
+        assert_eq!(p.request_profile.as_deref(), Some("kimi_coding_v1"));
 
-        let updated = store
-            .update_provider(
-                &p.provider_id,
-                "OpenAI",
-                "https://api.openai.com/v1",
-                "gpt-4o-mini",
-                None,
-                128000,
-            )
-            .expect("update provider")
-            .expect("provider exists");
+        let updated = <SqliteStore as ProviderRepository>::update_provider(
+            &store,
+            &p.provider_id,
+            "OpenAI",
+            "https://api.openai.com/v1",
+            "gpt-4o-mini",
+            None,
+            None,
+            128000,
+        )
+        .expect("update provider")
+        .expect("provider exists");
 
         assert_eq!(updated.model_name, "gpt-4o-mini");
         assert_eq!(updated.context_window_size, 128000);
+        assert_eq!(updated.request_profile.as_deref(), Some("kimi_coding_v1"));
         // provider_type is not mutated by update
         assert_eq!(updated.provider_type, "built_in");
+
+        let updated_profile = <SqliteStore as ProviderRepository>::update_provider(
+            &store,
+            &p.provider_id,
+            "OpenAI",
+            "https://api.openai.com/v1",
+            "gpt-4o-mini",
+            None,
+            Some("kimi_coding_v2"),
+            128000,
+        )
+        .expect("update provider profile")
+        .expect("provider exists");
+        assert_eq!(
+            updated_profile.request_profile.as_deref(),
+            Some("kimi_coding_v2")
+        );
     }
 
     #[test]
@@ -1013,8 +1080,8 @@ mod tests {
         let p = store
             .create_provider(
                 "Kimi",
-                "https://api.kimi.com/coding",
-                "k2.5",
+                "https://api.kimi.com/coding/v1",
+                "kimi-for-coding",
                 "key",
                 "built_in",
                 256000,

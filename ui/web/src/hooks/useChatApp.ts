@@ -825,6 +825,7 @@ export function useChatApp() {
       providerName: string;
       baseUrl: string;
       modelName: string;
+      requestProfile?: string;
       apiKey: string;
       providerType?: "built_in" | "custom";
       contextWindowSize?: number;
@@ -842,6 +843,7 @@ export function useChatApp() {
         providerName: string;
         baseUrl: string;
         modelName: string;
+        requestProfile?: string;
         apiKey?: string;
         providerType?: "built_in" | "custom";
         contextWindowSize?: number;

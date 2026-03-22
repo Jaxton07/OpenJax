@@ -96,6 +96,8 @@ pub struct ProviderModelConfig {
     #[serde(default)]
     pub api_key_env: Option<String>,
     #[serde(default)]
+    pub request_profile: Option<String>,
+    #[serde(default)]
     pub anthropic_version: Option<String>,
     #[serde(default)]
     pub thinking_budget_tokens: Option<u32>,
@@ -292,5 +294,24 @@ mod tests {
         assert!(paths.logs_dir.is_dir());
         assert!(paths.skills_dir.is_dir());
         assert!(!tmp.path().join("workspace/.openjax/config.toml").exists());
+    }
+
+    #[test]
+    fn parses_model_request_profile_from_toml() {
+        let raw = r#"
+[model.models.kimi]
+provider = "kimi"
+protocol = "chat_completions"
+model = "kimi-for-coding"
+request_profile = "kimi_coding_v1"
+"#;
+
+        let config: Config = toml::from_str(raw).expect("parse config");
+        let profile = config
+            .model
+            .as_ref()
+            .and_then(|model| model.models.get("kimi"))
+            .and_then(|entry| entry.request_profile.as_deref());
+        assert_eq!(profile, Some("kimi_coding_v1"));
     }
 }

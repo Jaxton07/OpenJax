@@ -11,6 +11,7 @@ use crate::config::ModelConfig;
 use crate::logger::{RAW_RESPONSE_LOG_TARGET, provider_raw_log_enabled};
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::RegisteredModel;
+use crate::model::request_profiles::anthropic_messages::AnthropicMessagesRequestProfile;
 use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage, StreamDelta};
 use crate::streaming::parser::{SseParser, anthropic::AnthropicSseParser};
 
@@ -70,6 +71,7 @@ pub(crate) struct AnthropicMessagesClient {
     model: String,
     endpoint: String,
     anthropic_version: String,
+    profile: AnthropicMessagesRequestProfile,
     backend_name: &'static str,
     thinking: Option<AnthropicThinking>,
     log_thinking: bool,
@@ -104,14 +106,16 @@ struct AnthropicMessage {
 }
 
 impl AnthropicMessagesClient {
-    pub(crate) fn from_registered_model(entry: &RegisteredModel) -> Option<Self> {
+    pub(crate) fn from_registered_model(entry: &RegisteredModel) -> Result<Option<Self>> {
         if entry.protocol != "anthropic_messages" {
-            return None;
+            return Ok(None);
         }
+        let profile = AnthropicMessagesRequestProfile::parse(entry.request_profile.as_deref())?;
         let api_key = entry
             .api_key
             .clone()
-            .or_else(|| default_api_key_for_provider(&entry.provider))?;
+            .or_else(|| default_api_key_for_provider(&entry.provider))
+            .ok_or_else(|| anyhow!("missing API key for provider '{}'", entry.provider))?;
         let base_url = entry
             .base_url
             .clone()
@@ -127,7 +131,7 @@ impl AnthropicMessagesClient {
                 budget_tokens,
             });
 
-        Some(Self {
+        Ok(Some(Self {
             client: Client::new(),
             model_id: entry.id.clone(),
             provider: entry.provider.clone(),
@@ -136,11 +140,12 @@ impl AnthropicMessagesClient {
             model: entry.model.clone(),
             endpoint: build_messages_endpoint(&base_url),
             anthropic_version,
+            profile,
             backend_name: "anthropic-messages",
             thinking,
             log_thinking: should_log_thinking(),
             capabilities: entry.capabilities,
-        })
+        }))
     }
 
     pub(crate) fn from_anthropic_config(config: Option<&ModelConfig>) -> Option<Self> {
@@ -226,6 +231,7 @@ impl AnthropicMessagesClient {
             model,
             endpoint,
             anthropic_version,
+            profile: AnthropicMessagesRequestProfile::Default,
             backend_name,
             thinking: load_thinking_from_env(),
             log_thinking: should_log_thinking(),
@@ -236,6 +242,38 @@ impl AnthropicMessagesClient {
                 json_mode: false,
             },
         })
+    }
+
+    fn build_request(
+        &self,
+        request: &ModelRequest,
+        stream: bool,
+        thinking: Option<AnthropicThinking>,
+    ) -> AnthropicMessagesRequest {
+        let _profile = self.profile;
+        AnthropicMessagesRequest {
+            model: self.model.clone(),
+            system: request
+                .system_prompt
+                .clone()
+                .unwrap_or_else(default_system_prompt),
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: request.user_input.to_string(),
+            }],
+            max_tokens: request.options.max_output_tokens.unwrap_or(4096),
+            temperature: Some(0.2),
+            stream: stream.then_some(true),
+            thinking,
+        }
+    }
+
+    fn request_builder(&self, accept: &str) -> reqwest::RequestBuilder {
+        self.client
+            .post(&self.endpoint)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", &self.anthropic_version)
+            .header("accept", accept)
     }
 }
 
@@ -413,28 +451,10 @@ impl ModelClient for AnthropicMessagesClient {
                 budget_tokens,
             })
             .or_else(|| self.thinking.clone());
-        let req = AnthropicMessagesRequest {
-            model: self.model.clone(),
-            system: request
-                .system_prompt
-                .clone()
-                .unwrap_or_else(default_system_prompt),
-            messages: vec![AnthropicMessage {
-                role: "user".to_string(),
-                content: request.user_input.to_string(),
-            }],
-            max_tokens: request.options.max_output_tokens.unwrap_or(4096),
-            temperature: Some(0.2),
-            stream: None,
-            thinking,
-        };
+        let req = self.build_request(request, false, thinking);
 
         let resp = self
-            .client
-            .post(&self.endpoint)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", &self.anthropic_version)
-            .header("accept", "application/json")
+            .request_builder("application/json")
             .json(&req)
             .send()
             .await
@@ -511,28 +531,10 @@ impl ModelClient for AnthropicMessagesClient {
                 budget_tokens,
             })
             .or_else(|| self.thinking.clone());
-        let req = AnthropicMessagesRequest {
-            model: self.model.clone(),
-            system: request
-                .system_prompt
-                .clone()
-                .unwrap_or_else(default_system_prompt),
-            messages: vec![AnthropicMessage {
-                role: "user".to_string(),
-                content: request.user_input.to_string(),
-            }],
-            max_tokens: request.options.max_output_tokens.unwrap_or(4096),
-            temperature: Some(0.2),
-            stream: Some(true),
-            thinking,
-        };
+        let req = self.build_request(request, true, thinking);
 
         let resp = self
-            .client
-            .post(&self.endpoint)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", &self.anthropic_version)
-            .header("accept", "text/event-stream")
+            .request_builder("text/event-stream")
             .json(&req)
             .send()
             .await
@@ -819,9 +821,12 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_messages_endpoint, extract_content_from_body, extract_delta_content_from_body,
-        extract_delta_thinking_from_body, extract_thinking_from_body, is_legacy_glm_chat_base_url,
+        AnthropicMessagesClient, build_messages_endpoint, extract_content_from_body,
+        extract_delta_content_from_body, extract_delta_thinking_from_body,
+        extract_thinking_from_body, is_legacy_glm_chat_base_url,
     };
+    use crate::model::registry::RegisteredModel;
+    use crate::model::types::{CapabilityFlags, ModelRequest, ModelStage};
     use crate::streaming::parser::parse_sse_data_line;
 
     #[test]
@@ -908,6 +913,64 @@ mod tests {
         assert_eq!(
             build_messages_endpoint("https://open.bigmodel.cn/api/anthropic"),
             "https://open.bigmodel.cn/api/anthropic/v1/messages"
+        );
+    }
+
+    fn sample_registered_model(request_profile: Option<&str>) -> RegisteredModel {
+        RegisteredModel {
+            id: "anthropic".to_string(),
+            provider: "anthropic".to_string(),
+            protocol: "anthropic_messages".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+            request_profile: request_profile.map(ToString::to_string),
+            base_url: Some("https://api.anthropic.com/v1".to_string()),
+            api_key: Some("secret".to_string()),
+            anthropic_version: Some("2023-06-01".to_string()),
+            thinking_budget_tokens: None,
+            capabilities: CapabilityFlags {
+                stream: true,
+                reasoning: true,
+                tool_call: false,
+                json_mode: false,
+            },
+        }
+    }
+
+    #[test]
+    fn default_profile_keeps_anthropic_request_shape() {
+        let client = AnthropicMessagesClient::from_registered_model(&sample_registered_model(None))
+            .expect("build client")
+            .expect("anthropic client");
+        let request = ModelRequest::for_stage(ModelStage::Planner, "hello");
+
+        let req = client.build_request(&request, true, None);
+        let http_request = client
+            .request_builder("text/event-stream")
+            .json(&req)
+            .build()
+            .expect("build request");
+
+        assert_eq!(req.max_tokens, 4096);
+        assert_eq!(req.temperature, Some(0.2));
+        assert_eq!(req.stream, Some(true));
+        assert_eq!(
+            http_request
+                .headers()
+                .get("anthropic-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("2023-06-01")
+        );
+    }
+
+    #[test]
+    fn unknown_registered_model_profile_returns_clear_error() {
+        let err = AnthropicMessagesClient::from_registered_model(&sample_registered_model(Some(
+            "bad_profile",
+        )))
+        .expect_err("unknown profile should fail");
+        assert!(
+            err.to_string()
+                .contains("unknown anthropic_messages request_profile")
         );
     }
 }

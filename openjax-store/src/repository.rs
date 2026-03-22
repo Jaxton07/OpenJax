@@ -45,6 +45,7 @@ pub trait ProviderRepository {
         base_url: &str,
         model_name: &str,
         api_key: &str,
+        request_profile: Option<&str>,
         provider_type: &str,
         context_window_size: u32,
     ) -> Result<ProviderRecord>;
@@ -55,6 +56,7 @@ pub trait ProviderRepository {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        request_profile: Option<&str>,
         context_window_size: u32,
     ) -> Result<Option<ProviderRecord>>;
     fn delete_provider(&self, provider_id: &str) -> Result<bool>;

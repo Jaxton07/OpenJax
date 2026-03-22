@@ -12,6 +12,7 @@ export interface LlmProvider {
   provider_name: string;
   base_url: string;
   model_name: string;
+  request_profile?: string | null;
   api_key_set: boolean;
   created_at: string;
   updated_at: string;

@@ -38,6 +38,7 @@ pub struct ProviderRecord {
     pub base_url: String,
     pub model_name: String,
     pub api_key: String,
+    pub request_profile: Option<String>,
     pub provider_type: String, // "built_in" | "custom"
     pub context_window_size: u32,
     pub created_at: String,

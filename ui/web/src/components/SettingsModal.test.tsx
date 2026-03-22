@@ -8,6 +8,7 @@ const providerItem = {
   provider_name: "openai-main",
   base_url: "https://api.openai.com/v1",
   model_name: "gpt-4.1-mini",
+  request_profile: null,
   api_key_set: true,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -100,6 +101,7 @@ describe("SettingsModal", () => {
       provider_name: "glm-main",
       base_url: "https://open.bigmodel.cn/api/anthropic",
       model_name: "glm-4.7",
+      request_profile: null,
       api_key_set: true,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -148,6 +150,7 @@ describe("SettingsModal", () => {
         providerName: "glm-main",
         baseUrl: "https://open.bigmodel.cn/api/anthropic",
         modelName: "glm-4.7",
+        requestProfile: "",
         apiKey: "key-a",
         providerType: "custom",
         contextWindowSize: 128000
@@ -238,14 +241,18 @@ describe("SettingsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "保存修改" }));
 
     await waitFor(() =>
-      expect(onUpdateProvider).toHaveBeenCalledWith("provider_1", {
-        providerName: "openai-main",
-        baseUrl: "https://api.openai.com/v1",
-        modelName: "gpt-4.1",
-        apiKey: "",
-        providerType: "custom",
-        contextWindowSize: 128000
-      })
+      expect(onUpdateProvider).toHaveBeenCalledWith(
+        "provider_1",
+        expect.objectContaining({
+          providerName: "openai-main",
+          baseUrl: "https://api.openai.com/v1",
+          modelName: "gpt-4.1",
+          apiKey: "",
+          providerType: "custom",
+          contextWindowSize: 128000,
+          requestProfile: ""
+        })
+      )
     );
   });
 

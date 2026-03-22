@@ -190,6 +190,7 @@ export default function SettingsModal(props: SettingsModalProps) {
           providerName: pendingCatalogEntry.display_name,
           baseUrl: pendingCatalogEntry.base_url,
           modelName: pendingCatalogEntry.default_model,
+          requestProfile: pendingCatalogEntry.catalog_key === "kimi_coding" ? "kimi_coding_v1" : "",
           apiKey: "",
           providerType: "built_in",
           contextWindowSize:
@@ -199,12 +200,21 @@ export default function SettingsModal(props: SettingsModalProps) {
           catalogModels: pendingCatalogEntry.models
         }
       : providerPanelMode === "create"
-      ? { providerName: "", baseUrl: "", modelName: "", apiKey: "", providerType: "custom", contextWindowSize: 0 }
+      ? {
+          providerName: "",
+          baseUrl: "",
+          modelName: "",
+          requestProfile: "",
+          apiKey: "",
+          providerType: "custom",
+          contextWindowSize: 0
+        }
       : selectedProvider
         ? {
             providerName: selectedProvider.provider_name,
             baseUrl: selectedProvider.base_url,
             modelName: selectedProvider.model_name,
+            requestProfile: selectedProvider.request_profile ?? "",
             apiKey: "",
             providerType: selectedProvider.provider_type,
             contextWindowSize: selectedProvider.context_window_size,
@@ -217,7 +227,15 @@ export default function SettingsModal(props: SettingsModalProps) {
                   )?.models
                 : undefined
           }
-        : { providerName: "", baseUrl: "", modelName: "", apiKey: "", providerType: "custom", contextWindowSize: 0 };
+        : {
+            providerName: "",
+            baseUrl: "",
+            modelName: "",
+            requestProfile: "",
+            apiKey: "",
+            providerType: "custom",
+            contextWindowSize: 0
+          };
 
   const handleSaveSettings = async (settings: AppSettings) => {
     setSavingGeneral(true);
@@ -342,6 +360,7 @@ export default function SettingsModal(props: SettingsModalProps) {
         providerName: provider.provider_name,
         baseUrl: provider.base_url,
         modelName: modelId,
+        requestProfile: provider.request_profile ?? "",
         apiKey: "",
         providerType: provider.provider_type,
         contextWindowSize: contextWindow
