@@ -3,7 +3,7 @@ use anyhow::{Result, anyhow};
 use crate::model::types::ModelRequest;
 
 const KIMI_CLI_USER_AGENT: &str = "KimiCLI/0.77";
-const KIMI_DEFAULT_MAX_TOKENS: u32 = 32_768;
+const KIMI_DEFAULT_MAX_TOKENS: u32 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChatCompletionsRequestProfile {
@@ -55,7 +55,7 @@ mod tests {
         let profile = ChatCompletionsRequestProfile::KimiCodingV1;
         let request = ModelRequest::for_stage(ModelStage::Planner, "hello");
 
-        assert_eq!(profile.resolve_max_tokens(&request), Some(32_768));
+        assert_eq!(profile.resolve_max_tokens(&request), Some(200_000));
     }
 
     #[test]

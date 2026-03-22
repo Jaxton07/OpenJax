@@ -822,8 +822,8 @@ mod tests {
         let non_stream = client.build_request(&request, false);
         let stream = client.build_request(&request, true);
 
-        assert_eq!(non_stream.max_tokens, Some(32_768));
-        assert_eq!(stream.max_tokens, Some(32_768));
+        assert_eq!(non_stream.max_tokens, Some(200_000));
+        assert_eq!(stream.max_tokens, Some(200_000));
         assert!(stream.stream_options.is_none());
     }
 
