@@ -47,7 +47,6 @@ ui/tui/
 ui/web/
 python/
   openjax_sdk/
-smoke_test/
 docs/
 ```
 

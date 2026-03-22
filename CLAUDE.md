@@ -29,7 +29,6 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `ui/tui/`：Rust TUI（最新版）。
 - `ui/web/`：React Web 前端（通过 gateway 访问会话与流式事件）。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
-- `smoke_test/`：冒烟测试脚本。
 
 ### 子模块 README 导航
 

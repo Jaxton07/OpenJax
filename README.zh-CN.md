@@ -190,7 +190,6 @@ openjax-protocol (shared types/events)
 - `openjax-gateway/`：面向 Web 的 HTTP/SSE 网关
 - `ui/web/`：React Web UI
 - `python/openjax_sdk/`：Python 异步 SDK
-- `smoke_test/`：冒烟脚本
 
 ## 开发者入口
 
