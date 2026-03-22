@@ -4,9 +4,15 @@ use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{Duration, sleep};
+
+static APPROVAL_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+fn serial_guard() -> MutexGuard<'static, ()> {
+    APPROVAL_TEST_LOCK.lock().expect("approval test lock poisoned")
+}
 
 fn temp_workspace_path() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -84,6 +90,7 @@ impl ApprovalHandler for MockApprovalHandler {
 
 #[tokio::test]
 async fn always_ask_prompts_and_approved_call_succeeds() {
+    let _guard = serial_guard();
     let workspace = create_workspace();
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
@@ -112,6 +119,7 @@ async fn always_ask_prompts_and_approved_call_succeeds() {
 
 #[tokio::test]
 async fn on_request_skips_prompt_for_non_mutating_tool() {
+    let _guard = serial_guard();
     let workspace = create_workspace();
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
@@ -140,6 +148,7 @@ async fn on_request_skips_prompt_for_non_mutating_tool() {
 
 #[tokio::test]
 async fn on_request_prompts_for_mutating_tool_and_rejects() {
+    let _guard = serial_guard();
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
@@ -175,6 +184,7 @@ async fn on_request_prompts_for_mutating_tool_and_rejects() {
 
 #[tokio::test]
 async fn never_does_not_prompt_even_for_mutating_tool() {
+    let _guard = serial_guard();
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
@@ -207,6 +217,7 @@ async fn never_does_not_prompt_even_for_mutating_tool() {
 
 #[tokio::test]
 async fn approval_timeout_is_reported_as_timeout() {
+    let _guard = serial_guard();
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
@@ -248,6 +259,7 @@ async fn approval_timeout_is_reported_as_timeout() {
 
 #[tokio::test]
 async fn on_request_prompts_for_git_commit_and_rejects() {
+    let _guard = serial_guard();
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\n").expect("seed file");
 
