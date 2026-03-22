@@ -111,6 +111,12 @@ Provider 相关：
 6. `OPENJAX_MAX_TOOL_CALLS_PER_TURN`
 7. `OPENJAX_MAX_PLANNER_ROUNDS_PER_TURN`
 
+## 请求格式策略
+
+1. `request_profile` 为运行时内部策略，不在 Web/Gateway 暴露给用户配置。
+2. 系统会按 provider 自动选择请求格式：如 Kimi Coding 使用 `kimi_coding_v1`，Anthropic 协议使用 `anthropic_default`。
+3. 未命中专用策略时，默认走 OpenAI 兼容 `chat_completions` 请求格式。
+
 ## 兼容策略
 
 1. 若只配置 legacy `[model]`，系统自动桥接并继续运行。

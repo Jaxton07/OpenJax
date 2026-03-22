@@ -135,6 +135,7 @@ describe("SettingsModal", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "LLM Provider" }));
     await userEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+    expect(screen.queryByLabelText("Request Profile")).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("名称"), "glm-main");
     await userEvent.type(
       screen.getByLabelText("Base URL"),
@@ -150,7 +151,6 @@ describe("SettingsModal", () => {
         providerName: "glm-main",
         baseUrl: "https://open.bigmodel.cn/api/anthropic",
         modelName: "glm-4.7",
-        requestProfile: "",
         apiKey: "key-a",
         providerType: "custom",
         contextWindowSize: 128000
@@ -234,6 +234,7 @@ describe("SettingsModal", () => {
     await screen.findByText("openai-main");
     expect(screen.queryByText("编辑 Provider")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.queryByLabelText("Request Profile")).not.toBeInTheDocument();
 
     const modelInput = screen.getByLabelText("模型名称");
     await userEvent.clear(modelInput);
@@ -249,8 +250,7 @@ describe("SettingsModal", () => {
           modelName: "gpt-4.1",
           apiKey: "",
           providerType: "custom",
-          contextWindowSize: 128000,
-          requestProfile: ""
+          contextWindowSize: 128000
         })
       )
     );

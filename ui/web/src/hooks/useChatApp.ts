@@ -621,7 +621,7 @@ export function useChatApp() {
           clearAuthState("登录态已失效，请重新登录。");
           return;
         }
-        setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
+        setState((prev) => ({ ...prev, globalError: humanizeProviderError(error) }));
       }
     },
     [
@@ -825,7 +825,6 @@ export function useChatApp() {
       providerName: string;
       baseUrl: string;
       modelName: string;
-      requestProfile?: string;
       apiKey: string;
       providerType?: "built_in" | "custom";
       contextWindowSize?: number;
@@ -843,7 +842,6 @@ export function useChatApp() {
         providerName: string;
         baseUrl: string;
         modelName: string;
-        requestProfile?: string;
         apiKey?: string;
         providerType?: "built_in" | "custom";
         contextWindowSize?: number;
@@ -994,6 +992,24 @@ function isSessionNotFoundError(error: unknown): boolean {
   }
   const gateway = error as Partial<GatewayError>;
   return gateway.code === "NOT_FOUND" || gateway.status === 404;
+}
+
+function humanizeProviderError(error: unknown): string {
+  const normalized = humanizeError(error);
+  if (!error || typeof error !== "object" || !("code" in error)) {
+    return normalized;
+  }
+  const gateway = error as GatewayError;
+  if (gateway.code !== "UPSTREAM_UNAVAILABLE" && gateway.status !== 404) {
+    return normalized;
+  }
+  const detail = [gateway.status ? `HTTP ${gateway.status}` : "", gateway.message]
+    .filter((part) => part && part.trim().length > 0)
+    .join(" - ");
+  if (!detail || normalized.includes(detail)) {
+    return normalized;
+  }
+  return `${normalized}（${detail}）`;
 }
 
 function resolveWebStreamDebugEnabled(): boolean {

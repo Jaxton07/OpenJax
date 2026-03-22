@@ -186,7 +186,18 @@ fn normalize_model_entry(
         provider,
         protocol: protocol.clone(),
         model,
-        request_profile: entry.request_profile.clone(),
+        request_profile: entry.request_profile.clone().or_else(|| {
+            infer_request_profile(
+                &entry
+                    .provider
+                    .clone()
+                    .unwrap_or_else(|| "openai".to_string())
+                    .to_ascii_lowercase(),
+                &protocol,
+                entry.base_url.as_deref(),
+                entry.model.as_deref(),
+            )
+        }),
         base_url: entry.base_url.clone(),
         api_key,
         anthropic_version: entry.anthropic_version.clone(),
@@ -239,6 +250,29 @@ fn default_capabilities(protocol: &str) -> CapabilityFlags {
             json_mode: false,
         },
     }
+}
+
+fn infer_request_profile(
+    provider: &str,
+    protocol: &str,
+    base_url: Option<&str>,
+    model: Option<&str>,
+) -> Option<String> {
+    if protocol == "anthropic_messages" || provider.contains("anthropic") {
+        return Some("anthropic_default".to_string());
+    }
+
+    let marker = format!(
+        "{} {} {}",
+        provider,
+        base_url.unwrap_or_default(),
+        model.unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    if marker.contains("kimi") && marker.contains("coding") {
+        return Some("kimi_coding_v1".to_string());
+    }
+    None
 }
 
 #[cfg(test)]
@@ -404,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_request_profile_on_registered_model() {
+    fn infers_kimi_request_profile_when_missing() {
         let mut models = HashMap::new();
         models.insert(
             "kimi".to_string(),
@@ -415,7 +449,7 @@ mod tests {
                 base_url: Some("https://api.kimi.com/coding/v1".to_string()),
                 api_key: Some("test-key".to_string()),
                 api_key_env: None,
-                request_profile: Some("kimi_coding_v1".to_string()),
+                request_profile: None,
                 anthropic_version: None,
                 thinking_budget_tokens: None,
                 supports_stream: None,
@@ -442,6 +476,48 @@ mod tests {
                 .get("kimi")
                 .and_then(|model| model.request_profile.as_deref()),
             Some("kimi_coding_v1")
+        );
+    }
+
+    #[test]
+    fn infers_anthropic_request_profile_when_missing() {
+        let mut models = HashMap::new();
+        models.insert(
+            "claude".to_string(),
+            ProviderModelConfig {
+                provider: Some("anthropic".to_string()),
+                protocol: Some("anthropic_messages".to_string()),
+                model: Some("claude-sonnet-4-6".to_string()),
+                base_url: Some("https://api.anthropic.com".to_string()),
+                api_key: Some("test-key".to_string()),
+                api_key_env: None,
+                request_profile: None,
+                anthropic_version: None,
+                thinking_budget_tokens: None,
+                supports_stream: None,
+                supports_reasoning: None,
+                supports_tool_call: None,
+                supports_json_mode: None,
+                context_window_size: None,
+            },
+        );
+
+        let config = ModelConfig {
+            backend: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            models,
+            routing: None,
+        };
+
+        let registry = ModelRegistry::from_config(Some(&config));
+        assert_eq!(
+            registry
+                .models
+                .get("claude")
+                .and_then(|model| model.request_profile.as_deref()),
+            Some("anthropic_default")
         );
     }
 }

@@ -37,6 +37,13 @@ mod tests {
     }
 
     #[test]
+    fn anthropic_profile_supports_anthropic_default() {
+        let profile = AnthropicMessagesRequestProfile::parse(Some("anthropic_default"))
+            .expect("anthropic default profile");
+        assert_eq!(profile, AnthropicMessagesRequestProfile::Default);
+    }
+
+    #[test]
     fn anthropic_profile_rejects_unknown_profile() {
         let err = AnthropicMessagesRequestProfile::parse(Some("kimi_coding_v1"))
             .expect_err("unsupported anthropic profile should fail");

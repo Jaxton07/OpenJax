@@ -85,7 +85,6 @@ pub fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
             &base_url,
             &model_name,
             &api_key,
-            None,
             "custom",
             0,
         );
@@ -98,8 +97,6 @@ pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
     const KIMI_PROVIDER_NAME: &str = "Kimi Coding";
     const KIMI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
     const KIMI_MODEL: &str = "kimi-for-coding";
-    const KIMI_REQUEST_PROFILE: &str = "kimi_coding_v1";
-
     let providers = store.list_providers().unwrap_or_default();
     for provider in providers {
         if provider.provider_type != "built_in" || provider.provider_name != KIMI_PROVIDER_NAME {
@@ -115,10 +112,6 @@ pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
             KIMI_BASE_URL,
             KIMI_MODEL,
             None,
-            provider
-                .request_profile
-                .as_deref()
-                .or(Some(KIMI_REQUEST_PROFILE)),
             provider.context_window_size,
         );
     }
@@ -139,7 +132,6 @@ mod tests {
             "https://api.kimi.com/coding",
             "k2.5",
             "key",
-            None,
             "built_in",
             256000,
         )
@@ -156,7 +148,6 @@ mod tests {
             .expect("provider exists");
         assert_eq!(updated.base_url, "https://api.kimi.com/coding/v1");
         assert_eq!(updated.model_name, "kimi-for-coding");
-        assert_eq!(updated.request_profile.as_deref(), Some("kimi_coding_v1"));
 
         let active = store
             .get_active_provider()

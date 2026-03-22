@@ -19,7 +19,6 @@ pub struct ProviderItem {
     base_url: String,
     model_name: String,
     api_key_set: bool,
-    request_profile: Option<String>,
     provider_type: String,
     context_window_size: u32,
     created_at: String,
@@ -65,13 +64,12 @@ pub struct ActiveProviderResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateProviderRequest {
     provider_name: String,
     base_url: String,
     model_name: String,
     api_key: String,
-    #[serde(default)]
-    request_profile: Option<String>,
     #[serde(default = "default_provider_type")]
     provider_type: String,
     #[serde(default)]
@@ -83,13 +81,12 @@ fn default_provider_type() -> String {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateProviderRequest {
     provider_name: String,
     base_url: String,
     model_name: String,
     api_key: Option<String>,
-    #[serde(default)]
-    request_profile: Option<String>,
     #[serde(default)]
     context_window_size: u32,
 }
@@ -134,7 +131,6 @@ fn to_provider_item(provider: openjax_store::ProviderRecord) -> ProviderItem {
         base_url: provider.base_url,
         model_name: provider.model_name,
         api_key_set: !provider.api_key.trim().is_empty(),
-        request_profile: provider.request_profile,
         provider_type: provider.provider_type,
         context_window_size: provider.context_window_size,
         created_at: provider.created_at,
@@ -232,11 +228,6 @@ pub async fn create_provider(
         base_url,
         model_name,
         api_key,
-        payload
-            .request_profile
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty()),
         &payload.provider_type,
         payload.context_window_size,
     )?;
@@ -274,11 +265,6 @@ pub async fn update_provider(
             base_url,
             model_name,
             api_key,
-            payload
-                .request_profile
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
             payload.context_window_size,
         )?
         .ok_or_else(|| {
@@ -340,24 +326,88 @@ pub async fn get_catalog() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::to_provider_item;
+    use super::{
+        CreateProviderRequest, ProviderListResponse, ProviderMutationResponse,
+        UpdateProviderRequest, to_provider_item,
+    };
     use openjax_store::ProviderRecord;
+    use serde_json::json;
 
-    #[test]
-    fn provider_item_preserves_request_profile() {
-        let item = to_provider_item(ProviderRecord {
+    fn sample_provider_record() -> ProviderRecord {
+        ProviderRecord {
             provider_id: "provider_1".to_string(),
             provider_name: "Kimi".to_string(),
             base_url: "https://api.kimi.com/coding/v1".to_string(),
             model_name: "kimi-for-coding".to_string(),
             api_key: "secret".to_string(),
-            request_profile: Some("kimi_coding_v1".to_string()),
             provider_type: "built_in".to_string(),
             context_window_size: 256000,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn provider_item_serialization_excludes_request_profile() {
+        let item = to_provider_item(sample_provider_record());
+
+        let payload = serde_json::to_value(item).expect("serialize provider item");
+        assert!(payload.get("request_profile").is_none());
+    }
+
+    #[test]
+    fn provider_responses_exclude_request_profile() {
+        let provider = to_provider_item(sample_provider_record());
+        let list_payload = serde_json::to_value(ProviderListResponse {
+            request_id: "req_1".to_string(),
+            providers: vec![provider],
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+        })
+        .expect("serialize list response");
+        assert!(
+            list_payload["providers"][0]
+                .get("request_profile")
+                .is_none()
+        );
+
+        let provider = to_provider_item(sample_provider_record());
+        let mutation_payload = serde_json::to_value(ProviderMutationResponse {
+            request_id: "req_2".to_string(),
+            provider,
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+        })
+        .expect("serialize mutation response");
+        assert!(
+            mutation_payload["provider"]
+                .get("request_profile")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn create_provider_request_rejects_request_profile_field() {
+        let payload = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "api_key": "secret",
+            "request_profile": "kimi_coding_v1"
         });
 
-        assert_eq!(item.request_profile.as_deref(), Some("kimi_coding_v1"));
+        let err = serde_json::from_value::<CreateProviderRequest>(payload).expect_err("must fail");
+        assert!(err.to_string().contains("unknown field `request_profile`"));
+    }
+
+    #[test]
+    fn update_provider_request_rejects_request_profile_field() {
+        let payload = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "request_profile": "kimi_coding_v1"
+        });
+
+        let err = serde_json::from_value::<UpdateProviderRequest>(payload).expect_err("must fail");
+        assert!(err.to_string().contains("unknown field `request_profile`"));
     }
 }

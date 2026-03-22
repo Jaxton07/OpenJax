@@ -73,10 +73,7 @@ pub fn build_config_from_providers(
     let mut route_order: Vec<String> = Vec::new();
 
     for provider in ordered {
-        let request_profile = provider
-            .request_profile
-            .clone()
-            .or_else(|| infer_request_profile(&provider));
+        let request_profile = infer_request_profile(&provider);
         let mut model_id = normalize_model_id(&provider.provider_name);
         if model_id.is_empty() {
             model_id = format!("provider_{}", provider.provider_id);
@@ -181,6 +178,12 @@ pub fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
 }
 
 fn infer_request_profile(provider: &ProviderRecord) -> Option<String> {
+    if provider_protocol(&provider.base_url, &provider.provider_name) == "anthropic_messages"
+        || provider_vendor(&provider.base_url, &provider.provider_name) == "anthropic"
+    {
+        return Some("anthropic_default".to_string());
+    }
+
     let marker = format!(
         "{} {} {}",
         provider.provider_name, provider.base_url, provider.model_name
@@ -206,7 +209,6 @@ mod tests {
             base_url: base_url.to_string(),
             model_name: model_name.to_string(),
             api_key: "secret".to_string(),
-            request_profile: None,
             provider_type: "built_in".to_string(),
             context_window_size: 256_000,
             created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -215,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn kimi_provider_maps_request_profile() {
+    fn kimi_provider_infers_kimi_profile_without_db_field() {
         let config = build_config_from_providers(
             vec![sample_provider(
                 "Kimi Coding",
@@ -250,5 +252,24 @@ mod tests {
             .and_then(|model| model.models.get("openai"))
             .and_then(|entry| entry.request_profile.as_deref());
         assert_eq!(profile, None);
+    }
+
+    #[test]
+    fn anthropic_provider_infers_anthropic_profile_without_db_field() {
+        let config = build_config_from_providers(
+            vec![sample_provider(
+                "Anthropic",
+                "https://api.anthropic.com",
+                "claude-sonnet-4-6",
+            )],
+            Some("provider_1"),
+        );
+
+        let profile = config
+            .model
+            .as_ref()
+            .and_then(|model| model.models.get("anthropic"))
+            .and_then(|entry| entry.request_profile.as_deref());
+        assert_eq!(profile, Some("anthropic_default"));
     }
 }

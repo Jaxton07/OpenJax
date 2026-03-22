@@ -163,7 +163,6 @@ export class GatewayClient {
     providerName: string;
     baseUrl: string;
     modelName: string;
-    requestProfile?: string;
     apiKey: string;
     providerType?: "built_in" | "custom";
     contextWindowSize?: number;
@@ -174,7 +173,6 @@ export class GatewayClient {
         provider_name: payload.providerName,
         base_url: payload.baseUrl,
         model_name: payload.modelName,
-        request_profile: payload.requestProfile?.trim() || undefined,
         api_key: payload.apiKey,
         provider_type: payload.providerType,
         context_window_size: payload.contextWindowSize
@@ -183,16 +181,15 @@ export class GatewayClient {
   }
 
   async updateProvider(
-    providerId: string,
-    payload: {
-      providerName: string;
-      baseUrl: string;
-      modelName: string;
-      requestProfile?: string;
-      apiKey?: string;
-      providerType?: "built_in" | "custom";
-      contextWindowSize?: number;
-    }
+      providerId: string,
+      payload: {
+        providerName: string;
+        baseUrl: string;
+        modelName: string;
+        apiKey?: string;
+        providerType?: "built_in" | "custom";
+        contextWindowSize?: number;
+      }
   ): Promise<ProviderMutationResponse> {
     return this.request(`/api/v1/providers/${providerId}`, {
       method: "PATCH",
@@ -200,7 +197,6 @@ export class GatewayClient {
         provider_name: payload.providerName,
         base_url: payload.baseUrl,
         model_name: payload.modelName,
-        request_profile: payload.requestProfile?.trim() || undefined,
         api_key: payload.apiKey,
         provider_type: payload.providerType,
         context_window_size: payload.contextWindowSize
