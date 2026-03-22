@@ -67,6 +67,13 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `zsh -lc "cargo test -p openjax-gateway"`
 - `zsh -lc "cargo test -p tui_next"`
 - `zsh -lc "cd ui/web && pnpm test"`
+- `zsh -lc "make core-smoke"`
+- `zsh -lc "make core-feature-skills"`
+- `zsh -lc "make core-feature-tools"`
+- `zsh -lc "make core-feature-streaming"`
+- `zsh -lc "make core-feature-approval"`
+- `zsh -lc "make core-feature-history"`
+- `zsh -lc "make core-full"`
 
 ### 单个 Rust 集成测试（重要）
 对于 `tests/` 中的文件，使用 `--test <file_stem>`。
@@ -132,7 +139,8 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - 任何行为变更都应包含测试新增/更新。
 - Rust 模式：
   - 在 `#[cfg(test)]` 块中写单元测试
-  - 在 `tests/` 中写集成测试，文件命名使用 `m*_*.rs`
+  - 在 `tests/` 中以 `*_suite.rs` 作为集成测试入口（`cargo test --test <suite_stem>`）
+  - 具体用例可按 `m*_*.rs` 组织在 suite 子目录中，通过 `#[path = \"...\"] mod ...;` 收编
 - Python 模式：
   - `unittest`
   - 文件名 `test_*.py`
