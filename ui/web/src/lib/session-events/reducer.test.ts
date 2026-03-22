@@ -241,4 +241,35 @@ describe("session-events/reducer", () => {
     expect(error?.startEventSeq).toBe(7);
     expect(error?.lastEventSeq).toBe(7);
   });
+
+  it("keeps response_error message after turn_completed", () => {
+    const session = baseSession();
+    const failed = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_err_done",
+      event_seq: 8,
+      timestamp: "2026-01-01T00:00:08Z",
+      type: "response_error",
+      payload: { message: "model request failed" }
+    });
+    const completed = applySessionEvent(failed, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_err_done",
+      event_seq: 9,
+      timestamp: "2026-01-01T00:00:09Z",
+      type: "turn_completed",
+      payload: {}
+    });
+
+    expect(
+      completed.messages.some(
+        (message) =>
+          message.kind === "text" &&
+          message.role === "error" &&
+          message.content.includes("model request failed")
+      )
+    ).toBe(true);
+  });
 });

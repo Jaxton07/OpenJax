@@ -11,7 +11,9 @@ use tokio::time::{Duration, sleep};
 static APPROVAL_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 fn serial_guard() -> MutexGuard<'static, ()> {
-    APPROVAL_TEST_LOCK.lock().expect("approval test lock poisoned")
+    APPROVAL_TEST_LOCK
+        .lock()
+        .expect("approval test lock poisoned")
 }
 
 fn temp_workspace_path() -> PathBuf {
