@@ -13,7 +13,7 @@
   - `ModelRequest` / `ModelResponse` / `CapabilityFlags`
 - `factory.rs`: 入口装配。优先使用新注册表配置，必要时桥接 legacy 配置。
 - `registry.rs`: 将 `[model]` / `[model.models]` / `[model.routing]` 规范化为 `ModelRegistry`。
-- `router.rs`: `ModelRouter`，按 stage 选主模型并执行 fallback 链路。
+- `router.rs`: `ModelRouter`，按 stage 选主模型并执行单次调用（主模型失败直接报错，不自动 fallback）。
 - `chat_completions.rs`: OpenAI 兼容协议适配器（OpenAI / MiniMax / GLM chat-completions）。
 - `anthropic_messages.rs`: Anthropic Messages 协议适配器（Anthropic / GLM anthropic 兼容）。
 - `../streaming/parser/`: provider 流式读取统一入口（`SseParser`）。
@@ -33,13 +33,13 @@
    - GLM chat-completions
 5. 仍不可用则返回 `MissingConfigModelClient`。
 
-## 路由与降级（router）
+## 路由（router）
 
 - 主路由由 `ModelStage` 决定：
   - `planner` -> `routing.planner`
   - `final_writer` -> `routing.final_writer`
   - `tool_reasoning` -> `routing.tool_reasoning`
-- fallback 链由 `routing.fallbacks` 提供，默认最大链路长度 `2`。
+- 当前运行时只调用路由选中的主模型一次；若主模型失败会直接返回错误，不自动 fallback 到其它 provider。
 - 路由会基于能力位过滤不匹配模型，例如：
   - `require_reasoning=true` 时跳过不支持 reasoning 的模型。
   - 流式调用时跳过不支持 stream 的模型。

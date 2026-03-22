@@ -32,7 +32,9 @@ pub struct RoutingPlan {
     pub planner: String,
     pub final_writer: String,
     pub tool_reasoning: String,
+    #[allow(dead_code)]
     pub fallbacks: HashMap<String, Vec<String>>,
+    #[allow(dead_code)]
     pub max_fallback_chain: usize,
 }
 
