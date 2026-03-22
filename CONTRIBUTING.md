@@ -109,9 +109,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 # Run all tests
 cargo test --workspace
 
-# Run a specific integration test (preferred for tests/ directory)
-cargo test -p openjax-core --test m3_sandbox
-cargo test -p openjax-core --test m4_apply_patch
+# Run a specific integration suite (preferred for tests/ directory)
+cargo test -p openjax-core --test tools_sandbox_suite
+cargo test -p openjax-core --test approval_suite
 
 # Run with output for debugging
 cargo test -p openjax-core -- --nocapture

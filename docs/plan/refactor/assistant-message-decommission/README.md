@@ -13,7 +13,7 @@
 - Protocol docs/schema mark `assistant_message` as `deprecated` compatibility event.
 
 ## Required Validation
-- `cargo test -p openjax-core --test m23_assistant_message_decommission_guardrails -- --nocapture`
+- `cargo test -p openjax-core --test streaming_suite assistant_message_decommission_guardrails_m23 -- --nocapture`
 - `cargo test -p openjax-gateway --test m1_assistant_message_compat_only -- --nocapture`
 - `cargo test -p openjax-gateway normal_turn_stream_has_no_assistant_message_event -- --nocapture`
 - `cd ui/web && pnpm test -- assistant_message`

@@ -197,13 +197,13 @@ Shell fallback 策略：
 ## 9. 测试覆盖（已验证）
 
 已通过的关键测试：
-- `openjax-core/tests/m3_sandbox.rs`
+- `openjax-core/tests/tools_sandbox_suite.rs`
   - pipeline 命令可执行
   - 网络/写入在 `approval_policy=never` 下被拒绝
   - 路径越权仍被拦截
-- `openjax-core/tests/m5_approval_handler.rs`
+- `openjax-core/tests/approval_suite.rs`
   - 非 shell mutating 与旧语义兼容
-- `openjax-core/tests/m8_approval_event_emission.rs`
+- `openjax-core/tests/approval_events_suite.rs`
   - 审批事件生命周期正确
 - `ui/tui/tests/m10_approval_panel_navigation.rs`
   - 扩展审批数据下 UI 行为稳定

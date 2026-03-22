@@ -2,18 +2,12 @@
 
 ## 关键测试
 
-1. `m10_skills_discovery`
-2. `m11_skills_prompt_injection`
-3. `m12_skills_config_toggle`
-4. `m13_skills_duplicate_resolution`
+1. `skills_suite`（聚合 skills 相关集成测试）
 
 ## 常用命令
 
 ```bash
-zsh -lc "cargo test -p openjax-core --test m10_skills_discovery"
-zsh -lc "cargo test -p openjax-core --test m11_skills_prompt_injection"
-zsh -lc "cargo test -p openjax-core --test m12_skills_config_toggle"
-zsh -lc "cargo test -p openjax-core --test m13_skills_duplicate_resolution"
+zsh -lc "cargo test -p openjax-core --test skills_suite"
 ```
 
 ## 常见问题

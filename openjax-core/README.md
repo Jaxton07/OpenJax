@@ -68,18 +68,36 @@ let events = agent
     .await;
 ```
 
+## 测试分层（推荐）
+
+日常开发建议按 `smoke -> feature -> full` 的顺序执行。
+
+下面的 `make core-*` target 已落地，可直接使用。`make test-rust` 仍然保留为 workspace 级全量 Rust 测试入口。
+
+| 层级 | Makefile target | 建议用途 | 等价命令 |
+| --- | --- | --- | --- |
+| smoke | `make core-smoke` | 关键路径快速验证：tools/sandbox + streaming 冒烟 | `zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite system_tools_are_registered_in_specs"`<br/>`zsh -lc "cargo test -p openjax-core --test streaming_suite submit_with_sink_emits_events_in_same_order_as_submit_result"` |
+| feature | `make core-feature-skills` 等 | 按领域回归：skills/tools/streaming/approval/history | `zsh -lc "cargo test -p openjax-core --test skills_suite"`<br/>`zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite"`<br/>`zsh -lc "cargo test -p openjax-core --test streaming_suite"`<br/>`zsh -lc "cargo test -p openjax-core --test approval_suite"`<br/>`zsh -lc "cargo test -p openjax-core --test approval_events_suite"`<br/>`zsh -lc "cargo test -p openjax-core --test core_history_suite"` |
+| full | `make core-full` | openjax-core 全量测试 | `zsh -lc "cargo test -p openjax-core --tests"` |
+
 ## 常用命令
 
 ```bash
 zsh -lc "cargo build -p openjax-core"
-zsh -lc "cargo test -p openjax-core"
-zsh -lc "cargo test -p openjax-core --test m3_sandbox"
-zsh -lc "cargo test -p openjax-core --test m4_apply_patch"
-zsh -lc "cargo test -p openjax-core --test m5_approval_handler"
-zsh -lc "cargo test -p openjax-core --test m6_submit_stream"
-zsh -lc "cargo test -p openjax-core --test m7_backward_compat_submit"
-zsh -lc "cargo test -p openjax-core --test m8_approval_event_emission"
-zsh -lc "cargo test -p openjax-core --test m9_system_tools"
-zsh -lc "cargo test -p openjax-core --test m10_context_compression"
-zsh -lc "bash openjax-core/tests/tool/test_apply_patch_e2e.sh"
+zsh -lc "cargo test -p openjax-core --tests"
+zsh -lc "cargo test -p openjax-core --test skills_suite"
+zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite"
+zsh -lc "cargo test -p openjax-core --test approval_suite"
+zsh -lc "cargo test -p openjax-core --test approval_events_suite"
+zsh -lc "cargo test -p openjax-core --test streaming_suite"
+zsh -lc "cargo test -p openjax-core --test core_history_suite"
+zsh -lc "make core-smoke"
+zsh -lc "make core-feature-skills"
+zsh -lc "make core-feature-tools"
+zsh -lc "make core-feature-streaming"
+zsh -lc "make core-feature-approval"
+zsh -lc "make core-feature-history"
+zsh -lc "make core-baseline"
 ```
+
+如果需要单独定位回归，可以继续直接使用上面的单测/集成测试命令；这些命令不会被分层说明替代。

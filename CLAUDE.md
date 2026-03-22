@@ -76,11 +76,12 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 ### 单个 Rust 集成测试（重要）
 对于 `tests/` 中的文件，使用 `--test <file_stem>`。
 避免对这些测试文件只使用纯过滤器形式。
-- `zsh -lc "cargo test -p openjax-core --test m3_sandbox"`
-- `zsh -lc "cargo test -p openjax-core --test m4_apply_patch"`
-- `zsh -lc "cargo test -p openjax-core --test m5_approval_handler"`
-- `zsh -lc "cargo test -p openjax-core --test m6_submit_stream"`
-- `zsh -lc "cargo test -p openjax-core --test m7_backward_compat_submit"`
+- `zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite"`
+- `zsh -lc "cargo test -p openjax-core --test approval_suite"`
+- `zsh -lc "cargo test -p openjax-core --test approval_events_suite"`
+- `zsh -lc "cargo test -p openjax-core --test streaming_suite"`
+- `zsh -lc "cargo test -p openjax-core --test skills_suite"`
+- `zsh -lc "cargo test -p openjax-core --test core_history_suite"`
 - `zsh -lc "cargo test -p tui_next --test m1_no_duplicate_history"`
 - `zsh -lc "cargo test -p tui_next --test m10_approval_panel_navigation"`
 
