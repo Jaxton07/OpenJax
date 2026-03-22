@@ -85,6 +85,29 @@ describe("Composer slash commands", () => {
     expect(screen.getByText("上下文使用 62.5% · 5,000 / 8,000 tokens")).toBeInTheDocument();
   });
 
+  it("keeps new chat button clickable and triggers callback", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ commands: [] }),
+      })
+    );
+    const onNewChat = vi.fn();
+    render(
+      <Composer
+        baseUrl="http://127.0.0.1:8765"
+        accessToken="token-123"
+        sessionId="sess_ctx"
+        onSend={vi.fn()}
+        onNewChat={onNewChat}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "新建对话" }));
+    expect(onNewChat).toHaveBeenCalledTimes(1);
+  });
+
   it("stores context usage updates in session state", () => {
     const session: ChatSession = {
       id: "sess_ctx",
