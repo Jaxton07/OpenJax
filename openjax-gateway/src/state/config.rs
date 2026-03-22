@@ -91,18 +91,21 @@ pub fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
     }
 }
 
+const KIMI_PROVIDER_NAME: &str = "Kimi Coding";
+const KIMI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
+const KIMI_MODEL: &str = "kimi-for-coding";
+const KIMI_CONTEXT_WINDOW: u32 = 200_000;
 pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
     use openjax_store::ProviderRepository;
-
-    const KIMI_PROVIDER_NAME: &str = "Kimi Coding";
-    const KIMI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
-    const KIMI_MODEL: &str = "kimi-for-coding";
     let providers = store.list_providers().unwrap_or_default();
     for provider in providers {
         if provider.provider_type != "built_in" || provider.provider_name != KIMI_PROVIDER_NAME {
             continue;
         }
-        if provider.base_url == KIMI_BASE_URL && provider.model_name == KIMI_MODEL {
+        if provider.base_url == KIMI_BASE_URL
+            && provider.model_name == KIMI_MODEL
+            && provider.context_window_size == KIMI_CONTEXT_WINDOW
+        {
             continue;
         }
         let _ = <SqliteStore as ProviderRepository>::update_provider(
@@ -112,7 +115,7 @@ pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
             KIMI_BASE_URL,
             KIMI_MODEL,
             None,
-            provider.context_window_size,
+            KIMI_CONTEXT_WINDOW,
         );
     }
 }
@@ -121,7 +124,7 @@ pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
 mod tests {
     use openjax_store::{ProviderRepository, SqliteStore};
 
-    use super::normalize_builtin_provider_defaults;
+    use super::{KIMI_CONTEXT_WINDOW, normalize_builtin_provider_defaults};
 
     #[test]
     fn normalizes_builtin_kimi_defaults_and_active_snapshot() {
@@ -155,5 +158,6 @@ mod tests {
             .expect("active provider exists");
         assert_eq!(active.provider_id, provider.provider_id);
         assert_eq!(active.model_name, "kimi-for-coding");
+        assert_eq!(active.context_window_size, KIMI_CONTEXT_WINDOW);
     }
 }

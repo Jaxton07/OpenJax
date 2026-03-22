@@ -109,7 +109,7 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         models: &[CatalogModel {
             model_id: "kimi-for-coding",
             display_name: "Kimi for Coding",
-            context_window: 256000,
+            context_window: 200000,
         }],
     },
     CatalogProvider {
