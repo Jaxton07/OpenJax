@@ -181,15 +181,15 @@ export class GatewayClient {
   }
 
   async updateProvider(
-    providerId: string,
-    payload: {
-      providerName: string;
-      baseUrl: string;
-      modelName: string;
-      apiKey?: string;
-      providerType?: "built_in" | "custom";
-      contextWindowSize?: number;
-    }
+      providerId: string,
+      payload: {
+        providerName: string;
+        baseUrl: string;
+        modelName: string;
+        apiKey?: string;
+        providerType?: "built_in" | "custom";
+        contextWindowSize?: number;
+      }
   ): Promise<ProviderMutationResponse> {
     return this.request(`/api/v1/providers/${providerId}`, {
       method: "PATCH",

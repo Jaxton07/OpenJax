@@ -224,9 +224,9 @@
 
 ```bash
 zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo build"
-zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p openjax-core --test m3_sandbox"
-zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p openjax-core --test m5_approval_handler"
-zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p openjax-core --test m8_approval_event_emission"
+zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p openjax-core --test tools_sandbox_suite"
+zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p openjax-core --test approval_suite"
+zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p openjax-core --test approval_events_suite"
 zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p tui_next --test m10_approval_panel_navigation"
 zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p tui_next --test m11_shell_target_visibility"
 zsh -lc "cd /Users/ericw/work/code/ai/openJax && cargo test -p tui_next --test m12_tool_partial_status"

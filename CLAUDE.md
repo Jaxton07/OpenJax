@@ -29,7 +29,6 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `ui/tui/`：Rust TUI（最新版）。
 - `ui/web/`：React Web 前端（通过 gateway 访问会话与流式事件）。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
-- `smoke_test/`：冒烟测试脚本。
 
 ### 子模块 README 导航
 
@@ -72,15 +71,23 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `zsh -lc "cargo test -p openjax-gateway"`
 - `zsh -lc "cargo test -p tui_next"`
 - `zsh -lc "cd ui/web && pnpm test"`
+- `zsh -lc "make core-smoke"`
+- `zsh -lc "make core-feature-skills"`
+- `zsh -lc "make core-feature-tools"`
+- `zsh -lc "make core-feature-streaming"`
+- `zsh -lc "make core-feature-approval"`
+- `zsh -lc "make core-feature-history"`
+- `zsh -lc "make core-full"`
 
 ### 单个 Rust 集成测试（重要）
 对于 `tests/` 中的文件，使用 `--test <file_stem>`。
 避免对这些测试文件只使用纯过滤器形式。
-- `zsh -lc "cargo test -p openjax-core --test m3_sandbox"`
-- `zsh -lc "cargo test -p openjax-core --test m4_apply_patch"`
-- `zsh -lc "cargo test -p openjax-core --test m5_approval_handler"`
-- `zsh -lc "cargo test -p openjax-core --test m6_submit_stream"`
-- `zsh -lc "cargo test -p openjax-core --test m7_backward_compat_submit"`
+- `zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite"`
+- `zsh -lc "cargo test -p openjax-core --test approval_suite"`
+- `zsh -lc "cargo test -p openjax-core --test approval_events_suite"`
+- `zsh -lc "cargo test -p openjax-core --test streaming_suite"`
+- `zsh -lc "cargo test -p openjax-core --test skills_suite"`
+- `zsh -lc "cargo test -p openjax-core --test core_history_suite"`
 - `zsh -lc "cargo test -p tui_next --test m1_no_duplicate_history"`
 - `zsh -lc "cargo test -p tui_next --test m10_approval_panel_navigation"`
 
@@ -139,7 +146,8 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - 任何行为变更都应包含测试新增/更新。
 - Rust 模式：
   - 在 `#[cfg(test)]` 块中写单元测试
-  - 在 `tests/` 中写集成测试，文件命名使用 `m*_*.rs`
+  - 在 `tests/` 中以 `*_suite.rs` 作为集成测试入口（`cargo test --test <suite_stem>`）
+  - 具体用例可按 `m*_*.rs` 组织在 suite 子目录中，通过 `#[path = \"...\"] mod ...;` 收编
 - Python 模式：
   - `unittest`
   - 文件名 `test_*.py`
@@ -185,7 +193,8 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - 必须确保方案的逻辑正确，必须经过全链路的逻辑验证。
 
 ### 其他
-- 在处理 Rust 项目文件时，优先使用 JetBrains / RustRover 的 `rustrover-index` MCP server 进行符号、引用、实现、类型层级和文本索引查询；不要先使用 `rg`、`grep`、`find` 等本地搜索。只有在确认当前会话无法使用该 MCP，或其能力不足以完成当前任务时，才允许退回本地搜索；退回前必须明确说明失败点属于“未配置 / 未连接 / 当前 agent 无工具暴露 / 其他”中的哪一类。
+- (重要)在处理 Rust 项目文件时，优先使用 JetBrains / RustRover 的 `rustrover-index` MCP server 进行符号、引用、实现、类型层级和文本索引查询；不要先使用 `rg`、`grep`、`find` 等本地搜索。只有在确认当前会话无法使用该 MCP，或其能力不足以完成当前任务时，才允许退回本地搜索；退回前必须明确说明失败点属于“未配置 / 未连接 / 当前 agent 无工具暴露 / 其他”中的哪一类。
+- (重要)在分派subagent 任务时记得告知subagent 也可以使用`rustrover-index` MCP
 - 本地开发环境通过make run-web-dev 启动前端和后台时需要预览时不要输入localhost 访问，统一输入127.0.0.1 加端口号访问
 - 在修改过程中如果发现某个文件内容过多，或者代码量很大，记得提醒用户规划拆分计划
 - 在针对某部分做修改时优先根据README 索引了解对应模块的上下文，避免自己全量搜索查看以看到太多无关内容。

@@ -15,6 +15,7 @@ pub struct CatalogProvider {
     pub base_url: &'static str,
     /// "chat_completions" | "anthropic_messages"
     pub protocol: &'static str,
+    pub request_profile: Option<&'static str>,
     pub default_model: &'static str,
     pub models: &'static [CatalogModel],
 }
@@ -25,6 +26,7 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         display_name: "OpenAI",
         base_url: "https://api.openai.com/v1",
         protocol: "chat_completions",
+        request_profile: None,
         default_model: "gpt-5.3-codex",
         models: &[
             CatalogModel {
@@ -64,6 +66,7 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         display_name: "Claude (Anthropic)",
         base_url: "https://api.anthropic.com",
         protocol: "anthropic_messages",
+        request_profile: None,
         default_model: "claude-sonnet-4-6",
         models: &[
             CatalogModel {
@@ -88,6 +91,7 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         display_name: "GLM Coding",
         base_url: "https://open.bigmodel.cn/api/coding/paas/v4",
         protocol: "chat_completions",
+        request_profile: None,
         default_model: "glm-4.7",
         models: &[CatalogModel {
             model_id: "glm-4.7",
@@ -98,13 +102,14 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
     CatalogProvider {
         catalog_key: "kimi_coding",
         display_name: "Kimi Coding",
-        base_url: "https://api.kimi.com/coding",
+        base_url: "https://api.kimi.com/coding/v1",
         protocol: "chat_completions",
-        default_model: "k2.5",
+        request_profile: Some("kimi_coding_v1"),
+        default_model: "kimi-for-coding",
         models: &[CatalogModel {
-            model_id: "k2.5",
-            display_name: "K2.5",
-            context_window: 256000,
+            model_id: "kimi-for-coding",
+            display_name: "Kimi for Coding",
+            context_window: 200000,
         }],
     },
     CatalogProvider {
@@ -112,6 +117,7 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         display_name: "MiniMax Coding",
         base_url: "https://api.minimaxi.com/v1",
         protocol: "chat_completions",
+        request_profile: None,
         default_model: "MiniMax-M2.7",
         models: &[CatalogModel {
             model_id: "MiniMax-M2.7",

@@ -48,6 +48,7 @@ pub fn build_runtime_config(
     providers: Vec<openjax_store::ProviderRecord>,
     active_provider_id: Option<&str>,
 ) -> openjax_core::Config {
+    // TODO: thread `request_profile` through core once ProviderModelConfig supports it.
     openjax_core::build_config_from_providers(providers, active_provider_id)
 }
 
@@ -78,6 +79,85 @@ pub fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
             .base_url
             .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
         let model_name = entry.model.unwrap_or_else(|| model_id.clone());
-        let _ = store.create_provider(&model_id, &base_url, &model_name, &api_key, "custom", 0);
+        let _ = <SqliteStore as ProviderRepository>::create_provider(
+            store,
+            &model_id,
+            &base_url,
+            &model_name,
+            &api_key,
+            "custom",
+            0,
+        );
+    }
+}
+
+const KIMI_PROVIDER_NAME: &str = "Kimi Coding";
+const KIMI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
+const KIMI_MODEL: &str = "kimi-for-coding";
+const KIMI_CONTEXT_WINDOW: u32 = 200_000;
+pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
+    use openjax_store::ProviderRepository;
+    let providers = store.list_providers().unwrap_or_default();
+    for provider in providers {
+        if provider.provider_type != "built_in" || provider.provider_name != KIMI_PROVIDER_NAME {
+            continue;
+        }
+        if provider.base_url == KIMI_BASE_URL
+            && provider.model_name == KIMI_MODEL
+            && provider.context_window_size == KIMI_CONTEXT_WINDOW
+        {
+            continue;
+        }
+        let _ = <SqliteStore as ProviderRepository>::update_provider(
+            store,
+            &provider.provider_id,
+            &provider.provider_name,
+            KIMI_BASE_URL,
+            KIMI_MODEL,
+            None,
+            KIMI_CONTEXT_WINDOW,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use openjax_store::{ProviderRepository, SqliteStore};
+
+    use super::{KIMI_CONTEXT_WINDOW, normalize_builtin_provider_defaults};
+
+    #[test]
+    fn normalizes_builtin_kimi_defaults_and_active_snapshot() {
+        let store = SqliteStore::open_memory().expect("open memory store");
+        let provider = <SqliteStore as ProviderRepository>::create_provider(
+            &store,
+            "Kimi Coding",
+            "https://api.kimi.com/coding",
+            "k2.5",
+            "key",
+            "built_in",
+            256000,
+        )
+        .expect("create provider");
+        store
+            .set_active_provider(&provider.provider_id)
+            .expect("set active provider");
+
+        normalize_builtin_provider_defaults(&store);
+
+        let updated = store
+            .get_provider(&provider.provider_id)
+            .expect("get provider")
+            .expect("provider exists");
+        assert_eq!(updated.base_url, "https://api.kimi.com/coding/v1");
+        assert_eq!(updated.model_name, "kimi-for-coding");
+
+        let active = store
+            .get_active_provider()
+            .expect("get active provider")
+            .expect("active provider exists");
+        assert_eq!(active.provider_id, provider.provider_id);
+        assert_eq!(active.model_name, "kimi-for-coding");
+        assert_eq!(active.context_window_size, KIMI_CONTEXT_WINDOW);
     }
 }

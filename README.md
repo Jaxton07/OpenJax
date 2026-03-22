@@ -190,7 +190,6 @@ openjax-protocol (shared types/events)
 - `openjax-gateway/`: HTTP/SSE gateway for Web clients
 - `ui/web/`: React Web UI
 - `python/openjax_sdk/`: async Python SDK
-- `smoke_test/`: smoke scripts
 
 ## For Contributors
 

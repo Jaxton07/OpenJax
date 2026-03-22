@@ -73,6 +73,7 @@ pub fn build_config_from_providers(
     let mut route_order: Vec<String> = Vec::new();
 
     for provider in ordered {
+        let request_profile = infer_request_profile(&provider);
         let mut model_id = normalize_model_id(&provider.provider_name);
         if model_id.is_empty() {
             model_id = format!("provider_{}", provider.provider_id);
@@ -96,6 +97,7 @@ pub fn build_config_from_providers(
                 base_url: Some(provider.base_url),
                 api_key: Some(provider.api_key),
                 api_key_env: None,
+                request_profile,
                 anthropic_version: None,
                 thinking_budget_tokens: Some(2000),
                 supports_stream: Some(true),
@@ -172,5 +174,102 @@ pub fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
         "glm"
     } else {
         "openai"
+    }
+}
+
+fn infer_request_profile(provider: &ProviderRecord) -> Option<String> {
+    if provider_protocol(&provider.base_url, &provider.provider_name) == "anthropic_messages"
+        || provider_vendor(&provider.base_url, &provider.provider_name) == "anthropic"
+    {
+        return Some("anthropic_default".to_string());
+    }
+
+    let marker = format!(
+        "{} {} {}",
+        provider.provider_name, provider.base_url, provider.model_name
+    )
+    .to_ascii_lowercase();
+    if marker.contains("kimi") && marker.contains("coding") {
+        Some("kimi_coding_v1".to_string())
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use openjax_store::ProviderRecord;
+
+    use super::build_config_from_providers;
+
+    fn sample_provider(provider_name: &str, base_url: &str, model_name: &str) -> ProviderRecord {
+        ProviderRecord {
+            provider_id: "provider_1".to_string(),
+            provider_name: provider_name.to_string(),
+            base_url: base_url.to_string(),
+            model_name: model_name.to_string(),
+            api_key: "secret".to_string(),
+            provider_type: "built_in".to_string(),
+            context_window_size: 256_000,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn kimi_provider_infers_kimi_profile_without_db_field() {
+        let config = build_config_from_providers(
+            vec![sample_provider(
+                "Kimi Coding",
+                "https://api.kimi.com/coding/v1",
+                "kimi-for-coding",
+            )],
+            Some("provider_1"),
+        );
+
+        let profile = config
+            .model
+            .as_ref()
+            .and_then(|model| model.models.get("kimi_coding"))
+            .and_then(|entry| entry.request_profile.as_deref());
+        assert_eq!(profile, Some("kimi_coding_v1"));
+    }
+
+    #[test]
+    fn non_kimi_provider_leaves_request_profile_empty() {
+        let config = build_config_from_providers(
+            vec![sample_provider(
+                "OpenAI",
+                "https://api.openai.com/v1",
+                "gpt-4.1-mini",
+            )],
+            Some("provider_1"),
+        );
+
+        let profile = config
+            .model
+            .as_ref()
+            .and_then(|model| model.models.get("openai"))
+            .and_then(|entry| entry.request_profile.as_deref());
+        assert_eq!(profile, None);
+    }
+
+    #[test]
+    fn anthropic_provider_infers_anthropic_profile_without_db_field() {
+        let config = build_config_from_providers(
+            vec![sample_provider(
+                "Anthropic",
+                "https://api.anthropic.com",
+                "claude-sonnet-4-6",
+            )],
+            Some("provider_1"),
+        );
+
+        let profile = config
+            .model
+            .as_ref()
+            .and_then(|model| model.models.get("anthropic"))
+            .and_then(|entry| entry.request_profile.as_deref());
+        assert_eq!(profile, Some("anthropic_default"));
     }
 }

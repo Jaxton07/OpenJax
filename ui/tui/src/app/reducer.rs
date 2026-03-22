@@ -231,7 +231,11 @@ impl App {
             Event::ToolCallsProposed { .. } | Event::ToolBatchCompleted { .. } => {}
             Event::ResponseError { message, .. } => {
                 self.clear_status_bar();
-                self.set_live_status(format!("Response failed: {message}"));
+                let failure = format!("Response failed: {message}");
+                self.set_live_status(failure.clone());
+                self.state.live_messages.clear();
+                let cell = self.system_cell(failure);
+                self.queue_history_cell(cell);
             }
             Event::ReasoningDelta { .. } => {}
             Event::LoopWarning { .. } => {}
@@ -299,6 +303,33 @@ mod tests {
         app.apply_core_event(Event::TurnCompleted { turn_id: 1 });
         assert!(app.state.status_bar.is_none());
         assert_eq!(app.drain_history_cells().len(), 1);
+    }
+
+    #[test]
+    fn response_error_is_persisted_after_turn_completed() {
+        let mut app = App::default();
+        app.apply_core_event(Event::TurnStarted { turn_id: 3 });
+        app.apply_core_event(Event::ResponseError {
+            turn_id: 3,
+            code: "model_request_failed".to_string(),
+            message: "upstream provider returned 404".to_string(),
+            retryable: false,
+        });
+        app.apply_core_event(Event::TurnCompleted { turn_id: 3 });
+
+        let cells = app.drain_history_cells();
+        assert!(
+            cells.iter().any(|cell| {
+                cell.lines
+                    .iter()
+                    .flat_map(|line| line.spans.iter())
+                    .any(|span| {
+                        span.content
+                            .contains("Response failed: upstream provider returned 404")
+                    })
+            }),
+            "response_error should remain visible after turn completion"
+        );
     }
 
     #[test]

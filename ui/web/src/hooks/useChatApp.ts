@@ -12,33 +12,35 @@ import {
 import { applySessionEvents } from "../lib/session-events/reducer";
 import { isSequenceResetEvent } from "../lib/session-events/sequence";
 import { loadAuth, loadSessions, loadSettings, saveAuth, saveSessions, saveSettings } from "../lib/storage";
-import type { ChatMessage, ChatSession, ChatState, MessageRole, PendingApproval } from "../types/chat";
+import type { ChatSession, ChatState, PendingApproval } from "../types/chat";
 import type {
   AppSettings,
   AuthSessionItem,
   CatalogProvider,
   GatewaySessionSummary,
   GatewayConnection,
-  GatewayError,
   LlmProvider,
   StreamEvent
 } from "../types/gateway";
+import { clearAuthStateRuntime, refreshAccessTokenRuntime, withAuthRetryRuntime } from "./chatApp/auth-flow";
+import {
+  buildChatSessionFromGateway,
+  isSessionNotFoundError
+} from "./chatApp/session-model";
+import {
+  clearConversationAction,
+  compactConversationAction,
+  deleteSessionAction,
+  ensureSessionAction,
+  newChatAction,
+  resolveApprovalAction,
+  sendMessageAction
+} from "./chatApp/session-actions";
+
+export { buildChatSessionFromGateway, mapGatewayRoleToMessageRole } from "./chatApp/session-model";
 
 const MAX_RECONNECT_RETRY = 6;
 const STREAM_DEBUG_ENABLED = resolveWebStreamDebugEnabled();
-
-function createLocalSession(sessionId: string): ChatSession {
-  return {
-    id: sessionId,
-    title: "新聊天",
-    createdAt: new Date().toISOString(),
-    connection: "idle",
-    turnPhase: "draft",
-    lastEventSeq: 0,
-    messages: [],
-    pendingApprovals: []
-  };
-}
 
 export function useChatApp() {
   const initialSessions = loadSessions();
@@ -210,72 +212,27 @@ export function useChatApp() {
   );
 
   const clearAuthState = useCallback((message: string) => {
-    reconnectAbortRef.current?.abort();
-    pollingAbortRef.current?.abort();
-    for (const session of sessionsRef.current) {
-      streamRenderStore.clear(session.id);
-    }
-    saveAuth({ authenticated: false, accessToken: "", sessionId: null, scope: null });
-    setState((prev) => ({
-      ...prev,
-      auth: { authenticated: false, accessToken: "", sessionId: null, scope: null },
-      sessions: [],
-      activeSessionId: null,
-      globalError: message
-    }));
+    clearAuthStateRuntime({
+      message,
+      reconnectAbortRef,
+      pollingAbortRef,
+      sessionsRef,
+      setState
+    });
   }, []);
 
   const refreshAccessToken = useCallback(async (): Promise<boolean> => {
-    if (refreshPromiseRef.current) {
-      return refreshPromiseRef.current;
-    }
-
-    const refreshing = (async () => {
-      try {
-        const refreshed = await client.refresh();
-        saveAuth({
-          authenticated: true,
-          accessToken: "",
-          sessionId: refreshed.session_id,
-          scope: refreshed.scope
-        });
-        setState((prev) => ({
-          ...prev,
-          auth: {
-            authenticated: true,
-            accessToken: refreshed.access_token,
-            sessionId: refreshed.session_id,
-            scope: refreshed.scope
-          }
-        }));
-        return true;
-      } catch {
-        clearAuthState("登录凭据已过期，请重新输入 Owner Key 登录。");
-        return false;
-      } finally {
-        refreshPromiseRef.current = null;
-      }
-    })();
-
-    refreshPromiseRef.current = refreshing;
-    return refreshing;
+    return refreshAccessTokenRuntime({
+      client,
+      refreshPromiseRef,
+      setState,
+      clearAuthState
+    });
   }, [clearAuthState, client]);
 
   const withAuthRetry = useCallback(
     async <T>(action: () => Promise<T>): Promise<T> => {
-      try {
-        return await action();
-      } catch (error) {
-        if (!isAuthenticationError(error)) {
-          throw error;
-        }
-
-        const refreshed = await refreshAccessToken();
-        if (!refreshed) {
-          throw error;
-        }
-        return action();
-      }
+      return withAuthRetryRuntime(action, refreshAccessToken, isAuthenticationError);
     },
     [refreshAccessToken]
   );
@@ -295,29 +252,13 @@ export function useChatApp() {
   }, []);
 
   const ensureSession = useCallback(async (): Promise<string> => {
-    if (state.activeSessionId) {
-      return state.activeSessionId;
-    }
-
-    setState((prev) => ({ ...prev, loading: true, globalError: null }));
-    try {
-      const created = await withAuthRetry(() => client.startSession());
-      const session = createLocalSession(created.session_id);
-      setState((prev) => ({
-        ...prev,
-        sessions: [session, ...prev.sessions],
-        activeSessionId: session.id,
-        loading: false
-      }));
-      return session.id;
-    } catch (error) {
-      if (isAuthenticationError(error)) {
-        clearAuthState("认证失效，请重新登录。");
-      } else {
-        setState((prev) => ({ ...prev, loading: false, globalError: humanizeError(error) }));
-      }
-      throw error;
-    }
+    return ensureSessionAction({
+      activeSessionId: state.activeSessionId,
+      withAuthRetry,
+      client,
+      setState,
+      clearAuthState
+    });
   }, [clearAuthState, client, state.activeSessionId, withAuthRetry]);
 
   const startSseLoop = useCallback(
@@ -541,88 +482,17 @@ export function useChatApp() {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      const message = content.trim();
-      if (!message) {
-        return;
-      }
-
-      const sessionId = await ensureSession();
-      updateSession(sessionId, (session) => ({
-        ...session,
-        turnPhase: "submitting",
-        title: session.messages.length === 0 ? summarizeTitle(message) : session.title,
-        messages: [
-          ...session.messages,
-          {
-            id: crypto.randomUUID(),
-            kind: "text",
-            role: "user",
-            content: message,
-            timestamp: new Date().toISOString(),
-            startEventSeq: session.lastEventSeq + 1,
-            lastEventSeq: session.lastEventSeq + 1
-          }
-        ]
-      }));
-
-      try {
-        const submitted = await withAuthRetry(() => client.submitTurn(sessionId, message));
-        if (state.settings.outputMode === "polling") {
-          pollingAbortRef.current?.abort();
-          const pollAbort = new AbortController();
-          pollingAbortRef.current = pollAbort;
-
-          updateSession(sessionId, (session) => ({ ...session, connection: "active", turnPhase: "streaming" }));
-          const result = await withAuthRetry(() =>
-            client.pollTurnUntilDone(sessionId, submitted.turn_id, pollAbort.signal)
-          );
-
-          if (result.status === "completed") {
-            updateSession(sessionId, (session) => ({
-              ...session,
-              turnPhase: "completed",
-              messages: [
-                ...session.messages,
-                {
-                  id: crypto.randomUUID(),
-                  kind: "text",
-                  role: "assistant",
-                  content: result.assistant_message ?? "",
-                  timestamp: result.timestamp,
-                  startEventSeq: session.lastEventSeq + 1,
-                  lastEventSeq: session.lastEventSeq + 1,
-                  turnId: result.turn_id
-                }
-              ]
-            }));
-          } else {
-            updateSession(sessionId, (session) => ({
-              ...session,
-              turnPhase: "failed",
-              messages: [
-                ...session.messages,
-                {
-                  id: crypto.randomUUID(),
-                  kind: "text",
-                  role: "error",
-                  content: result.error?.message ?? "回合失败",
-                  timestamp: result.timestamp,
-                  startEventSeq: session.lastEventSeq + 1,
-                  lastEventSeq: session.lastEventSeq + 1,
-                  turnId: result.turn_id
-                }
-              ]
-            }));
-          }
-        }
-      } catch (error) {
-        updateSession(sessionId, (session) => ({ ...session, turnPhase: "failed" }));
-        if (isAuthenticationError(error)) {
-          clearAuthState("登录态已失效，请重新登录。");
-          return;
-        }
-        setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
-      }
+      await sendMessageAction({
+        content,
+        ensureSession,
+        updateSession,
+        withAuthRetry,
+        client,
+        outputMode: state.settings.outputMode,
+        pollingAbortRef,
+        clearAuthState,
+        setState
+      });
     },
     [
       clearAuthState,
@@ -635,23 +505,14 @@ export function useChatApp() {
   );
 
   const newChat = useCallback(async () => {
-    try {
-      const created = await withAuthRetry(() => client.startSession());
-      const session = createLocalSession(created.session_id);
-      setState((prev) => ({
-        ...prev,
-        sessions: [session, ...prev.sessions],
-        activeSessionId: session.id,
-        globalError: null
-      }));
-    } catch (error) {
-      if (isAuthenticationError(error)) {
-        clearAuthState("登录态已失效，请重新登录。");
-        return;
-      }
-      setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
-    }
-  }, [clearAuthState, client, withAuthRetry]);
+    await newChatAction({
+      activeSession,
+      withAuthRetry,
+      client,
+      setState,
+      clearAuthState
+    });
+  }, [activeSession, clearAuthState, client, withAuthRetry]);
 
   const switchSession = useCallback((sessionId: string) => {
     setState((prev) => ({ ...prev, activeSessionId: sessionId, globalError: null }));
@@ -659,115 +520,55 @@ export function useChatApp() {
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
-      const shouldDelete = window.confirm("确认删除该会话？此操作不可恢复。");
-      if (!shouldDelete) {
-        return;
-      }
-
-      if (state.activeSessionId === sessionId) {
-        reconnectAbortRef.current?.abort();
-        pollingAbortRef.current?.abort();
-      }
-
-      try {
-        await withAuthRetry(() => client.shutdownSession(sessionId));
-        streamRenderStore.clear(sessionId);
-        setState((prev) => {
-          const removedIndex = prev.sessions.findIndex((session) => session.id === sessionId);
-          if (removedIndex < 0) {
-            return prev;
-          }
-
-          const sessions = prev.sessions.filter((session) => session.id !== sessionId);
-          const nextActive =
-            prev.activeSessionId === sessionId
-              ? sessions[removedIndex] ?? sessions[removedIndex - 1] ?? null
-              : sessions.find((session) => session.id === prev.activeSessionId) ?? null;
-
-          return {
-            ...prev,
-            sessions,
-            activeSessionId: nextActive?.id ?? null,
-            globalError: null,
-            infoToast: "会话已删除"
-          };
-        });
-      } catch (error) {
-        if (isAuthenticationError(error)) {
-          clearAuthState("登录态已失效，请重新登录。");
-          return;
-        }
-        setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
-      }
+      await deleteSessionAction({
+        sessionId,
+        activeSessionId: state.activeSessionId,
+        reconnectAbortRef,
+        pollingAbortRef,
+        withAuthRetry,
+        client,
+        setState,
+        clearAuthState
+      });
     },
     [clearAuthState, client, state.activeSessionId, withAuthRetry]
   );
 
   const resolveApproval = useCallback(
     async (approval: PendingApproval, approved: boolean) => {
-      const sessionId = state.activeSessionId;
-      if (!sessionId) {
-        return;
-      }
-
-      try {
-        await withAuthRetry(() =>
-          client.resolveApproval(sessionId, approval.approvalId, approved, approved ? "approved" : "rejected")
-        );
-        updateSession(sessionId, (session) => ({
-          ...session,
-          pendingApprovals: session.pendingApprovals.filter(
-            (item) => item.approvalId !== approval.approvalId
-          )
-        }));
-      } catch (error) {
-        if (isAuthenticationError(error)) {
-          clearAuthState("登录态已失效，请重新登录。");
-          return;
-        }
-        setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
-      }
+      await resolveApprovalAction({
+        approval,
+        approved,
+        activeSessionId: state.activeSessionId,
+        withAuthRetry,
+        client,
+        updateSession,
+        clearAuthState,
+        setState
+      });
     },
     [clearAuthState, client, state.activeSessionId, updateSession, withAuthRetry]
   );
 
   const clearConversation = useCallback(async () => {
-    if (!state.activeSessionId) {
-      return;
-    }
-    try {
-      await withAuthRetry(() => client.clearSession(state.activeSessionId!));
-      streamRenderStore.clear(state.activeSessionId);
-      updateSession(state.activeSessionId, (session) => ({
-        ...session,
-        messages: [],
-        pendingApprovals: [],
-        turnPhase: "draft"
-      }));
-      setState((prev) => ({ ...prev, infoToast: "会话已清空" }));
-    } catch (error) {
-      if (isAuthenticationError(error)) {
-        clearAuthState("登录态已失效，请重新登录。");
-        return;
-      }
-      setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
-    }
+    await clearConversationAction({
+      activeSessionId: state.activeSessionId,
+      withAuthRetry,
+      client,
+      updateSession,
+      clearAuthState,
+      setState
+    });
   }, [clearAuthState, client, state.activeSessionId, updateSession, withAuthRetry]);
 
   const compactConversation = useCallback(async () => {
-    if (!state.activeSessionId) {
-      return;
-    }
-    try {
-      await withAuthRetry(() => client.compactSession(state.activeSessionId!));
-      setState((prev) => ({ ...prev, infoToast: "会话已压缩" }));
-    } catch (error) {
-      if (isAuthenticationError(error)) {
-        clearAuthState("登录态已失效，请重新登录。");
-        return;
-      }
-      setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
-    }
+    await compactConversationAction({
+      activeSessionId: state.activeSessionId,
+      withAuthRetry,
+      client,
+      clearAuthState,
+      setState
+    });
   }, [clearAuthState, client, state.activeSessionId, withAuthRetry]);
 
   const updateSettings = useCallback((next: AppSettings) => {
@@ -943,55 +744,6 @@ export function useChatApp() {
     dismissGlobalError,
     dismissToast
   };
-}
-
-function summarizeTitle(input: string): string {
-  const plain = input.replace(/\s+/g, " ").trim();
-  return plain.length > 24 ? `${plain.slice(0, 24)}...` : plain;
-}
-
-export function mapGatewayRoleToMessageRole(role: string): MessageRole {
-  if (role === "user" || role === "assistant" || role === "tool" || role === "error" || role === "system") {
-    return role;
-  }
-  return "system";
-}
-
-export function buildChatSessionFromGateway(
-  remoteSession: GatewaySessionSummary,
-  remoteEvents: StreamEvent[]
-): ChatSession {
-  const orderedEvents = [...remoteEvents].sort((left, right) => left.event_seq - right.event_seq);
-  let session: ChatSession = {
-    id: remoteSession.session_id,
-    title: remoteSession.title?.trim() || "新聊天",
-    createdAt: remoteSession.created_at,
-    connection: "idle",
-    turnPhase: "draft",
-    lastEventSeq: 0,
-    messages: [],
-    pendingApprovals: []
-  };
-  if (orderedEvents.length > 0) {
-    session = applySessionEvents(session, orderedEvents);
-  }
-  const messages: ChatMessage[] = session.messages;
-  const firstUserMessage = messages.find((message) => message.role === "user");
-  const title = remoteSession.title?.trim() || summarizeTitle(firstUserMessage?.content ?? "新聊天");
-  return {
-    ...session,
-    title,
-    connection: "idle",
-    createdAt: remoteSession.created_at
-  };
-}
-
-function isSessionNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-  const gateway = error as Partial<GatewayError>;
-  return gateway.code === "NOT_FOUND" || gateway.status === 404;
 }
 
 function resolveWebStreamDebugEnabled(): boolean {

@@ -1,4 +1,4 @@
-// openjax-core/tests/m22_history_turn_record.rs
+// openjax-core/tests/core_history/m22_history_turn_record.rs
 //
 // Validates three core invariants after TurnRecord refactor:
 // 1. Successful tool call turns are committed to history (with tool_traces)

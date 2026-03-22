@@ -18,7 +18,8 @@ use openjax_store::SqliteStore;
 use openjax_store::{ProviderRepository, SessionRepository};
 
 use super::config::{
-    build_runtime_config, gateway_db_path, map_store_error, migrate_providers_from_config_if_needed,
+    build_runtime_config, gateway_db_path, map_store_error,
+    migrate_providers_from_config_if_needed, normalize_builtin_provider_defaults,
 };
 use super::runtime::{
     ApiTurnError, SessionRuntime, StreamEventEnvelope, TurnRuntime, TurnStatus,
@@ -59,6 +60,7 @@ impl AppState {
         let db_path = gateway_db_path();
         let store = Arc::new(SqliteStore::open(&db_path)?);
         migrate_providers_from_config_if_needed(&store);
+        normalize_builtin_provider_defaults(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
@@ -224,16 +226,17 @@ impl AppState {
         provider_type: &str,
         context_window_size: u32,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
-        self.store
-            .create_provider(
-                provider_name,
-                base_url,
-                model_name,
-                api_key,
-                provider_type,
-                context_window_size,
-            )
-            .map_err(map_store_error)
+        let store = self.store.as_ref();
+        <SqliteStore as ProviderRepository>::create_provider(
+            store,
+            provider_name,
+            base_url,
+            model_name,
+            api_key,
+            provider_type,
+            context_window_size,
+        )
+        .map_err(map_store_error)
     }
 
     pub fn update_provider(
@@ -245,16 +248,17 @@ impl AppState {
         api_key: Option<&str>,
         context_window_size: u32,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
-        self.store
-            .update_provider(
-                provider_id,
-                provider_name,
-                base_url,
-                model_name,
-                api_key,
-                context_window_size,
-            )
-            .map_err(map_store_error)
+        let store = self.store.as_ref();
+        <SqliteStore as ProviderRepository>::update_provider(
+            store,
+            provider_id,
+            provider_name,
+            base_url,
+            model_name,
+            api_key,
+            context_window_size,
+        )
+        .map_err(map_store_error)
     }
 
     pub fn delete_provider(&self, provider_id: &str) -> Result<bool, ApiError> {

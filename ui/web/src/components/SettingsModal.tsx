@@ -199,7 +199,14 @@ export default function SettingsModal(props: SettingsModalProps) {
           catalogModels: pendingCatalogEntry.models
         }
       : providerPanelMode === "create"
-      ? { providerName: "", baseUrl: "", modelName: "", apiKey: "", providerType: "custom", contextWindowSize: 0 }
+      ? {
+          providerName: "",
+          baseUrl: "",
+          modelName: "",
+          apiKey: "",
+          providerType: "custom",
+          contextWindowSize: 0
+        }
       : selectedProvider
         ? {
             providerName: selectedProvider.provider_name,
@@ -217,7 +224,14 @@ export default function SettingsModal(props: SettingsModalProps) {
                   )?.models
                 : undefined
           }
-        : { providerName: "", baseUrl: "", modelName: "", apiKey: "", providerType: "custom", contextWindowSize: 0 };
+        : {
+            providerName: "",
+            baseUrl: "",
+            modelName: "",
+            apiKey: "",
+            providerType: "custom",
+            contextWindowSize: 0
+          };
 
   const handleSaveSettings = async (settings: AppSettings) => {
     setSavingGeneral(true);

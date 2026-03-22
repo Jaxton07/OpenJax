@@ -1,4 +1,4 @@
-// openjax-core/tests/m11_context_compression.rs
+// openjax-core/tests/core_history/m11_context_compression.rs
 //
 // Integration tests for context compression functionality.
 // Tests verify:
@@ -13,9 +13,35 @@ use openjax_core::{
 use openjax_protocol::{Event, Op};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static CWD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+struct CwdScope {
+    _lock: MutexGuard<'static, ()>,
+    original: PathBuf,
+}
+
+impl CwdScope {
+    fn enter(target: &Path) -> Self {
+        let lock = CWD_LOCK.lock().expect("cwd lock poisoned");
+        let original = std::env::current_dir().expect("current dir should be available");
+        std::env::set_current_dir(target).expect("set current dir");
+        Self {
+            _lock: lock,
+            original,
+        }
+    }
+}
+
+impl Drop for CwdScope {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.original);
+    }
+}
 
 fn temp_dir() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -99,8 +125,8 @@ async fn test_compact_produces_summary_plus_recent() {
     let ws = workspace();
     fs::write(ws.join("file.txt"), "content").unwrap();
 
-    // Change to workspace directory so the agent can access the file
-    let _ = std::env::set_current_dir(&ws);
+    // Serialize cwd mutations in this integration suite.
+    let _cwd_scope = CwdScope::enter(&ws);
 
     // Create config with echo backend to allow compression without real API key
     let model_config = ModelConfig {
@@ -180,8 +206,7 @@ async fn test_context_window_zero_skips_auto_compact() {
     let ws = workspace();
     fs::write(ws.join("file.txt"), "content").unwrap();
 
-    // Change to workspace directory
-    let _ = std::env::set_current_dir(&ws);
+    let _cwd_scope = CwdScope::enter(&ws);
 
     // Create config with echo backend to allow manual compression without real API key
     let model_config = ModelConfig {
@@ -250,7 +275,7 @@ async fn test_auto_compact_emits_context_usage_updated() {
     let ws = workspace();
     fs::write(ws.join("file.txt"), "content").unwrap();
 
-    let _ = std::env::set_current_dir(&ws);
+    let _cwd_scope = CwdScope::enter(&ws);
 
     let mut models = HashMap::new();
     models.insert(

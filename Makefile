@@ -12,7 +12,8 @@ export CARGO_HTTP_MULTIPLEXING ?= false
 	help doctor prefetch \
 	run-tui run-web-dev build-web-release build-release-mac package-mac build-release-linux package-linux package-windows install-local install-online upgrade-online upgrade-from-package uninstall-local install-source \
 	build-all test-rust clean-dist \
-	lint format clean
+	lint format clean \
+	core-smoke core-feature-skills core-feature-tools core-feature-streaming core-feature-approval core-feature-history core-full core-baseline
 
 help:
 	@echo "OpenJax Deployment Commands:"
@@ -34,6 +35,16 @@ help:
 	@echo "    make upgrade-from-package PKG=<tar.gz> - 使用本地包离线升级"
 	@echo "    make uninstall-local   - 本机卸载 (默认全清理, KEEP_USER_DATA=1 可保留 userdata)"
 	@echo "    make install-source    - 源码安装（本地仓库，一键）(构建 + 安装)"
+	@echo ""
+	@echo "  openjax-core 测试入口:"
+	@echo "    make core-smoke         - 运行 openjax-core 烟雾测试"
+	@echo "    make core-feature-skills - 运行 openjax-core skills 特性测试"
+	@echo "    make core-feature-tools  - 运行 openjax-core tools 特性测试"
+	@echo "    make core-feature-streaming - 运行 openjax-core streaming 特性测试"
+	@echo "    make core-feature-approval - 运行 openjax-core approval 特性测试"
+	@echo "    make core-feature-history - 运行 openjax-core history 特性测试"
+	@echo "    make core-full          - 运行 openjax-core 全量测试"
+	@echo "    make core-baseline      - 运行 openjax-core 冷/热耗时统计与慢测榜"
 	@echo ""
 	@echo "  校验与清理:"
 	@echo "    make build-all         - 构建整个 Rust workspace"
@@ -133,6 +144,30 @@ build-all:
 
 test-rust:
 	$(CARGO) test --workspace
+
+core-smoke:
+	bash scripts/test/core.sh core-smoke
+
+core-feature-skills:
+	bash scripts/test/core.sh core-feature-skills
+
+core-feature-tools:
+	bash scripts/test/core.sh core-feature-tools
+
+core-feature-streaming:
+	bash scripts/test/core.sh core-feature-streaming
+
+core-feature-approval:
+	bash scripts/test/core.sh core-feature-approval
+
+core-feature-history:
+	bash scripts/test/core.sh core-feature-history
+
+core-full:
+	bash scripts/test/core.sh core-full
+
+core-baseline:
+	bash scripts/test/core.sh core-baseline
 
 clean-dist:
 	rm -rf dist

@@ -11,6 +11,7 @@ use crate::config::ModelConfig;
 use crate::logger::{RAW_RESPONSE_LOG_TARGET, provider_raw_log_enabled};
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::RegisteredModel;
+use crate::model::request_profiles::chat_completions::ChatCompletionsRequestProfile;
 use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage, StreamDelta};
 use crate::streaming::parser::{SseParser, openai::OpenAiSseParser};
 
@@ -38,6 +39,7 @@ pub(crate) struct ChatCompletionsClient {
     api_key: String,
     model: String,
     endpoint: String,
+    profile: ChatCompletionsRequestProfile,
     backend_name: &'static str,
     capabilities: CapabilityFlags,
 }
@@ -53,6 +55,8 @@ struct ChatCompletionRequest {
     messages: Vec<ChatMessage>,
     temperature: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream_options: Option<StreamOptions>,
@@ -65,19 +69,21 @@ struct ChatMessage {
 }
 
 impl ChatCompletionsClient {
-    pub(crate) fn from_registered_model(entry: &RegisteredModel) -> Option<Self> {
+    pub(crate) fn from_registered_model(entry: &RegisteredModel) -> Result<Option<Self>> {
         if entry.protocol != "chat_completions" {
-            return None;
+            return Ok(None);
         }
+        let profile = ChatCompletionsRequestProfile::parse(entry.request_profile.as_deref())?;
         let api_key = entry
             .api_key
             .clone()
-            .or_else(|| default_api_key_for_provider(&entry.provider))?;
+            .or_else(|| default_api_key_for_provider(&entry.provider))
+            .ok_or_else(|| anyhow!("missing API key for provider '{}'", entry.provider))?;
         let base_url = entry
             .base_url
             .clone()
             .unwrap_or_else(|| default_base_url_for_provider(&entry.provider).to_string());
-        Some(Self {
+        Ok(Some(Self {
             client: Client::new(),
             model_id: entry.id.clone(),
             provider: entry.provider.clone(),
@@ -85,9 +91,10 @@ impl ChatCompletionsClient {
             api_key,
             model: entry.model.clone(),
             endpoint: format!("{}/chat/completions", base_url.trim_end_matches('/')),
+            profile,
             backend_name: "chat-completions",
             capabilities: entry.capabilities,
-        })
+        }))
     }
 
     pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
@@ -167,6 +174,7 @@ impl ChatCompletionsClient {
             api_key,
             model,
             endpoint,
+            profile: ChatCompletionsRequestProfile::Default,
             backend_name,
             capabilities: CapabilityFlags {
                 stream: true,
@@ -176,10 +184,53 @@ impl ChatCompletionsClient {
             },
         })
     }
+
+    fn build_request(&self, request: &ModelRequest, stream: bool) -> ChatCompletionRequest {
+        ChatCompletionRequest {
+            model: self.model.clone(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: request
+                        .system_prompt
+                        .clone()
+                        .unwrap_or_else(default_system_prompt),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: request.user_input.to_string(),
+                },
+            ],
+            temperature: 0.2,
+            max_tokens: self.profile.resolve_max_tokens(request),
+            stream: stream.then_some(true),
+            stream_options: if stream && self.profile.include_stream_options() {
+                Some(StreamOptions {
+                    include_usage: true,
+                })
+            } else {
+                None
+            },
+        }
+    }
+
+    fn request_builder(&self, accept: &str) -> reqwest::RequestBuilder {
+        let builder = self
+            .client
+            .post(&self.endpoint)
+            .bearer_auth(&self.api_key)
+            .header("accept", accept);
+        if let Some(user_agent) = self.profile.user_agent() {
+            builder.header("User-Agent", user_agent)
+        } else {
+            builder
+        }
+    }
 }
 
 fn default_api_key_for_provider(provider: &str) -> Option<String> {
     let key = match provider {
+        "kimi" => "OPENJAX_KIMI_API_KEY",
         "minimax" => "OPENJAX_MINIMAX_API_KEY",
         "glm" => "OPENJAX_GLM_API_KEY",
         _ => "OPENAI_API_KEY",
@@ -189,6 +240,7 @@ fn default_api_key_for_provider(provider: &str) -> Option<String> {
 
 fn default_base_url_for_provider(provider: &str) -> &'static str {
     match provider {
+        "kimi" => "https://api.kimi.com/coding/v1",
         "minimax" => "https://api.minimaxi.com/v1",
         "glm" => "https://open.bigmodel.cn/api/coding/paas/v4",
         _ => "https://api.openai.com/v1",
@@ -309,31 +361,10 @@ fn extract_usage_from_payload(payload: &serde_json::Value) -> Option<ModelUsage>
 #[async_trait]
 impl ModelClient for ChatCompletionsClient {
     async fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
-        let req = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: request
-                        .system_prompt
-                        .clone()
-                        .unwrap_or_else(default_system_prompt),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: request.user_input.to_string(),
-                },
-            ],
-            temperature: 0.2,
-            stream: None,
-            stream_options: None,
-        };
+        let req = self.build_request(request, false);
 
         let resp = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(&self.api_key)
-            .header("accept", "application/json")
+            .request_builder("application/json")
             .json(&req)
             .send()
             .await
@@ -390,33 +421,10 @@ impl ModelClient for ChatCompletionsClient {
         request: &ModelRequest,
         delta_sender: Option<UnboundedSender<StreamDelta>>,
     ) -> Result<ModelResponse> {
-        let req = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: request
-                        .system_prompt
-                        .clone()
-                        .unwrap_or_else(default_system_prompt),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: request.user_input.to_string(),
-                },
-            ],
-            temperature: 0.2,
-            stream: Some(true),
-            stream_options: Some(StreamOptions {
-                include_usage: true,
-            }),
-        };
+        let req = self.build_request(request, true);
 
         let resp = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(&self.api_key)
-            .header("accept", "text/event-stream")
+            .request_builder("text/event-stream")
             .json(&req)
             .send()
             .await
@@ -694,9 +702,11 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        extract_content_from_body, extract_delta_content_from_body,
+        ChatCompletionsClient, extract_content_from_body, extract_delta_content_from_body,
         extract_delta_reasoning_from_body,
     };
+    use crate::model::registry::RegisteredModel;
+    use crate::model::types::{CapabilityFlags, ModelRequest, ModelStage};
     use crate::streaming::parser::parse_sse_data_line;
 
     #[test]
@@ -777,6 +787,92 @@ mod tests {
         assert_eq!(
             extract_delta_reasoning_from_body(&body).as_deref(),
             Some("thinking")
+        );
+    }
+
+    fn sample_registered_model(request_profile: Option<&str>) -> RegisteredModel {
+        RegisteredModel {
+            id: "kimi".to_string(),
+            provider: "kimi".to_string(),
+            protocol: "chat_completions".to_string(),
+            model: "kimi-for-coding".to_string(),
+            request_profile: request_profile.map(ToString::to_string),
+            base_url: Some("https://api.kimi.com/coding/v1".to_string()),
+            api_key: Some("secret".to_string()),
+            anthropic_version: None,
+            thinking_budget_tokens: None,
+            capabilities: CapabilityFlags {
+                stream: true,
+                reasoning: false,
+                tool_call: false,
+                json_mode: false,
+            },
+        }
+    }
+
+    #[test]
+    fn kimi_profile_adds_max_tokens_and_disables_stream_options() {
+        let client = ChatCompletionsClient::from_registered_model(&sample_registered_model(Some(
+            "kimi_coding_v1",
+        )))
+        .expect("build client")
+        .expect("chat client");
+        let request = ModelRequest::for_stage(ModelStage::Planner, "hello");
+
+        let non_stream = client.build_request(&request, false);
+        let stream = client.build_request(&request, true);
+
+        assert_eq!(non_stream.max_tokens, Some(200_000));
+        assert_eq!(stream.max_tokens, Some(200_000));
+        assert!(stream.stream_options.is_none());
+    }
+
+    #[test]
+    fn default_profile_keeps_stream_options_enabled() {
+        let client = ChatCompletionsClient::from_registered_model(&sample_registered_model(None))
+            .expect("build client")
+            .expect("chat client");
+        let request = ModelRequest::for_stage(ModelStage::Planner, "hello");
+
+        let stream = client.build_request(&request, true);
+
+        assert!(stream.max_tokens.is_none());
+        assert!(stream.stream_options.is_some());
+    }
+
+    #[test]
+    fn kimi_profile_sets_cli_user_agent_header() {
+        let client = ChatCompletionsClient::from_registered_model(&sample_registered_model(Some(
+            "kimi_coding_v1",
+        )))
+        .expect("build client")
+        .expect("chat client");
+        let request = ModelRequest::for_stage(ModelStage::Planner, "hello");
+
+        let http_request = client
+            .request_builder("application/json")
+            .json(&client.build_request(&request, false))
+            .build()
+            .expect("build request");
+
+        assert_eq!(
+            http_request
+                .headers()
+                .get("user-agent")
+                .and_then(|value| value.to_str().ok()),
+            Some("KimiCLI/0.77")
+        );
+    }
+
+    #[test]
+    fn unknown_registered_model_profile_returns_clear_error() {
+        let err = ChatCompletionsClient::from_registered_model(&sample_registered_model(Some(
+            "bad_profile",
+        )))
+        .expect_err("unknown profile should fail");
+        assert!(
+            err.to_string()
+                .contains("unknown chat_completions request_profile")
         );
     }
 }

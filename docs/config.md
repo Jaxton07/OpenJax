@@ -15,7 +15,7 @@
 当以上两个路径都不存在时，`tui_next/openjaxd` 启动会自动生成默认模板（优先写入项目级路径）。
 默认模板已预置以下 provider：
 
-1. `kimi`（默认路由，模型 `K2.5`）
+1. `kimi`（默认路由，模型 `kimi-for-coding`）
 2. `glm`
 3. `openai`
 4. `claude`（anthropic）
@@ -110,6 +110,12 @@ Provider 相关：
 5. `OPENJAX_THINKING_BUDGET_TOKENS`（Anthropic 协议请求中可覆盖 thinking budget）
 6. `OPENJAX_MAX_TOOL_CALLS_PER_TURN`
 7. `OPENJAX_MAX_PLANNER_ROUNDS_PER_TURN`
+
+## 请求格式策略
+
+1. `request_profile` 为运行时内部策略，不在 Web/Gateway 暴露给用户配置。
+2. 系统会按 provider 自动选择请求格式：如 Kimi Coding 使用 `kimi_coding_v1`，Anthropic 协议使用 `anthropic_default`。
+3. 未命中专用策略时，默认走 OpenAI 兼容 `chat_completions` 请求格式。
 
 ## 兼容策略
 

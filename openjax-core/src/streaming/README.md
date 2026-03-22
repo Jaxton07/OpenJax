@@ -67,4 +67,4 @@
 ## 验证建议
 
 - 单测：`parser` 分段拼接、`sink` 背压、`replay` 越窗、`orchestrator` 顺序。
-- 集成：`cargo test -p openjax-core --test m6_submit_stream`。
+- 集成：`cargo test -p openjax-core --test streaming_suite`。

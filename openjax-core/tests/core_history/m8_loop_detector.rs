@@ -1,5 +1,5 @@
-//! Integration test for LoopDetector mechanism
-//! Run with: zsh -lc "cargo test -p openjax-core --test m8_loop_detector"
+//! Integration tests for the LoopDetector mechanism.
+//! Run with: zsh -lc "cargo test -p openjax-core --test core_history_suite loop_detector"
 
 use openjax_core::{LoopDetector, LoopSignal};
 
