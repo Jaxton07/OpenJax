@@ -1185,6 +1185,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "openjax-policy"
+version = "0.2.14"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "openjax-protocol"
 version = "0.2.14"
 dependencies = [

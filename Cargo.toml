@@ -6,6 +6,7 @@ members = [
   "openjaxd",
   "ui/tui",
   "openjax-gateway",
+  "openjax-policy",
 ]
 resolver = "2"
 
