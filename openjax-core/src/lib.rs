@@ -26,6 +26,7 @@ pub use config::SkillsConfig;
 pub use logger::init_logger;
 pub use logger::init_logger_with_file;
 pub use logger::init_split_logger;
+use openjax_policy::runtime::PolicyRuntime;
 use openjax_protocol::Event;
 pub use paths::OpenJaxPaths;
 use std::path::PathBuf;
@@ -90,6 +91,8 @@ pub struct Agent {
     tool_batch_v2_enabled: bool,
     approval_handler: Arc<dyn approval::ApprovalHandler>,
     event_sink: Option<UnboundedSender<Event>>,
+    policy_runtime: Option<PolicyRuntime>,
+    policy_session_id: Option<String>,
     context_window_size: u32,
     last_input_tokens: Option<u64>,
 }

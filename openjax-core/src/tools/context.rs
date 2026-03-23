@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::approval::{ApprovalHandler, StdinApprovalHandler};
 use crate::tools::shell::ShellType;
+use openjax_policy::runtime::PolicyRuntime;
 use openjax_policy::schema::{
     DecisionKind as PolicyCenterDecisionKind, PolicyInput as PolicyCenterInput,
     PolicyRule as PolicyCenterRule,
@@ -159,7 +160,11 @@ impl ToolInvocation {
         PolicyCenterInput {
             tool_name: self.tool_name.clone(),
             action,
-            session_id: Some(self.turn.turn_id.to_string()),
+            session_id: self
+                .turn
+                .session_id
+                .clone()
+                .or_else(|| Some(self.turn.turn_id.to_string())),
             actor: Some("user".to_string()),
             resource: Some(self.turn.cwd.display().to_string()),
             capabilities,
@@ -191,12 +196,14 @@ fn shell_payload_requires_escalated(payload: &ToolPayload) -> bool {
 #[derive(Clone)]
 pub struct ToolTurnContext {
     pub turn_id: u64,
+    pub session_id: Option<String>,
     pub cwd: PathBuf,
     pub sandbox_policy: SandboxPolicy,
     pub approval_policy: ApprovalPolicy,
     pub shell_type: ShellType,
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<UnboundedSender<Event>>,
+    pub policy_runtime: Option<PolicyRuntime>,
     pub windows_sandbox_level: Option<String>,
     pub prevent_shell_skill_trigger: bool,
 }
@@ -205,12 +212,14 @@ impl Default for ToolTurnContext {
     fn default() -> Self {
         Self {
             turn_id: 0,
+            session_id: None,
             cwd: PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
             approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::default(),
             approval_handler: Arc::new(StdinApprovalHandler::new()),
             event_sink: None,
+            policy_runtime: None,
             windows_sandbox_level: None,
             prevent_shell_skill_trigger: true,
         }
@@ -225,6 +234,11 @@ impl std::fmt::Debug for ToolTurnContext {
             .field("sandbox_policy", &self.sandbox_policy)
             .field("approval_policy", &self.approval_policy)
             .field("shell_type", &self.shell_type)
+            .field("session_id", &self.session_id)
+            .field(
+                "policy_runtime",
+                &self.policy_runtime.as_ref().map(|_| "<runtime>"),
+            )
             .field("windows_sandbox_level", &self.windows_sandbox_level)
             .field(
                 "prevent_shell_skill_trigger",

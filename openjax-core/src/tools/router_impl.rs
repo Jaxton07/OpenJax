@@ -26,12 +26,14 @@ pub struct ToolRouter {
 
 pub struct ToolExecutionRequest<'a> {
     pub turn_id: u64,
+    pub session_id: Option<String>,
     pub tool_call_id: String,
     pub call: &'a ToolCall,
     pub cwd: &'a std::path::Path,
     pub config: ToolRuntimeConfig,
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
+    pub policy_runtime: Option<openjax_policy::runtime::PolicyRuntime>,
 }
 
 impl ToolRouter {
@@ -74,12 +76,14 @@ impl ToolRouter {
     pub async fn execute(&self, request: ToolExecutionRequest<'_>) -> Result<ToolExecOutcome> {
         let ToolExecutionRequest {
             turn_id,
+            session_id,
             tool_call_id,
             call,
             cwd,
             config,
             approval_handler,
             event_sink,
+            policy_runtime,
         } = request;
         debug!(
             tool_name = %call.name,
@@ -100,6 +104,7 @@ impl ToolRouter {
 
         let invocation = create_tool_invocation(CreateToolInvocationParams {
             turn_id,
+            session_id,
             call_id: tool_call_id,
             tool_name: call.name.clone(),
             arguments: serde_json::to_string(&call.args)
@@ -111,6 +116,7 @@ impl ToolRouter {
             prevent_shell_skill_trigger: config.prevent_shell_skill_trigger,
             approval_handler,
             event_sink,
+            policy_runtime,
         });
 
         let result = self.orchestrator.run(invocation).await;

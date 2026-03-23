@@ -9,6 +9,10 @@ use openjax_core::tools::error::FunctionCallError;
 use openjax_core::tools::orchestrator::ToolOrchestrator;
 use openjax_core::tools::registry::ToolRegistry;
 use openjax_core::tools::shell::ShellType;
+use openjax_policy::overlay::SessionOverlay;
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::schema::{DecisionKind, PolicyRule};
+use openjax_policy::store::PolicyStore;
 
 #[derive(Debug)]
 struct RejectApproval;
@@ -31,12 +35,14 @@ async fn unknown_tool_without_descriptor_defaults_to_ask() {
         },
         turn: ToolTurnContext {
             turn_id: 42,
+            session_id: None,
             cwd: std::path::PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
             approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::default(),
             approval_handler: Arc::new(RejectApproval),
             event_sink: None,
+            policy_runtime: None,
             windows_sandbox_level: None,
             prevent_shell_skill_trigger: true,
         },
@@ -46,5 +52,119 @@ async fn unknown_tool_without_descriptor_defaults_to_ask() {
     match result {
         Err(FunctionCallError::ApprovalRejected(_)) => {}
         other => panic!("expected ApprovalRejected for unknown descriptor, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn published_runtime_rule_can_deny_known_tool() {
+    let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
+    let runtime = PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![PolicyRule {
+            id: "deny_read_file".to_string(),
+            decision: DecisionKind::Deny,
+            priority: 200,
+            tool_name: Some("read_file".to_string()),
+            action: Some("read".to_string()),
+            session_id: None,
+            actor: None,
+            resource: None,
+            capabilities_all: vec![],
+            risk_tags_all: vec![],
+            reason: "deny read file".to_string(),
+        }],
+    ));
+    let invocation = ToolInvocation {
+        tool_name: "read_file".to_string(),
+        call_id: "call-read-1".to_string(),
+        payload: ToolPayload::Function {
+            arguments: r#"{"path":"Cargo.toml"}"#.to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 7,
+            session_id: Some("sess_policy".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            approval_policy: ApprovalPolicy::OnRequest,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(RejectApproval),
+            event_sink: None,
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let result = orchestrator.run(invocation).await;
+    match result {
+        Err(FunctionCallError::Internal(message)) => {
+            assert!(message.contains("deny read file"));
+        }
+        other => panic!("expected deny result from published runtime, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn session_overlay_rule_applies_by_session_id() {
+    let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
+    let runtime = PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![PolicyRule {
+            id: "allow_read_file".to_string(),
+            decision: DecisionKind::Allow,
+            priority: 100,
+            tool_name: Some("read_file".to_string()),
+            action: Some("read".to_string()),
+            session_id: None,
+            actor: None,
+            resource: None,
+            capabilities_all: vec![],
+            risk_tags_all: vec![],
+            reason: "allow read file".to_string(),
+        }],
+    ));
+    runtime.set_session_overlay(
+        "sess_overlay",
+        SessionOverlay::new(vec![PolicyRule {
+            id: "overlay_deny_read_file".to_string(),
+            decision: DecisionKind::Deny,
+            priority: 300,
+            tool_name: Some("read_file".to_string()),
+            action: Some("read".to_string()),
+            session_id: Some("sess_overlay".to_string()),
+            actor: None,
+            resource: None,
+            capabilities_all: vec![],
+            risk_tags_all: vec![],
+            reason: "overlay deny read file".to_string(),
+        }]),
+    );
+    let invocation = ToolInvocation {
+        tool_name: "read_file".to_string(),
+        call_id: "call-read-overlay".to_string(),
+        payload: ToolPayload::Function {
+            arguments: r#"{"path":"Cargo.toml"}"#.to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 8,
+            session_id: Some("sess_overlay".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            approval_policy: ApprovalPolicy::OnRequest,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(RejectApproval),
+            event_sink: None,
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let result = orchestrator.run(invocation).await;
+    match result {
+        Err(FunctionCallError::Internal(message)) => {
+            assert!(message.contains("overlay deny read file"));
+        }
+        other => panic!("expected overlay deny for matched session, got: {other:?}"),
     }
 }

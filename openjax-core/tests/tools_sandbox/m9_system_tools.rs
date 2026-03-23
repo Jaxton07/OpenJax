@@ -49,6 +49,7 @@ async fn process_snapshot_dispatch_returns_json() {
     let outcome = router
         .execute(ToolExecutionRequest {
             turn_id: 1,
+            session_id: None,
             tool_call_id: "test-call-1".to_string(),
             call: &call("process_snapshot", &[("limit", "5"), ("sort_by", "cpu")]),
             cwd: &cwd,
@@ -59,6 +60,7 @@ async fn process_snapshot_dispatch_returns_json() {
             },
             approval_handler: approval.clone(),
             event_sink: None,
+            policy_runtime: None,
         })
         .await
         .expect("process_snapshot should execute");
@@ -78,6 +80,7 @@ async fn system_load_does_not_trigger_approval_under_on_request() {
     let outcome = router
         .execute(ToolExecutionRequest {
             turn_id: 1,
+            session_id: None,
             tool_call_id: "test-call-2".to_string(),
             call: &call(
                 "system_load",
@@ -91,6 +94,7 @@ async fn system_load_does_not_trigger_approval_under_on_request() {
             },
             approval_handler: approval.clone(),
             event_sink: None,
+            policy_runtime: None,
         })
         .await
         .expect("system_load should execute");

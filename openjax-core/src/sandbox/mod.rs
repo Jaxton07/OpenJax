@@ -294,6 +294,11 @@ fn evaluate_policy_center_decision(
     let rules = descriptor
         .map(|item| vec![item.allow_rule_for_tool(&invocation.tool_name)])
         .unwrap_or_default();
+    if let Some(runtime) = invocation.turn.policy_runtime.as_ref() {
+        let handle = runtime.handle();
+        let input = invocation.to_policy_center_input(descriptor, handle.policy_version());
+        return handle.decide(&input);
+    }
     let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, rules));
     let input = invocation.to_policy_center_input(descriptor, runtime.current_version());
     runtime.handle().decide(&input)

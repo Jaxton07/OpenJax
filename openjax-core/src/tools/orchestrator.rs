@@ -353,6 +353,12 @@ fn merge_policy_center_outcome(
 
 fn evaluate_policy_center_decision(invocation: &ToolInvocation) -> openjax_policy::PolicyDecision {
     let descriptor = invocation.policy_descriptor();
+    if let Some(runtime) = invocation.turn.policy_runtime.as_ref() {
+        let handle = runtime.handle();
+        let input = invocation.to_policy_center_input(descriptor.as_ref(), handle.policy_version());
+        return handle.decide(&input);
+    }
+
     let rules = descriptor
         .as_ref()
         .map(|item| vec![item.allow_rule_for_tool(&invocation.tool_name)])

@@ -186,12 +186,14 @@ impl Agent {
         let (tool_event_tx, mut tool_event_rx) = tokio::sync::mpsc::unbounded_channel();
         let execute_fut = self.tools.execute(tools::ToolExecutionRequest {
             turn_id,
+            session_id: self.policy_session_id.clone(),
             tool_call_id: tool_call_id.to_string(),
             call,
             cwd: self.cwd.as_path(),
             config: self.tool_runtime_config,
             approval_handler: self.approval_handler.clone(),
             event_sink: Some(tool_event_tx),
+            policy_runtime: self.policy_runtime.clone(),
         });
         tokio::pin!(execute_fut);
 

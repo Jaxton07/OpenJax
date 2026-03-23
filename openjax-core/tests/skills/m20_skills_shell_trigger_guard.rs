@@ -30,6 +30,7 @@ async fn shell_guard_blocks_skill_trigger_like_command() {
     let outcome = router
         .execute(ToolExecutionRequest {
             turn_id: 1,
+            session_id: None,
             tool_call_id: "test-call-1".to_string(),
             call: &call,
             cwd: &cwd,
@@ -41,6 +42,7 @@ async fn shell_guard_blocks_skill_trigger_like_command() {
             },
             approval_handler: Arc::new(AllowAllApprovalHandler),
             event_sink: None,
+            policy_runtime: None,
         })
         .await
         .expect("shell execution should return guard output");

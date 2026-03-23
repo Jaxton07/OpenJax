@@ -10,6 +10,7 @@ use crate::agent::runtime_policy::{
 use crate::agent::state::RateLimitConfig;
 use crate::dispatcher::DispatcherConfig;
 use crate::{Agent, Config, approval, model, skills, tools};
+use openjax_policy::runtime::PolicyRuntime;
 
 impl Agent {
     pub fn new() -> Self {
@@ -124,6 +125,8 @@ impl Agent {
             tool_batch_v2_enabled: true,
             approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
             event_sink: None,
+            policy_runtime: None,
+            policy_session_id: None,
             context_window_size,
             last_input_tokens: None,
         }
@@ -143,6 +146,14 @@ impl Agent {
 
     pub fn set_approval_handler(&mut self, handler: Arc<dyn approval::ApprovalHandler>) {
         self.approval_handler = handler;
+    }
+
+    pub fn set_policy_runtime(&mut self, runtime: Option<PolicyRuntime>) {
+        self.policy_runtime = runtime;
+    }
+
+    pub fn set_policy_session_id(&mut self, session_id: Option<String>) {
+        self.policy_session_id = session_id;
     }
 }
 
