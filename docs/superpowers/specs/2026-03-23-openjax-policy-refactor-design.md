@@ -62,14 +62,12 @@
 2. `openjax-gateway` -> `openjax-policy`（策略管理 API、发布 API、会话覆盖 API）
 3. `ui/web` -> `openjax-gateway` -> `openjax-core`（保持现有 Web 链路）
 4. `ui/tui` -> `openjax-core`（默认链路，不强制依赖 gateway）
-5. `ui/tui` -> `openjax-gateway`（可选模式，作为后续统一接入演进能力）
 
 ### 4.3 UI 接入策略决策（M1）
 
 1. M1 不强制 TUI 经过 gateway，确保 `tui` 启动不依赖额外进程。
 2. 策略一致性通过共享 `openjax-policy` 保证，而不是强行统一传输链路。
 3. Web 继续通过 gateway 管理会话和事件流，TUI 默认保持本地直连低延迟体验。
-4. 后续如需统一路径，采用“可选 gateway 模式”灰度，不在 M1 作为硬目标。
 
 ## 5. 决策模型
 
