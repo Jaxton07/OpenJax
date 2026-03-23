@@ -2,12 +2,39 @@
 
 本文档介绍了如何为 OpenJax 工具系统扩展新工具。
 
+## 步骤 0：接入权限声明（PolicyDescriptor）
+
+在实现处理器前，先把新工具接入 `ToolInvocation::policy_descriptor()` 的匹配分支，确保策略中心可以识别该工具的动作、能力和风险标签。
+
+当前接入点在：`openjax-core/src/tools/context.rs`。
+
+```rust
+// openjax-core/src/tools/context.rs
+impl ToolInvocation {
+    pub fn policy_descriptor(&self) -> Option<PolicyDescriptor> {
+        let descriptor = match self.tool_name.as_str() {
+            "my_tool" => PolicyDescriptor {
+                action: "read".to_string(),
+                capabilities: vec!["fs_read".to_string()],
+                risk_tags: vec![],
+            },
+            _ => return None,
+        };
+        Some(descriptor)
+    }
+}
+```
+
+没有这一步，即使处理器实现完成，也不算“工具接入完成”。
+
 ## 步骤 1：创建工具处理器
 
 按工具类型选择目录：
 
 - 通用工作区工具：`openjax-core/src/tools/handlers/`
 - 系统观测类只读工具：`openjax-core/src/tools/system/`
+
+在实现新工具前，先完成权限声明设计。新工具必须实现 `PolicyDescriptor`（或语义等价的权限声明接口/结构），并明确描述该工具需要的授权边界。没有权限声明的工具，不视为完成接入。
 
 ```rust
 use async_trait::async_trait;
@@ -152,6 +179,14 @@ pub use handlers::MyToolHandler;
 
 更新 [tools-list.md](tools-list.md)，添加新工具的说明。
 
+## 接入门禁
+
+新工具接入在文档和 CI 层面都必须满足以下条件：
+
+- 必须实现 `PolicyDescriptor`，或提供同义的权限声明能力，用于描述工具的授权需求
+- 必须覆盖三类测试：`allow`、`ask`/`escalate`、`deny`
+- 缺少权限声明时，CI 不能把该工具判定为“接入完成”
+
 ## 完整示例
 
 以下是一个完整的示例，实现一个简单的 `echo` 工具：
@@ -294,25 +329,34 @@ tool:echo message="Hello, World!" repeat=3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::context::ToolInvocation;
+    use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolPayload, ToolTurnContext};
 
     #[tokio::test]
     async fn test_echo_handler() {
         let handler = EchoHandler;
         let invocation = ToolInvocation {
-            name: "echo".to_string(),
+            tool_name: "echo".to_string(),
+            call_id: "call_test_echo".to_string(),
             payload: ToolPayload::Function {
                 arguments: serde_json::json!({
                     "message": "test",
                     "repeat": 2
                 }).to_string(),
             },
-            cwd: std::env::current_dir().unwrap(),
-            config: Default::default(),
+            turn: ToolTurnContext::default(),
         };
 
         let result = handler.handle(invocation).await.unwrap();
-        assert!(result.is_success());
+        match result {
+            crate::tools::context::ToolOutput::Function { body, success } => {
+                assert_eq!(success, Some(true));
+                match body {
+                    FunctionCallOutputBody::Text(text) => assert!(!text.is_empty()),
+                    FunctionCallOutputBody::Json(_) => panic!("unexpected json body"),
+                }
+            }
+            crate::tools::context::ToolOutput::Mcp { .. } => panic!("unexpected mcp output"),
+        }
     }
 }
 ```
