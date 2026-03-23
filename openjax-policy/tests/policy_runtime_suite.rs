@@ -202,6 +202,6 @@ fn base_rule(id: &str, decision: DecisionKind) -> PolicyRule {
         resource: None,
         capabilities_all: vec![],
         risk_tags_all: vec![],
-        reason: format!("{id}"),
+        reason: id.to_string(),
     }
 }

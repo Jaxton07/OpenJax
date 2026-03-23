@@ -15,6 +15,8 @@ fn approval_panel_supports_up_down_and_submit() {
         risk_tags: vec!["write".to_string()],
         sandbox_backend: Some("linux_native".to_string()),
         degrade_reason: None,
+        policy_version: None,
+        matched_rule_id: None,
     });
 
     let lines = app.approval_panel_lines().expect("panel should exist");

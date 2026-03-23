@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 use async_trait::async_trait;
 use openjax_core::{Agent, ApprovalHandler, ApprovalPolicy, ApprovalRequest, SandboxMode};
 use openjax_protocol::{Event, Op};

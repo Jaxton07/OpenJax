@@ -37,6 +37,8 @@ fn approval_panel_keeps_desired_height_and_uses_short_footer() {
         risk_tags: vec!["write".to_string()],
         sandbox_backend: Some("linux_native".to_string()),
         degrade_reason: None,
+        policy_version: None,
+        matched_rule_id: None,
     });
 
     assert_eq!(app.desired_height(80), base);

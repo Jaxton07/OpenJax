@@ -118,16 +118,16 @@ impl PolicyHandle {
     pub fn decide(&self, input: &PolicyInput) -> PolicyDecision {
         let input_for_snapshot = self.with_snapshot_version(input);
 
-        if let Some(session_id) = input_for_snapshot.session_id.as_deref() {
-            if let Some(overlay) = self.snapshot.overlays.get(session_id) {
-                let overlay_decision = decide(
-                    &input_for_snapshot,
-                    &overlay.rules,
-                    self.snapshot.store.default_decision.clone(),
-                );
-                if overlay_decision.matched_rule_id.is_some() {
-                    return overlay_decision;
-                }
+        if let Some(session_id) = input_for_snapshot.session_id.as_deref()
+            && let Some(overlay) = self.snapshot.overlays.get(session_id)
+        {
+            let overlay_decision = decide(
+                &input_for_snapshot,
+                &overlay.rules,
+                self.snapshot.store.default_decision.clone(),
+            );
+            if overlay_decision.matched_rule_id.is_some() {
+                return overlay_decision;
             }
         }
 

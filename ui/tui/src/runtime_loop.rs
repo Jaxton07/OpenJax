@@ -40,6 +40,8 @@ pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &Tu
             risk_tags: Vec::new(),
             sandbox_backend: None,
             degrade_reason: None,
+            policy_version: None,
+            matched_rule_id: None,
         });
     }
     if drained > 0 {
