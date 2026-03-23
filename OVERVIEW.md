@@ -7,7 +7,7 @@
 OpenJax 是一个以 Rust 为内核、同时提供外层能力的 Agent 框架。  
 当前仓库同时维护：
 
-- Rust workspace 核心模块（协议、内核、daemon、Rust TUI、gateway）
+- Rust workspace 核心模块（协议、内核、daemon、Rust TUI、gateway、store、policy）
 - Web 前端模块（React + Vite）
 - Python SDK 模块（连接 daemon）
 - 协议、工具与重构计划文档
@@ -22,6 +22,8 @@ Rust workspace（`Cargo.toml`）成员：
 | `openjax-core` | Agent 主循环、工具系统、模型客户端、沙箱与审批 | 暂无独立 README（可先看 [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)） |
 | `openjaxd` | Rust daemon（JSONL 协议入口） | [openjaxd/README.md](openjaxd/README.md) |
 | `openjax-gateway` | HTTP/SSE 网关（会话、turn、审批、事件流） | [openjax-gateway/README.md](openjax-gateway/README.md) |
+| `openjax-store` | SQLite 持久化存储层（会话、消息、事件、provider 配置） | [openjax-store/README.md](openjax-store/README.md) |
+| `openjax-policy` | 策略中心（规则匹配、版本化发布、session overlay、审计） | [openjax-policy/README.md](openjax-policy/README.md) |
 | `tui_next` | Rust TUI 交互层（事件渲染、审批弹层） | [ui/tui/README.md](ui/tui/README.md) |
 
 仓库内 Python 模块：
@@ -43,6 +45,8 @@ openjax-protocol/
 openjax-core/
 openjaxd/
 openjax-gateway/
+openjax-store/
+openjax-policy/
 ui/tui/
 ui/web/
 python/
@@ -62,6 +66,9 @@ User
      openjax-core
           │
           ▼
+     openjax-policy
+          │
+          ▼
      openjax-protocol
 
 Web/SDK
@@ -69,6 +76,9 @@ Web/SDK
           │
           ▼
      openjax-core
+          │
+          ▼
+     openjax-policy
 
 Daemon/SDK
  ├─ openjaxd (Rust daemon, JSONL over stdio)
@@ -86,6 +96,8 @@ Daemon/SDK
 - [openjax-core/README.md](openjax-core/README.md)
 - [openjaxd/README.md](openjaxd/README.md)
 - [openjax-gateway/README.md](openjax-gateway/README.md)
+- [openjax-store/README.md](openjax-store/README.md)
+- [openjax-policy/README.md](openjax-policy/README.md)
 - [ui/tui/README.md](ui/tui/README.md)
 - [ui/web/README.md](ui/web/README.md)
 - [python/openjax_sdk/README.md](python/openjax_sdk/README.md)
@@ -95,6 +107,7 @@ Daemon/SDK
 
 - 协议文档： [docs/protocol/v1/README.md](docs/protocol/v1/README.md)
 - 工具系统： [openjax-core/src/tools/docs/README.md](openjax-core/src/tools/docs/README.md)
+- 策略中心： [openjax-policy/README.md](openjax-policy/README.md)
 - 重构计划索引： [docs/plan/refactor/README.md](docs/plan/refactor/README.md)
 
 
@@ -108,6 +121,7 @@ zsh -lc "cargo test --workspace"
 zsh -lc "cargo test -p openjax-core"
 zsh -lc "cargo test -p openjaxd"
 zsh -lc "cargo test -p openjax-gateway"
+zsh -lc "cargo test -p openjax-policy --tests"
 zsh -lc "cargo test -p tui_next"
 zsh -lc "PYTHONPATH=python/openjax_sdk/src python3 -m unittest discover -s python/openjax_sdk/tests -v"
 zsh -lc "cd ui/web && pnpm test"

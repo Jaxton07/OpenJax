@@ -15,6 +15,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
   - `openjaxd`
   - `openjax-gateway`
   - `openjax-store`
+  - `openjax-policy`
   - `ui/tui`
 - Python 包：
   - `python/openjax_sdk`
@@ -26,6 +27,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `openjaxd/`：守护进程。
 - `openjax-gateway/`：HTTP/SSE 网关（会话、turn、审批、事件流）。
 - `openjax-store/`：SQLite 持久化存储层（会话、消息、事件、LLM provider 配置）。
+- `openjax-policy/`：统一策略中心（规则匹配、版本化发布、会话 overlay、审计记录）。
 - `ui/tui/`：Rust TUI（最新版）。
 - `ui/web/`：React Web 前端（通过 gateway 访问会话与流式事件）。
 - `python/openjax_sdk/`：面向守护进程的异步 SDK。
@@ -38,6 +40,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - [openjax-core/src/tools/README.md](openjax-core/src/tools/README.md)
 - [openjax-gateway/README.md](openjax-gateway/README.md)
 - [openjax-store/README.md](openjax-store/README.md)
+- [openjax-policy/README.md](openjax-policy/README.md)
 - [ui/tui/README.md](ui/tui/README.md)
 - [ui/web/README.md](ui/web/README.md)
 - [openjaxd/README.md](openjaxd/README.md)
@@ -55,6 +58,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `zsh -lc "cargo build"`
 - `zsh -lc "cargo build -p openjax-core"`
 - `zsh -lc "cargo build -p openjax-gateway"`
+- `zsh -lc "cargo build -p openjax-policy"`
 - `zsh -lc "cargo build -p tui_next"`
 - `zsh -lc "cargo build -p openjaxd"`
 - `zsh -lc "cd ui/web && pnpm build"`
@@ -69,6 +73,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `zsh -lc "cargo test --workspace"`
 - `zsh -lc "cargo test -p openjax-core"`
 - `zsh -lc "cargo test -p openjax-gateway"`
+- `zsh -lc "cargo test -p openjax-policy --tests"`
 - `zsh -lc "cargo test -p tui_next"`
 - `zsh -lc "cd ui/web && pnpm test"`
 - `zsh -lc "make core-smoke"`
