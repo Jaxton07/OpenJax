@@ -8,6 +8,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
 use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, Config, approval_timeout_ms_from_env};
+use openjax_policy::schema::PolicyRule;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, broadcast, oneshot};
@@ -114,6 +115,7 @@ pub struct SessionRuntime {
     pub agent: Arc<Mutex<Agent>>,
     pub approval_handler: Arc<GatewayApprovalHandler>,
     pub active_provider_id: Option<String>,
+    pub policy_overlay_rules: Vec<PolicyRule>,
     pub status: SessionStatus,
     pub turns: HashMap<String, TurnRuntime>,
     pub core_turn_to_public: HashMap<u64, String>,
@@ -138,6 +140,7 @@ impl SessionRuntime {
             agent: Arc::new(Mutex::new(agent)),
             approval_handler,
             active_provider_id: None,
+            policy_overlay_rules: Vec::new(),
             status: SessionStatus::Active,
             turns: HashMap::new(),
             core_turn_to_public: HashMap::new(),
@@ -158,6 +161,7 @@ impl SessionRuntime {
         self.agent = Arc::new(Mutex::new(agent));
         self.approval_handler = approval_handler;
         self.active_provider_id = None;
+        self.policy_overlay_rules.clear();
         self.status = SessionStatus::Active;
         self.turns.clear();
         self.core_turn_to_public.clear();
@@ -173,6 +177,7 @@ impl SessionRuntime {
         agent.set_approval_handler(approval_handler.clone());
         self.agent = Arc::new(Mutex::new(agent));
         self.approval_handler = approval_handler;
+        self.policy_overlay_rules.clear();
         self.status = SessionStatus::Active;
         self.turns.clear();
         self.core_turn_to_public.clear();
@@ -279,23 +284,23 @@ impl GatewayApprovalHandler {
 impl ApprovalHandler for GatewayApprovalHandler {
     async fn request_approval(&self, request: ApprovalRequest) -> Result<bool, String> {
         let timeout_ms = approval_timeout_ms_from_env();
+        let approval_id = request.request_id.clone();
         let (tx, rx) = oneshot::channel();
-        self.pending
-            .lock()
-            .await
-            .insert(request.request_id.clone(), tx);
+        self.pending.lock().await.insert(approval_id.clone(), tx);
         info!(
-            approval_id = %request.request_id,
+            approval_id = %approval_id,
             target = %request.target,
             "approval requested"
         );
-        match timeout(Duration::from_millis(timeout_ms), rx).await {
+        let outcome = match timeout(Duration::from_millis(timeout_ms), rx).await {
             Ok(Ok(approved)) => Ok(approved),
             Ok(Err(_)) => Err("approval channel closed".to_string()),
             Err(_) => {
-                warn!(approval_id = %request.request_id, "approval timed out");
+                warn!(approval_id = %approval_id, "approval timed out");
                 Err("approval timed out".to_string())
             }
-        }
+        };
+        self.pending.lock().await.remove(&approval_id);
+        outcome
     }
 }

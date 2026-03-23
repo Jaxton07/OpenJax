@@ -1169,6 +1169,7 @@ dependencies = [
  "futures-util",
  "hex",
  "openjax-core",
+ "openjax-policy",
  "openjax-protocol",
  "openjax-store",
  "rand 0.8.5",
