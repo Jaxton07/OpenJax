@@ -44,6 +44,8 @@ pub async fn request_degrade_approval(
             request_id: request_id.clone(),
             target: command.to_string(),
             reason: human_reason.clone(),
+            policy_version: None,
+            matched_rule_id: None,
             tool_name: Some(invocation.tool_name.clone()),
             command_preview: Some(truncate_preview(command, 180)),
             risk_tags: vec!["sandbox_degrade".to_string()],

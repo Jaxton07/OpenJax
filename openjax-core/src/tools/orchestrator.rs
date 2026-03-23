@@ -76,8 +76,10 @@ impl ToolOrchestrator {
             .sandbox_manager
             .is_mutating_operation(&invocation.tool_name);
         if !is_shell_like_tool(&invocation.tool_name) {
+            let policy_center_decision = evaluate_policy_center_decision(&invocation);
             let policy_outcome = merge_policy_center_outcome(
                 &invocation,
+                &policy_center_decision,
                 evaluate_tool_invocation_policy(&invocation, is_mutating),
             );
             if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
@@ -105,6 +107,8 @@ impl ToolOrchestrator {
                 let context = policy_outcome.approval_context.as_ref();
                 let target = approval_target(&invocation, context);
                 let reason = approval_reason(&policy_outcome, invocation.turn.approval_policy);
+                let policy_version = Some(policy_center_decision.policy_version);
+                let matched_rule_id = policy_center_decision.matched_rule_id.clone();
                 let risk_tags = if context
                     .map(|ctx| !ctx.risk_tags.is_empty())
                     .unwrap_or(false)
@@ -132,6 +136,8 @@ impl ToolOrchestrator {
                         request_id: request_id.clone(),
                         target: target.clone(),
                         reason: reason.clone(),
+                        policy_version,
+                        matched_rule_id,
                         tool_name: Some(invocation.tool_name.clone()),
                         command_preview: context.and_then(|ctx| ctx.command_preview.clone()),
                         risk_tags: risk_tags.clone(),
@@ -312,9 +318,9 @@ fn truncate_preview(text: &str, limit: usize) -> String {
 
 fn merge_policy_center_outcome(
     invocation: &ToolInvocation,
+    center: &openjax_policy::PolicyDecision,
     mut legacy: PolicyOutcome,
 ) -> PolicyOutcome {
-    let center = evaluate_policy_center_decision(invocation);
     let center_decision = map_policy_center_decision(&center.kind);
     if decision_rank(center_decision) > decision_rank(legacy.trace.decision) {
         legacy.trace.decision = center_decision;
@@ -335,7 +341,7 @@ fn merge_policy_center_outcome(
                     .as_ref()
                     .map(|_| Vec::new())
                     .unwrap_or_else(|| vec!["unknown_tool_descriptor".to_string()]),
-                reason: center.reason,
+                reason: center.reason.clone(),
                 sandbox_backend: None,
                 degrade_reason: None,
                 fallback_plan: None,

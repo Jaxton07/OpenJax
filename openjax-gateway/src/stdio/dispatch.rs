@@ -966,6 +966,8 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             risk_tags,
             sandbox_backend,
             degrade_reason,
+            policy_version,
+            matched_rule_id,
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -980,7 +982,9 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
                 "command_preview": command_preview,
                 "risk_tags": risk_tags,
                 "sandbox_backend": sandbox_backend,
-                "degrade_reason": degrade_reason
+                "degrade_reason": degrade_reason,
+                "policy_version": policy_version,
+                "matched_rule_id": matched_rule_id
             }),
         }),
         Event::ApprovalResolved {
@@ -1211,6 +1215,8 @@ mod tests {
                 risk_tags: vec!["write".to_string()],
                 sandbox_backend: Some("linux_native".to_string()),
                 degrade_reason: None,
+                policy_version: Some(1),
+                matched_rule_id: Some("rule_1".to_string()),
             },
             Event::ApprovalResolved {
                 turn_id: 1,

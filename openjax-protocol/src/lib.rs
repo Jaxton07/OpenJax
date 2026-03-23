@@ -186,6 +186,10 @@ pub enum Event {
         target: String,
         reason: String,
         #[serde(default)]
+        policy_version: Option<u64>,
+        #[serde(default)]
+        matched_rule_id: Option<String>,
+        #[serde(default)]
         tool_name: Option<String>,
         #[serde(default)]
         command_preview: Option<String>,
