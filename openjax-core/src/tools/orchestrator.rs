@@ -3,9 +3,14 @@ use crate::tools::ToolsConfig;
 use crate::tools::context::{ApprovalPolicy, ToolInvocation, ToolOutput};
 use crate::tools::events::{AfterToolUse, BeforeToolUse, HookEvent};
 use crate::tools::hooks::HookExecutor;
-use crate::tools::policy::{ApprovalContext, PolicyDecision, evaluate_tool_invocation_policy};
+use crate::tools::policy::{
+    ApprovalContext, PolicyDecision, PolicyOutcome, evaluate_tool_invocation_policy,
+};
 use crate::tools::registry::ToolRegistry;
 use crate::tools::sandboxing::SandboxManager;
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::schema::DecisionKind as PolicyCenterDecisionKind;
+use openjax_policy::store::PolicyStore;
 use openjax_protocol::Event;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -71,7 +76,10 @@ impl ToolOrchestrator {
             .sandbox_manager
             .is_mutating_operation(&invocation.tool_name);
         if !is_shell_like_tool(&invocation.tool_name) {
-            let policy_outcome = evaluate_tool_invocation_policy(&invocation, is_mutating);
+            let policy_outcome = merge_policy_center_outcome(
+                &invocation,
+                evaluate_tool_invocation_policy(&invocation, is_mutating),
+            );
             if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
                 return Err(crate::tools::error::FunctionCallError::Internal(
                     policy_outcome.trace.reason,
@@ -300,4 +308,68 @@ fn truncate_preview(text: &str, limit: usize) -> String {
     let mut out = text.chars().take(limit).collect::<String>();
     out.push_str("...");
     out
+}
+
+fn merge_policy_center_outcome(
+    invocation: &ToolInvocation,
+    mut legacy: PolicyOutcome,
+) -> PolicyOutcome {
+    let center = evaluate_policy_center_decision(invocation);
+    let center_decision = map_policy_center_decision(&center.kind);
+    if decision_rank(center_decision) > decision_rank(legacy.trace.decision) {
+        legacy.trace.decision = center_decision;
+        legacy.trace.reason = center.reason.clone();
+
+        if matches!(
+            legacy.trace.decision,
+            PolicyDecision::AskApproval | PolicyDecision::AskEscalation
+        ) && legacy.approval_context.is_none()
+        {
+            legacy.approval_context = Some(ApprovalContext {
+                tool_name: invocation.tool_name.clone(),
+                raw_command: None,
+                normalized_command: None,
+                command_preview: None,
+                risk_tags: center
+                    .matched_rule_id
+                    .as_ref()
+                    .map(|_| Vec::new())
+                    .unwrap_or_else(|| vec!["unknown_tool_descriptor".to_string()]),
+                reason: center.reason,
+                sandbox_backend: None,
+                degrade_reason: None,
+                fallback_plan: None,
+            });
+        }
+    }
+    legacy
+}
+
+fn evaluate_policy_center_decision(invocation: &ToolInvocation) -> openjax_policy::PolicyDecision {
+    let descriptor = invocation.policy_descriptor();
+    let rules = descriptor
+        .as_ref()
+        .map(|item| vec![item.allow_rule_for_tool(&invocation.tool_name)])
+        .unwrap_or_default();
+    let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, rules));
+    let input = invocation.to_policy_center_input(descriptor.as_ref(), runtime.current_version());
+    runtime.handle().decide(&input)
+}
+
+fn map_policy_center_decision(decision: &PolicyCenterDecisionKind) -> PolicyDecision {
+    match decision {
+        PolicyCenterDecisionKind::Allow => PolicyDecision::Allow,
+        PolicyCenterDecisionKind::Ask => PolicyDecision::AskApproval,
+        PolicyCenterDecisionKind::Escalate => PolicyDecision::AskEscalation,
+        PolicyCenterDecisionKind::Deny => PolicyDecision::Deny,
+    }
+}
+
+fn decision_rank(decision: PolicyDecision) -> u8 {
+    match decision {
+        PolicyDecision::Allow => 0,
+        PolicyDecision::AskApproval => 1,
+        PolicyDecision::AskEscalation => 2,
+        PolicyDecision::Deny => 3,
+    }
 }

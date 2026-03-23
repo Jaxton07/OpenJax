@@ -3,6 +3,10 @@ use std::sync::Arc;
 
 use crate::approval::{ApprovalHandler, StdinApprovalHandler};
 use crate::tools::shell::ShellType;
+use openjax_policy::schema::{
+    DecisionKind as PolicyCenterDecisionKind, PolicyInput as PolicyCenterInput,
+    PolicyRule as PolicyCenterRule,
+};
 use openjax_protocol::Event;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -30,6 +34,32 @@ pub enum ToolPayload {
 pub struct ShellToolCallParams {
     pub command: String,
     pub args: Vec<String>,
+}
+
+/// 工具策略描述符
+#[derive(Debug, Clone)]
+pub struct PolicyDescriptor {
+    pub action: String,
+    pub capabilities: Vec<String>,
+    pub risk_tags: Vec<String>,
+}
+
+impl PolicyDescriptor {
+    pub fn allow_rule_for_tool(&self, tool_name: &str) -> PolicyCenterRule {
+        PolicyCenterRule {
+            id: format!("descriptor:{tool_name}:{}", self.action),
+            decision: PolicyCenterDecisionKind::Allow,
+            priority: 100,
+            tool_name: Some(tool_name.to_string()),
+            action: Some(self.action.clone()),
+            session_id: None,
+            actor: None,
+            resource: None,
+            capabilities_all: self.capabilities.clone(),
+            risk_tags_all: self.risk_tags.clone(),
+            reason: format!("tool `{tool_name}` is declared in policy descriptor"),
+        }
+    }
 }
 
 /// 工具输出
@@ -68,6 +98,92 @@ impl std::fmt::Debug for ToolInvocation {
             .field("payload", &self.payload)
             .field("turn", &self.turn)
             .finish()
+    }
+}
+
+impl ToolInvocation {
+    pub fn policy_descriptor(&self) -> Option<PolicyDescriptor> {
+        let descriptor = match self.tool_name.as_str() {
+            "read_file" | "list_dir" | "grep_files" => PolicyDescriptor {
+                action: "read".to_string(),
+                capabilities: vec!["fs_read".to_string()],
+                risk_tags: vec![],
+            },
+            "apply_patch" | "edit_file_range" => PolicyDescriptor {
+                action: "write".to_string(),
+                capabilities: vec!["fs_write".to_string()],
+                risk_tags: vec!["mutating".to_string()],
+            },
+            "process_snapshot" | "system_load" | "disk_usage" => PolicyDescriptor {
+                action: "observe".to_string(),
+                capabilities: vec!["process_exec".to_string()],
+                risk_tags: vec![],
+            },
+            "shell" | "exec_command" => {
+                let mut risk_tags = Vec::new();
+                if shell_payload_requires_escalated(&self.payload) {
+                    risk_tags.push("require_escalated".to_string());
+                }
+                PolicyDescriptor {
+                    action: "exec".to_string(),
+                    capabilities: vec!["process_exec".to_string()],
+                    risk_tags,
+                }
+            }
+            _ => return None,
+        };
+        Some(descriptor)
+    }
+
+    pub fn to_policy_center_input(
+        &self,
+        descriptor: Option<&PolicyDescriptor>,
+        policy_version: u64,
+    ) -> PolicyCenterInput {
+        let (action, capabilities, risk_tags) = descriptor
+            .map(|d| {
+                (
+                    d.action.clone(),
+                    d.capabilities.clone(),
+                    d.risk_tags.clone(),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    "invoke".to_string(),
+                    Vec::new(),
+                    vec!["unknown_tool_descriptor".to_string()],
+                )
+            });
+
+        PolicyCenterInput {
+            tool_name: self.tool_name.clone(),
+            action,
+            session_id: Some(self.turn.turn_id.to_string()),
+            actor: Some("user".to_string()),
+            resource: Some(self.turn.cwd.display().to_string()),
+            capabilities,
+            risk_tags,
+            policy_version,
+        }
+    }
+}
+
+fn shell_payload_requires_escalated(payload: &ToolPayload) -> bool {
+    let ToolPayload::Function { arguments } = payload else {
+        return false;
+    };
+
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
+        return false;
+    };
+
+    match value.get("require_escalated") {
+        Some(serde_json::Value::Bool(v)) => *v,
+        Some(serde_json::Value::String(v)) => {
+            matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes")
+        }
+        _ => false,
     }
 }
 

@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::sandbox;
 use crate::tools::apply_patch_interceptor;
-use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload};
+use crate::tools::context::{PolicyDescriptor, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
 
@@ -62,7 +62,16 @@ impl ToolHandler for ShellCommandHandler {
 
         let command = args.cmd;
         let timeout_ms = args.timeout_ms;
-        let _require_escalated = args.require_escalated;
+        let require_escalated = args.require_escalated;
+        let mut risk_tags = Vec::new();
+        if require_escalated {
+            risk_tags.push("require_escalated".to_string());
+        }
+        let policy_descriptor = PolicyDescriptor {
+            action: "exec".to_string(),
+            capabilities: vec!["process_exec".to_string()],
+            risk_tags,
+        };
 
         if invocation.turn.prevent_shell_skill_trigger
             && looks_like_skill_trigger_shell_command(&command)
@@ -99,7 +108,7 @@ impl ToolHandler for ShellCommandHandler {
             });
         }
 
-        sandbox::execute_shell(&invocation, &command, timeout_ms).await
+        sandbox::execute_shell(&invocation, &command, timeout_ms, Some(policy_descriptor)).await
     }
 }
 
