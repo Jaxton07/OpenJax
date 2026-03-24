@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use openjax_core::approval::{ApprovalHandler, ApprovalRequest};
 use openjax_core::tools::{ToolCall, ToolExecutionRequest, ToolRouter, ToolRuntimeConfig};
-use openjax_core::{ApprovalPolicy, SandboxMode};
+use openjax_core::SandboxMode;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,7 +35,6 @@ async fn shell_guard_blocks_skill_trigger_like_command() {
             call: &call,
             cwd: &cwd,
             config: ToolRuntimeConfig {
-                approval_policy: ApprovalPolicy::OnRequest,
                 sandbox_mode: SandboxMode::WorkspaceWrite,
                 prevent_shell_skill_trigger: true,
                 ..ToolRuntimeConfig::default()

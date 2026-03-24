@@ -5,7 +5,7 @@
 // 2. After many turns, truncation only keeps MAX_CONVERSATION_HISTORY_TURNS turns
 // 3. Tool calls that execute but return ok=false still complete and commit to history
 
-use openjax_core::{Agent, ApprovalPolicy, SandboxMode};
+use openjax_core::{Agent, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
@@ -36,11 +36,7 @@ async fn successful_tool_turn_increments_history() {
     let ws = workspace();
     fs::write(ws.join("data.txt"), "content").unwrap();
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        ws.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, ws.clone());
 
     // Turn 1
     let events1 = agent
@@ -92,11 +88,7 @@ async fn history_truncation_does_not_panic() {
     let ws = workspace();
     fs::write(ws.join("file.txt"), "hello").unwrap();
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        ws.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, ws.clone());
 
     // Submit 12 turns — exceeds MAX_CONVERSATION_HISTORY_TURNS = 10
     for _ in 0..12 {
@@ -123,11 +115,7 @@ async fn failed_tool_call_turn_still_completes() {
     let ws = workspace();
     // intentionally no missing.txt file
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        ws.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, ws.clone());
 
     let events = agent
         .submit(Op::UserTurn {

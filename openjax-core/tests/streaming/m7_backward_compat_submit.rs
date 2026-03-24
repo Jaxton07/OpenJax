@@ -1,4 +1,4 @@
-use openjax_core::{Agent, ApprovalPolicy, SandboxMode};
+use openjax_core::{Agent, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
@@ -27,11 +27,7 @@ async fn submit_still_returns_full_turn_event_sequence() {
     let workspace = create_workspace();
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {

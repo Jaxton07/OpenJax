@@ -175,9 +175,7 @@ fn now_rfc3339() -> String {
 mod tests {
     use super::{DiskUsageHandler, to_disk_item};
     use crate::tools::FunctionCallOutputBody;
-    use crate::tools::context::{
-        ApprovalPolicy, SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext,
-    };
+    use crate::tools::context::{SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext};
     use crate::tools::registry::ToolHandler;
     use crate::tools::system::errors::SystemToolError;
     use crate::tools::system::provider::SystemMetricsProvider;
@@ -252,7 +250,6 @@ mod tests {
                 arguments: arguments.to_string(),
             },
             turn: ToolTurnContext {
-                approval_policy: ApprovalPolicy::OnRequest,
                 sandbox_policy: SandboxPolicy::Write,
                 ..ToolTurnContext::default()
             },

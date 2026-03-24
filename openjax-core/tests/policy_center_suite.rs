@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use openjax_core::approval::{ApprovalHandler, ApprovalRequest};
 use openjax_core::tools::context::{
-    ApprovalPolicy, SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext,
+    SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext,
 };
 use openjax_core::tools::error::FunctionCallError;
 use openjax_core::tools::orchestrator::ToolOrchestrator;
@@ -38,7 +38,6 @@ async fn unknown_tool_without_descriptor_defaults_to_ask() {
             session_id: None,
             cwd: std::path::PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
-            approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::default(),
             approval_handler: Arc::new(RejectApproval),
             event_sink: None,
@@ -85,7 +84,6 @@ async fn published_runtime_rule_can_deny_known_tool() {
             session_id: Some("sess_policy".to_string()),
             cwd: std::path::PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
-            approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::default(),
             approval_handler: Arc::new(RejectApproval),
             event_sink: None,
@@ -150,7 +148,6 @@ async fn session_overlay_rule_applies_by_session_id() {
             session_id: Some("sess_overlay".to_string()),
             cwd: std::path::PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
-            approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::default(),
             approval_handler: Arc::new(RejectApproval),
             event_sink: None,

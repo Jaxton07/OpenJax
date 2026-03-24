@@ -4,7 +4,8 @@
 mod approval_event_emission_m8;
 
 use async_trait::async_trait;
-use openjax_core::{Agent, ApprovalHandler, ApprovalPolicy, ApprovalRequest, SandboxMode};
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
+use openjax_policy::{runtime::PolicyRuntime, schema::DecisionKind, store::PolicyStore};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
@@ -41,11 +42,9 @@ async fn approval_event_contains_policy_metadata() {
     fs::create_dir_all(&workspace).expect("failed to create temp workspace");
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::AlwaysAsk,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let policy_runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]));
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_policy_runtime(Some(policy_runtime));
     agent.set_approval_handler(Arc::new(AlwaysApprove));
 
     let events = agent

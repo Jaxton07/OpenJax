@@ -1,4 +1,4 @@
-use openjax_core::{Agent, ApprovalPolicy, SandboxMode, tools};
+use openjax_core::{Agent, SandboxMode, tools};
 use openjax_protocol::{AgentSource, Event, Op, StreamSource, ThreadId};
 use std::path::PathBuf;
 
@@ -57,11 +57,7 @@ fn assert_synthetic_response_pair(events: &[Event], expected_fragment: &str) {
 
 #[tokio::test]
 async fn send_to_agent_emits_response_completed_event() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
 
     let events = agent
         .submit(Op::SendToAgent {
@@ -75,11 +71,7 @@ async fn send_to_agent_emits_response_completed_event() {
 
 #[tokio::test]
 async fn placeholder_ops_do_not_require_assistant_message_for_completion() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
 
     let interrupt_events = agent
         .submit(Op::InterruptAgent {

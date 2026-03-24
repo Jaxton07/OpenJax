@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use openjax_core::approval::{ApprovalHandler, ApprovalRequest};
 use openjax_core::tools::{self, ToolCall, ToolExecutionRequest, ToolRouter, ToolRuntimeConfig};
-use openjax_core::{ApprovalPolicy, SandboxMode};
+use openjax_core::SandboxMode;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -54,7 +54,6 @@ async fn process_snapshot_dispatch_returns_json() {
             call: &call("process_snapshot", &[("limit", "5"), ("sort_by", "cpu")]),
             cwd: &cwd,
             config: ToolRuntimeConfig {
-                approval_policy: ApprovalPolicy::OnRequest,
                 sandbox_mode: SandboxMode::WorkspaceWrite,
                 ..ToolRuntimeConfig::default()
             },
@@ -88,7 +87,6 @@ async fn system_load_does_not_trigger_approval_under_on_request() {
             ),
             cwd: &cwd,
             config: ToolRuntimeConfig {
-                approval_policy: ApprovalPolicy::OnRequest,
                 sandbox_mode: SandboxMode::WorkspaceWrite,
                 ..ToolRuntimeConfig::default()
             },
