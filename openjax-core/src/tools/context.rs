@@ -120,17 +120,11 @@ impl ToolInvocation {
                 capabilities: vec!["process_exec".to_string()],
                 risk_tags: vec![],
             },
-            "shell" | "exec_command" => {
-                let mut risk_tags = Vec::new();
-                if shell_payload_requires_escalated(&self.payload) {
-                    risk_tags.push("require_escalated".to_string());
-                }
-                PolicyDescriptor {
-                    action: "exec".to_string(),
-                    capabilities: vec!["process_exec".to_string()],
-                    risk_tags,
-                }
-            }
+            "shell" | "exec_command" => PolicyDescriptor {
+                action: "exec".to_string(),
+                capabilities: vec!["process_exec".to_string()],
+                risk_tags: vec![],
+            },
             _ => return None,
         };
         Some(descriptor)
@@ -171,24 +165,6 @@ impl ToolInvocation {
             risk_tags,
             policy_version,
         }
-    }
-}
-
-fn shell_payload_requires_escalated(payload: &ToolPayload) -> bool {
-    let ToolPayload::Function { arguments } = payload else {
-        return false;
-    };
-
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
-        return false;
-    };
-
-    match value.get("require_escalated") {
-        Some(serde_json::Value::Bool(v)) => *v,
-        Some(serde_json::Value::String(v)) => {
-            matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes")
-        }
-        _ => false,
     }
 }
 
