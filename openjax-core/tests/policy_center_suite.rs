@@ -371,3 +371,105 @@ async fn degrade_approval_denied_by_policy_center() {
     let has_approval_event = rx.try_recv().map(|e| matches!(e, Event::ApprovalRequested { .. })).unwrap_or(false);
     assert!(!has_approval_event, "policy Deny should NOT emit ApprovalRequested event");
 }
+
+/// 带 destructive 风险标签的 shell 命令（如 rm -rf /tmp/test_dir）经 Policy Center 后，
+/// legacy sandbox 层将 destructive 命令映射为 PolicyDecision::Deny（比 Policy Center 的
+/// Escalate 更严格），select_stricter_outcome 取 Deny，最终直接返回 Internal 错误，
+/// 不会发出 ApprovalRequested 事件。
+///
+/// 注：system:destructive_escalate 规则（priority=1000）本身产生 Escalate 决策，
+/// 但 legacy sandbox 的 Deny 在 select_stricter_outcome 中优先级更高（rank 3 > 2），
+/// 因此结果是直接拒绝而非升级审批。
+#[tokio::test]
+async fn destructive_shell_triggers_escalation() {
+    use openjax_core::tools::error::FunctionCallError;
+
+    let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    // DecisionKind::Ask 为默认，系统内置 destructive_escalate 规则自动注入
+    let runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]));
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-shell-destructive".to_string(),
+        payload: ToolPayload::Function {
+            // rm -rf /tmp/test_dir 包含 "rm -rf /" 模式，触发 destructive 标签
+            arguments: serde_json::json!({ "cmd": "rm -rf /tmp/test_dir" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 300,
+            session_id: Some("sess_shell_destructive".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(AcceptApproval),
+            event_sink: Some(tx),
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let result = orchestrator.run(invocation).await;
+
+    // 确认直接被 Deny（legacy sandbox 的 Deny 严于 Policy Center 的 Escalate）
+    assert!(
+        matches!(result, Err(FunctionCallError::Internal(_))),
+        "destructive shell command should be denied immediately (legacy Deny > policy center Escalate), got: {result:?}"
+    );
+
+    // 确认没有 ApprovalRequested 事件被发出（因为 Deny 在进入审批流程前就已返回）
+    let has_approval_event = rx
+        .try_recv()
+        .map(|e| matches!(e, Event::ApprovalRequested { .. }))
+        .unwrap_or(false);
+    assert!(
+        !has_approval_event,
+        "destructive shell command should NOT emit ApprovalRequested event when Deny is the final decision"
+    );
+}
+
+/// 普通 shell 命令（如 ls -la）经 Policy Center 后，
+/// 默认 Ask 决策映射为 Normal 审批，approval_kind 应为 Some(Normal)。
+#[tokio::test]
+async fn safe_shell_triggers_normal_approval() {
+    let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]));
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-shell-safe".to_string(),
+        payload: ToolPayload::Function {
+            arguments: serde_json::json!({ "cmd": "ls -la" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 301,
+            session_id: Some("sess_shell_safe".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(AcceptApproval),
+            event_sink: Some(tx),
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let _ = orchestrator.run(invocation).await;
+
+    let mut approval_kind_found = None;
+    while let Ok(event) = rx.try_recv() {
+        if let Event::ApprovalRequested { approval_kind, .. } = event {
+            approval_kind_found = Some(approval_kind);
+            break;
+        }
+    }
+
+    let approval_kind =
+        approval_kind_found.expect("safe shell tool should emit ApprovalRequested event");
+    assert_eq!(
+        approval_kind,
+        Some(ApprovalKind::Normal),
+        "safe shell command approval_kind should be Some(Normal), got: {approval_kind:?}"
+    );
+}
