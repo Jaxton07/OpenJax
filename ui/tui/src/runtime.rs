@@ -45,7 +45,7 @@ pub async fn run() -> anyhow::Result<()> {
         let guard = agent.lock().await;
         app.set_runtime_info(
             guard.model_backend_name().to_string(),
-            guard.approval_policy_name().to_string(),
+            guard.policy_default_decision_name().to_string(),
             guard.sandbox_mode_name().to_string(),
             cwd.as_path(),
         );

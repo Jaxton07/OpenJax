@@ -73,12 +73,12 @@ impl App {
     pub fn set_runtime_info(
         &mut self,
         model_name: String,
-        approval_policy: String,
+        policy_default: String,
         sandbox_mode: String,
         cwd: &Path,
     ) {
         self.state.model_name = Some(model_name);
-        self.state.approval_policy = Some(approval_policy);
+        self.state.policy_default = Some(policy_default);
         self.state.sandbox_mode = Some(sandbox_mode);
         self.state.cwd_display = Some(Self::display_path(cwd));
     }
