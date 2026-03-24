@@ -31,10 +31,8 @@ impl Agent {
             ));
         }
 
-        let mut sub_agent = Agent::with_runtime(
-            self.tool_runtime_config.sandbox_mode,
-            self.cwd.clone(),
-        );
+        let mut sub_agent =
+            Agent::with_runtime(self.tool_runtime_config.sandbox_mode, self.cwd.clone());
 
         // Set parent relationship
         sub_agent.parent_thread_id = Some(self.thread_id);

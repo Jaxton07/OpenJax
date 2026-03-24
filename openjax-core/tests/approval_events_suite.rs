@@ -61,7 +61,11 @@ async fn approval_event_contains_policy_metadata() {
                 matched_rule_id,
                 approval_kind,
                 ..
-            } => Some((*policy_version, matched_rule_id.clone(), approval_kind.clone())),
+            } => Some((
+                *policy_version,
+                matched_rule_id.clone(),
+                approval_kind.clone(),
+            )),
             _ => None,
         })
         .expect("approval event should be emitted");

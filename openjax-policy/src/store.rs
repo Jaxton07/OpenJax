@@ -39,7 +39,10 @@ mod tests {
     #[test]
     fn policy_store_has_builtin_destructive_escalate_rule() {
         let store = PolicyStore::new(DecisionKind::Ask, vec![]);
-        let rule = store.rules.iter().find(|r| r.id == "system:destructive_escalate");
+        let rule = store
+            .rules
+            .iter()
+            .find(|r| r.id == "system:destructive_escalate");
         assert!(
             rule.is_some(),
             "system:destructive_escalate rule must exist"
@@ -48,7 +51,10 @@ mod tests {
         assert_eq!(rule.decision, DecisionKind::Escalate);
         assert_eq!(rule.priority, 1000);
         assert!(rule.risk_tags_all.contains(&"destructive".to_string()));
-        assert!(!rule.reason.is_empty(), "system rule must have a non-empty reason");
+        assert!(
+            !rule.reason.is_empty(),
+            "system rule must have a non-empty reason"
+        );
     }
 
     #[test]

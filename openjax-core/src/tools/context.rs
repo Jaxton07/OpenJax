@@ -245,7 +245,6 @@ impl std::fmt::Debug for ToolTurnContext {
     }
 }
 
-
 /// MCP 工具结果
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct McpToolResult {

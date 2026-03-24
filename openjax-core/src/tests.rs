@@ -14,8 +14,7 @@ use super::{
         decision::{normalize_model_decision, parse_model_decision},
         prompt::{build_planner_input, summarize_user_input},
         runtime_policy::{
-            parse_sandbox_mode,
-            resolve_max_planner_rounds_per_turn_with_lookup,
+            parse_sandbox_mode, resolve_max_planner_rounds_per_turn_with_lookup,
             resolve_max_tool_calls_per_turn_with_lookup,
         },
         tool_policy::should_abort_on_consecutive_duplicate_skips,
