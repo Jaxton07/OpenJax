@@ -223,3 +223,151 @@ async fn shell_tool_goes_through_policy_center() {
         "shell tool approval_kind should be Some(Normal), not None"
     );
 }
+
+/// 沙箱降级触发的审批事件 approval_kind 应为 Some(Escalation)（无 policy runtime 时）。
+#[tokio::test]
+async fn degrade_approval_has_escalation_kind() {
+    use openjax_core::sandbox::degrade::request_degrade_approval;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    let (tx, mut rx) = unbounded_channel::<Event>();
+
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-degrade-1".to_string(),
+        payload: ToolPayload::Function {
+            arguments: serde_json::json!({ "cmd": "echo test" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 200,
+            session_id: Some("sess_degrade".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            // AcceptApproval：允许审批通过，以便函数能正常返回
+            approval_handler: Arc::new(AcceptApproval),
+            event_sink: Some(tx),
+            // 无 policy_runtime：应回退为 Escalate，对应 ApprovalKind::Escalation
+            policy_runtime: None,
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let result = request_degrade_approval(&invocation, "echo test", "none_escalated", "seatbelt unavailable").await;
+    assert!(result.is_ok(), "degrade approval should succeed when handler accepts: {result:?}");
+
+    // 检查发出的 ApprovalRequested 事件
+    let mut found_kind = None;
+    while let Ok(event) = rx.try_recv() {
+        if let Event::ApprovalRequested { approval_kind, .. } = event {
+            found_kind = Some(approval_kind);
+            break;
+        }
+    }
+
+    let approval_kind = found_kind.expect("degrade path should emit ApprovalRequested event");
+    assert_eq!(
+        approval_kind,
+        Some(ApprovalKind::Escalation),
+        "degrade approval_kind should be Some(Escalation) when no policy runtime, got: {approval_kind:?}"
+    );
+}
+
+/// 当 Policy Center 有 Escalate 规则时，降级审批应发出 Escalation 类型。
+#[tokio::test]
+async fn degrade_approval_escalation_from_policy_center() {
+    use openjax_core::sandbox::degrade::request_degrade_approval;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    let (tx, mut rx) = unbounded_channel::<Event>();
+
+    // 构造一个强制 Escalate 的 policy runtime
+    let runtime = PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Escalate,
+        vec![],
+    ));
+
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-degrade-2".to_string(),
+        payload: ToolPayload::Function {
+            arguments: serde_json::json!({ "cmd": "echo test" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 201,
+            session_id: Some("sess_degrade_policy".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(AcceptApproval),
+            event_sink: Some(tx),
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let result = request_degrade_approval(&invocation, "echo test", "none_escalated", "backend unavailable").await;
+    assert!(result.is_ok(), "degrade approval should succeed: {result:?}");
+
+    let mut found_kind = None;
+    while let Ok(event) = rx.try_recv() {
+        if let Event::ApprovalRequested { approval_kind, .. } = event {
+            found_kind = Some(approval_kind);
+            break;
+        }
+    }
+
+    let approval_kind = found_kind.expect("degrade path should emit ApprovalRequested event");
+    assert_eq!(
+        approval_kind,
+        Some(ApprovalKind::Escalation),
+        "degrade with Escalate policy should have ApprovalKind::Escalation, got: {approval_kind:?}"
+    );
+}
+
+/// 当 Policy Center 明确 Deny 时，降级路径应直接返回错误，不触发审批事件。
+#[tokio::test]
+async fn degrade_approval_denied_by_policy_center() {
+    use openjax_core::sandbox::degrade::request_degrade_approval;
+    use openjax_core::tools::error::FunctionCallError;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    let (tx, mut rx) = unbounded_channel::<Event>();
+
+    let runtime = PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Deny,
+        vec![],
+    ));
+
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-degrade-deny".to_string(),
+        payload: ToolPayload::Function {
+            arguments: serde_json::json!({ "cmd": "echo test" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 202,
+            session_id: Some("sess_degrade_deny".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(AcceptApproval),
+            event_sink: Some(tx),
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let result = request_degrade_approval(&invocation, "echo test", "none_escalated", "backend unavailable").await;
+    assert!(
+        matches!(result, Err(FunctionCallError::Internal(_))),
+        "policy Deny should produce Internal error, got: {result:?}"
+    );
+
+    // 确认没有 ApprovalRequested 事件被发出
+    let has_approval_event = rx.try_recv().map(|e| matches!(e, Event::ApprovalRequested { .. })).unwrap_or(false);
+    assert!(!has_approval_event, "policy Deny should NOT emit ApprovalRequested event");
+}
