@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use openjax_core::approval::{ApprovalHandler, ApprovalRequest};
-use openjax_core::tools::context::{
-    SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext,
-};
+use openjax_core::tools::context::{SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext};
 use openjax_core::tools::error::FunctionCallError;
 use openjax_core::tools::orchestrator::ToolOrchestrator;
 use openjax_core::tools::registry::ToolRegistry;
@@ -13,6 +11,18 @@ use openjax_policy::overlay::SessionOverlay;
 use openjax_policy::runtime::PolicyRuntime;
 use openjax_policy::schema::{DecisionKind, PolicyRule};
 use openjax_policy::store::PolicyStore;
+use openjax_protocol::ApprovalKind;
+use openjax_protocol::Event;
+
+#[derive(Debug)]
+struct AcceptApproval;
+
+#[async_trait]
+impl ApprovalHandler for AcceptApproval {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        Ok(true)
+    }
+}
 
 #[derive(Debug)]
 struct RejectApproval;
@@ -164,4 +174,52 @@ async fn session_overlay_rule_applies_by_session_id() {
         }
         other => panic!("expected overlay deny for matched session, got: {other:?}"),
     }
+}
+
+/// Shell 工具也应经过 Policy Center 决策路径，
+/// ApprovalRequested 事件的 approval_kind 应为 Some(Normal) 而非 None。
+#[tokio::test]
+async fn shell_tool_goes_through_policy_center() {
+    let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]));
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-shell-policy".to_string(),
+        payload: ToolPayload::Function {
+            arguments: serde_json::json!({ "cmd": "echo hello" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 100,
+            session_id: Some("sess_shell".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(AcceptApproval),
+            event_sink: Some(tx),
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    // 执行 shell 工具（无论执行结果如何，我们只关心审批事件）
+    let _ = orchestrator.run(invocation).await;
+
+    // 收集所有已发送的事件
+    let mut approval_kind_found = None;
+    while let Ok(event) = rx.try_recv() {
+        if let Event::ApprovalRequested { approval_kind, .. } = event {
+            approval_kind_found = Some(approval_kind);
+            break;
+        }
+    }
+
+    let approval_kind =
+        approval_kind_found.expect("shell tool should emit ApprovalRequested event");
+    assert_eq!(
+        approval_kind,
+        Some(ApprovalKind::Normal),
+        "shell tool approval_kind should be Some(Normal), not None"
+    );
 }

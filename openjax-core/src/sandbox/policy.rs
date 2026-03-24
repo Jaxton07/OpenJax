@@ -320,7 +320,7 @@ fn starts_with_env_assignment(command: &str) -> bool {
     left.contains('=') && !left.starts_with("./") && !left.starts_with('/')
 }
 
-fn extract_shell_command(invocation: &ToolInvocation) -> Option<(String, bool)> {
+pub fn extract_shell_command(invocation: &ToolInvocation) -> Option<(String, bool)> {
     let ToolPayload::Function { arguments } = &invocation.payload else {
         return None;
     };
@@ -389,8 +389,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        PolicyDecision, SandboxCapability, evaluate_tool_invocation_policy,
-        extract_shell_risk_tags,
+        PolicyDecision, SandboxCapability, evaluate_tool_invocation_policy, extract_shell_risk_tags,
     };
     use crate::approval::StdinApprovalHandler;
     use crate::tools::context::{SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext};
