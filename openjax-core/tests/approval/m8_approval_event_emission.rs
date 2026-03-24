@@ -80,9 +80,12 @@ async fn emits_approval_requested_and_resolved_events() {
     assert!(requested.is_some());
     assert!(resolved.is_some());
 
-    if let Some(Event::ApprovalRequested { approval_kind, .. }) = requested {
-        assert_eq!(approval_kind, &Some(openjax_protocol::ApprovalKind::Normal));
-    }
+    let Event::ApprovalRequested { approval_kind, .. } =
+        requested.expect("ApprovalRequested event should exist")
+    else {
+        panic!("event must be ApprovalRequested");
+    };
+    assert_eq!(approval_kind, &Some(openjax_protocol::ApprovalKind::Normal));
 
     let _ = fs::remove_dir_all(workspace);
 }
@@ -134,10 +137,12 @@ async fn submit_with_sink_emits_approval_requested_before_resolution() {
     .await
     .expect("approval_requested should stream before approval resolution");
 
-    if let Event::ApprovalRequested { approval_kind, .. } = &approval_evt {
-        assert_eq!(approval_kind, &Some(openjax_protocol::ApprovalKind::Normal));
-    }
     assert!(matches!(approval_evt, Event::ApprovalRequested { .. }));
+
+    let Event::ApprovalRequested { approval_kind, .. } = &approval_evt else {
+        panic!("event must be ApprovalRequested");
+    };
+    assert_eq!(approval_kind, &Some(openjax_protocol::ApprovalKind::Normal));
 
     release.notify_one();
     let events = submit_task.await.expect("submit task join");
