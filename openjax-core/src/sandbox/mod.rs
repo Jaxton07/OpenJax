@@ -10,15 +10,12 @@ use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput};
 use crate::tools::error::FunctionCallError;
 use crate::tools::shell::Shell;
 use crate::tools::{SandboxMode, SandboxPolicy};
-use openjax_policy::runtime::PolicyRuntime;
-use openjax_policy::schema::DecisionKind as PolicyCenterDecisionKind;
-use openjax_policy::store::PolicyStore;
 use tracing::info;
 
 use self::classifier::classify_command;
 use self::degrade::request_degrade_approval;
 use self::policy::{
-    PolicyDecision, PolicyOutcome, SandboxBackend, evaluate_tool_invocation_policy,
+    PolicyDecision, SandboxBackend, evaluate_tool_invocation_policy,
 };
 use self::result::{classify_shell_result, looks_like_fatal_stderr};
 use self::runtime::{
@@ -31,7 +28,6 @@ pub async fn execute_shell(
     invocation: &ToolInvocation,
     command: &str,
     timeout_ms: u64,
-    policy_descriptor: Option<crate::tools::context::PolicyDescriptor>,
 ) -> Result<ToolOutput, FunctionCallError> {
     let sandbox_policy = match invocation.turn.sandbox_policy {
         SandboxPolicy::None => SandboxMode::DangerFullAccess,
@@ -46,14 +42,7 @@ pub async fn execute_shell(
         "shell started"
     );
 
-    let policy_outcome = merge_policy_center_outcome(
-        invocation,
-        policy_descriptor.as_ref(),
-        evaluate_tool_invocation_policy(invocation, true),
-    );
-    if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
-        return Err(FunctionCallError::Internal(policy_outcome.trace.reason));
-    }
+    let policy_outcome = evaluate_tool_invocation_policy(invocation, true);
 
     if let SandboxMode::WorkspaceWrite = sandbox_policy {
         runtime::ensure_workspace_relative_paths(command, &invocation.turn.cwd).map_err(|e| {
@@ -266,61 +255,6 @@ fn evaluate_runtime_status(output: &runtime::SandboxExecutionResult) -> (bool, O
     (true, None)
 }
 
-fn merge_policy_center_outcome(
-    invocation: &ToolInvocation,
-    descriptor: Option<&crate::tools::context::PolicyDescriptor>,
-    mut legacy: PolicyOutcome,
-) -> PolicyOutcome {
-    let center = evaluate_policy_center_decision(invocation, descriptor);
-    let center_decision = map_policy_center_decision(&center.kind);
-    if decision_rank(center_decision) > decision_rank(legacy.trace.decision) {
-        legacy.trace.decision = center_decision;
-        legacy.trace.reason = center.reason.clone();
-    }
-    legacy
-}
-
-fn evaluate_policy_center_decision(
-    invocation: &ToolInvocation,
-    descriptor: Option<&crate::tools::context::PolicyDescriptor>,
-) -> openjax_policy::PolicyDecision {
-    let invocation_descriptor;
-    let descriptor = if let Some(descriptor) = descriptor {
-        Some(descriptor)
-    } else {
-        invocation_descriptor = invocation.policy_descriptor();
-        invocation_descriptor.as_ref()
-    };
-    let rules = descriptor
-        .map(|item| vec![item.allow_rule_for_tool(&invocation.tool_name)])
-        .unwrap_or_default();
-    if let Some(runtime) = invocation.turn.policy_runtime.as_ref() {
-        let handle = runtime.handle();
-        let input = invocation.to_policy_center_input(descriptor, handle.policy_version());
-        return handle.decide(&input);
-    }
-    let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, rules));
-    let input = invocation.to_policy_center_input(descriptor, runtime.current_version());
-    runtime.handle().decide(&input)
-}
-
-fn map_policy_center_decision(decision: &PolicyCenterDecisionKind) -> PolicyDecision {
-    match decision {
-        PolicyCenterDecisionKind::Allow => PolicyDecision::Allow,
-        PolicyCenterDecisionKind::Ask => PolicyDecision::AskApproval,
-        PolicyCenterDecisionKind::Escalate => PolicyDecision::AskEscalation,
-        PolicyCenterDecisionKind::Deny => PolicyDecision::Deny,
-    }
-}
-
-fn decision_rank(decision: PolicyDecision) -> u8 {
-    match decision {
-        PolicyDecision::Allow => 0,
-        PolicyDecision::AskApproval => 1,
-        PolicyDecision::AskEscalation => 2,
-        PolicyDecision::Deny => 3,
-    }
-}
 
 #[cfg(test)]
 mod tests {
