@@ -143,6 +143,7 @@ impl ToolOrchestrator {
                         risk_tags: risk_tags.clone(),
                         sandbox_backend: sandbox_backend.clone(),
                         degrade_reason: context.and_then(|ctx| ctx.degrade_reason.clone()),
+                        approval_kind: None,
                     });
                 }
 

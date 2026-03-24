@@ -51,6 +51,7 @@ pub async fn request_degrade_approval(
             risk_tags: vec!["sandbox_degrade".to_string()],
             sandbox_backend: Some(backend.to_string()),
             degrade_reason: Some(reason.to_string()),
+            approval_kind: None,
         });
     }
 

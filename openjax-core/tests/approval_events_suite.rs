@@ -54,14 +54,15 @@ async fn approval_event_contains_policy_metadata() {
         })
         .await;
 
-    let (policy_version, matched_rule_id) = events
+    let (policy_version, matched_rule_id, approval_kind) = events
         .iter()
         .find_map(|event| match event {
             Event::ApprovalRequested {
                 policy_version,
                 matched_rule_id,
+                approval_kind,
                 ..
-            } => Some((*policy_version, matched_rule_id.clone())),
+            } => Some((*policy_version, matched_rule_id.clone(), approval_kind.clone())),
             _ => None,
         })
         .expect("approval event should be emitted");
@@ -71,6 +72,7 @@ async fn approval_event_contains_policy_metadata() {
         matched_rule_id.as_deref(),
         Some("descriptor:read_file:read")
     );
+    assert_eq!(approval_kind, Some(openjax_protocol::ApprovalKind::Normal));
 
     let _ = fs::remove_dir_all(workspace);
 }
