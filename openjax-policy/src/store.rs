@@ -8,7 +8,8 @@ pub struct PolicyStore {
 
 impl PolicyStore {
     pub fn new(default_decision: DecisionKind, mut rules: Vec<PolicyRule>) -> Self {
-        // Insert system built-in rules (high priority)
+        // 插入系统内置规则（全局规则集中优先级最高，priority=1000）
+        // 注：session overlay 规则的评估优先于全局规则，不受此约束
         let system_destructive = PolicyRule {
             id: "system:destructive_escalate".to_string(),
             decision: DecisionKind::Escalate,
@@ -47,6 +48,7 @@ mod tests {
         assert_eq!(rule.decision, DecisionKind::Escalate);
         assert_eq!(rule.priority, 1000);
         assert!(rule.risk_tags_all.contains(&"destructive".to_string()));
+        assert!(!rule.reason.is_empty(), "system rule must have a non-empty reason");
     }
 
     #[test]
