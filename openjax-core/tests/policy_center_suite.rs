@@ -373,17 +373,10 @@ async fn degrade_approval_denied_by_policy_center() {
 }
 
 /// 带 destructive 风险标签的 shell 命令（如 rm -rf /tmp/test_dir）经 Policy Center 后，
-/// legacy sandbox 层将 destructive 命令映射为 PolicyDecision::Deny（比 Policy Center 的
-/// Escalate 更严格），select_stricter_outcome 取 Deny，最终直接返回 Internal 错误，
-/// 不会发出 ApprovalRequested 事件。
-///
-/// 注：system:destructive_escalate 规则（priority=1000）本身产生 Escalate 决策，
-/// 但 legacy sandbox 的 Deny 在 select_stricter_outcome 中优先级更高（rank 3 > 2），
-/// 因此结果是直接拒绝而非升级审批。
+/// sandbox 层将 destructive 命令映射为 PolicyDecision::AskEscalation，
+/// 最终触发 Escalation 类型审批事件，用户可以选择批准或拒绝。
 #[tokio::test]
 async fn destructive_shell_triggers_escalation() {
-    use openjax_core::tools::error::FunctionCallError;
-
     let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
     // DecisionKind::Ask 为默认，系统内置 destructive_escalate 规则自动注入
@@ -409,22 +402,23 @@ async fn destructive_shell_triggers_escalation() {
         },
     };
 
-    let result = orchestrator.run(invocation).await;
+    let _ = orchestrator.run(invocation).await;
 
-    // 确认直接被 Deny（legacy sandbox 的 Deny 严于 Policy Center 的 Escalate）
-    assert!(
-        matches!(result, Err(FunctionCallError::Internal(_))),
-        "destructive shell command should be denied immediately (legacy Deny > policy center Escalate), got: {result:?}"
-    );
+    // 确认发出了 ApprovalRequested 事件且 approval_kind 为 Escalation
+    let mut approval_kind_found = None;
+    while let Ok(event) = rx.try_recv() {
+        if let Event::ApprovalRequested { approval_kind, .. } = event {
+            approval_kind_found = Some(approval_kind);
+            break;
+        }
+    }
 
-    // 确认没有 ApprovalRequested 事件被发出（因为 Deny 在进入审批流程前就已返回）
-    let has_approval_event = rx
-        .try_recv()
-        .map(|e| matches!(e, Event::ApprovalRequested { .. }))
-        .unwrap_or(false);
-    assert!(
-        !has_approval_event,
-        "destructive shell command should NOT emit ApprovalRequested event when Deny is the final decision"
+    let approval_kind =
+        approval_kind_found.expect("destructive shell command should emit ApprovalRequested event");
+    assert_eq!(
+        approval_kind,
+        Some(ApprovalKind::Escalation),
+        "destructive shell command approval_kind should be Some(Escalation), got: {approval_kind:?}"
     );
 }
 

@@ -220,7 +220,7 @@ fn derive_decision_from_tags(
     risk_tags: &[String],
 ) -> PolicyDecision {
     if risk_tags.contains(&"destructive".to_string()) {
-        return PolicyDecision::Deny;
+        return PolicyDecision::AskEscalation;
     }
 
     if risk_tags.contains(&"require_escalated".to_string())
