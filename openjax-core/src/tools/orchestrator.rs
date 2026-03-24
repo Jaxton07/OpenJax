@@ -1,6 +1,6 @@
 use crate::approval::{ApprovalRequest, approval_timeout_ms_from_env};
 use crate::tools::ToolsConfig;
-use crate::tools::context::{ApprovalPolicy, ToolInvocation, ToolOutput};
+use crate::tools::context::{ToolInvocation, ToolOutput};
 use crate::tools::events::{AfterToolUse, BeforeToolUse, HookEvent};
 use crate::tools::hooks::HookExecutor;
 use crate::tools::policy::{
@@ -106,7 +106,7 @@ impl ToolOrchestrator {
                 let request_id = Uuid::new_v4().to_string();
                 let context = policy_outcome.approval_context.as_ref();
                 let target = approval_target(&invocation, context);
-                let reason = approval_reason(&policy_outcome, invocation.turn.approval_policy);
+                let reason = approval_reason(&policy_outcome);
                 let policy_version = Some(policy_center_decision.policy_version);
                 let matched_rule_id = policy_center_decision.matched_rule_id.clone();
                 let risk_tags = if context
@@ -295,15 +295,9 @@ fn approval_target(invocation: &ToolInvocation, context: Option<&ApprovalContext
     invocation.tool_name.clone()
 }
 
-fn approval_reason(
-    outcome: &crate::tools::policy::PolicyOutcome,
-    approval_policy: ApprovalPolicy,
-) -> String {
+fn approval_reason(outcome: &crate::tools::policy::PolicyOutcome) -> String {
     if let Some(context) = &outcome.approval_context {
         return context.reason.clone();
-    }
-    if matches!(approval_policy, ApprovalPolicy::AlwaysAsk) {
-        return "approval policy requires confirmation".to_string();
     }
     outcome.trace.reason.clone()
 }

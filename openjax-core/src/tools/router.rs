@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-pub use super::context::ApprovalPolicy;
 use super::shell::ShellType;
 use super::spec::ToolsConfig;
 
@@ -154,7 +153,6 @@ fn parse_quoted_value(s: &str, i: &mut usize, quote: char) -> Option<String> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ToolRuntimeConfig {
-    pub approval_policy: ApprovalPolicy,
     pub sandbox_mode: SandboxMode,
     pub shell_type: ShellType,
     pub tools_config: ToolsConfig,
@@ -164,7 +162,6 @@ pub struct ToolRuntimeConfig {
 impl Default for ToolRuntimeConfig {
     fn default() -> Self {
         Self {
-            approval_policy: ApprovalPolicy::OnRequest,
             sandbox_mode: SandboxMode::WorkspaceWrite,
             shell_type: ShellType::default(),
             tools_config: ToolsConfig::default(),
@@ -176,7 +173,6 @@ impl Default for ToolRuntimeConfig {
 impl ToolRuntimeConfig {
     pub fn with_config(config: ToolsConfig) -> Self {
         Self {
-            approval_policy: ApprovalPolicy::OnRequest,
             sandbox_mode: SandboxMode::WorkspaceWrite,
             shell_type: ShellType::default(),
             tools_config: config,

@@ -91,7 +91,6 @@ impl ToolRouter {
             args_json = %serde_json::to_string(&call.args).unwrap_or_default(),
             cwd = %cwd.display(),
             sandbox_mode = config.sandbox_mode.as_str(),
-            approval_policy = config.approval_policy.as_str(),
             "tool_execute started"
         );
 
@@ -99,8 +98,6 @@ impl ToolRouter {
             super::router::SandboxMode::WorkspaceWrite => SandboxPolicy::Write,
             super::router::SandboxMode::DangerFullAccess => SandboxPolicy::DangerFullAccess,
         };
-
-        let approval_policy = config.approval_policy;
 
         let invocation = create_tool_invocation(CreateToolInvocationParams {
             turn_id,
@@ -111,7 +108,6 @@ impl ToolRouter {
                 .map_err(|e| anyhow!("failed to serialize args: {}", e))?,
             cwd: cwd.to_path_buf(),
             sandbox_policy,
-            approval_policy,
             shell_type: config.shell_type,
             prevent_shell_skill_trigger: config.prevent_shell_skill_trigger,
             approval_handler,

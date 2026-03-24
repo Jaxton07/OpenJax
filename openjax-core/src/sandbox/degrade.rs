@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use crate::approval::{ApprovalRequest, approval_timeout_ms_from_env};
 use crate::sandbox::runtime::fnv1a64;
-use crate::tools::ApprovalPolicy;
 use crate::tools::context::ToolInvocation;
 use crate::tools::error::FunctionCallError;
 use openjax_protocol::Event;
@@ -16,13 +15,6 @@ pub async fn request_degrade_approval(
     backend: &str,
     reason: &str,
 ) -> Result<bool, FunctionCallError> {
-    let approval_policy = invocation.turn.approval_policy;
-    if matches!(approval_policy, ApprovalPolicy::Never) {
-        return Err(FunctionCallError::Internal(format!(
-            "sandbox backend unavailable and approval policy is never: {backend} {reason}"
-        )));
-    }
-
     let request_id = Uuid::new_v4().to_string();
     let command_hash = fnv1a64(command);
     let human_reason = format!(

@@ -32,7 +32,6 @@ impl Agent {
         }
 
         let mut sub_agent = Agent::with_runtime(
-            self.tool_runtime_config.approval_policy,
             self.tool_runtime_config.sandbox_mode,
             self.cwd.clone(),
         );

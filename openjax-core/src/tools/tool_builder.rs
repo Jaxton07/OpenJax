@@ -1,5 +1,5 @@
 use crate::approval::ApprovalHandler;
-use crate::tools::context::{ApprovalPolicy, SandboxPolicy};
+use crate::tools::context::SandboxPolicy;
 use crate::tools::handlers::{
     ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler,
     ShellCommandHandler,
@@ -102,7 +102,6 @@ pub struct CreateToolInvocationParams {
     pub arguments: String,
     pub cwd: std::path::PathBuf,
     pub sandbox_policy: SandboxPolicy,
-    pub approval_policy: ApprovalPolicy,
     pub shell_type: ShellType,
     pub prevent_shell_skill_trigger: bool,
     pub approval_handler: Arc<dyn ApprovalHandler>,
@@ -125,7 +124,6 @@ pub fn create_tool_invocation(
             session_id: params.session_id,
             cwd: params.cwd,
             sandbox_policy: params.sandbox_policy,
-            approval_policy: params.approval_policy,
             shell_type: params.shell_type,
             prevent_shell_skill_trigger: params.prevent_shell_skill_trigger,
             approval_handler: params.approval_handler,
@@ -143,7 +141,7 @@ mod tests {
         create_tool_invocation,
     };
     use crate::approval::StdinApprovalHandler;
-    use crate::tools::context::{ApprovalPolicy, SandboxPolicy, ToolPayload};
+    use crate::tools::context::{SandboxPolicy, ToolPayload};
     use crate::tools::shell::ShellType;
     use crate::tools::spec::{ApplyPatchToolType, ShellToolType, ToolsConfig};
     use std::sync::Arc;
@@ -197,7 +195,6 @@ mod tests {
             arguments: r#"{"cmd":"echo hello"}"#.to_string(),
             cwd: std::path::PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
-            approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::Sh,
             prevent_shell_skill_trigger: true,
             approval_handler: Arc::new(StdinApprovalHandler::new()),

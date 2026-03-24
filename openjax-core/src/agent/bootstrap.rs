@@ -4,8 +4,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::agent::runtime_policy::{
-    resolve_approval_policy, resolve_max_planner_rounds_per_turn, resolve_max_tool_calls_per_turn,
-    resolve_sandbox_mode,
+    resolve_max_planner_rounds_per_turn, resolve_max_tool_calls_per_turn, resolve_sandbox_mode,
 };
 use crate::agent::state::RateLimitConfig;
 use crate::dispatcher::DispatcherConfig;
@@ -16,33 +15,22 @@ impl Agent {
     pub fn new() -> Self {
         let config = Config::load();
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::with_config_and_runtime(
-            config,
-            tools::ApprovalPolicy::from_env(),
-            tools::SandboxMode::from_env(),
-            cwd,
-        )
+        Self::with_config_and_runtime(config, tools::SandboxMode::from_env(), cwd)
     }
 
     pub fn with_config(config: Config) -> Self {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let approval_policy = resolve_approval_policy(&config);
         let sandbox_mode = resolve_sandbox_mode(&config);
-        Self::with_config_and_runtime(config, approval_policy, sandbox_mode, cwd)
+        Self::with_config_and_runtime(config, sandbox_mode, cwd)
     }
 
-    pub fn with_runtime(
-        approval_policy: tools::ApprovalPolicy,
-        sandbox_mode: tools::SandboxMode,
-        cwd: PathBuf,
-    ) -> Self {
+    pub fn with_runtime(sandbox_mode: tools::SandboxMode, cwd: PathBuf) -> Self {
         let config = Config::load();
-        Self::with_config_and_runtime(config, approval_policy, sandbox_mode, cwd)
+        Self::with_config_and_runtime(config, sandbox_mode, cwd)
     }
 
     pub fn with_config_and_runtime(
         config: Config,
-        approval_policy: tools::ApprovalPolicy,
         sandbox_mode: tools::SandboxMode,
         cwd: PathBuf,
     ) -> Self {
@@ -76,7 +64,6 @@ impl Agent {
         info!(
             thread_id = ?thread_id,
             model_backend = model_client.name(),
-            approval_policy = approval_policy.as_str(),
             sandbox_mode = sandbox_mode.as_str(),
             max_tool_calls_per_turn = max_tool_calls_per_turn,
             max_planner_rounds_per_turn = max_planner_rounds_per_turn,
@@ -94,14 +81,12 @@ impl Agent {
             next_turn_id: 1,
             model_client,
             tools: tools::ToolRouter::with_runtime_config(tools::ToolRuntimeConfig {
-                approval_policy,
                 sandbox_mode,
                 shell_type: tools::ShellType::default(),
                 tools_config: tools::spec::ToolsConfig::default(),
                 prevent_shell_skill_trigger: skill_runtime_config.prevent_shell_skill_trigger,
             }),
             tool_runtime_config: tools::ToolRuntimeConfig {
-                approval_policy,
                 sandbox_mode,
                 shell_type: tools::ShellType::default(),
                 tools_config: tools::spec::ToolsConfig::default(),
@@ -136,8 +121,11 @@ impl Agent {
         self.model_client.name()
     }
 
-    pub fn approval_policy_name(&self) -> &'static str {
-        self.tool_runtime_config.approval_policy.as_str()
+    pub fn policy_default_decision_name(&self) -> &'static str {
+        self.policy_runtime
+            .as_ref()
+            .map(|r| r.handle().default_decision().as_str())
+            .unwrap_or("ask")
     }
 
     pub fn sandbox_mode_name(&self) -> &'static str {

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::tools::context::{ApprovalPolicy, SandboxPolicy, ToolInvocation, ToolPayload};
+use crate::tools::context::{SandboxPolicy, ToolInvocation, ToolPayload};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SandboxBackend {
@@ -97,45 +97,6 @@ pub fn evaluate_tool_invocation_policy(
     } else if is_mutating {
         trace.decision = PolicyDecision::AskApproval;
         trace.reason = "mutating tool requires approval".to_string();
-    }
-
-    match invocation.turn.approval_policy {
-        ApprovalPolicy::AlwaysAsk => {
-            if !matches!(trace.decision, PolicyDecision::Deny) {
-                trace.decision = PolicyDecision::AskApproval;
-                if trace.reason == "allowed by default" {
-                    trace.reason = "approval policy requires confirmation".to_string();
-                }
-                if approval_context.is_none() {
-                    approval_context = Some(ApprovalContext {
-                        tool_name: invocation.tool_name.clone(),
-                        raw_command: None,
-                        normalized_command: None,
-                        command_preview: None,
-                        risk_tags: trace.risk_tags.clone(),
-                        reason: trace.reason.clone(),
-                        sandbox_backend: None,
-                        degrade_reason: None,
-                        fallback_plan: None,
-                    });
-                }
-            }
-        }
-        ApprovalPolicy::OnRequest => {}
-        ApprovalPolicy::Never => {
-            if matches!(
-                trace.decision,
-                PolicyDecision::AskApproval | PolicyDecision::AskEscalation
-            ) {
-                if is_shell_like_tool(&invocation.tool_name) {
-                    trace.decision = PolicyDecision::Deny;
-                    trace.reason = "approval is required but policy is set to never".to_string();
-                } else {
-                    trace.decision = PolicyDecision::Allow;
-                    trace.reason = "approval policy is never; mutating tool allowed".to_string();
-                }
-            }
-        }
     }
 
     PolicyOutcome {
@@ -403,9 +364,7 @@ mod tests {
 
     use super::{PolicyDecision, SandboxCapability, evaluate_tool_invocation_policy};
     use crate::approval::StdinApprovalHandler;
-    use crate::tools::context::{
-        ApprovalPolicy, SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext,
-    };
+    use crate::tools::context::{SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext};
     use crate::tools::shell::ShellType;
 
     fn shell_invocation(command: &str) -> ToolInvocation {
@@ -420,7 +379,6 @@ mod tests {
                 session_id: None,
                 cwd: std::path::PathBuf::from("."),
                 sandbox_policy: SandboxPolicy::Write,
-                approval_policy: ApprovalPolicy::OnRequest,
                 shell_type: ShellType::default(),
                 approval_handler: Arc::new(StdinApprovalHandler::new()),
                 event_sink: None,

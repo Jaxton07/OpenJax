@@ -13,7 +13,6 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# OpenJax default config template
 
 [sandbox]
 mode = "workspace_write"
-approval_policy = "on_request"
 
 [agent]
 max_agents = 4
@@ -130,10 +129,6 @@ pub struct SandboxConfig {
     /// Sandbox mode: workspace_write | danger_full_access
     #[serde(default)]
     pub mode: Option<String>,
-
-    /// Approval policy: always_ask | on_request | never
-    #[serde(default)]
-    pub approval_policy: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
