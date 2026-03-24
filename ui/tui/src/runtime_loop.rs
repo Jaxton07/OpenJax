@@ -42,6 +42,7 @@ pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &Tu
             degrade_reason: None,
             policy_version: None,
             matched_rule_id: None,
+            approval_kind: None,
         });
     }
     if drained > 0 {
