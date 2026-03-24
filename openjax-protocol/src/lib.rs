@@ -199,6 +199,8 @@ pub enum Event {
         sandbox_backend: Option<String>,
         #[serde(default)]
         degrade_reason: Option<String>,
+        #[serde(default)]
+        approval_kind: Option<ApprovalKind>,
     },
     ApprovalResolved {
         turn_id: u64,
@@ -231,6 +233,13 @@ pub enum Event {
         turn_id: u64,
     },
     ShutdownComplete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalKind {
+    Normal,
+    Escalation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
