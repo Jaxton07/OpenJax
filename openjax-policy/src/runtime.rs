@@ -115,6 +115,10 @@ impl PolicyHandle {
         self.snapshot.version
     }
 
+    pub fn default_decision(&self) -> crate::schema::DecisionKind {
+        self.snapshot.store.default_decision.clone()
+    }
+
     pub fn decide(&self, input: &PolicyInput) -> PolicyDecision {
         let input_for_snapshot = self.with_snapshot_version(input);
 
@@ -142,5 +146,20 @@ impl PolicyHandle {
         let mut input_for_snapshot = input.clone();
         input_for_snapshot.policy_version = self.snapshot.version;
         input_for_snapshot
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::DecisionKind;
+
+    #[test]
+    fn policy_handle_exposes_default_decision() {
+        let runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]));
+        assert_eq!(runtime.handle().default_decision(), DecisionKind::Ask);
+
+        let runtime2 = PolicyRuntime::new(PolicyStore::new(DecisionKind::Deny, vec![]));
+        assert_eq!(runtime2.handle().default_decision(), DecisionKind::Deny);
     }
 }

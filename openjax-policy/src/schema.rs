@@ -19,6 +19,15 @@ impl DecisionKind {
             Self::Deny => 3,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DecisionKind::Allow => "allow",
+            DecisionKind::Ask => "ask",
+            DecisionKind::Escalate => "escalate",
+            DecisionKind::Deny => "deny",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,6 +98,19 @@ fn unique_count(values: &[String]) -> usize {
         .map(|value| value.as_str())
         .collect::<BTreeSet<_>>()
         .len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decision_kind_as_str_returns_correct_strings() {
+        assert_eq!(DecisionKind::Allow.as_str(), "allow");
+        assert_eq!(DecisionKind::Ask.as_str(), "ask");
+        assert_eq!(DecisionKind::Escalate.as_str(), "escalate");
+        assert_eq!(DecisionKind::Deny.as_str(), "deny");
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
