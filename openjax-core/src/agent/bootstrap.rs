@@ -121,6 +121,8 @@ impl Agent {
         self.model_client.name()
     }
 
+    /// 返回当前 policy runtime 的默认决策名称，用于 TUI 展示。
+    /// 无 policy runtime 时回退为 "ask"（保守默认，确保需要时触发审批）。
     pub fn policy_default_decision_name(&self) -> &'static str {
         self.policy_runtime
             .as_ref()
