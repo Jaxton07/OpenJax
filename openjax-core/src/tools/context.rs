@@ -199,7 +199,6 @@ pub struct ToolTurnContext {
     pub session_id: Option<String>,
     pub cwd: PathBuf,
     pub sandbox_policy: SandboxPolicy,
-    pub approval_policy: ApprovalPolicy,
     pub shell_type: ShellType,
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<UnboundedSender<Event>>,
@@ -215,7 +214,6 @@ impl Default for ToolTurnContext {
             session_id: None,
             cwd: PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
-            approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::default(),
             approval_handler: Arc::new(StdinApprovalHandler::new()),
             event_sink: None,
@@ -232,7 +230,6 @@ impl std::fmt::Debug for ToolTurnContext {
             .field("turn_id", &self.turn_id)
             .field("cwd", &self.cwd)
             .field("sandbox_policy", &self.sandbox_policy)
-            .field("approval_policy", &self.approval_policy)
             .field("shell_type", &self.shell_type)
             .field("session_id", &self.session_id)
             .field(
@@ -248,32 +245,6 @@ impl std::fmt::Debug for ToolTurnContext {
     }
 }
 
-/// 批准策略
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApprovalPolicy {
-    AlwaysAsk,
-    OnRequest,
-    Never,
-}
-
-impl ApprovalPolicy {
-    pub fn from_env() -> Self {
-        match std::env::var("OPENJAX_APPROVAL_POLICY").as_deref() {
-            Ok("always_ask") => Self::AlwaysAsk,
-            Ok("on_request") => Self::OnRequest,
-            Ok("never") => Self::Never,
-            _ => Self::OnRequest,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::AlwaysAsk => "always_ask",
-            Self::OnRequest => "on_request",
-            Self::Never => "never",
-        }
-    }
-}
 
 /// MCP 工具结果
 #[derive(Debug, Clone, serde::Serialize)]

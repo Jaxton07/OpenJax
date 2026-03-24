@@ -29,7 +29,7 @@ pub use common::{
     take_bytes_at_char_boundary, verify_path_exists,
 };
 pub use context::{
-    ApprovalPolicy, FunctionCallOutputBody, McpToolResult, SandboxPolicy, ToolInvocation,
+    FunctionCallOutputBody, McpToolResult, SandboxPolicy, ToolInvocation,
     ToolOutput, ToolPayload, ToolTurnContext,
 };
 pub use dynamic::DynamicToolManager;

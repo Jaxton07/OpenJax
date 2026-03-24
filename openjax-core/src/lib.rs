@@ -39,7 +39,6 @@ pub use provider_store::{
     build_config_from_providers, load_runtime_config, normalize_model_id, provider_protocol,
     provider_vendor,
 };
-pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
 
 // Re-export loop detector types for integration tests
