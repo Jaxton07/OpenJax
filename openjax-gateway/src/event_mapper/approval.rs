@@ -17,6 +17,7 @@ pub fn map(event: &Event) -> Option<CoreEventMapping> {
             risk_tags,
             sandbox_backend,
             degrade_reason,
+            approval_kind,
         } => Some(CoreEventMapping {
             core_turn_id: Some(*turn_id),
             event_type: "approval_requested",
@@ -30,7 +31,8 @@ pub fn map(event: &Event) -> Option<CoreEventMapping> {
                 "command_preview": command_preview,
                 "risk_tags": risk_tags,
                 "sandbox_backend": sandbox_backend,
-                "degrade_reason": degrade_reason
+                "degrade_reason": degrade_reason,
+                "approval_kind": approval_kind
             }),
             stream_source: None,
         }),

@@ -968,6 +968,7 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
             degrade_reason,
             policy_version,
             matched_rule_id,
+            approval_kind,
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
@@ -984,7 +985,8 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
                 "sandbox_backend": sandbox_backend,
                 "degrade_reason": degrade_reason,
                 "policy_version": policy_version,
-                "matched_rule_id": matched_rule_id
+                "matched_rule_id": matched_rule_id,
+                "approval_kind": approval_kind
             }),
         }),
         Event::ApprovalResolved {
