@@ -422,6 +422,109 @@ async fn destructive_shell_triggers_escalation() {
     );
 }
 
+/// shell 工具配置了明确 Allow 规则时，不应触发 ApprovalRequested 事件。
+#[tokio::test]
+async fn shell_allow_rule_skips_approval() {
+    let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let runtime = PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![PolicyRule {
+            id: "allow_shell_exec".to_string(),
+            decision: DecisionKind::Allow,
+            priority: 10,
+            tool_name: Some("shell".to_string()),
+            action: Some("exec".to_string()),
+            session_id: None,
+            actor: None,
+            resource: None,
+            capabilities_all: vec![],
+            risk_tags_all: vec![],
+            reason: "allow shell exec".to_string(),
+        }],
+    ));
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-shell-allow".to_string(),
+        payload: ToolPayload::Function {
+            arguments: serde_json::json!({ "cmd": "echo hello" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 400,
+            session_id: Some("sess_shell_allow".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            approval_handler: Arc::new(RejectApproval),
+            event_sink: Some(tx),
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let _ = orchestrator.run(invocation).await;
+
+    // Allow 规则应跳过审批，不应有任何 ApprovalRequested 事件
+    let has_approval_event = rx
+        .try_recv()
+        .map(|e| matches!(e, Event::ApprovalRequested { .. }))
+        .unwrap_or(false);
+    assert!(
+        !has_approval_event,
+        "shell with Allow rule should NOT emit ApprovalRequested event"
+    );
+}
+
+/// destructive 命令应通过内置 system:destructive_escalate 规则触发 Escalation 审批，
+/// 无需任何自定义规则。
+#[tokio::test]
+async fn destructive_command_triggers_escalation_via_builtin_rule() {
+    let orchestrator = ToolOrchestrator::new(Arc::new(ToolRegistry::new()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    // 无自定义规则，只有内置 system:destructive_escalate 规则
+    let runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]));
+    let invocation = ToolInvocation {
+        tool_name: "shell".to_string(),
+        call_id: "call-shell-builtin-destructive".to_string(),
+        payload: ToolPayload::Function {
+            // rm -rf / 触发内置 destructive 风险标签 → system:destructive_escalate 规则
+            arguments: serde_json::json!({ "cmd": "rm -rf /" }).to_string(),
+        },
+        turn: ToolTurnContext {
+            turn_id: 401,
+            session_id: Some("sess_builtin_destructive".to_string()),
+            cwd: std::path::PathBuf::from("."),
+            sandbox_policy: SandboxPolicy::Write,
+            shell_type: ShellType::default(),
+            // AcceptApproval 防止 rejection 掩盖事件发出
+            approval_handler: Arc::new(AcceptApproval),
+            event_sink: Some(tx),
+            policy_runtime: Some(runtime),
+            windows_sandbox_level: None,
+            prevent_shell_skill_trigger: true,
+        },
+    };
+
+    let _ = orchestrator.run(invocation).await;
+
+    let mut approval_kind_found = None;
+    while let Ok(event) = rx.try_recv() {
+        if let Event::ApprovalRequested { approval_kind, .. } = event {
+            approval_kind_found = Some(approval_kind);
+            break;
+        }
+    }
+
+    let approval_kind = approval_kind_found
+        .expect("destructive shell via builtin rule should emit ApprovalRequested event");
+    assert_eq!(
+        approval_kind,
+        Some(ApprovalKind::Escalation),
+        "builtin destructive_escalate rule should produce ApprovalKind::Escalation, got: {approval_kind:?}"
+    );
+}
+
 /// 普通 shell 命令（如 ls -la）经 Policy Center 后，
 /// 默认 Ask 决策映射为 Normal 审批，approval_kind 应为 Some(Normal)。
 #[tokio::test]
