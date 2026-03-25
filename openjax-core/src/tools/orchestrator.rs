@@ -390,8 +390,15 @@ fn evaluate_policy_center_decision(invocation: &ToolInvocation) -> openjax_polic
         return handle.decide(&input);
     }
 
-    // 无 policy_runtime 时保守回退：Ask 作为默认，所有工具均需审批
-    let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, vec![]));
+    // 无 policy_runtime 时的回退：
+    // - 已知工具（有 descriptor）创建 Allow 规则，保持与 OnRequest 策略等效的默认行为
+    // - 未知工具（无 descriptor）使用 Ask 默认，要求审批
+    // 注：需要强制审批的测试场景应显式注入 PolicyRuntime(Ask)
+    let rules = descriptor
+        .as_ref()
+        .map(|item| vec![item.allow_rule_for_tool(&invocation.tool_name)])
+        .unwrap_or_default();
+    let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, rules));
     let input = invocation.to_policy_center_input(descriptor.as_ref(), runtime.current_version());
     runtime.handle().decide(&input)
 }

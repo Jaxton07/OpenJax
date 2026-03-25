@@ -1,9 +1,20 @@
-use openjax_core::{Agent, SandboxMode};
+use async_trait::async_trait;
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+struct AlwaysApproveHandler;
+
+#[async_trait]
+impl ApprovalHandler for AlwaysApproveHandler {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        Ok(true)
+    }
+}
 
 fn temp_workspace_path() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -49,6 +60,7 @@ async fn apply_patch_add_update_delete_successfully() {
     fs::write(workspace.join("obsolete.txt"), "remove me").expect("seed delete file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     let patch = "*** Begin Patch
 *** Add File: notes.txt
@@ -91,6 +103,7 @@ async fn apply_patch_invalid_update_does_not_modify_file() {
     fs::write(workspace.join("todo.txt"), "line1\nline2\nline3").expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     let patch = "*** Begin Patch
 *** Update File: todo.txt
@@ -127,6 +140,7 @@ async fn apply_patch_rolls_back_when_later_action_fails() {
     fs::write(workspace.join("blocker"), "I am a file").expect("seed blocker file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     let patch = "*** Begin Patch
 *** Add File: alpha.txt
@@ -166,6 +180,7 @@ async fn apply_patch_fuzzy_level1_trailing_whitespace() {
     .expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     // Patch uses context line without trailing whitespace — should match via level-1 fuzzy.
     let patch = "*** Begin Patch
@@ -213,6 +228,7 @@ async fn apply_patch_fuzzy_level3_unicode_normalization() {
     .expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     // Patch uses plain "-" for the em-dash line — should match via level-3 unicode normalization.
     let patch = "*** Begin Patch
@@ -254,6 +270,7 @@ async fn apply_patch_ambiguous_match_applies_to_first() {
     fs::write(workspace.join("dup.txt"), "x = 1\ny = 2\n\nx = 1\ny = 2").expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     let patch = "*** Begin Patch
 *** Update File: dup.txt

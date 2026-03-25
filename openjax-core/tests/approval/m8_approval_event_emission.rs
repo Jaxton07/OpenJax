@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
+use openjax_policy::{runtime::PolicyRuntime, schema::DecisionKind, store::PolicyStore};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
@@ -59,6 +60,10 @@ async fn emits_approval_requested_and_resolved_events() {
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![],
+    ))));
     agent.set_approval_handler(Arc::new(AlwaysApprove));
 
     let events = agent
@@ -94,6 +99,10 @@ async fn submit_with_sink_emits_approval_requested_before_resolution() {
     let entered = Arc::new(Notify::new());
     let release = Arc::new(Notify::new());
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![],
+    ))));
     agent.set_approval_handler(Arc::new(BlockingApprove {
         entered: entered.clone(),
         release: release.clone(),

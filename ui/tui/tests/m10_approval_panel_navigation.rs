@@ -17,6 +17,7 @@ fn approval_panel_supports_up_down_and_submit() {
         degrade_reason: None,
         policy_version: None,
         matched_rule_id: None,
+        approval_kind: None,
     });
 
     let lines = app.approval_panel_lines().expect("panel should exist");

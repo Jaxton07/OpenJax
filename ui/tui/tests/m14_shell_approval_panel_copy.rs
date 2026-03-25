@@ -16,6 +16,7 @@ fn shell_approval_panel_uses_compact_english_copy_with_countdown() {
         degrade_reason: Some("runtime denied".to_string()),
         policy_version: None,
         matched_rule_id: None,
+        approval_kind: None,
     });
 
     let lines = app.approval_panel_lines().expect("panel should exist");

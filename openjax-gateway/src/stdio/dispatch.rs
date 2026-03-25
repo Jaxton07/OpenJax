@@ -1219,6 +1219,7 @@ mod tests {
                 degrade_reason: None,
                 policy_version: Some(1),
                 matched_rule_id: Some("rule_1".to_string()),
+                approval_kind: None,
             },
             Event::ApprovalResolved {
                 turn_id: 1,

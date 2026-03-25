@@ -38,6 +38,7 @@ fn approval_request_dismisses_slash_palette() {
         degrade_reason: None,
         policy_version: None,
         matched_rule_id: None,
+        approval_kind: None,
     });
 
     assert!(!app.is_slash_palette_active());

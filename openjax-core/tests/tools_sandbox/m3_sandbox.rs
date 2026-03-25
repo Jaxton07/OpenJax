@@ -1,9 +1,21 @@
-use openjax_core::{Agent, SandboxMode};
+use async_trait::async_trait;
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Simulates a user who always rejects approval prompts.
+struct RejectApprovalHandler;
+
+#[async_trait]
+impl ApprovalHandler for RejectApprovalHandler {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        Ok(false)
+    }
+}
 
 fn temp_workspace_path() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -82,6 +94,8 @@ async fn blocks_parent_traversal_read_in_workspace_write() {
 async fn blocks_shell_redirect_write_in_workspace_write() {
     let workspace = create_workspace();
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    // Write-redirecting commands require approval; simulate a user who rejects.
+    agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent
         .submit(Op::UserTurn {
@@ -92,7 +106,7 @@ async fn blocks_shell_redirect_write_in_workspace_write() {
     match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
-            assert!(output.contains("approval is required but policy is set to never"));
+            assert!(output.contains("Approval rejected") || output.contains("command rejected"));
         }
         _ => unreachable!(),
     }
@@ -104,6 +118,8 @@ async fn blocks_shell_redirect_write_in_workspace_write() {
 async fn blocks_network_command_in_workspace_write() {
     let workspace = create_workspace();
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    // Network commands require approval; simulate a user who rejects.
+    agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent
         .submit(Op::UserTurn {
@@ -114,7 +130,7 @@ async fn blocks_network_command_in_workspace_write() {
     match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
-            assert!(output.contains("approval is required but policy is set to never"));
+            assert!(output.contains("Approval rejected") || output.contains("command rejected"));
         }
         _ => unreachable!(),
     }

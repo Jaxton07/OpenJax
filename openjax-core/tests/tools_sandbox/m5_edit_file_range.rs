@@ -1,9 +1,20 @@
-use openjax_core::{Agent, SandboxMode};
+use async_trait::async_trait;
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+struct AlwaysApproveHandler;
+
+#[async_trait]
+impl ApprovalHandler for AlwaysApproveHandler {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        Ok(true)
+    }
+}
 
 fn temp_workspace_path() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -43,6 +54,7 @@ async fn edit_file_range_replaces_lines_successfully() {
     fs::write(workspace.join("todo.txt"), "line1\nline2\nline3\nline4\n").expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     let input = "tool:edit_file_range file_path=todo.txt start_line=2 end_line=3 new_text='line2-updated\nline3-updated'";
     let events = agent
@@ -71,6 +83,7 @@ async fn edit_file_range_deletes_lines_with_empty_text() {
     fs::write(workspace.join("todo.txt"), "a\nb\nc\nd\n").expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     let input = "tool:edit_file_range file_path=todo.txt start_line=2 end_line=3 new_text=''";
     let events = agent
@@ -98,6 +111,7 @@ async fn edit_file_range_rejects_invalid_range() {
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_approval_handler(Arc::new(AlwaysApproveHandler));
 
     let input = "tool:edit_file_range file_path=todo.txt start_line=3 end_line=4 new_text='x'";
     let events = agent

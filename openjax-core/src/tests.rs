@@ -24,6 +24,9 @@ use super::{
 use crate::tools::context::{FunctionCallOutputBody, ToolOutput};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::schema::DecisionKind;
+use openjax_policy::store::PolicyStore;
 
 #[derive(Clone)]
 struct ScriptedStreamingModel {
@@ -854,6 +857,10 @@ async fn tool_batch_approval_blocked_stops_followup_scheduling_and_rounds() {
     let model = ApprovalBlockedBatchModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
+    agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![],
+    ))));
     agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent
@@ -901,6 +908,10 @@ async fn tool_batch_approval_blocked_cancels_pending_parallel_tool() {
             marker_path: marker_path.clone(),
         }),
     );
+    agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![],
+    ))));
     agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent

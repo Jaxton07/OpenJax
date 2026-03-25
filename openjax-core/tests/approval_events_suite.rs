@@ -71,10 +71,8 @@ async fn approval_event_contains_policy_metadata() {
         .expect("approval event should be emitted");
 
     assert_eq!(policy_version, Some(1));
-    assert_eq!(
-        matched_rule_id.as_deref(),
-        Some("descriptor:read_file:read")
-    );
+    // No custom rules in store → default Ask applies, no matched_rule_id
+    assert_eq!(matched_rule_id, None);
     assert_eq!(approval_kind, Some(openjax_protocol::ApprovalKind::Normal));
 
     let _ = fs::remove_dir_all(workspace);

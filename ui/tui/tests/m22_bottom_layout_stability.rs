@@ -39,6 +39,7 @@ fn approval_panel_keeps_desired_height_and_uses_short_footer() {
         degrade_reason: None,
         policy_version: None,
         matched_rule_id: None,
+        approval_kind: None,
     });
 
     assert_eq!(app.desired_height(80), base);
