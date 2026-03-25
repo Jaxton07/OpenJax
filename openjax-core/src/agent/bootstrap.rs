@@ -145,6 +145,71 @@ impl Agent {
     pub fn set_policy_session_id(&mut self, session_id: Option<String>) {
         self.policy_session_id = session_id;
     }
+
+    /// 切换当前会话的策略层级。
+    /// - 无论是否已有 policy_runtime，均以新 default_decision 构造 PolicyStore（含内置 system:destructive_escalate 规则）
+    /// - 已有 runtime 时通过 publish 保留 session overlay；无 runtime 时新建
+    pub fn set_policy_level(&mut self, level: crate::agent::PolicyLevel) {
+        use openjax_policy::{runtime::PolicyRuntime, store::PolicyStore};
+        let kind = level.to_decision_kind();
+        let store = PolicyStore::new(kind, vec![]);
+        match self.policy_runtime.as_ref() {
+            Some(runtime) => {
+                runtime.publish(store);
+            }
+            None => {
+                self.policy_runtime = Some(PolicyRuntime::new(store));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::PolicyLevel;
+    use openjax_policy::schema::DecisionKind;
+
+    #[test]
+    fn set_policy_level_from_none_creates_runtime() {
+        let mut agent = Agent::with_config(crate::Config::default());
+        assert_eq!(agent.policy_default_decision_name(), "ask"); // fallback
+        agent.set_policy_level(PolicyLevel::Permissive);
+        assert_eq!(agent.policy_default_decision_name(), "allow");
+    }
+
+    #[test]
+    fn set_policy_level_from_existing_runtime_updates_default() {
+        use openjax_policy::{runtime::PolicyRuntime, store::PolicyStore};
+        let mut agent = Agent::with_config(crate::Config::default());
+        agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+            DecisionKind::Ask,
+            vec![],
+        ))));
+        agent.set_policy_level(PolicyLevel::Strict);
+        assert_eq!(agent.policy_default_decision_name(), "deny");
+    }
+
+    #[test]
+    fn set_policy_level_strict_still_escalates_destructive() {
+        use openjax_policy::schema::PolicyInput;
+        let mut agent = Agent::with_config(crate::Config::default());
+        agent.set_policy_level(PolicyLevel::Strict);
+        let runtime = agent.policy_runtime.as_ref().unwrap();
+        let input = PolicyInput {
+            tool_name: "shell".to_string(),
+            action: "exec".to_string(),
+            session_id: None,
+            actor: None,
+            resource: None,
+            capabilities: vec![],
+            risk_tags: vec!["destructive".to_string()],
+            policy_version: 0,
+        };
+        let decision = runtime.handle().decide(&input);
+        // system:destructive_escalate (priority=1000) beats Deny default
+        assert_eq!(decision.kind, DecisionKind::Escalate);
+    }
 }
 
 impl Default for Agent {
