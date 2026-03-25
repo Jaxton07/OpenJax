@@ -10,9 +10,9 @@ pub enum PolicyLevel {
 impl PolicyLevel {
     pub fn as_str(self) -> &'static str {
         match self {
-            PolicyLevel::Permissive => "permissive",
-            PolicyLevel::Standard => "standard",
-            PolicyLevel::Strict => "strict",
+            PolicyLevel::Permissive => "allow",
+            PolicyLevel::Standard => "ask",
+            PolicyLevel::Strict => "deny",
         }
     }
 
@@ -26,9 +26,9 @@ impl PolicyLevel {
 
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "permissive" => Some(PolicyLevel::Permissive),
-            "standard" => Some(PolicyLevel::Standard),
-            "strict" => Some(PolicyLevel::Strict),
+            "allow" => Some(PolicyLevel::Permissive),
+            "ask" => Some(PolicyLevel::Standard),
+            "deny" => Some(PolicyLevel::Strict),
             _ => None,
         }
     }
@@ -49,7 +49,7 @@ mod tests {
     fn from_str_returns_none_for_invalid() {
         assert!(PolicyLevel::from_str("unknown").is_none());
         assert!(PolicyLevel::from_str("").is_none());
-        assert!(PolicyLevel::from_str("ask").is_none());
+        assert!(PolicyLevel::from_str("invalid").is_none());
     }
 
     #[test]
