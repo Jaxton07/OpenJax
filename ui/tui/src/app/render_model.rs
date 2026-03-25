@@ -113,9 +113,9 @@ impl App {
     pub fn policy_picker_lines(&self) -> Option<Vec<Line<'static>>> {
         let picker = self.state.policy_picker.as_ref()?;
         let options: [(&str, &str); 3] = [
-            ("permissive", "宽松 - 自动通过大多数操作"),
-            ("standard", "标准 - 操作需审批（当前默认）"),
-            ("strict", "严格 - 拒绝未显式允许的操作"),
+            ("allow", "Allow all tools without asking"),
+            ("ask",   "Ask before risky operations (default)"),
+            ("deny",  "Deny all risky operations"),
         ];
         let mut lines = Vec::new();
         lines.push(Line::from(Span::styled(
@@ -420,9 +420,9 @@ impl App {
 
 fn policy_level_display(level: Option<&str>) -> (&'static str, Color) {
     match level {
-        Some("permissive") | Some("allow") => ("permissive", Color::Cyan),
-        Some("strict") | Some("deny") => ("strict", Color::Yellow),
-        _ => ("standard", Color::White),
+        Some("allow") => ("allow", Color::Cyan),
+        Some("deny")  => ("deny", Color::Yellow),
+        _             => ("ask", Color::White),
     }
 }
 

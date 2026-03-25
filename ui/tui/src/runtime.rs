@@ -75,7 +75,7 @@ pub async fn run() -> anyhow::Result<()> {
                 // policy picker 确认（优先，不受 busy 状态阻断）
                 if app.state.policy_picker.is_some() {
                     let idx = app.state.policy_picker.as_ref().unwrap().selected_index;
-                    let levels = ["permissive", "standard", "strict"];
+                    let levels = ["allow", "ask", "deny"];
                     if let Some(&level_str) = levels.get(idx) {
                         if let Some(level) = openjax_core::PolicyLevel::from_str(level_str) {
                             agent.lock().await.set_policy_level(level);
