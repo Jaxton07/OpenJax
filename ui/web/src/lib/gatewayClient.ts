@@ -8,6 +8,7 @@ import type {
   GatewaySessionMessagesResponse,
   GatewaySessionTimelineResponse,
   GatewayConnection,
+  GetPolicyLevelResponse,
   ProviderDeleteResponse,
   ProviderListResponse,
   ProviderMutationResponse,
@@ -152,6 +153,17 @@ export class GatewayClient {
   async shutdownSession(sessionId: string): Promise<SessionActionResponse> {
     return this.request(`/api/v1/sessions/${sessionId}`, {
       method: "DELETE"
+    });
+  }
+
+  async getPolicyLevel(sessionId: string): Promise<GetPolicyLevelResponse> {
+    return this.request(`/api/v1/sessions/${sessionId}/policy`, { method: "GET" });
+  }
+
+  async setPolicyLevel(sessionId: string, level: string): Promise<{ level: string }> {
+    return this.request(`/api/v1/sessions/${sessionId}/policy`, {
+      method: "PUT",
+      body: JSON.stringify({ level })
     });
   }
 
