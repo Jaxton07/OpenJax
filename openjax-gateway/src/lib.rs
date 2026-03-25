@@ -95,7 +95,7 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         )
         .route(
             "/api/v1/sessions/:session_id/policy",
-            put(handlers::set_policy_level),
+            get(handlers::get_policy_level).put(handlers::set_policy_level),
         )
         .route(
             "/api/v1/sessions/:session_id/policy-overlay",
