@@ -25,13 +25,16 @@ import type {
 import { clearAuthStateRuntime, refreshAccessTokenRuntime, withAuthRetryRuntime } from "./chatApp/auth-flow";
 import {
   buildChatSessionFromGateway,
+  isEmptyDraftSession,
   isSessionNotFoundError
 } from "./chatApp/session-model";
 import {
+  changePolicyLevelAction,
   clearConversationAction,
   compactConversationAction,
   deleteSessionAction,
   ensureSessionAction,
+  fetchPolicyLevelAction,
   newChatAction,
   resolveApprovalAction,
   sendMessageAction
@@ -369,6 +372,14 @@ export function useChatApp() {
     state.auth.authenticated,
     state.settings.outputMode
   ]);
+
+  useEffect(() => {
+    const sessionId = activeSession?.id;
+    if (!sessionId || !state.auth.authenticated || !state.auth.accessToken) return;
+    // Don't fetch for empty draft sessions (not yet interacted with)
+    if (isEmptyDraftSession(activeSession)) return;
+    void fetchPolicyLevelAction({ client, sessionId, updateSession });
+  }, [activeSession?.id, state.auth.authenticated, state.auth.accessToken, client, updateSession]);
 
   const hydrateSessionsFromGateway = useCallback(async (apiClient: GatewayClient): Promise<ChatSession[]> => {
     const sessionsResponse = await apiClient.listChatSessions();
@@ -708,6 +719,20 @@ export function useChatApp() {
     [client, withAuthRetry]
   );
 
+  const sendPolicyLevel = useCallback(
+    async (sessionId: string, level: "allow" | "ask" | "deny") => {
+      await changePolicyLevelAction({
+        client,
+        sessionId,
+        level,
+        updateSession,
+        clearAuthState,
+        setState
+      });
+    },
+    [client, updateSession, clearAuthState]
+  );
+
   const dismissGlobalError = useCallback(() => {
     setState((prev) => ({ ...prev, globalError: null }));
   }, []);
@@ -741,6 +766,7 @@ export function useChatApp() {
     getActiveProvider,
     setActiveProvider,
     fetchCatalog,
+    sendPolicyLevel,
     dismissGlobalError,
     dismissToast
   };
