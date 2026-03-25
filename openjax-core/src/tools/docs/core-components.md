@@ -83,7 +83,7 @@ impl ToolOrchestrator {
 ### 执行流程
 
 1. **执行前钩子**：调用 `BeforeToolUse` 钩子
-2. **检查批准**：根据批准策略决定是否需要用户确认
+2. **检查批准**：由注入的 `PolicyRuntime` 决定是否需要用户确认
 3. **选择沙箱**：根据沙箱策略选择合适的执行环境
 4. **执行工具**：通过 `ToolRegistry::dispatch()` 执行工具
 5. **执行后钩子**：调用 `AfterToolUse` 钩子
@@ -169,7 +169,6 @@ pub enum ToolOutput {
 
 ```rust
 pub struct ToolRuntimeConfig {
-    pub approval_policy: ApprovalPolicy,
     pub sandbox_mode: SandboxMode,
     pub shell_type: ShellType,
     pub tools_config: ToolsConfig,
@@ -177,9 +176,10 @@ pub struct ToolRuntimeConfig {
 }
 ```
 
+审批决策不再由 `ToolRuntimeConfig` 内联持有，改为通过 `PolicyRuntime` 注入 agent（`agent.set_policy_runtime(Some(runtime))`），由 Policy Center 统一管理。
+
 ### 字段说明
 
-- `approval_policy`: 批准策略（AlwaysAsk、OnRequest、Never）
 - `sandbox_mode`: 沙箱模式（WorkspaceWrite、DangerFullAccess）
 - `shell_type`: shell 执行类型（`bash/zsh/sh/pwsh`）
 - `tools_config`: 工具注册与规格配置（例如是否禁用 `shell`、`apply_patch` 规格类型）

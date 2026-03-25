@@ -24,18 +24,13 @@ pub enum SandboxPolicy {
     Write,
     DangerFullAccess,
 }
-
-pub enum ApprovalPolicy {
-    AlwaysAsk,
-    OnRequest,
-    Never,
-}
 ```
+
+审批策略（原 `ApprovalPolicy`）已移除，审批决策统一由 Policy Center 通过 `PolicyRuntime` 管理，不再以枚举字段内联在运行时配置中。
 
 环境变量：
 
 - `OPENJAX_SANDBOX_MODE`
-- `OPENJAX_APPROVAL_POLICY`
 - `OPENJAX_SANDBOX_DEGRADE_POLICY`
 
 ## shell 工具说明
@@ -64,7 +59,7 @@ pub enum ApprovalPolicy {
 
 1. 进程与系统观测优先使用 `process_snapshot/system_load/disk_usage`。
 2. 仅在系统工具无法覆盖时再使用 `shell`。
-3. 生产环境默认 `workspace_write + on_request`。
+3. 生产环境默认 `workspace_write`，审批规则通过 Policy Center 配置。
 4. 调试 shell 拒绝问题时，优先查看 `sandbox audit` 日志和 `runtime_deny_reason`。
 
 ## 参考

@@ -35,8 +35,8 @@ use std::path::Path;
 let router = ToolRouter::new();
 let cwd = std::env::current_dir()?;
 let config = ToolRuntimeConfig {
-    approval_policy: ApprovalPolicy::AlwaysAsk,
     sandbox_mode: SandboxMode::WorkspaceWrite,
+    ..Default::default()
 };
 
 let result = router.execute(&call, &cwd, config).await?;
@@ -46,15 +46,17 @@ let result = router.execute(&call, &cwd, config).await?;
 
 ### 完整示例
 
+审批决策由 Policy Center 统一管理，通过 `PolicyRuntime` 注入 agent：
+
 ```rust
 use openjax_core::tools::{ToolRouter, parse_tool_call, ToolRuntimeConfig};
-use openjax_core::tools::router::{ApprovalPolicy, SandboxMode};
+use openjax_core::tools::router::SandboxMode;
 
 pub async fn execute_tool_turn(&self, input: &str) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let config = ToolRuntimeConfig {
-        approval_policy: ApprovalPolicy::AlwaysAsk,
         sandbox_mode: SandboxMode::WorkspaceWrite,
+        ..Default::default()
     };
 
     if let Some(call) = parse_tool_call(input) {
@@ -66,17 +68,15 @@ pub async fn execute_tool_turn(&self, input: &str) -> Result<String> {
 }
 ```
 
-## 配置选项
-
-### 批准策略
+注入 `PolicyRuntime` 以启用策略驱动审批：
 
 ```rust
-pub enum ApprovalPolicy {
-    AlwaysAsk,    // 总是询问
-    OnRequest,    // 仅在请求时询问
-    Never,         // 从不询问
-}
+use openjax_policy::PolicyRuntime;
+
+agent.set_policy_runtime(Some(runtime));
 ```
+
+## 配置选项
 
 ### 沙箱模式
 
@@ -90,16 +90,13 @@ pub enum SandboxMode {
 ### 环境变量配置
 
 ```bash
-# 设置批准策略
-export OPENJAX_APPROVAL_POLICY=always_ask  # 默认
-export OPENJAX_APPROVAL_POLICY=on_request
-export OPENJAX_APPROVAL_POLICY=never
-
 # 设置沙箱模式
 export OPENJAX_SANDBOX_MODE=workspace_write  # 默认
 export OPENJAX_SANDBOX_MODE=danger_full_access  # 无限制
 export OPENJAX_SANDBOX_MODE=read_only  # 只读
 ```
+
+审批策略由 Policy Center 管理，不再通过环境变量配置。
 
 ## 常见使用场景
 

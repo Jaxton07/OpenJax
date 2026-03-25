@@ -69,17 +69,16 @@ tool:read_file file_path=../../file.rs
 
 **错误**：`ApprovalRejected("command rejected by user")`
 
-**原因**：用户拒绝了工具执行
+**原因**：用户拒绝了工具执行，或 Policy Center 决策为拒绝
 
 **解决**：
-- 检查批准策略设置
 - 确认用户输入 `y` 同意执行
-- 考虑调整批准策略
+- 检查 Policy Center 中对应工具的规则配置
+- 若需跳过审批，可在策略规则中将对应工具配置为 `DecisionKind::Allow`
 
-```bash
-# 设置批准策略
-export OPENJAX_APPROVAL_POLICY=never  # 从不询问
-export OPENJAX_APPROVAL_POLICY=on_request  # 仅在请求时询问
+```rust
+// 示例：通过 Policy Center 规则放行特定工具
+// 在策略规则中设置 DecisionKind::Allow，使该工具无需用户确认直接执行
 ```
 
 ### 5. 超时
