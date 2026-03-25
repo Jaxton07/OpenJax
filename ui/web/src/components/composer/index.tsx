@@ -15,6 +15,8 @@ interface ComposerProps {
   onSend: (content: string) => Promise<void> | void;
   onNewChat: () => void;
   contextUsage?: ContextUsageState | null;
+  policyLevel?: "allow" | "ask" | "deny";
+  onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
 }
 
 export default function Composer({
@@ -25,6 +27,8 @@ export default function Composer({
   onSend,
   onNewChat,
   contextUsage,
+  policyLevel,
+  onPolicyLevelChange,
 }: ComposerProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -155,6 +159,8 @@ export default function Composer({
         slashSelectedIndex={effectiveSlashIndex}
         onSlashIndexChange={(i) => setSlashSelectedIndex(i)}
         onSlashClose={handleSlashClose}
+        policyLevel={policyLevel}
+        onPolicyLevelChange={onPolicyLevelChange}
       />
     </div>
   );

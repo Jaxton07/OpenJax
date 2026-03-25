@@ -3,6 +3,7 @@ import { SendIcon } from "../../pic/icon";
 import type { ContextUsageState } from "../../types/chat";
 import type { SlashCommandDto } from "../../types/gateway";
 import ContextUsageRing from "./ContextUsageRing";
+import PolicyLevelButton from "./PolicyLevelButton";
 
 interface ComposerInputProps {
   value: string;
@@ -16,6 +17,8 @@ interface ComposerInputProps {
   slashSelectedIndex?: number;
   onSlashIndexChange?: (index: number) => void;
   onSlashClose?: () => void;
+  policyLevel?: "allow" | "ask" | "deny";
+  onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
 }
 
 export default function ComposerInput({
@@ -29,12 +32,17 @@ export default function ComposerInput({
   slashSelectedIndex,
   onSlashIndexChange,
   onSlashClose,
+  policyLevel,
+  onPolicyLevelChange,
 }: ComposerInputProps) {
   const hasContent = value.trim().length > 0;
 
   return (
     <div className="composer">
       <ContextUsageRing contextUsage={contextUsage} />
+      {onPolicyLevelChange && (
+        <PolicyLevelButton level={policyLevel ?? "ask"} onChange={onPolicyLevelChange} />
+      )}
       <textarea
         ref={textareaRef}
         value={value}

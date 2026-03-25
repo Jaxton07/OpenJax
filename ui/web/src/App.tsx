@@ -52,7 +52,8 @@ export default function App() {
     setActiveProvider,
     fetchCatalog,
     dismissGlobalError,
-    dismissToast
+    dismissToast,
+    sendPolicyLevel
   } = useChatApp();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -207,6 +208,8 @@ export default function App() {
           contextUsage={activeSession?.contextUsage ?? null}
           onSend={sendMessage}
           onNewChat={() => void newChat()}
+          policyLevel={activeSession?.policyLevel ?? "ask"}
+          onPolicyLevelChange={(level) => void sendPolicyLevel(activeSession!.id, level)}
         />
       </main>
 
