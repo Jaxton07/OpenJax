@@ -538,3 +538,46 @@ pub async fn clear_runtime(
     let mut session = session_runtime.lock().await;
     session.clear_context_with_config(config);
 }
+
+// ---------------------------------------------------------------------------
+// Policy level
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct SetPolicyLevelRequest {
+    pub level: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SetPolicyLevelResponse {
+    pub level: String,
+}
+
+/// PUT /api/v1/sessions/:session_id/policy
+pub async fn set_policy_level(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Json(body): Json<SetPolicyLevelRequest>,
+) -> Result<Json<SetPolicyLevelResponse>, ApiError> {
+    let level = openjax_core::PolicyLevel::from_str(&body.level).ok_or_else(|| {
+        ApiError::invalid_argument(
+            format!(
+                "'{}' is not a valid policy level; use permissive, standard, or strict",
+                body.level
+            ),
+            json!({ "level": body.level }),
+        )
+    })?;
+
+    // Take Arc to agent (releasing session map lock before locking agent)
+    let agent_arc = {
+        let session_runtime = state.get_session(&session_id).await?;
+        let session = session_runtime.lock().await;
+        session.agent.clone()
+    };
+    agent_arc.lock().await.set_policy_level(level);
+
+    Ok(Json(SetPolicyLevelResponse {
+        level: level.as_str().to_string(),
+    }))
+}
