@@ -58,8 +58,7 @@ max_planner_rounds_per_turn = 20
 
 常用：
 
-1. `OPENJAX_APPROVAL_POLICY=always_ask|on_request|never`
-2. `OPENJAX_SANDBOX_MODE=workspace_write|danger_full_access`
+1. `OPENJAX_SANDBOX_MODE=workspace_write|danger_full_access`
 3. `OPENJAX_LOG_LEVEL=trace|debug|info|warn|error`
 
 Provider 相关：

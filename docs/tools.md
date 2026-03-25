@@ -141,13 +141,14 @@ stderr:
 
 ### 审批策略
 
-通过环境变量 `OPENJAX_APPROVAL_POLICY` 配置：
+审批决策由 Policy Center 统一管理，通过注入 `PolicyRuntime` 配置：
 
-| 策略 | 说明 |
-|-----|------|
-| `always_ask` | 总是询问用户（默认） |
-| `on_request` | 仅在 `require_escalated=true` 时询问 |
-| `never` | 从不询问 |
+```rust
+use openjax_policy::{runtime::PolicyRuntime, schema::DecisionKind, store::PolicyStore};
+agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]))));
+```
+
+默认（无 policy_runtime）：mutating 工具和有风险标签的 shell 命令需要审批，只读工具自动放行。
 
 ### 沙箱模式
 
@@ -344,7 +345,7 @@ export OPENJAX_MINIMAX_BASE_URL="https://api.minimax.chat/v1"
 
 ```bash
 # 审批策略
-export OPENJAX_APPROVAL_POLICY="always_ask"  # | on_request | never
+# 审批策略现由 PolicyRuntime 注入管理（见上方"审批策略"章节）
 
 # 沙箱模式
 export OPENJAX_SANDBOX_MODE="workspace_write"  # | danger_full_access

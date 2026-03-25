@@ -66,7 +66,6 @@ Copy any needed credentials into your shell environment. Never commit secrets.
 export OPENAI_API_KEY=sk-...
 export OPENJAX_MODEL=gpt-4o          # optional
 export OPENJAX_SANDBOX_MODE=...      # optional
-export OPENJAX_APPROVAL_POLICY=...   # optional
 export OPENJAX_GATEWAY_BIND=...      # optional
 ```
 

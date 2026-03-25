@@ -64,7 +64,7 @@
 
 ## 策略来源
 
-- 审批策略：`OPENJAX_APPROVAL_POLICY` 或 `config.sandbox.approval_policy`。
+- 审批策略：通过 `agent.set_policy_runtime(Some(runtime))` 注入 `PolicyRuntime` 配置。
 - 沙箱模式：`OPENJAX_SANDBOX_MODE` 或 `config.sandbox.mode`。
 - Final writer 路径已停用，当前固定使用 planner-only 输出链路。
 

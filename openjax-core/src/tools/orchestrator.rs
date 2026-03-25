@@ -335,15 +335,15 @@ fn evaluate_policy_center_decision(invocation: &ToolInvocation) -> openjax_polic
 
     // 为 shell 工具注入命令级风险标签到 descriptor 中，
     // 使 Policy Center 能基于具体命令内容进行决策
-    if is_shell_like_tool(&invocation.tool_name) {
-        if let Some((command, require_escalated)) = extract_shell_command(invocation) {
-            let normalized = command.split_whitespace().collect::<Vec<_>>().join(" ");
-            let shell_risk_tags = extract_shell_risk_tags(&normalized, require_escalated);
-            if let Some(ref mut desc) = descriptor {
-                for tag in shell_risk_tags {
-                    if !desc.risk_tags.contains(&tag) {
-                        desc.risk_tags.push(tag);
-                    }
+    if is_shell_like_tool(&invocation.tool_name)
+        && let Some((command, require_escalated)) = extract_shell_command(invocation)
+    {
+        let normalized = command.split_whitespace().collect::<Vec<_>>().join(" ");
+        let shell_risk_tags = extract_shell_risk_tags(&normalized, require_escalated);
+        if let Some(ref mut desc) = descriptor {
+            for tag in shell_risk_tags {
+                if !desc.risk_tags.contains(&tag) {
+                    desc.risk_tags.push(tag);
                 }
             }
         }
