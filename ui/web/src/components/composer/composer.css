@@ -236,3 +236,84 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Policy level button */
+.policy-level-wrap {
+  position: absolute;
+  left: 42px;
+  bottom: 10px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.policy-level-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.15));
+  background: transparent;
+  color: var(--text-muted, rgba(255,255,255,0.5));
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.policy-level-btn:hover {
+  color: var(--text-color, rgba(255,255,255,0.85));
+  border-color: var(--border-color-hover, rgba(255,255,255,0.3));
+}
+
+.policy-level-btn svg {
+  width: 0.65em;
+  height: 0.65em;
+  opacity: 0.7;
+}
+
+.policy-level-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 220px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.15));
+  background: var(--popover-bg, #1e1e2e);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+
+.policy-level-option {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  cursor: pointer;
+  gap: 2px;
+}
+
+.policy-level-option:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.07));
+}
+
+.policy-level-option.active {
+  background: var(--active-bg, rgba(99,102,241,0.2));
+}
+
+.policy-level-option-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color, rgba(255,255,255,0.85));
+}
+
+.policy-level-option.active .policy-level-option-name {
+  color: var(--accent, #818cf8);
+}
+
+.policy-level-option-summary {
+  font-size: 11px;
+  color: var(--text-muted, rgba(255,255,255,0.4));
+}
