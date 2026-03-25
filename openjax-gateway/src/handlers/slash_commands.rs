@@ -55,6 +55,9 @@ pub async fn list_slash_commands(
                     "session_action"
                 }
                 openjax_core::slash_commands::SlashCommandKind::Skill { .. } => "skill",
+                openjax_core::slash_commands::SlashCommandKind::LocalPicker { .. } => {
+                    "local_picker"
+                }
             };
             SlashCommandDto {
                 name: cmd.name.to_string(),
@@ -156,6 +159,14 @@ pub async fn exec_slash_command(
                         "unexpected builtin command",
                         serde_json::json!({}),
                     ))
+                }
+                openjax_core::slash_commands::SlashCommandKind::LocalPicker { name } => {
+                    // LocalPicker is handled client-side (TUI); gateway returns a hint
+                    Ok(Json(SlashExecResponse {
+                        status: "pending".to_string(),
+                        message: None,
+                        action: Some(format!("local_picker:{}", name)),
+                    }))
                 }
             }
         }
