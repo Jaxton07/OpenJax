@@ -390,11 +390,8 @@ fn evaluate_policy_center_decision(invocation: &ToolInvocation) -> openjax_polic
         return handle.decide(&input);
     }
 
-    let rules = descriptor
-        .as_ref()
-        .map(|item| vec![item.allow_rule_for_tool(&invocation.tool_name)])
-        .unwrap_or_default();
-    let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, rules));
+    // 无 policy_runtime 时保守回退：Ask 作为默认，所有工具均需审批
+    let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, vec![]));
     let input = invocation.to_policy_center_input(descriptor.as_ref(), runtime.current_version());
     runtime.handle().decide(&input)
 }
