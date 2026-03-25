@@ -8,6 +8,7 @@ pub enum TransientKind {
     None,
     Slash,
     Approval,
+    PolicyPicker,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -15,6 +16,7 @@ pub enum FooterMode {
     Idle,
     SlashActive,
     ApprovalActive,
+    PolicyPickerActive,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -42,12 +44,23 @@ impl App {
         } else {
             self.slash_palette_height()
         };
+        let picker_rows = if approval_rows > 0 || slash_rows > 0 {
+            0
+        } else {
+            self.policy_picker_height()
+        };
 
         let (transient_kind, transient_rows, footer_mode) = if approval_rows > 0 {
             (
                 TransientKind::Approval,
                 approval_rows,
                 FooterMode::ApprovalActive,
+            )
+        } else if picker_rows > 0 {
+            (
+                TransientKind::PolicyPicker,
+                picker_rows,
+                FooterMode::PolicyPickerActive,
             )
         } else if slash_rows > 0 {
             (TransientKind::Slash, slash_rows, FooterMode::SlashActive)

@@ -64,6 +64,11 @@ pub struct PendingApproval {
     pub timeout_ms: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyPickerState {
+    pub selected_index: usize, // 0=permissive, 1=standard, 2=strict
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApprovalSelection {
     Approve,
@@ -95,6 +100,7 @@ pub struct AppState {
     pub slash_palette: SlashPaletteState,
     pub pending_approval: Option<PendingApproval>,
     pub approval_selection: ApprovalSelection,
+    pub policy_picker: Option<PolicyPickerState>,
     pub active_turn_id: Option<u64>,
     pub stream_turn_id: Option<u64>,
     pub stream_text: String,
@@ -122,6 +128,7 @@ impl Default for AppState {
             slash_palette: SlashPaletteState::default(),
             pending_approval: None,
             approval_selection: ApprovalSelection::Approve,
+            policy_picker: None,
             active_turn_id: None,
             stream_turn_id: None,
             stream_text: String::new(),

@@ -113,6 +113,10 @@ impl App {
                 }
                 true
             }
+            SlashCommandKind::LocalPicker { .. } => {
+                self.open_policy_picker();
+                true
+            }
             SlashCommandKind::SessionAction { .. } | SlashCommandKind::Skill { .. } => {
                 // Not handled locally; will be handled by the UI/agent separately
                 false

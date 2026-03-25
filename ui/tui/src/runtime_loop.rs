@@ -115,7 +115,7 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
             input_line: app.input_line(),
             input_cursor: app.input_cursor_offset(term_width),
             transient_panel,
-            footer_text: app.footer_text(),
+            footer_line: app.footer_line(),
         },
         |area, buf| app.render_live(area, buf),
     )?;

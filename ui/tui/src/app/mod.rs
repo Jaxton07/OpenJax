@@ -304,6 +304,43 @@ impl App {
         std::mem::take(&mut self.viewport_reset_requested)
     }
 
+    /// 打开 policy picker。若 pending_approval 存在则忽略（互斥）。
+    pub fn open_policy_picker(&mut self) {
+        if self.state.pending_approval.is_some() {
+            return;
+        }
+        let current = self.state.policy_default.as_deref().unwrap_or("standard");
+        let selected_index = match current {
+            "permissive" | "allow" => 0,
+            "strict" | "deny" => 2,
+            _ => 1, // standard / ask / 其他均默认 standard
+        };
+        self.state.policy_picker = Some(crate::state::PolicyPickerState { selected_index });
+        self.dismiss_slash_palette();
+        self.state.input.clear();
+        self.state.input_cursor = 0;
+    }
+
+    /// 循环移动 policy picker 选中项（delta = ±1）
+    pub fn move_policy_selection(&mut self, delta: i8) {
+        let Some(picker) = self.state.policy_picker.as_mut() else {
+            return;
+        };
+        let next = (picker.selected_index as i8 + delta).rem_euclid(3) as usize;
+        picker.selected_index = next;
+    }
+
+    /// 确认 picker 选择（仅更新本地状态；agent 调用在 runtime.rs 侧）
+    pub fn apply_policy_pick(&mut self, level_str: &str) {
+        self.state.policy_default = Some(level_str.to_string());
+        self.state.policy_picker = None;
+    }
+
+    /// 取消 picker，不变更 policy
+    pub fn dismiss_policy_picker(&mut self) {
+        self.state.policy_picker = None;
+    }
+
     pub fn set_live_status(&mut self, text: impl Into<String>) {
         self.state.live_messages = vec![LiveMessage {
             role: "status",

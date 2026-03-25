@@ -144,6 +144,7 @@ pub(crate) fn clip_transient_lines(
             lines[start..start + max_rows].to_vec()
         }
         TransientKind::Approval => clip_approval_lines(lines, selected_index, max_rows),
+        TransientKind::PolicyPicker => clip_approval_lines(lines, selected_index, max_rows),
         TransientKind::None => Vec::new(),
     }
 }
