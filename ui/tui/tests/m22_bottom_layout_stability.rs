@@ -1,23 +1,32 @@
 use openjax_protocol::Event as CoreEvent;
 use tui_next::app::App;
 
+fn footer_hint(app: &App) -> String {
+    // Extract just the hint text (first span) from footer_line()
+    app.footer_line()
+        .spans
+        .first()
+        .map(|s| s.content.to_string())
+        .unwrap_or_default()
+}
+
 #[test]
 fn slash_toggle_keeps_desired_height_and_stable_footer() {
     let mut app = App::default();
     let base = app.desired_height(80);
     assert_eq!(
-        app.footer_text(),
+        footer_hint(&app),
         "Enter submit | / commands | Esc clear | Ctrl-C quit"
     );
 
     app.append_input("/");
     assert_eq!(app.desired_height(80), base);
-    assert_eq!(app.footer_text(), "Tab/Enter complete | Esc dismiss");
+    assert_eq!(footer_hint(&app), "Tab/Enter complete | Esc dismiss");
 
     app.backspace();
     assert_eq!(app.desired_height(80), base);
     assert_eq!(
-        app.footer_text(),
+        footer_hint(&app),
         "Enter submit | / commands | Esc clear | Ctrl-C quit"
     );
 }
@@ -43,5 +52,5 @@ fn approval_panel_keeps_desired_height_and_uses_short_footer() {
     });
 
     assert_eq!(app.desired_height(80), base);
-    assert_eq!(app.footer_text(), "↑↓ select | Enter confirm | Esc later");
+    assert_eq!(footer_hint(&app), "↑↓ select | Enter confirm | Esc later");
 }
