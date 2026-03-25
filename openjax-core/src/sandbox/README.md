@@ -26,10 +26,14 @@ openjax-core/src/sandbox
 
 - `mod.rs`
   - façade 入口：`execute_shell(...)`
-  - 编排流程：`policy -> runtime -> degrade -> result -> audit`
+  - 编排流程：`capabilities 检测 -> runtime -> degrade -> result -> audit`
+  - 注：主审批决策（Allow/Ask/Escalate/Deny）已在 `ToolOrchestrator` 中完成，`execute_shell` 被调用时主审批已通过
 - `policy.rs`
-  - 命令风险识别与能力映射
-  - 输出 `PolicyDecision/PolicyOutcome/PolicyTrace`
+  - `detect_capabilities(command)`：命令能力检测（fs_read/fs_write/network 等）
+  - `extract_shell_risk_tags(command, require_escalated)`：纯函数，提取风险标签（供 orchestrator 注入 Policy Center 输入）
+  - `preferred_backend(sandbox_policy)`：根据沙箱策略选择 runtime 后端
+  - `evaluate_tool_invocation_policy()`：辅助函数（mutating/non-mutating 判断），不参与主审批流程
+  - `PolicyTrace`：构造降级审批判断所用的上下文
 - `runtime/mod.rs`
   - runtime 调度与后端选择
   - 公共执行请求/响应类型
@@ -55,23 +59,35 @@ openjax-core/src/sandbox
 
 ## Execution Flow
 
-1. `tools/handlers/shell.rs` 解析参数后调用 `sandbox::execute_shell`.
-2. `policy.rs` 生成策略决策与能力集合。
-3. `runtime/mod.rs` 选择 backend 并执行命令。
-4. 若 backend 不可用，`degrade.rs` 处理审批与 fallback。
-5. `result.rs` 产出结果分类，`audit.rs` 记录审计信息。
+shell 工具的完整执行链路分两层：
+
+**第一层：orchestrator 主审批（在进入 sandbox 前）**
+
+1. `ToolOrchestrator::run()` 调用 `evaluate_policy_center_decision()`。
+2. Policy Center（`openjax-policy`）做出 Allow / Ask / Escalate / Deny 决策。
+   - `Deny` → 立即返回 Err，不进入 sandbox。
+   - `Ask / Escalate` → 发出 `ApprovalRequested` 事件，等待用户审批；拒绝则返回 Err。
+   - `Allow` → 审批通过，继续调用 `registry.dispatch()`。
+3. `ShellCommandHandler::handle()` 解析参数后调用 `sandbox::execute_shell()`。
+
+**第二层：sandbox 隔离执行（主审批已通过）**
+
+4. `policy.rs` 的 `detect_capabilities()` 检测命令能力，构造 `policy_trace`（仅用于降级审批判断）。
+5. `runtime/mod.rs` 选择 backend 并执行命令。
+6. 若 backend 不可用，`degrade.rs` 处理降级二次审批与 fallback。
+7. `result.rs` 产出结果分类，`audit.rs` 记录审计信息。
 
 ## Strategy Rules
 
-- 策略判定（`policy.rs`）
-  - `PolicyDecision::Deny`: 直接拒绝，不执行 runtime。
-  - `PolicyDecision::AskApproval/AskEscalation`: 进入审批流程（非 shell 由 orchestrator 处理，shell 降级审批由 sandbox 处理）。
-  - `PolicyDecision::Allow`: 允许进入 runtime。
-- backend 不可用时（`execute_in_sandbox` 返回 `Err`）
+- 主审批决策（`openjax-policy` + orchestrator）
+  - `Deny`：直接拒绝，不进入 sandbox。
+  - `Ask / Escalate`：等待用户审批，通过后才进入 sandbox。
+  - `Allow`：直接进入 sandbox 执行。
+- sandbox 内部降级路径（`execute_in_sandbox` 返回 `Err`，即 backend 不可用）
   - `OPENJAX_SANDBOX_DEGRADE_POLICY=deny`: 直接失败。
   - `OPENJAX_SANDBOX_DEGRADE_POLICY=ask_then_allow`:
-    - 普通只读命令且 `policy=Allow`：允许自动降级到 `none_escalated`。
-    - `ProcessObserve`（`ps/top/pgrep`）或非 Allow 场景：先审批，审批通过后再降级执行。
+    - 普通只读命令且 `policy_trace.decision=Allow` 且无写/网络能力：自动降级到 `none_escalated`。
+    - `ProcessObserve`（`ps/top/pgrep`）或有写/网络能力的命令：先二次审批，通过后降级执行。
 - runtime 成功但输出可疑时
   - 若命中 `exit_code=0 + fatal stderr`（如 `Operation not permitted`），会设置 `runtime_allowed=false`。
   - 对 `ProcessObserve` 命令，该场景会触发审批后降级重试。
