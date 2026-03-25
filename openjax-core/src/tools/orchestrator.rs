@@ -3,10 +3,7 @@ use crate::tools::ToolsConfig;
 use crate::tools::context::{ToolInvocation, ToolOutput};
 use crate::tools::events::{AfterToolUse, BeforeToolUse, HookEvent};
 use crate::tools::hooks::HookExecutor;
-use crate::tools::policy::{
-    ApprovalContext, PolicyDecision, PolicyOutcome, evaluate_tool_invocation_policy,
-    extract_shell_command, extract_shell_risk_tags,
-};
+use crate::tools::policy::{ApprovalContext, extract_shell_command, extract_shell_risk_tags};
 use crate::tools::registry::ToolRegistry;
 use crate::tools::sandboxing::SandboxManager;
 use openjax_policy::runtime::PolicyRuntime;
@@ -78,20 +75,40 @@ impl ToolOrchestrator {
             .is_mutating_operation(&invocation.tool_name);
 
         let policy_center_decision = evaluate_policy_center_decision(&invocation);
-        let legacy_outcome = evaluate_tool_invocation_policy(&invocation, is_mutating);
-        let policy_outcome =
-            select_stricter_outcome(&invocation, &policy_center_decision, legacy_outcome);
 
-        if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
+        if matches!(policy_center_decision.kind, PolicyCenterDecisionKind::Deny) {
             return Err(crate::tools::error::FunctionCallError::Internal(
-                policy_outcome.trace.reason,
+                policy_center_decision.reason.clone(),
             ));
         }
 
+        // 为 shell 工具内联构建 ApprovalContext（提供命令预览和风险标签）
+        let approval_context: Option<ApprovalContext> =
+            if is_shell_like_tool(&invocation.tool_name) {
+                extract_shell_command(&invocation).map(|(cmd, require_escalated)| {
+                    let normalized = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
+                    let preview = truncate_preview(&normalized, 160);
+                    let risk_tags = extract_shell_risk_tags(&normalized, require_escalated);
+                    ApprovalContext {
+                        tool_name: invocation.tool_name.clone(),
+                        raw_command: Some(cmd.clone()),
+                        normalized_command: Some(normalized),
+                        command_preview: Some(preview),
+                        risk_tags,
+                        reason: policy_center_decision.reason.clone(),
+                        sandbox_backend: None,
+                        degrade_reason: None,
+                        fallback_plan: None,
+                    }
+                })
+            } else {
+                None
+            };
+
         let has_reusable_approval = self.should_reuse_mutating_approval(&invocation, is_mutating);
         let requires_approval = matches!(
-            policy_outcome.trace.decision,
-            PolicyDecision::AskApproval | PolicyDecision::AskEscalation
+            policy_center_decision.kind,
+            PolicyCenterDecisionKind::Ask | PolicyCenterDecisionKind::Escalate
         ) && !has_reusable_approval;
 
         if has_reusable_approval {
@@ -104,25 +121,21 @@ impl ToolOrchestrator {
 
         if requires_approval {
             let request_id = Uuid::new_v4().to_string();
-            let context = policy_outcome.approval_context.as_ref();
+            let context = approval_context.as_ref();
             let target = approval_target(&invocation, context);
-            let reason = approval_reason(&policy_outcome);
+            let reason = approval_reason(&policy_center_decision, context);
             let policy_version = Some(policy_center_decision.policy_version);
             let matched_rule_id = policy_center_decision.matched_rule_id.clone();
-            let risk_tags = if context
-                .map(|ctx| !ctx.risk_tags.is_empty())
-                .unwrap_or(false)
-            {
-                context.map(|ctx| ctx.risk_tags.clone()).unwrap_or_default()
-            } else {
-                policy_outcome.trace.risk_tags.clone()
-            };
+            let risk_tags = context
+                .map(|ctx| ctx.risk_tags.clone())
+                .filter(|tags| !tags.is_empty())
+                .unwrap_or_default();
             let sandbox_backend = context
                 .and_then(|ctx| ctx.sandbox_backend)
                 .map(|backend| backend.as_str().to_string());
-            let approval_kind = match policy_outcome.trace.decision {
-                PolicyDecision::AskApproval => Some(ApprovalKind::Normal),
-                PolicyDecision::AskEscalation => Some(ApprovalKind::Escalation),
+            let approval_kind = match policy_center_decision.kind {
+                PolicyCenterDecisionKind::Ask => Some(ApprovalKind::Normal),
+                PolicyCenterDecisionKind::Escalate => Some(ApprovalKind::Escalation),
                 _ => None,
             };
             tracing::info!(
@@ -130,7 +143,7 @@ impl ToolOrchestrator {
                 request_id = %request_id,
                 tool_name = %invocation.tool_name,
                 target_preview = %truncate_preview(&target, 160),
-                policy_decision = ?policy_outcome.trace.decision,
+                policy_decision = ?policy_center_decision.kind,
                 risk_tags = ?risk_tags,
                 sandbox_backend = ?sandbox_backend,
                 approval_kind = ?approval_kind,
@@ -298,11 +311,14 @@ fn approval_target(invocation: &ToolInvocation, context: Option<&ApprovalContext
     invocation.tool_name.clone()
 }
 
-fn approval_reason(outcome: &crate::tools::policy::PolicyOutcome) -> String {
-    if let Some(context) = &outcome.approval_context {
-        return context.reason.clone();
+fn approval_reason(
+    decision: &openjax_policy::PolicyDecision,
+    context: Option<&ApprovalContext>,
+) -> String {
+    if let Some(ctx) = context {
+        return ctx.reason.clone();
     }
-    outcome.trace.reason.clone()
+    decision.reason.clone()
 }
 
 fn truncate_preview(text: &str, limit: usize) -> String {
@@ -312,57 +328,6 @@ fn truncate_preview(text: &str, limit: usize) -> String {
     let mut out = text.chars().take(limit).collect::<String>();
     out.push_str("...");
     out
-}
-
-/// 选择更严格的决策结果：对比 Policy Center 决策与 legacy 决策，取更严格的一方。
-fn select_stricter_outcome(
-    invocation: &ToolInvocation,
-    center: &openjax_policy::PolicyDecision,
-    mut legacy: PolicyOutcome,
-) -> PolicyOutcome {
-    let center_decision = match center.kind {
-        PolicyCenterDecisionKind::Allow => PolicyDecision::Allow,
-        PolicyCenterDecisionKind::Ask => PolicyDecision::AskApproval,
-        PolicyCenterDecisionKind::Escalate => PolicyDecision::AskEscalation,
-        PolicyCenterDecisionKind::Deny => PolicyDecision::Deny,
-    };
-
-    let rank = |d: PolicyDecision| -> u8 {
-        match d {
-            PolicyDecision::Allow => 0,
-            PolicyDecision::AskApproval => 1,
-            PolicyDecision::AskEscalation => 2,
-            PolicyDecision::Deny => 3,
-        }
-    };
-
-    if rank(center_decision) > rank(legacy.trace.decision) {
-        legacy.trace.decision = center_decision;
-        legacy.trace.reason = center.reason.clone();
-
-        if matches!(
-            legacy.trace.decision,
-            PolicyDecision::AskApproval | PolicyDecision::AskEscalation
-        ) && legacy.approval_context.is_none()
-        {
-            legacy.approval_context = Some(ApprovalContext {
-                tool_name: invocation.tool_name.clone(),
-                raw_command: None,
-                normalized_command: None,
-                command_preview: None,
-                risk_tags: center
-                    .matched_rule_id
-                    .as_ref()
-                    .map(|_| Vec::new())
-                    .unwrap_or_else(|| vec!["unknown_tool_descriptor".to_string()]),
-                reason: center.reason.clone(),
-                sandbox_backend: None,
-                degrade_reason: None,
-                fallback_plan: None,
-            });
-        }
-    }
-    legacy
 }
 
 fn evaluate_policy_center_decision(invocation: &ToolInvocation) -> openjax_policy::PolicyDecision {
@@ -390,10 +355,27 @@ fn evaluate_policy_center_decision(invocation: &ToolInvocation) -> openjax_polic
         return handle.decide(&input);
     }
 
-    // 无 policy_runtime 时的回退：
-    // - 已知工具（有 descriptor）创建 Allow 规则，保持与 OnRequest 策略等效的默认行为
-    // - 未知工具（无 descriptor）使用 Ask 默认，要求审批
-    // 注：需要强制审批的测试场景应显式注入 PolicyRuntime(Ask)
+    // 无 policy_runtime 时的 fallback：
+    // - 无 descriptor（未知工具）：Ask 默认，要求审批
+    // - descriptor 有 risk_tags（如 mutating、network、write 等）：Ask 默认，防止绕过审批
+    // - descriptor 无 risk_tags（只读/无风险工具或安全 shell 命令）：创建 Allow 规则
+    //
+    // 注：shell 工具的命令级风险标签已在上方注入到 descriptor.risk_tags 中，
+    //     因此此处逻辑对 shell 工具同样适用：
+    //     - ls/ps 等安全命令 → risk_tags 为空 → Allow
+    //     - curl/git commit 等 → risk_tags 非空 → Ask
+    let has_risk = descriptor
+        .as_ref()
+        .map(|d| !d.risk_tags.is_empty())
+        .unwrap_or(true); // 无 descriptor 等同于有风险
+
+    if has_risk {
+        let runtime = PolicyRuntime::new(PolicyStore::new(PolicyCenterDecisionKind::Ask, vec![]));
+        let input =
+            invocation.to_policy_center_input(descriptor.as_ref(), runtime.current_version());
+        return runtime.handle().decide(&input);
+    }
+
     let rules = descriptor
         .as_ref()
         .map(|item| vec![item.allow_rule_for_tool(&invocation.tool_name)])

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::tools::context::{SandboxPolicy, ToolInvocation, ToolPayload};
+use crate::tools::context::{ToolInvocation, ToolPayload};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SandboxBackend {
@@ -78,100 +78,27 @@ pub struct PolicyOutcome {
 }
 
 pub fn evaluate_tool_invocation_policy(
-    invocation: &ToolInvocation,
+    _invocation: &ToolInvocation,
     is_mutating: bool,
 ) -> PolicyOutcome {
-    let mut trace = PolicyTrace {
-        decision: PolicyDecision::Allow,
-        reason: "allowed by default".to_string(),
-        risk_tags: Vec::new(),
-        capabilities: Vec::new(),
-    };
-
-    let mut approval_context: Option<ApprovalContext> = None;
-
-    if is_shell_like_tool(&invocation.tool_name) {
-        let shell = analyze_shell_invocation(invocation);
-        trace = shell.trace.clone();
-        approval_context = shell.approval_context;
-    } else if is_mutating {
-        trace.decision = PolicyDecision::AskApproval;
-        trace.reason = "mutating tool requires approval".to_string();
-    }
-
-    PolicyOutcome {
-        trace,
-        approval_context,
-    }
-}
-
-fn analyze_shell_invocation(invocation: &ToolInvocation) -> PolicyOutcome {
-    let Some((command, require_escalated)) = extract_shell_command(invocation) else {
-        return PolicyOutcome {
-            trace: PolicyTrace {
-                decision: PolicyDecision::Deny,
-                reason: "invalid shell payload".to_string(),
-                risk_tags: vec!["invalid_payload".to_string()],
-                capabilities: vec![SandboxCapability::ProcessExec],
-            },
-            approval_context: Some(ApprovalContext {
-                tool_name: invocation.tool_name.clone(),
-                raw_command: None,
-                normalized_command: None,
-                command_preview: None,
-                risk_tags: vec!["invalid_payload".to_string()],
-                reason: "invalid shell payload".to_string(),
-                sandbox_backend: preferred_backend(invocation.turn.sandbox_policy),
-                degrade_reason: None,
-                fallback_plan: None,
-            }),
-        };
-    };
-
-    let normalized = normalize_command(&command);
-    let capabilities = detect_capabilities(&normalized);
-    let risk_tags = extract_shell_risk_tags(&normalized, require_escalated);
-
-    let decision = derive_decision_from_tags(
-        invocation.turn.sandbox_policy,
-        &normalized,
-        &capabilities,
-        &risk_tags,
-    );
-
-    let reason = match decision {
-        PolicyDecision::Allow => "command allowed by policy".to_string(),
-        PolicyDecision::AskApproval => "command requires approval".to_string(),
-        PolicyDecision::AskEscalation => "command requires escalated approval".to_string(),
-        PolicyDecision::Deny => "command denied by policy".to_string(),
-    };
-    let approval_context = if matches!(
-        decision,
-        PolicyDecision::AskApproval | PolicyDecision::AskEscalation
-    ) {
-        Some(ApprovalContext {
-            tool_name: invocation.tool_name.clone(),
-            raw_command: Some(command.clone()),
-            normalized_command: Some(normalized.clone()),
-            command_preview: Some(truncate_preview(&normalized, 180)),
-            risk_tags: risk_tags.clone(),
-            reason: reason.clone(),
-            sandbox_backend: preferred_backend(invocation.turn.sandbox_policy),
-            degrade_reason: None,
-            fallback_plan: None,
-        })
+    let decision = if is_mutating {
+        PolicyDecision::AskApproval
     } else {
-        None
+        PolicyDecision::Allow
     };
-
+    let reason = if is_mutating {
+        "mutating tool requires approval".to_string()
+    } else {
+        "allowed by default".to_string()
+    };
     PolicyOutcome {
         trace: PolicyTrace {
             decision,
             reason,
-            risk_tags,
-            capabilities,
+            risk_tags: vec![],
+            capabilities: vec![],
         },
-        approval_context,
+        approval_context: None,
     }
 }
 
@@ -212,41 +139,7 @@ pub fn extract_shell_risk_tags(command: &str, require_escalated: bool) -> Vec<St
     tags.into_iter().collect()
 }
 
-/// 根据风险标签和 sandbox_policy 推导 PolicyDecision（决策层，不做标签提取）。
-fn derive_decision_from_tags(
-    sandbox_policy: SandboxPolicy,
-    command: &str,
-    capabilities: &[SandboxCapability],
-    risk_tags: &[String],
-) -> PolicyDecision {
-    if risk_tags.contains(&"destructive".to_string()) {
-        return PolicyDecision::AskEscalation;
-    }
-
-    if risk_tags.contains(&"require_escalated".to_string())
-        || risk_tags.contains(&"privilege_escalation".to_string())
-    {
-        return PolicyDecision::AskEscalation;
-    }
-
-    if matches!(sandbox_policy, SandboxPolicy::DangerFullAccess) {
-        return PolicyDecision::Allow;
-    }
-
-    let has_network = capabilities.contains(&SandboxCapability::Network);
-    let has_write = capabilities.contains(&SandboxCapability::FsWrite)
-        || capabilities.contains(&SandboxCapability::EnvWrite);
-
-    // 检查 command 中是否含 network/write 标签（与 capabilities 双重确认）
-    let _ = command; // command 参数保留供未来扩展用
-    if has_network || has_write {
-        return PolicyDecision::AskApproval;
-    }
-
-    PolicyDecision::Allow
-}
-
-fn detect_capabilities(command: &str) -> Vec<SandboxCapability> {
+pub fn detect_capabilities(command: &str) -> Vec<SandboxCapability> {
     let lower = command.to_ascii_lowercase();
     let mut caps = BTreeSet::new();
     caps.insert(SandboxCapability::ProcessExec);
@@ -345,24 +238,13 @@ fn parse_boolish(value: &serde_json::Value) -> Option<bool> {
     }
 }
 
-fn normalize_command(command: &str) -> String {
-    command.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn truncate_preview(command: &str, limit: usize) -> String {
-    let total = command.chars().count();
-    if total <= limit {
-        return command.to_string();
-    }
-    let mut preview = command.chars().take(limit).collect::<String>();
-    preview.push_str("...");
-    preview
-}
-
-fn preferred_backend(policy: SandboxPolicy) -> Option<SandboxBackend> {
+pub fn preferred_backend(policy: crate::tools::context::SandboxPolicy) -> Option<SandboxBackend> {
     match policy {
-        SandboxPolicy::DangerFullAccess => Some(SandboxBackend::NoneEscalated),
-        SandboxPolicy::Write | SandboxPolicy::ReadOnly => {
+        crate::tools::context::SandboxPolicy::DangerFullAccess => {
+            Some(SandboxBackend::NoneEscalated)
+        }
+        crate::tools::context::SandboxPolicy::Write
+        | crate::tools::context::SandboxPolicy::ReadOnly => {
             #[cfg(target_os = "linux")]
             {
                 Some(SandboxBackend::LinuxNative)
@@ -376,21 +258,15 @@ fn preferred_backend(policy: SandboxPolicy) -> Option<SandboxBackend> {
                 Some(SandboxBackend::NoneEscalated)
             }
         }
-        SandboxPolicy::None => Some(SandboxBackend::NoneEscalated),
+        crate::tools::context::SandboxPolicy::None => Some(SandboxBackend::NoneEscalated),
     }
-}
-
-fn is_shell_like_tool(tool_name: &str) -> bool {
-    matches!(tool_name, "shell" | "exec_command")
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{PolicyDecision, SandboxCapability, detect_capabilities, evaluate_tool_invocation_policy, extract_shell_risk_tags};
     use std::sync::Arc;
 
-    use super::{
-        PolicyDecision, SandboxCapability, evaluate_tool_invocation_policy, extract_shell_risk_tags,
-    };
     use crate::approval::StdinApprovalHandler;
     use crate::tools::context::{SandboxPolicy, ToolInvocation, ToolPayload, ToolTurnContext};
     use crate::tools::shell::ShellType;
@@ -418,36 +294,30 @@ mod tests {
     }
 
     #[test]
-    fn shell_pipe_is_not_auto_denied() {
+    fn mutating_tool_requires_ask_approval() {
         let invocation = shell_invocation("ps -eo pid,%cpu,cmd --sort=-%cpu | head -n 2");
         let outcome = evaluate_tool_invocation_policy(&invocation, true);
+        assert_eq!(outcome.trace.decision, PolicyDecision::AskApproval);
         assert_ne!(outcome.trace.decision, PolicyDecision::Deny);
     }
 
     #[test]
-    fn shell_network_requires_approval() {
-        let invocation = shell_invocation("curl https://example.com");
-        let outcome = evaluate_tool_invocation_policy(&invocation, true);
-        assert_eq!(outcome.trace.decision, PolicyDecision::AskApproval);
-        assert!(
-            outcome
-                .trace
-                .capabilities
-                .contains(&SandboxCapability::Network)
-        );
+    fn non_mutating_tool_is_allowed() {
+        let invocation = shell_invocation("ls -la");
+        let outcome = evaluate_tool_invocation_policy(&invocation, false);
+        assert_eq!(outcome.trace.decision, PolicyDecision::Allow);
     }
 
     #[test]
-    fn shell_git_commit_requires_approval() {
-        let invocation = shell_invocation("git commit -m \"feat: test\"");
-        let outcome = evaluate_tool_invocation_policy(&invocation, true);
-        assert_eq!(outcome.trace.decision, PolicyDecision::AskApproval);
-        assert!(
-            outcome
-                .trace
-                .capabilities
-                .contains(&SandboxCapability::FsWrite)
-        );
+    fn detect_capabilities_network_command() {
+        let caps = detect_capabilities("curl https://example.com");
+        assert!(caps.contains(&SandboxCapability::Network));
+    }
+
+    #[test]
+    fn detect_capabilities_git_commit() {
+        let caps = detect_capabilities("git commit -m \"feat: test\"");
+        assert!(caps.contains(&SandboxCapability::FsWrite));
     }
 
     #[test]
