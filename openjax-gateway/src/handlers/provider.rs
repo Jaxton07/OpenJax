@@ -445,4 +445,24 @@ mod tests {
         let _req_default = serde_json::from_value::<CreateProviderRequest>(payload_default)
             .expect("must succeed with default protocol");
     }
+
+    #[test]
+    fn update_provider_request_accepts_protocol_field() {
+        let payload_with_protocol = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "protocol": "anthropic_messages"
+        });
+        let _req = serde_json::from_value::<UpdateProviderRequest>(payload_with_protocol)
+            .expect("must succeed");
+
+        let payload_default = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding"
+        });
+        let _req_default = serde_json::from_value::<UpdateProviderRequest>(payload_default)
+            .expect("must succeed with default protocol");
+    }
 }
