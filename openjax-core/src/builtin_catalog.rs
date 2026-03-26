@@ -115,7 +115,7 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
     CatalogProvider {
         catalog_key: "minimax_coding",
         display_name: "MiniMax Coding",
-        base_url: "https://api.minimax.com/anthropic/v1",
+        base_url: "https://api.minimaxi.com/anthropic/v1",
         protocol: "anthropic_messages",
         request_profile: None,
         default_model: "MiniMax-M2.7",

@@ -162,7 +162,7 @@ impl AnthropicMessagesClient {
             "OPENJAX_MINIMAX_MODEL",
             "OPENJAX_MINIMAX_BASE_URL",
             "MiniMax-M2.7",
-            "https://api.minimax.com/anthropic/v1",
+            "https://api.minimaxi.com/anthropic/v1",
             "minimax-anthropic-messages",
         )
     }
