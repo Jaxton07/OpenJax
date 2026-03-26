@@ -1,8 +1,12 @@
 //! Config helpers and environment-based settings.
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use openjax_core::OpenJaxPaths;
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::schema::{DecisionKind, PolicyRule};
+use openjax_policy::store::PolicyStore;
 use openjax_store::SqliteStore;
 use serde_json::json;
 
@@ -10,6 +14,62 @@ use crate::error::ApiError;
 
 pub const DEFAULT_EVENT_REPLAY_LIMIT: usize = 1024;
 pub const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1024;
+
+pub struct GatewayPolicyState {
+    pub draft_rules: Vec<PolicyRule>,
+    pub default_decision: DecisionKind,
+    pub runtime: PolicyRuntime,
+}
+
+impl GatewayPolicyState {
+    fn new() -> Self {
+        let draft_rules = Vec::new();
+        let default_decision = DecisionKind::Ask;
+        let runtime = PolicyRuntime::new(PolicyStore::new(
+            default_decision.clone(),
+            draft_rules.clone(),
+        ));
+        Self {
+            draft_rules,
+            default_decision,
+            runtime,
+        }
+    }
+}
+
+struct PolicyStateEntry {
+    store: Weak<SqliteStore>,
+    state: Arc<Mutex<GatewayPolicyState>>,
+}
+
+static POLICY_STATE_REGISTRY: OnceLock<Mutex<Vec<PolicyStateEntry>>> = OnceLock::new();
+
+fn policy_state_registry() -> &'static Mutex<Vec<PolicyStateEntry>> {
+    POLICY_STATE_REGISTRY.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+pub fn gateway_policy_state(store: &Arc<SqliteStore>) -> Arc<Mutex<GatewayPolicyState>> {
+    let mut guard = match policy_state_registry().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.retain(|entry| entry.store.upgrade().is_some());
+
+    for entry in &*guard {
+        if let Some(existing_store) = entry.store.upgrade()
+            && Arc::ptr_eq(&existing_store, store)
+        {
+            return entry.state.clone();
+        }
+    }
+
+    let state = Arc::new(Mutex::new(GatewayPolicyState::new()));
+    guard.push(PolicyStateEntry {
+        store: Arc::downgrade(store),
+        state: state.clone(),
+    });
+    state
+}
 
 pub fn event_replay_limit() -> usize {
     std::env::var("OPENJAX_GATEWAY_EVENT_REPLAY_LIMIT")

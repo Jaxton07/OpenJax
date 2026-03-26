@@ -45,7 +45,7 @@ pub async fn run() -> anyhow::Result<()> {
         let guard = agent.lock().await;
         app.set_runtime_info(
             guard.model_backend_name().to_string(),
-            guard.approval_policy_name().to_string(),
+            guard.policy_default_decision_name().to_string(),
             guard.sandbox_mode_name().to_string(),
             cwd.as_path(),
         );
@@ -72,6 +72,18 @@ pub async fn run() -> anyhow::Result<()> {
         match map_event(evt) {
             InputAction::Quit => break,
             InputAction::Submit => {
+                // policy picker 确认（优先，不受 busy 状态阻断）
+                if app.state.policy_picker.is_some() {
+                    let idx = app.state.policy_picker.as_ref().unwrap().selected_index;
+                    let levels = ["allow", "ask", "deny"];
+                    if let Some(&level_str) = levels.get(idx) {
+                        if let Some(level) = openjax_core::PolicyLevel::from_str(level_str) {
+                            agent.lock().await.set_policy_level(level);
+                        }
+                        app.apply_policy_pick(level_str);
+                    }
+                    continue;
+                }
                 if turn_task.is_some() && app.state.pending_approval.is_none() {
                     app.set_live_status("Busy: previous turn still running");
                     continue;
@@ -103,7 +115,9 @@ pub async fn run() -> anyhow::Result<()> {
             InputAction::MoveLeft => app.move_cursor_left(),
             InputAction::MoveRight => app.move_cursor_right(),
             InputAction::MoveUp => {
-                if app.state.pending_approval.is_some() {
+                if app.state.policy_picker.is_some() {
+                    app.move_policy_selection(-1);
+                } else if app.state.pending_approval.is_some() {
                     app.move_approval_selection(-1);
                 } else if app.is_slash_palette_active() {
                     app.move_slash_selection(-1);
@@ -112,7 +126,9 @@ pub async fn run() -> anyhow::Result<()> {
                 }
             }
             InputAction::MoveDown => {
-                if app.state.pending_approval.is_some() {
+                if app.state.policy_picker.is_some() {
+                    app.move_policy_selection(1);
+                } else if app.state.pending_approval.is_some() {
                     app.move_approval_selection(1);
                 } else if app.is_slash_palette_active() {
                     app.move_slash_selection(1);
@@ -122,7 +138,9 @@ pub async fn run() -> anyhow::Result<()> {
             }
             InputAction::Append(text) => app.append_input(&text),
             InputAction::DismissOverlay => {
-                if app.is_slash_palette_active() {
+                if app.state.policy_picker.is_some() {
+                    app.dismiss_policy_picker();
+                } else if app.is_slash_palette_active() {
                     app.dismiss_slash_palette();
                 } else if app.state.pending_approval.is_none() {
                     app.clear();

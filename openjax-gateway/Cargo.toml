@@ -11,6 +11,7 @@ async-trait.workspace = true
 axum = { version = "0.7", features = ["macros"] }
 futures-util = "0.3"
 openjax-core = { path = "../openjax-core" }
+openjax-policy = { path = "../openjax-policy" }
 openjax-protocol = { path = "../openjax-protocol" }
 openjax-store = { path = "../openjax-store" }
 serde.workspace = true

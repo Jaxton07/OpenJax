@@ -1,5 +1,12 @@
+#![allow(clippy::await_holding_lock)]
+
 use async_trait::async_trait;
-use openjax_core::{Agent, ApprovalHandler, ApprovalPolicy, ApprovalRequest, SandboxMode};
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
+use openjax_policy::{
+    runtime::PolicyRuntime,
+    schema::{DecisionKind, PolicyRule},
+    store::PolicyStore,
+};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
@@ -96,11 +103,12 @@ async fn always_ask_prompts_and_approved_call_succeeds() {
     let workspace = create_workspace();
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::AlwaysAsk,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    // PolicyRuntime(Ask) ensures all tools require approval, even non-mutating read_file
+    agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![],
+    ))));
     let handler = Arc::new(MockApprovalHandler::new(vec![true]));
     agent.set_approval_handler(handler.clone());
 
@@ -125,11 +133,7 @@ async fn on_request_skips_prompt_for_non_mutating_tool() {
     let workspace = create_workspace();
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::OnRequest,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
     let handler = Arc::new(MockApprovalHandler::new(vec![]));
     agent.set_approval_handler(handler.clone());
 
@@ -154,11 +158,7 @@ async fn on_request_prompts_for_mutating_tool_and_rejects() {
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::OnRequest,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
     let handler = Arc::new(MockApprovalHandler::new(vec![false]));
     agent.set_approval_handler(handler.clone());
 
@@ -185,16 +185,28 @@ async fn on_request_prompts_for_mutating_tool_and_rejects() {
 }
 
 #[tokio::test]
-async fn never_does_not_prompt_even_for_mutating_tool() {
+async fn policy_deny_blocks_tool_without_approval_prompt() {
     let _guard = serial_guard();
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    // A policy rule that hard-denies edit_file_range without prompting for approval
+    let deny_rule = PolicyRule {
+        id: "deny:edit_file_range".to_string(),
+        decision: DecisionKind::Deny,
+        priority: 200,
+        tool_name: Some("edit_file_range".to_string()),
+        action: None,
+        session_id: None,
+        actor: None,
+        resource: None,
+        capabilities_all: vec![],
+        risk_tags_all: vec![],
+        reason: "edit_file_range blocked by policy".to_string(),
+    };
+    let policy_runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![deny_rule]));
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    agent.set_policy_runtime(Some(policy_runtime));
     let handler = Arc::new(MockApprovalHandler::new(vec![false]));
     agent.set_approval_handler(handler.clone());
 
@@ -206,13 +218,14 @@ async fn never_does_not_prompt_even_for_mutating_tool() {
         .await;
 
     match tool_completion(&events, "edit_file_range") {
-        Event::ToolCallCompleted { ok, .. } => assert!(*ok),
+        Event::ToolCallCompleted { ok, .. } => assert!(!ok),
         _ => unreachable!(),
     }
+    // Deny path: approval handler must never be called
     assert_eq!(handler.call_count(), 0);
 
     let todo = fs::read_to_string(workspace.join("todo.txt")).expect("todo should exist");
-    assert_eq!(todo, "x\nb\n");
+    assert_eq!(todo, "a\nb\n");
 
     let _ = fs::remove_dir_all(workspace);
 }
@@ -223,11 +236,7 @@ async fn approval_timeout_is_reported_as_timeout() {
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::OnRequest,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
     agent.set_approval_handler(Arc::new(BlockingApprovalHandler));
 
     unsafe {
@@ -265,11 +274,7 @@ async fn on_request_prompts_for_git_commit_and_rejects() {
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::OnRequest,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
     let handler = Arc::new(MockApprovalHandler::new(vec![false]));
     agent.set_approval_handler(handler.clone());
 

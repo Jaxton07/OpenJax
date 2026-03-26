@@ -80,12 +80,11 @@
 - 网络/写入/环境写能力：`AskApproval`。
 - 只读与普通进程执行：`Allow`。
 
-### 4.2 与审批策略（ApprovalPolicy）折叠
-- `always_ask`：非拒绝调用统一要求审批。
-- `on_request`：沿用策略引擎结果。
-- `never`：
-  - shell 若需要审批则改为拒绝（防止静默放行高风险 shell）。
-  - 非 shell mutating 工具保持原兼容行为（避免破坏既有语义）。
+### 4.2 Policy Center 审批决策
+审批决策由 Policy Center 统一管理（通过注入 `PolicyRuntime`）：
+- risk_tags 非空（mutating / network / write 等）：默认 Ask，触发审批。
+- 纯只读/无风险工具：默认 Allow，自动放行。
+- `system:destructive_escalate` 内置规则：destructive 命令强制 Escalation 审批。
 
 ## 5. 协议与 UI 可见性
 
@@ -135,7 +134,6 @@
 
 已有配置继续生效：
 - `OPENJAX_SANDBOX_MODE`
-- `OPENJAX_APPROVAL_POLICY`
 
 ## 7. 安全约束（当前实现）
 

@@ -1135,6 +1135,7 @@ dependencies = [
  "async-trait",
  "dirs",
  "once_cell",
+ "openjax-policy",
  "openjax-protocol",
  "openjax-store",
  "pretty_assertions",
@@ -1168,6 +1169,7 @@ dependencies = [
  "futures-util",
  "hex",
  "openjax-core",
+ "openjax-policy",
  "openjax-protocol",
  "openjax-store",
  "rand 0.8.5",
@@ -1182,6 +1184,13 @@ dependencies = [
  "tower-http",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "openjax-policy"
+version = "0.2.14"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

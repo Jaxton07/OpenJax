@@ -85,12 +85,72 @@ impl App {
         raw.min(area_width.saturating_sub(1))
     }
 
-    pub fn footer_text(&self) -> String {
-        match self.bottom_layout(0).footer_mode {
-            FooterMode::Idle => "Enter submit | / commands | Esc clear | Ctrl-C quit".to_string(),
-            FooterMode::SlashActive => "Tab/Enter complete | Esc dismiss".to_string(),
-            FooterMode::ApprovalActive => "↑↓ select | Enter confirm | Esc later".to_string(),
+    pub fn footer_line(&self) -> Line<'static> {
+        let hint = match self.bottom_layout(0).footer_mode {
+            FooterMode::Idle => "Enter submit | / commands | Esc clear | Ctrl-C quit",
+            FooterMode::SlashActive => "Tab/Enter complete | Esc dismiss",
+            FooterMode::ApprovalActive => "↑↓ select | Enter confirm | Esc later",
+            FooterMode::PolicyPickerActive => "↑↓ select | Enter confirm | Esc cancel",
+        };
+        let (policy_label, policy_color) =
+            policy_level_display(self.state.policy_default.as_deref());
+        Line::from(vec![
+            Span::styled(
+                hint,
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" | policy: {}", policy_label),
+                Style::default()
+                    .fg(policy_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    }
+
+    pub fn policy_picker_lines(&self) -> Option<Vec<Line<'static>>> {
+        let picker = self.state.policy_picker.as_ref()?;
+        let options: [(&str, &str); 3] = [
+            ("allow", "Allow all tools without asking"),
+            ("ask",   "Ask before risky operations (default)"),
+            ("deny",  "Deny all risky operations"),
+        ];
+        let mut lines = Vec::new();
+        lines.push(Line::from(Span::styled(
+            "Select policy level:",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::default());
+        for (idx, (name, desc)) in options.iter().enumerate() {
+            let selected = idx == picker.selected_index;
+            let marker = if selected { "› " } else { "  " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(marker, style),
+                Span::styled(format!("{:<12}", name), style),
+                Span::styled(
+                    desc.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
         }
+        Some(lines)
+    }
+
+    pub fn policy_picker_height(&self) -> u16 {
+        self.policy_picker_lines()
+            .map(|lines| lines.len() as u16)
+            .unwrap_or(0)
     }
 
     pub fn slash_palette_lines(&self) -> Option<Vec<Line<'static>>> {
@@ -227,6 +287,19 @@ impl App {
                     selected_index: selected,
                 }
             }),
+            TransientKind::PolicyPicker => self.policy_picker_lines().map(|lines| {
+                // header=0, blank=1, options=2/3/4; selected_index is offset by 2
+                let selected = self
+                    .state
+                    .policy_picker
+                    .as_ref()
+                    .map(|p| p.selected_index + 2);
+                TransientPanel {
+                    kind: TransientKind::PolicyPicker,
+                    lines,
+                    selected_index: selected,
+                }
+            }),
             TransientKind::Slash => self.slash_palette_lines().map(|lines| {
                 let selected = if lines.is_empty() {
                     None
@@ -342,6 +415,14 @@ impl App {
         let remaining = timeout.saturating_sub(elapsed);
         let secs = remaining.as_secs();
         format!("{:02}:{:02}", secs / 60, secs % 60)
+    }
+}
+
+fn policy_level_display(level: Option<&str>) -> (&'static str, Color) {
+    match level {
+        Some("allow") => ("allow", Color::Cyan),
+        Some("deny")  => ("deny", Color::Yellow),
+        _             => ("ask", Color::White),
     }
 }
 

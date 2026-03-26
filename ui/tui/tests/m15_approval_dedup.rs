@@ -14,6 +14,9 @@ fn approval_history_is_written_only_on_resolved_event() {
         risk_tags: vec!["write".to_string()],
         sandbox_backend: Some("macos_seatbelt".to_string()),
         degrade_reason: None,
+        policy_version: None,
+        matched_rule_id: None,
+        approval_kind: None,
     });
 
     app.state.input = "y".to_string();
@@ -59,6 +62,9 @@ fn duplicate_approval_requested_with_same_id_is_deduped() {
         risk_tags: vec![],
         sandbox_backend: None,
         degrade_reason: None,
+        policy_version: None,
+        matched_rule_id: None,
+        approval_kind: None,
     });
     let first_live = app.state.live_messages.clone();
 
@@ -72,6 +78,9 @@ fn duplicate_approval_requested_with_same_id_is_deduped() {
         risk_tags: vec!["fs_write".to_string()],
         sandbox_backend: Some("macos_seatbelt".to_string()),
         degrade_reason: Some("permission denied".to_string()),
+        policy_version: None,
+        matched_rule_id: None,
+        approval_kind: None,
     });
 
     let pending = app
@@ -103,6 +112,9 @@ git: error: could not open /dev/null";
         risk_tags: vec![],
         sandbox_backend: Some("macos_seatbelt".to_string()),
         degrade_reason: None,
+        policy_version: None,
+        matched_rule_id: None,
+        approval_kind: None,
     });
 
     let message = app

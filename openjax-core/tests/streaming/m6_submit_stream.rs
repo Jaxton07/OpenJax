@@ -1,4 +1,4 @@
-use openjax_core::{Agent, ApprovalPolicy, SandboxMode};
+use openjax_core::{Agent, SandboxMode};
 use openjax_protocol::Op;
 use std::fs;
 use std::path::PathBuf;
@@ -28,11 +28,7 @@ async fn submit_with_sink_emits_events_in_same_order_as_submit_result() {
     let workspace = create_workspace();
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
     let (tx, mut rx) = unbounded_channel();
 
     let returned_events = agent

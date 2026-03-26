@@ -336,11 +336,13 @@ async fn handle(&self, invocation: ToolInvocation) -> Result<ToolOutput, Functio
 ### 使用沙箱
 
 ```rust
-// 始终使用沙箱模式
+// 始终使用沙箱模式；审批决策由 PolicyRuntime 统一管理
 let config = ToolRuntimeConfig {
-    approval_policy: ApprovalPolicy::AlwaysAsk,
     sandbox_mode: SandboxMode::WorkspaceWrite,
+    ..Default::default()
 };
+// 通过 agent 注入策略运行时以启用审批：
+// agent.set_policy_runtime(Some(runtime));
 ```
 
 ## 11. 文档

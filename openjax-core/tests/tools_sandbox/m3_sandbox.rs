@@ -1,9 +1,21 @@
-use openjax_core::{Agent, ApprovalPolicy, SandboxMode};
+use async_trait::async_trait;
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Simulates a user who always rejects approval prompts.
+struct RejectApprovalHandler;
+
+#[async_trait]
+impl ApprovalHandler for RejectApprovalHandler {
+    async fn request_approval(&self, _request: ApprovalRequest) -> Result<bool, String> {
+        Ok(false)
+    }
+}
 
 fn temp_workspace_path() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -37,11 +49,7 @@ fn tool_completion<'a>(events: &'a [Event], tool_name: &str) -> &'a Event {
 #[tokio::test]
 async fn blocks_absolute_path_read_in_workspace_write() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {
@@ -63,11 +71,7 @@ async fn blocks_absolute_path_read_in_workspace_write() {
 #[tokio::test]
 async fn blocks_parent_traversal_read_in_workspace_write() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {
@@ -89,11 +93,9 @@ async fn blocks_parent_traversal_read_in_workspace_write() {
 #[tokio::test]
 async fn blocks_shell_redirect_write_in_workspace_write() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    // Write-redirecting commands require approval; simulate a user who rejects.
+    agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent
         .submit(Op::UserTurn {
@@ -104,7 +106,7 @@ async fn blocks_shell_redirect_write_in_workspace_write() {
     match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
-            assert!(output.contains("approval is required but policy is set to never"));
+            assert!(output.contains("Approval rejected") || output.contains("command rejected"));
         }
         _ => unreachable!(),
     }
@@ -115,11 +117,9 @@ async fn blocks_shell_redirect_write_in_workspace_write() {
 #[tokio::test]
 async fn blocks_network_command_in_workspace_write() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
+    // Network commands require approval; simulate a user who rejects.
+    agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent
         .submit(Op::UserTurn {
@@ -130,7 +130,7 @@ async fn blocks_network_command_in_workspace_write() {
     match tool_completion(&events, "shell") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
-            assert!(output.contains("approval is required but policy is set to never"));
+            assert!(output.contains("Approval rejected") || output.contains("command rejected"));
         }
         _ => unreachable!(),
     }
@@ -141,11 +141,7 @@ async fn blocks_network_command_in_workspace_write() {
 #[tokio::test]
 async fn allows_safe_readonly_command_in_workspace_write() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {
@@ -167,11 +163,7 @@ async fn allows_safe_readonly_command_in_workspace_write() {
 #[tokio::test]
 async fn allows_shell_pipeline_in_workspace_write() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {
@@ -193,11 +185,7 @@ async fn allows_shell_pipeline_in_workspace_write() {
 #[tokio::test]
 async fn marks_shell_non_zero_exit_as_failed() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {
@@ -219,11 +207,7 @@ async fn marks_shell_non_zero_exit_as_failed() {
 #[tokio::test]
 async fn marks_pipeline_with_failed_segment_as_failed() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {
@@ -251,11 +235,7 @@ async fn marks_pipeline_with_failed_segment_as_failed() {
 #[tokio::test]
 async fn marks_sigpipe_pipeline_as_partial_success() {
     let workspace = create_workspace();
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {

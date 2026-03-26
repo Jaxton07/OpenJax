@@ -317,3 +317,46 @@ export async function compactConversationAction(params: CompactConversationParam
     params.setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
   }
 }
+
+interface FetchPolicyLevelParams {
+  client: GatewayClient;
+  sessionId: string;
+  updateSession: (sessionId: string, updater: (session: ChatSession) => ChatSession) => void;
+}
+
+export async function fetchPolicyLevelAction(params: FetchPolicyLevelParams): Promise<void> {
+  try {
+    const response = await params.client.getPolicyLevel(params.sessionId);
+    params.updateSession(params.sessionId, (session) => ({
+      ...session,
+      policyLevel: response.level,
+    }));
+  } catch {
+    // Silent fallback — GET failure leaves policyLevel undefined, UI uses "ask"
+  }
+}
+
+interface ChangePolicyLevelParams {
+  client: GatewayClient;
+  sessionId: string;
+  level: "allow" | "ask" | "deny";
+  updateSession: (sessionId: string, updater: (session: ChatSession) => ChatSession) => void;
+  clearAuthState: (message: string) => void;
+  setState: SetState;
+}
+
+export async function changePolicyLevelAction(params: ChangePolicyLevelParams): Promise<void> {
+  try {
+    await params.client.setPolicyLevel(params.sessionId, params.level);
+    params.updateSession(params.sessionId, (session) => ({
+      ...session,
+      policyLevel: params.level,
+    }));
+  } catch (error) {
+    if (isAuthenticationError(error)) {
+      params.clearAuthState("登录态已失效，请重新登录。");
+      return;
+    }
+    params.setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
+  }
+}

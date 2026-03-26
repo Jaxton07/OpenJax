@@ -74,6 +74,13 @@ impl SlashCommandRegistry {
                 usage_hint: "/compact",
                 kind: SlashCommandKind::SessionAction { action: "compact" },
             },
+            SlashCommand {
+                name: "policy",
+                aliases: &[],
+                description: "Switch policy level (permissive / standard / strict)",
+                usage_hint: "/policy",
+                kind: SlashCommandKind::LocalPicker { name: "policy" },
+            },
         ]
     }
 

@@ -1,5 +1,5 @@
 use crate::approval::ApprovalHandler;
-use crate::tools::context::{ApprovalPolicy, SandboxPolicy};
+use crate::tools::context::SandboxPolicy;
 use crate::tools::handlers::{
     ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler,
     ShellCommandHandler,
@@ -96,16 +96,17 @@ pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, V
 
 pub struct CreateToolInvocationParams {
     pub turn_id: u64,
+    pub session_id: Option<String>,
     pub call_id: String,
     pub tool_name: String,
     pub arguments: String,
     pub cwd: std::path::PathBuf,
     pub sandbox_policy: SandboxPolicy,
-    pub approval_policy: ApprovalPolicy,
     pub shell_type: ShellType,
     pub prevent_shell_skill_trigger: bool,
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<tokio::sync::mpsc::UnboundedSender<openjax_protocol::Event>>,
+    pub policy_runtime: Option<openjax_policy::runtime::PolicyRuntime>,
 }
 
 /// 创建工具调用上下文
@@ -120,13 +121,14 @@ pub fn create_tool_invocation(
         },
         turn: crate::tools::context::ToolTurnContext {
             turn_id: params.turn_id,
+            session_id: params.session_id,
             cwd: params.cwd,
             sandbox_policy: params.sandbox_policy,
-            approval_policy: params.approval_policy,
             shell_type: params.shell_type,
             prevent_shell_skill_trigger: params.prevent_shell_skill_trigger,
             approval_handler: params.approval_handler,
             event_sink: params.event_sink,
+            policy_runtime: params.policy_runtime,
             windows_sandbox_level: None,
         },
     }
@@ -139,7 +141,7 @@ mod tests {
         create_tool_invocation,
     };
     use crate::approval::StdinApprovalHandler;
-    use crate::tools::context::{ApprovalPolicy, SandboxPolicy, ToolPayload};
+    use crate::tools::context::{SandboxPolicy, ToolPayload};
     use crate::tools::shell::ShellType;
     use crate::tools::spec::{ApplyPatchToolType, ShellToolType, ToolsConfig};
     use std::sync::Arc;
@@ -187,16 +189,17 @@ mod tests {
     fn create_tool_invocation_keeps_shell_type_from_runtime_config() {
         let invocation = create_tool_invocation(CreateToolInvocationParams {
             turn_id: 42,
+            session_id: Some("sess_42".to_string()),
             call_id: "call-42".to_string(),
             tool_name: "shell".to_string(),
             arguments: r#"{"cmd":"echo hello"}"#.to_string(),
             cwd: std::path::PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
-            approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::Sh,
             prevent_shell_skill_trigger: true,
             approval_handler: Arc::new(StdinApprovalHandler::new()),
             event_sink: None,
+            policy_runtime: None,
         });
         assert!(matches!(invocation.payload, ToolPayload::Function { .. }));
         assert_eq!(invocation.turn.shell_type, ShellType::Sh);

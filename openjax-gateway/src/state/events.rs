@@ -18,7 +18,7 @@ use openjax_store::SqliteStore;
 use openjax_store::{ProviderRepository, SessionRepository};
 
 use super::config::{
-    build_runtime_config, gateway_db_path, map_store_error,
+    build_runtime_config, gateway_db_path, gateway_policy_state, map_store_error,
     migrate_providers_from_config_if_needed, normalize_builtin_provider_defaults,
 };
 use super::runtime::{
@@ -138,6 +138,14 @@ impl AppState {
 
     pub async fn delete_session(&self, session_id: &str) -> Result<(), ApiError> {
         self.sessions.write().await.remove(session_id);
+        {
+            let policy_state = gateway_policy_state(&self.store);
+            let guard = match policy_state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            guard.runtime.clear_session_overlay(session_id);
+        }
         self.store
             .delete_session(session_id)
             .map_err(map_store_error)?;
@@ -343,13 +351,24 @@ pub async fn run_turn_task(
     turn_id_tx: oneshot::Sender<Result<String, ApiError>>,
 ) {
     let (event_sink_tx, mut event_sink_rx) = mpsc::unbounded_channel();
+    let policy_runtime = {
+        let policy_state = gateway_policy_state(&app_state.store);
+        let guard = match policy_state.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.runtime.clone()
+    };
     let agent = {
         let guard = session_runtime.lock().await;
         guard.agent.clone()
     };
+    let session_id_for_core = session_id.clone();
 
     let submit_task = tokio::spawn(async move {
         let mut guard = agent.lock().await;
+        guard.set_policy_runtime(Some(policy_runtime));
+        guard.set_policy_session_id(Some(session_id_for_core));
         guard
             .submit_with_sink(openjax_protocol::Op::UserTurn { input }, event_sink_tx)
             .await

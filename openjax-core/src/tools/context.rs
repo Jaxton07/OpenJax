@@ -3,6 +3,11 @@ use std::sync::Arc;
 
 use crate::approval::{ApprovalHandler, StdinApprovalHandler};
 use crate::tools::shell::ShellType;
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::schema::{
+    DecisionKind as PolicyCenterDecisionKind, PolicyInput as PolicyCenterInput,
+    PolicyRule as PolicyCenterRule,
+};
 use openjax_protocol::Event;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -30,6 +35,32 @@ pub enum ToolPayload {
 pub struct ShellToolCallParams {
     pub command: String,
     pub args: Vec<String>,
+}
+
+/// 工具策略描述符
+#[derive(Debug, Clone)]
+pub struct PolicyDescriptor {
+    pub action: String,
+    pub capabilities: Vec<String>,
+    pub risk_tags: Vec<String>,
+}
+
+impl PolicyDescriptor {
+    pub fn allow_rule_for_tool(&self, tool_name: &str) -> PolicyCenterRule {
+        PolicyCenterRule {
+            id: format!("descriptor:{tool_name}:{}", self.action),
+            decision: PolicyCenterDecisionKind::Allow,
+            priority: 100,
+            tool_name: Some(tool_name.to_string()),
+            action: Some(self.action.clone()),
+            session_id: None,
+            actor: None,
+            resource: None,
+            capabilities_all: self.capabilities.clone(),
+            risk_tags_all: self.risk_tags.clone(),
+            reason: format!("tool `{tool_name}` is declared in policy descriptor"),
+        }
+    }
 }
 
 /// 工具输出
@@ -71,16 +102,83 @@ impl std::fmt::Debug for ToolInvocation {
     }
 }
 
+impl ToolInvocation {
+    pub fn policy_descriptor(&self) -> Option<PolicyDescriptor> {
+        let descriptor = match self.tool_name.as_str() {
+            "read_file" | "list_dir" | "grep_files" => PolicyDescriptor {
+                action: "read".to_string(),
+                capabilities: vec!["fs_read".to_string()],
+                risk_tags: vec![],
+            },
+            "apply_patch" | "edit_file_range" => PolicyDescriptor {
+                action: "write".to_string(),
+                capabilities: vec!["fs_write".to_string()],
+                risk_tags: vec!["mutating".to_string()],
+            },
+            "process_snapshot" | "system_load" | "disk_usage" => PolicyDescriptor {
+                action: "observe".to_string(),
+                capabilities: vec!["process_exec".to_string()],
+                risk_tags: vec![],
+            },
+            "shell" | "exec_command" => PolicyDescriptor {
+                action: "exec".to_string(),
+                capabilities: vec!["process_exec".to_string()],
+                risk_tags: vec![],
+            },
+            _ => return None,
+        };
+        Some(descriptor)
+    }
+
+    pub fn to_policy_center_input(
+        &self,
+        descriptor: Option<&PolicyDescriptor>,
+        policy_version: u64,
+    ) -> PolicyCenterInput {
+        let (action, capabilities, risk_tags) = descriptor
+            .map(|d| {
+                (
+                    d.action.clone(),
+                    d.capabilities.clone(),
+                    d.risk_tags.clone(),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    "invoke".to_string(),
+                    Vec::new(),
+                    vec!["unknown_tool_descriptor".to_string()],
+                )
+            });
+
+        PolicyCenterInput {
+            tool_name: self.tool_name.clone(),
+            action,
+            session_id: self
+                .turn
+                .session_id
+                .clone()
+                .or_else(|| Some(self.turn.turn_id.to_string())),
+            actor: Some("user".to_string()),
+            resource: Some(self.turn.cwd.display().to_string()),
+            capabilities,
+            risk_tags,
+            policy_version,
+        }
+    }
+}
+
 /// 工具轮次上下文
 #[derive(Clone)]
 pub struct ToolTurnContext {
     pub turn_id: u64,
+    pub session_id: Option<String>,
     pub cwd: PathBuf,
     pub sandbox_policy: SandboxPolicy,
-    pub approval_policy: ApprovalPolicy,
     pub shell_type: ShellType,
     pub approval_handler: Arc<dyn ApprovalHandler>,
     pub event_sink: Option<UnboundedSender<Event>>,
+    pub policy_runtime: Option<PolicyRuntime>,
     pub windows_sandbox_level: Option<String>,
     pub prevent_shell_skill_trigger: bool,
 }
@@ -89,12 +187,13 @@ impl Default for ToolTurnContext {
     fn default() -> Self {
         Self {
             turn_id: 0,
+            session_id: None,
             cwd: PathBuf::from("."),
             sandbox_policy: SandboxPolicy::Write,
-            approval_policy: ApprovalPolicy::OnRequest,
             shell_type: ShellType::default(),
             approval_handler: Arc::new(StdinApprovalHandler::new()),
             event_sink: None,
+            policy_runtime: None,
             windows_sandbox_level: None,
             prevent_shell_skill_trigger: true,
         }
@@ -107,41 +206,18 @@ impl std::fmt::Debug for ToolTurnContext {
             .field("turn_id", &self.turn_id)
             .field("cwd", &self.cwd)
             .field("sandbox_policy", &self.sandbox_policy)
-            .field("approval_policy", &self.approval_policy)
             .field("shell_type", &self.shell_type)
+            .field("session_id", &self.session_id)
+            .field(
+                "policy_runtime",
+                &self.policy_runtime.as_ref().map(|_| "<runtime>"),
+            )
             .field("windows_sandbox_level", &self.windows_sandbox_level)
             .field(
                 "prevent_shell_skill_trigger",
                 &self.prevent_shell_skill_trigger,
             )
             .finish()
-    }
-}
-
-/// 批准策略
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApprovalPolicy {
-    AlwaysAsk,
-    OnRequest,
-    Never,
-}
-
-impl ApprovalPolicy {
-    pub fn from_env() -> Self {
-        match std::env::var("OPENJAX_APPROVAL_POLICY").as_deref() {
-            Ok("always_ask") => Self::AlwaysAsk,
-            Ok("on_request") => Self::OnRequest,
-            Ok("never") => Self::Never,
-            _ => Self::OnRequest,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::AlwaysAsk => "always_ask",
-            Self::OnRequest => "on_request",
-            Self::Never => "never",
-        }
     }
 }
 

@@ -1,6 +1,6 @@
 use ratatui::layout::{Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
 use crate::app::{BottomLayout, TransientPanel};
@@ -27,7 +27,7 @@ pub struct DrawRequest {
     pub input_line: Line<'static>,
     pub input_cursor: u16,
     pub transient_panel: Option<TransientPanel>,
-    pub footer_text: String,
+    pub footer_line: Line<'static>,
 }
 
 impl Tui {
@@ -74,7 +74,7 @@ impl Tui {
             input_line,
             input_cursor,
             transient_panel,
-            footer_text,
+            footer_line,
         } = request;
         let screen = self.terminal.size()?;
         let current_area = self.terminal.area();
@@ -164,12 +164,7 @@ impl Tui {
             frame.set_cursor_position((cursor_x, chunks[idx.input].y + 1));
 
             frame.render_widget(Clear, chunks[idx.footer]);
-            let footer = Paragraph::new(Line::from(vec![Span::styled(
-                footer_text,
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
-            )]));
+            let footer = Paragraph::new(footer_line);
             footer.render(chunks[idx.footer], frame.buffer_mut());
         })?;
 

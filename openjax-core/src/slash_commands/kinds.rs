@@ -41,15 +41,19 @@ pub enum SlashCommandKind {
     Skill {
         skill_name: &'static str,
     },
+    /// TUI 本地 picker overlay，不经过 agent 或 gateway；由 TUI 的 submit_slash_command_if_exact 处理
+    LocalPicker {
+        name: &'static str,
+    },
 }
 
 impl SlashCommandKind {
     pub fn execute(&self) -> SlashResult {
         match self {
             SlashCommandKind::Builtin { handler, .. } => SlashResult::Ok(handler().0),
-            SlashCommandKind::SessionAction { .. } | SlashCommandKind::Skill { .. } => {
-                SlashResult::Pending
-            }
+            SlashCommandKind::SessionAction { .. }
+            | SlashCommandKind::Skill { .. }
+            | SlashCommandKind::LocalPicker { .. } => SlashResult::Pending,
         }
     }
     pub fn needs_agent(&self) -> bool {
@@ -69,6 +73,12 @@ impl SlashCommandKind {
         match self {
             SlashCommandKind::Builtin { replaces_input, .. } => *replaces_input,
             _ => false,
+        }
+    }
+    pub fn local_picker_name(&self) -> Option<&'static str> {
+        match self {
+            SlashCommandKind::LocalPicker { name } => Some(name),
+            _ => None,
         }
     }
 }

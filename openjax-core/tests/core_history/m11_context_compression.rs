@@ -7,8 +7,7 @@
 // 3. Zero context_window_size skips auto-compaction
 
 use openjax_core::{
-    Agent, ApprovalPolicy, Config, ModelConfig, ModelRoutingConfig, ProviderModelConfig,
-    SandboxMode,
+    Agent, Config, ModelConfig, ModelRoutingConfig, ProviderModelConfig, SandboxMode,
 };
 use openjax_protocol::{Event, Op};
 use std::collections::HashMap;
@@ -67,11 +66,7 @@ async fn test_split_for_compression_skips_short_history() {
     let ws = workspace();
     fs::write(ws.join("file.txt"), "content").unwrap();
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        ws.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, ws.clone());
 
     // Submit exactly 4 turns (the boundary case)
     for i in 0..4 {

@@ -32,6 +32,14 @@
 - [Hooks 系统](hooks-system.md) - Hooks 系统的详细说明
 - [动态工具](dynamic-tools.md) - 动态工具支持
 
+### 扩展门禁
+
+新增工具时，必须先完成权限声明并通过接入校验：
+
+- 新工具必须实现 `PolicyDescriptor`，或提供同义的权限声明能力
+- 必须补齐 `allow`、`ask`/`escalate`、`deny` 三类测试
+- 缺少权限声明不算接入完成，CI 应将其视为未通过门禁
+
 ### 安全文档
 
 - [沙箱和批准](sandbox-and-approval.md) - 沙箱和批准机制

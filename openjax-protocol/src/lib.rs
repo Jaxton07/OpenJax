@@ -186,6 +186,10 @@ pub enum Event {
         target: String,
         reason: String,
         #[serde(default)]
+        policy_version: Option<u64>,
+        #[serde(default)]
+        matched_rule_id: Option<String>,
+        #[serde(default)]
         tool_name: Option<String>,
         #[serde(default)]
         command_preview: Option<String>,
@@ -195,6 +199,8 @@ pub enum Event {
         sandbox_backend: Option<String>,
         #[serde(default)]
         degrade_reason: Option<String>,
+        #[serde(default)]
+        approval_kind: Option<ApprovalKind>,
     },
     ApprovalResolved {
         turn_id: u64,
@@ -227,6 +233,13 @@ pub enum Event {
         turn_id: u64,
     },
     ShutdownComplete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalKind {
+    Normal,
+    Escalation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

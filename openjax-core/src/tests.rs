@@ -9,13 +9,12 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::{Duration, sleep};
 
 use super::{
-    Agent, ApprovalHandler, ApprovalPolicy, ApprovalRequest, Config, SandboxMode,
+    Agent, ApprovalHandler, ApprovalRequest, Config, SandboxMode,
     agent::{
         decision::{normalize_model_decision, parse_model_decision},
         prompt::{build_planner_input, summarize_user_input},
         runtime_policy::{
-            parse_approval_policy, parse_sandbox_mode,
-            resolve_max_planner_rounds_per_turn_with_lookup,
+            parse_sandbox_mode, resolve_max_planner_rounds_per_turn_with_lookup,
             resolve_max_tool_calls_per_turn_with_lookup,
         },
         tool_policy::should_abort_on_consecutive_duplicate_skips,
@@ -25,6 +24,9 @@ use super::{
 use crate::tools::context::{FunctionCallOutputBody, ToolOutput};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::schema::DecisionKind;
+use openjax_policy::store::PolicyStore;
 
 #[derive(Clone)]
 struct ScriptedStreamingModel {
@@ -461,11 +463,7 @@ fn keeps_final_action_unchanged() {
 
 #[test]
 fn duplicate_detection_is_turn_local_when_cleared() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     let mut args = HashMap::new();
     args.insert("cmd".to_string(), "echo hi".to_string());
 
@@ -478,20 +476,6 @@ fn duplicate_detection_is_turn_local_when_cleared() {
 
 #[test]
 fn parse_runtime_policies() {
-    assert!(matches!(
-        parse_approval_policy("always_ask"),
-        Some(ApprovalPolicy::AlwaysAsk)
-    ));
-    assert!(matches!(
-        parse_approval_policy("on_request"),
-        Some(ApprovalPolicy::OnRequest)
-    ));
-    assert!(matches!(
-        parse_approval_policy("never"),
-        Some(ApprovalPolicy::Never)
-    ));
-    assert!(parse_approval_policy("invalid").is_none());
-
     assert!(matches!(
         parse_sandbox_mode("workspace_write"),
         Some(SandboxMode::WorkspaceWrite)
@@ -541,11 +525,7 @@ fn resolves_turn_limits_from_config_and_env_with_precedence() {
 
 #[test]
 fn duplicate_detection_resets_after_mutation_epoch_change() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     let mut args = HashMap::new();
     args.insert("cmd".to_string(), "echo hi".to_string());
 
@@ -596,11 +576,7 @@ fn summarize_user_input_adds_ellipsis_when_truncated() {
 
 #[tokio::test]
 async fn final_action_emits_response_text_delta_before_completion() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -653,11 +629,7 @@ async fn final_action_emits_response_text_delta_before_completion() {
 
 #[tokio::test]
 async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -702,11 +674,7 @@ async fn planner_only_mode_skips_final_writer_and_keeps_response_delta_events() 
 
 #[tokio::test]
 async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     let model = ScriptedStreamingModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -738,11 +706,7 @@ async fn planner_only_mode_with_stream_engine_v2_still_skips_final_writer() {
 
 #[tokio::test]
 async fn planner_stream_parse_failure_falls_back_to_complete_response() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     let model = PlannerFallbackModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
@@ -769,11 +733,7 @@ async fn planner_stream_parse_failure_falls_back_to_complete_response() {
 
 #[tokio::test]
 async fn tool_batch_emits_proposal_and_batch_completed_events() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     agent.model_client = Box::new(ScriptedToolBatchModel::new());
 
     let events = agent
@@ -815,11 +775,7 @@ async fn tool_batch_emits_proposal_and_batch_completed_events() {
 
 #[tokio::test]
 async fn tool_batch_dependency_unmet_still_emits_started_before_completed() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     agent.model_client = Box::new(ScriptedToolBatchDependencyModel::new());
 
     let events = agent
@@ -859,11 +815,7 @@ async fn tool_batch_dependency_unmet_still_emits_started_before_completed() {
 
 #[tokio::test]
 async fn duplicate_tool_skip_and_abort_emit_response_error_events() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     agent.model_client = Box::new(DuplicateToolLoopModel);
     let mut dup_args = HashMap::new();
     dup_args.insert("cmd".to_string(), "echo hi".to_string());
@@ -901,14 +853,14 @@ async fn duplicate_tool_skip_and_abort_emit_response_error_events() {
 
 #[tokio::test]
 async fn tool_batch_approval_blocked_stops_followup_scheduling_and_rounds() {
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::AlwaysAsk,
-        SandboxMode::WorkspaceWrite,
-        PathBuf::from("."),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     let model = ApprovalBlockedBatchModel::new();
     let model_probe = model.clone();
     agent.model_client = Box::new(model);
+    agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![],
+    ))));
     agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent
@@ -947,11 +899,7 @@ async fn tool_batch_approval_blocked_cancels_pending_parallel_tool() {
     fs::create_dir_all(&workspace).expect("create workspace");
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::OnRequest,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
     agent.model_client = Box::new(ApprovalCancellationBatchModel);
     let marker_path = workspace.join("slow_probe_marker.txt");
     agent.tools.register_tool(
@@ -960,6 +908,10 @@ async fn tool_batch_approval_blocked_cancels_pending_parallel_tool() {
             marker_path: marker_path.clone(),
         }),
     );
+    agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
+        DecisionKind::Ask,
+        vec![],
+    ))));
     agent.set_approval_handler(Arc::new(RejectApprovalHandler));
 
     let events = agent

@@ -26,6 +26,7 @@ pub use config::SkillsConfig;
 pub use logger::init_logger;
 pub use logger::init_logger_with_file;
 pub use logger::init_split_logger;
+use openjax_policy::runtime::PolicyRuntime;
 use openjax_protocol::Event;
 pub use paths::OpenJaxPaths;
 use std::path::PathBuf;
@@ -38,11 +39,13 @@ pub use provider_store::{
     build_config_from_providers, load_runtime_config, normalize_model_id, provider_protocol,
     provider_vendor,
 };
-pub use tools::ApprovalPolicy;
 pub use tools::SandboxMode;
 
 // Re-export loop detector types for integration tests
 pub use agent::loop_detector::{LoopDetector, LoopSignal};
+
+// Re-export policy level for gateway and TUI
+pub use agent::PolicyLevel;
 
 // Re-export protocol types for external use
 pub use openjax_protocol::{AgentSource, AgentStatus, ThreadId};
@@ -90,6 +93,8 @@ pub struct Agent {
     tool_batch_v2_enabled: bool,
     approval_handler: Arc<dyn approval::ApprovalHandler>,
     event_sink: Option<UnboundedSender<Event>>,
+    policy_runtime: Option<PolicyRuntime>,
+    policy_session_id: Option<String>,
     context_window_size: u32,
     last_input_tokens: Option<u64>,
 }

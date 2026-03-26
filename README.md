@@ -163,7 +163,6 @@ The following environment variables override the config file at runtime:
 | `OPENJAX_KIMI_API_KEY` | Kimi API key override | - |
 | `OPENJAX_GLM_API_KEY` | GLM API key override | - |
 | `OPENJAX_ANTHROPIC_API_KEY` | Claude API key override | - |
-| `OPENJAX_APPROVAL_POLICY` | Approval level | `on_request` |
 | `OPENJAX_SANDBOX_MODE` | Sandbox mode | `workspace_write` |
 
 ## Architecture

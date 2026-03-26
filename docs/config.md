@@ -7,8 +7,7 @@
 
 ## 配置文件位置
 
-1. 项目级：`.openjax/config/config.toml`
-2. 用户级：`~/.openjax/config.toml`
+用户级：`~/.openjax/config.toml`
 
 ## 启动自动生成
 
@@ -46,45 +45,7 @@ max_planner_rounds_per_turn = 20
 1. 运行时自动桥接成 `model.models.default`。
 2. `planner/final_writer/tool_reasoning` 默认都使用 `default`。
 
-## 2) 新版配置（推荐）
 
-```toml
-[model.routing]
-planner = "glm_fast"
-final_writer = "glm_quality"
-tool_reasoning = "glm_fast"
-
-[model.routing.fallbacks]
-glm_fast = ["glm_quality", "openai_backup"]
-
-[model.models.glm_fast]
-provider = "glm"
-protocol = "anthropic_messages" # anthropic_messages | chat_completions
-model = "GLM-4.7"
-base_url = "https://open.bigmodel.cn/api/anthropic"
-api_key_env = "OPENJAX_GLM_API_KEY"
-thinking_budget_tokens = 2000
-supports_stream = true
-supports_reasoning = true
-
-[model.models.glm_quality]
-provider = "glm"
-protocol = "anthropic_messages"
-model = "GLM-4.7"
-base_url = "https://open.bigmodel.cn/api/anthropic"
-api_key_env = "OPENJAX_GLM_API_KEY"
-supports_stream = true
-supports_reasoning = true
-
-[model.models.openai_backup]
-provider = "openai"
-protocol = "chat_completions"
-model = "gpt-4.1-mini"
-base_url = "https://api.openai.com/v1"
-api_key_env = "OPENAI_API_KEY"
-supports_stream = true
-supports_reasoning = false
-```
 
 ## 路由与回退
 
@@ -97,8 +58,7 @@ supports_reasoning = false
 
 常用：
 
-1. `OPENJAX_APPROVAL_POLICY=always_ask|on_request|never`
-2. `OPENJAX_SANDBOX_MODE=workspace_write|danger_full_access`
+1. `OPENJAX_SANDBOX_MODE=workspace_write|danger_full_access`
 3. `OPENJAX_LOG_LEVEL=trace|debug|info|warn|error`
 
 Provider 相关：

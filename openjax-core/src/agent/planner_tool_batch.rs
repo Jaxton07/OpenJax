@@ -125,6 +125,8 @@ impl Agent {
                     let tool_runtime_config = self.tool_runtime_config;
                     let approval_handler = self.approval_handler.clone();
                     let cwd = self.cwd.clone();
+                    let session_id = self.policy_session_id.clone();
+                    let policy_runtime = self.policy_runtime.clone();
                     let call_for_task = call.clone();
                     let handle = tokio::spawn(async move {
                         let tool_call = tools::ToolCall {
@@ -134,12 +136,14 @@ impl Agent {
                         tools
                             .execute(tools::ToolExecutionRequest {
                                 turn_id,
+                                session_id,
                                 tool_call_id: call_for_task.tool_call_id.clone(),
                                 call: &tool_call,
                                 cwd: cwd.as_path(),
                                 config: tool_runtime_config,
                                 approval_handler,
                                 event_sink: None,
+                                policy_runtime,
                             })
                             .await
                     });

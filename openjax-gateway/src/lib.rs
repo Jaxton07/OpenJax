@@ -17,7 +17,7 @@ use axum::Router;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE};
 use axum::http::{HeaderValue, Method};
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{get, patch, post};
+use axum::routing::{get, patch, post, put};
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -94,9 +94,27 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
             get(handlers::list_session_messages),
         )
         .route(
+            "/api/v1/sessions/:session_id/policy",
+            get(handlers::get_policy_level).put(handlers::set_policy_level),
+        )
+        .route(
+            "/api/v1/sessions/:session_id/policy-overlay",
+            put(handlers::set_session_policy_overlay)
+                .delete(handlers::clear_session_policy_overlay),
+        )
+        .route(
             "/api/v1/sessions/:session_id/timeline",
             get(handlers::list_session_timeline),
         )
+        .route(
+            "/api/v1/policy/rules",
+            get(handlers::list_policy_rules).post(handlers::create_policy_rule),
+        )
+        .route(
+            "/api/v1/policy/rules/:rule_id",
+            put(handlers::update_policy_rule).delete(handlers::delete_policy_rule),
+        )
+        .route("/api/v1/policy/publish", post(handlers::publish_policy))
         .route(
             "/api/v1/sessions/:session_id/turns",
             post(handlers::submit_turn),

@@ -36,6 +36,9 @@ fn approval_request_dismisses_slash_palette() {
         risk_tags: vec!["write".to_string()],
         sandbox_backend: Some("linux_native".to_string()),
         degrade_reason: None,
+        policy_version: None,
+        matched_rule_id: None,
+        approval_kind: None,
     });
 
     assert!(!app.is_slash_palette_active());

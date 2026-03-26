@@ -73,12 +73,12 @@ impl App {
     pub fn set_runtime_info(
         &mut self,
         model_name: String,
-        approval_policy: String,
+        policy_default: String,
         sandbox_mode: String,
         cwd: &Path,
     ) {
         self.state.model_name = Some(model_name);
-        self.state.approval_policy = Some(approval_policy);
+        self.state.policy_default = Some(policy_default);
         self.state.sandbox_mode = Some(sandbox_mode);
         self.state.cwd_display = Some(Self::display_path(cwd));
     }
@@ -184,20 +184,20 @@ impl App {
         }
 
         // SessionAction 命令的 TUI 侧处理（不走 gateway HTTP）
-        if input.starts_with('/') {
-            if let Some(matched) = crate::slash_commands::find_exact(&input) {
-                if matched.kind.session_action_name() == Some("compact") {
-                    self.state.input.clear();
-                    self.state.input_cursor = 0;
-                    self.dismiss_slash_palette();
-                    self.set_status_running("Compacting");
-                    return Some(SubmitAction::CompactSession);
-                }
-                // clear 在 TUI 侧做本地 clear（不走 gateway）
-                if matched.kind.session_action_name() == Some("clear") {
-                    self.clear();
-                    return None;
-                }
+        if input.starts_with('/')
+            && let Some(matched) = crate::slash_commands::find_exact(&input)
+        {
+            if matched.kind.session_action_name() == Some("compact") {
+                self.state.input.clear();
+                self.state.input_cursor = 0;
+                self.dismiss_slash_palette();
+                self.set_status_running("Compacting");
+                return Some(SubmitAction::CompactSession);
+            }
+            // clear 在 TUI 侧做本地 clear（不走 gateway）
+            if matched.kind.session_action_name() == Some("clear") {
+                self.clear();
+                return None;
             }
         }
 
@@ -302,6 +302,43 @@ impl App {
 
     pub fn take_viewport_reset_requested(&mut self) -> bool {
         std::mem::take(&mut self.viewport_reset_requested)
+    }
+
+    /// 打开 policy picker。若 pending_approval 存在则忽略（互斥）。
+    pub fn open_policy_picker(&mut self) {
+        if self.state.pending_approval.is_some() {
+            return;
+        }
+        let current = self.state.policy_default.as_deref().unwrap_or("standard");
+        let selected_index = match current {
+            "permissive" | "allow" => 0,
+            "strict" | "deny" => 2,
+            _ => 1, // standard / ask / 其他均默认 standard
+        };
+        self.state.policy_picker = Some(crate::state::PolicyPickerState { selected_index });
+        self.dismiss_slash_palette();
+        self.state.input.clear();
+        self.state.input_cursor = 0;
+    }
+
+    /// 循环移动 policy picker 选中项（delta = ±1）
+    pub fn move_policy_selection(&mut self, delta: i8) {
+        let Some(picker) = self.state.policy_picker.as_mut() else {
+            return;
+        };
+        let next = (picker.selected_index as i8 + delta).rem_euclid(3) as usize;
+        picker.selected_index = next;
+    }
+
+    /// 确认 picker 选择（仅更新本地状态；agent 调用在 runtime.rs 侧）
+    pub fn apply_policy_pick(&mut self, level_str: &str) {
+        self.state.policy_default = Some(level_str.to_string());
+        self.state.policy_picker = None;
+    }
+
+    /// 取消 picker，不变更 policy
+    pub fn dismiss_policy_picker(&mut self) {
+        self.state.policy_picker = None;
     }
 
     pub fn set_live_status(&mut self, text: impl Into<String>) {

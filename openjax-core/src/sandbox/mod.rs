@@ -14,7 +14,7 @@ use tracing::info;
 
 use self::classifier::classify_command;
 use self::degrade::request_degrade_approval;
-use self::policy::{PolicyDecision, SandboxBackend, evaluate_tool_invocation_policy};
+use self::policy::{PolicyDecision, SandboxBackend, detect_capabilities, preferred_backend};
 use self::result::{classify_shell_result, looks_like_fatal_stderr};
 use self::runtime::{
     SandboxDegradePolicy, SandboxExecutionRequest, SandboxRuntimeSettings, execute_in_sandbox,
@@ -40,10 +40,20 @@ pub async fn execute_shell(
         "shell started"
     );
 
-    let policy_outcome = evaluate_tool_invocation_policy(invocation, true);
-    if matches!(policy_outcome.trace.decision, PolicyDecision::Deny) {
-        return Err(FunctionCallError::Internal(policy_outcome.trace.reason));
-    }
+    let shell_capabilities = detect_capabilities(command);
+
+    // 基于命令能力推导沙箱执行时的 policy_trace.decision：
+    // 用于降级审批（degrade approval）是否需要触发的判断。
+    // - 有写/网络能力 → AskApproval
+    // - 只读命令 → Allow
+    let shell_trace_decision = if shell_capabilities
+        .iter()
+        .any(|cap| matches!(cap, self::policy::SandboxCapability::FsWrite | self::policy::SandboxCapability::EnvWrite | self::policy::SandboxCapability::Network))
+    {
+        PolicyDecision::AskApproval
+    } else {
+        PolicyDecision::Allow
+    };
 
     if let SandboxMode::WorkspaceWrite = sandbox_policy {
         runtime::ensure_workspace_relative_paths(command, &invocation.turn.cwd).map_err(|e| {
@@ -56,17 +66,20 @@ pub async fn execute_shell(
     let shell = Shell::new(invocation.turn.shell_type)
         .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
     let runtime_settings = SandboxRuntimeSettings::from_env();
+    let policy_trace = crate::sandbox::policy::PolicyTrace {
+        decision: shell_trace_decision,
+        reason: "sandbox execution policy".to_string(),
+        risk_tags: vec![],
+        capabilities: shell_capabilities.clone(),
+    };
     let execution_request = SandboxExecutionRequest {
         command: command.to_string(),
         cwd: invocation.turn.cwd.clone(),
         timeout_ms,
-        capabilities: policy_outcome.trace.capabilities.clone(),
+        capabilities: shell_capabilities,
         shell,
-        policy_trace: policy_outcome.trace.clone(),
-        preferred_backend: policy_outcome
-            .approval_context
-            .as_ref()
-            .and_then(|ctx| ctx.sandbox_backend),
+        policy_trace,
+        preferred_backend: preferred_backend(invocation.turn.sandbox_policy),
     };
 
     let command_class = classify_command(command);
@@ -255,6 +268,7 @@ fn evaluate_runtime_status(output: &runtime::SandboxExecutionResult) -> (bool, O
 
     (true, None)
 }
+
 
 #[cfg(test)]
 mod tests {

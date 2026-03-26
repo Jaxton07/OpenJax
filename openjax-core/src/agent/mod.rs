@@ -1,3 +1,6 @@
+pub mod policy_level;
+pub use policy_level::PolicyLevel;
+
 pub(crate) mod bootstrap;
 pub(crate) mod context_compressor;
 pub(crate) mod decision;

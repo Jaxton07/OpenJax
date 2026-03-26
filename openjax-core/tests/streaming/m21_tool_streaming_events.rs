@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use openjax_core::{Agent, ApprovalHandler, ApprovalPolicy, ApprovalRequest, SandboxMode};
+use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, SandboxMode};
 use openjax_protocol::{Event, Op};
 use std::fs;
 use std::path::PathBuf;
@@ -34,11 +34,7 @@ async fn emits_args_delta_and_progress_before_completion() {
     fs::create_dir_all(&workspace).expect("create workspace");
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::Never,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
 
     let events = agent
         .submit(Op::UserTurn {
@@ -81,11 +77,7 @@ async fn approval_rejection_emits_tool_call_failed() {
     fs::create_dir_all(&workspace).expect("create workspace");
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
-    let mut agent = Agent::with_runtime(
-        ApprovalPolicy::OnRequest,
-        SandboxMode::WorkspaceWrite,
-        workspace.clone(),
-    );
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
     agent.set_approval_handler(Arc::new(RejectApproval));
 
     let events = agent

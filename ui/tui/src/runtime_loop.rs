@@ -40,6 +40,9 @@ pub(crate) async fn drain_approval_requests(app: &mut App, approval_handler: &Tu
             risk_tags: Vec::new(),
             sandbox_backend: None,
             degrade_reason: None,
+            policy_version: None,
+            matched_rule_id: None,
+            approval_kind: None,
         });
     }
     if drained > 0 {
@@ -112,7 +115,7 @@ pub(crate) fn render_once(app: &mut App, tui: &mut Tui) -> anyhow::Result<()> {
             input_line: app.input_line(),
             input_cursor: app.input_cursor_offset(term_width),
             transient_panel,
-            footer_text: app.footer_text(),
+            footer_line: app.footer_line(),
         },
         |area, buf| app.render_live(area, buf),
     )?;

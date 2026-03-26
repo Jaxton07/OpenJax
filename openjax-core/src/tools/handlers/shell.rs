@@ -11,8 +11,6 @@ use crate::tools::registry::{ToolHandler, ToolKind};
 #[derive(Deserialize)]
 struct ShellCommandArgs {
     cmd: String,
-    #[serde(default, deserialize_with = "deserialize_boolish")]
-    require_escalated: bool,
     #[serde(default = "shell_default_timeout")]
     timeout_ms: u64,
 }
@@ -21,22 +19,6 @@ fn shell_default_timeout() -> u64 {
     30_000
 }
 
-fn deserialize_boolish<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    if let Some(v) = value.as_bool() {
-        return Ok(v);
-    }
-    if let Some(v) = value.as_str() {
-        return Ok(matches!(
-            v.to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes"
-        ));
-    }
-    Ok(false)
-}
 
 pub struct ShellCommandHandler;
 
@@ -62,7 +44,6 @@ impl ToolHandler for ShellCommandHandler {
 
         let command = args.cmd;
         let timeout_ms = args.timeout_ms;
-        let _require_escalated = args.require_escalated;
 
         if invocation.turn.prevent_shell_skill_trigger
             && looks_like_skill_trigger_shell_command(&command)

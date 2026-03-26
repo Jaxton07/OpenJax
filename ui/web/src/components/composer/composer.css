@@ -132,12 +132,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgba(15, 23, 42, 0.82);
+  color: var(--ink-2);
   pointer-events: auto;
 }
 
 .context-usage-ring.is-empty {
-  color: rgba(148, 163, 184, 0.88);
+  color: var(--ink-5);
 }
 
 .context-usage-ring svg {
@@ -235,4 +235,90 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Policy level button */
+.policy-level-wrap {
+  position: absolute;
+  left: 42px;
+  bottom: 10px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.policy-level-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 64px;
+  padding: 2px 0;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 15px;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.policy-level-btn:hover {
+  color: var(--ink-2);
+}
+
+.policy-level-btn svg {
+  width: 1.1em;
+  height: 1.1em;
+  opacity: 0.8;
+}
+
+.policy-level-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 220px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+
+[data-theme="dark"] .policy-level-popover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.policy-level-option {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  cursor: pointer;
+  gap: 2px;
+}
+
+.policy-level-option:hover {
+  background: var(--bg-hover);
+}
+
+.policy-level-option.active {
+  background: var(--accent-bg);
+}
+
+.policy-level-option-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.policy-level-option.active .policy-level-option-name {
+  color: var(--accent);
+}
+
+.policy-level-option-summary {
+  font-size: 11px;
+  color: var(--ink-4);
 }

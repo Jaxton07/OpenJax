@@ -51,15 +51,14 @@ openjax-core/
 ## 最小使用示例
 
 ```rust
-use openjax_core::{Agent, ApprovalPolicy, SandboxMode};
+use openjax_core::{Agent, SandboxMode};
 use openjax_protocol::Op;
 
 let cwd = std::env::current_dir().unwrap();
-let mut agent = Agent::with_runtime(
-    ApprovalPolicy::OnRequest,
-    SandboxMode::WorkspaceWrite,
-    cwd,
-);
+let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, cwd);
+// 需要审批控制时，注入 PolicyRuntime：
+// use openjax_policy::{runtime::PolicyRuntime, schema::DecisionKind, store::PolicyStore};
+// agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![]))));
 
 let events = agent
     .submit(Op::UserTurn {

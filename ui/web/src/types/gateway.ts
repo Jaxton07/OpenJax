@@ -255,3 +255,8 @@ export interface SlashExecResponse {
   message?: string;
   action?: string | null;
 }
+
+export interface GetPolicyLevelResponse {
+  session_id: string;
+  level: "allow" | "ask" | "deny";
+}

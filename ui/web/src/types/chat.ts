@@ -95,6 +95,7 @@ export interface ChatSession {
   pendingApprovals: PendingApproval[];
   contextUsage?: ContextUsageState;
   streaming?: SessionStreamingState;
+  policyLevel?: "allow" | "ask" | "deny";
 }
 
 export interface ChatState {

@@ -19,3 +19,4 @@ __pycache__/
 scripts/api_test/response.log
 .superpowers/
 docs/superpowers/
+.idea/

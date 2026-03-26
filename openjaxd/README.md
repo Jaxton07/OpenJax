@@ -61,7 +61,6 @@ zsh -lc "cargo run -q -p openjaxd"
 | `OPENAI_API_KEY` | 模型访问密钥 |
 | `OPENJAX_MODEL` | 模型标识 |
 | `OPENJAX_SANDBOX_MODE` | 沙箱模式 |
-| `OPENJAX_APPROVAL_POLICY` | 审批策略 |
 
 ## 测试
 
