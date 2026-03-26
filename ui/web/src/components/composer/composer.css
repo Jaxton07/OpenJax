@@ -132,12 +132,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgba(15, 23, 42, 0.82);
+  color: var(--ink-2);
   pointer-events: auto;
 }
 
 .context-usage-ring.is-empty {
-  color: rgba(148, 163, 184, 0.88);
+  color: var(--ink-5);
 }
 
 .context-usage-ring svg {
@@ -250,28 +250,29 @@
 .policy-level-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 64px;
+  padding: 2px 0;
   border-radius: 999px;
-  border: 1px solid var(--border-color, rgba(255,255,255,0.15));
+  border: none;
   background: transparent;
-  color: var(--text-muted, rgba(255,255,255,0.5));
-  font-size: 11px;
+  color: var(--ink-3);
+  font-size: 15px;
   line-height: 1.5;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s;
 }
 
 .policy-level-btn:hover {
-  color: var(--text-color, rgba(255,255,255,0.85));
-  border-color: var(--border-color-hover, rgba(255,255,255,0.3));
+  color: var(--ink-2);
 }
 
 .policy-level-btn svg {
-  width: 0.65em;
-  height: 0.65em;
-  opacity: 0.7;
+  width: 1.1em;
+  height: 1.1em;
+  opacity: 0.8;
 }
 
 .policy-level-popover {
@@ -281,10 +282,14 @@
   z-index: 30;
   min-width: 220px;
   border-radius: 8px;
-  border: 1px solid var(--border-color, rgba(255,255,255,0.15));
-  background: var(--popover-bg, #1e1e2e);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
   overflow: hidden;
+}
+
+[data-theme="dark"] .policy-level-popover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
 
 .policy-level-option {
@@ -296,24 +301,24 @@
 }
 
 .policy-level-option:hover {
-  background: var(--hover-bg, rgba(255,255,255,0.07));
+  background: var(--bg-hover);
 }
 
 .policy-level-option.active {
-  background: var(--active-bg, rgba(99,102,241,0.2));
+  background: var(--accent-bg);
 }
 
 .policy-level-option-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-color, rgba(255,255,255,0.85));
+  color: var(--ink-2);
 }
 
 .policy-level-option.active .policy-level-option-name {
-  color: var(--accent, #818cf8);
+  color: var(--accent);
 }
 
 .policy-level-option-summary {
   font-size: 11px;
-  color: var(--text-muted, rgba(255,255,255,0.4));
+  color: var(--ink-4);
 }

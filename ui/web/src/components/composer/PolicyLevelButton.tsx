@@ -54,8 +54,8 @@ export default function PolicyLevelButton({ level, onChange }: PolicyLevelButton
         onClick={() => setOpen((v) => !v)}
         title="Change policy level"
       >
-        {level}
         <UpDownIcon />
+        {level}
       </button>
     </div>
   );
