@@ -20,6 +20,7 @@ pub struct ProviderItem {
     model_name: String,
     api_key_set: bool,
     provider_type: String,
+    protocol: String,
     context_window_size: u32,
     created_at: String,
     updated_at: String,
@@ -72,12 +73,18 @@ pub struct CreateProviderRequest {
     api_key: String,
     #[serde(default = "default_provider_type")]
     provider_type: String,
+    #[serde(default = "default_protocol")]
+    protocol: String,
     #[serde(default)]
     context_window_size: u32,
 }
 
 fn default_provider_type() -> String {
     "custom".to_string()
+}
+
+fn default_protocol() -> String {
+    "chat_completions".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,6 +94,8 @@ pub struct UpdateProviderRequest {
     base_url: String,
     model_name: String,
     api_key: Option<String>,
+    #[serde(default = "default_protocol")]
+    protocol: String,
     #[serde(default)]
     context_window_size: u32,
 }
@@ -132,6 +141,7 @@ fn to_provider_item(provider: openjax_store::ProviderRecord) -> ProviderItem {
         model_name: provider.model_name,
         api_key_set: !provider.api_key.trim().is_empty(),
         provider_type: provider.provider_type,
+        protocol: provider.protocol,
         context_window_size: provider.context_window_size,
         created_at: provider.created_at,
         updated_at: provider.updated_at,
@@ -229,7 +239,7 @@ pub async fn create_provider(
         model_name,
         api_key,
         &payload.provider_type,
-        "chat_completions",
+        &payload.protocol,
         payload.context_window_size,
     )?;
     Ok(Json(ProviderMutationResponse {
@@ -266,7 +276,7 @@ pub async fn update_provider(
             base_url,
             model_name,
             api_key,
-            "chat_completions",
+            &payload.protocol,
             payload.context_window_size,
         )?
         .ok_or_else(|| {

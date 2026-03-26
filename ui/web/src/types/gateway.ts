@@ -16,6 +16,7 @@ export interface LlmProvider {
   created_at: string;
   updated_at: string;
   provider_type: "built_in" | "custom";
+  protocol: string;
   context_window_size: number;
 }
 

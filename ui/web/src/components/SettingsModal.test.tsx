@@ -13,6 +13,7 @@ const providerItem = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
   provider_type: "custom" as const,
+  protocol: "chat_completions",
   context_window_size: 128000
 };
 
@@ -106,6 +107,7 @@ describe("SettingsModal", () => {
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
       provider_type: "custom" as const,
+      protocol: "chat_completions",
       context_window_size: 0
     });
 
@@ -153,6 +155,7 @@ describe("SettingsModal", () => {
         modelName: "glm-4.7",
         apiKey: "key-a",
         providerType: "custom",
+        protocol: "chat_completions",
         contextWindowSize: 128000
       })
     );

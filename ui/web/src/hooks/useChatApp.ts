@@ -639,6 +639,7 @@ export function useChatApp() {
       modelName: string;
       apiKey: string;
       providerType?: "built_in" | "custom";
+      protocol?: string;
       contextWindowSize?: number;
     }): Promise<LlmProvider> => {
       const data = await withAuthRetry(() => client.createProvider(payload));
@@ -656,6 +657,7 @@ export function useChatApp() {
         modelName: string;
         apiKey?: string;
         providerType?: "built_in" | "custom";
+        protocol?: string;
         contextWindowSize?: number;
       }
     ): Promise<LlmProvider> => {

@@ -177,6 +177,7 @@ export class GatewayClient {
     modelName: string;
     apiKey: string;
     providerType?: "built_in" | "custom";
+    protocol?: string;
     contextWindowSize?: number;
   }): Promise<ProviderMutationResponse> {
     return this.request("/api/v1/providers", {
@@ -187,6 +188,7 @@ export class GatewayClient {
         model_name: payload.modelName,
         api_key: payload.apiKey,
         provider_type: payload.providerType,
+        protocol: payload.protocol,
         context_window_size: payload.contextWindowSize
       })
     });
@@ -200,6 +202,7 @@ export class GatewayClient {
         modelName: string;
         apiKey?: string;
         providerType?: "built_in" | "custom";
+        protocol?: string;
         contextWindowSize?: number;
       }
   ): Promise<ProviderMutationResponse> {
@@ -211,6 +214,7 @@ export class GatewayClient {
         model_name: payload.modelName,
         api_key: payload.apiKey,
         provider_type: payload.providerType,
+        protocol: payload.protocol,
         context_window_size: payload.contextWindowSize
       })
     });

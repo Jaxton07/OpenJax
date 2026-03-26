@@ -7,6 +7,7 @@ interface ProviderFormValue {
   modelName: string;
   apiKey: string;
   providerType: "built_in" | "custom";
+  protocol: string;
   contextWindowSize: number;
   catalogModels?: CatalogModel[];
 }
@@ -46,6 +47,7 @@ export default function ProviderForm(props: ProviderFormProps) {
     normalizedDraft.baseUrl !== normalizedInitial.baseUrl ||
     normalizedDraft.modelName !== normalizedInitial.modelName ||
     normalizedDraft.apiKey !== normalizedInitial.apiKey ||
+    normalizedDraft.protocol !== normalizedInitial.protocol ||
     normalizedDraft.contextWindowSize !== normalizedInitial.contextWindowSize;
 
   const isBuiltIn = draft.providerType === "built_in";
@@ -162,6 +164,20 @@ export default function ProviderForm(props: ProviderFormProps) {
           />
         )}
       </label>
+
+      {/* 协议 */}
+      {!isBuiltIn && (
+        <label>
+          协议
+          <select
+            value={draft.protocol}
+            onChange={(e) => setDraft((p) => ({ ...p, protocol: e.target.value }))}
+          >
+            <option value="chat_completions">OpenAI Compatible</option>
+            <option value="anthropic_messages">Anthropic Compatible (Claude / Kimi / MiniMax / GLM)</option>
+          </select>
+        </label>
+      )}
 
       {/* API Key */}
       <label>
