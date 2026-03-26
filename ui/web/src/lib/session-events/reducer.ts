@@ -93,7 +93,7 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   if (turnId && shouldCloseReasoningOnEvent(event)) {
-    closeOpenReasoningBlock(next.messages, turnId, event.event_seq);
+    closeOpenReasoningBlock(next.messages, turnId, event.event_seq, event.timestamp);
   }
   if (event.type === "turn_started" || event.type === "response_started" || event.type === "response_resumed") {
     next.turnPhase = "streaming";

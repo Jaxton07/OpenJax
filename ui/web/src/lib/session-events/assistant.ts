@@ -250,7 +250,7 @@ export function appendReasoningDelta(
   };
 }
 
-export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string, eventSeq?: number): void {
+export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string, eventSeq?: number, timestamp?: string): void {
   const idx = findAssistantMessageIndex(messages, turnId);
   if (idx < 0) {
     return;
@@ -268,7 +268,7 @@ export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string,
     ...blocks[openIdx],
     closed: true,
     endEventSeq: blocks[openIdx].lastEventSeq ?? eventSeq,
-    endedAt: new Date().toISOString()
+    endedAt: timestamp ?? new Date().toISOString()
   };
   messages[idx] = {
     ...message,
@@ -279,7 +279,8 @@ export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string,
 export function closeOpenReasoningBlockInSession(
   session: ChatSession,
   turnId?: string,
-  eventSeq?: number
+  eventSeq?: number,
+  timestamp?: string
 ): ChatSession {
   if (!turnId) {
     return session;
@@ -302,7 +303,7 @@ export function closeOpenReasoningBlockInSession(
     ...nextBlocks[openIdx],
     closed: true,
     endEventSeq: nextBlocks[openIdx].lastEventSeq ?? eventSeq,
-    endedAt: new Date().toISOString()
+    endedAt: timestamp ?? new Date().toISOString()
   };
   const messages = [...session.messages];
   messages[idx] = {

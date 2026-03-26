@@ -107,7 +107,7 @@ export function useChatApp() {
           if (session.id !== sessionId) {
             return session;
           }
-          const withReasoningClosed = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq);
+          const withReasoningClosed = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq, event.timestamp);
           const next = touchAssistantTextSeqInSession(
             withReasoningClosed,
             event.turn_id,
@@ -164,7 +164,7 @@ export function useChatApp() {
           }
           const withReasoningClosed =
             event.type === "response_completed"
-              ? closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq)
+              ? closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq, event.timestamp)
               : session;
           const next = applyResponseCompletedSession(withReasoningClosed, event, finalizedContent);
           changed = changed || next !== session;
