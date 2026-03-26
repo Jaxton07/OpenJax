@@ -23,6 +23,18 @@ use crate::runtime_loop::{
 };
 use crate::tui::Tui;
 
+fn dismiss_overlay(app: &mut App) {
+    if app.state.policy_picker.is_some() {
+        app.dismiss_policy_picker();
+    } else if app.is_slash_palette_active() {
+        app.dismiss_slash_palette();
+    } else if app.state.pending_approval.is_some() {
+        app.defer_pending_approval();
+    } else {
+        app.clear();
+    }
+}
+
 pub async fn run() -> anyhow::Result<()> {
     init_split_logger("openjax.log", "openjax_tui.log");
     info!("tui runtime starting");
@@ -137,15 +149,7 @@ pub async fn run() -> anyhow::Result<()> {
                 }
             }
             InputAction::Append(text) => app.append_input(&text),
-            InputAction::DismissOverlay => {
-                if app.state.policy_picker.is_some() {
-                    app.dismiss_policy_picker();
-                } else if app.is_slash_palette_active() {
-                    app.dismiss_slash_palette();
-                } else if app.state.pending_approval.is_none() {
-                    app.clear();
-                }
-            }
+            InputAction::DismissOverlay => dismiss_overlay(&mut app),
             InputAction::None => {}
         }
     }
@@ -164,4 +168,44 @@ pub async fn run() -> anyhow::Result<()> {
     let _ = write!(stdout, "\r\n");
     let _ = stdout.flush();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dismiss_overlay;
+    use crate::app::App;
+    use crate::state::PendingApproval;
+
+    #[test]
+    fn dismiss_overlay_with_pending_approval_defers_request() {
+        let mut app = App::default();
+        app.state.pending_approval = Some(PendingApproval {
+            request_id: "req-1".to_string(),
+            target: "target".to_string(),
+            reason: "reason".to_string(),
+            tool_name: Some("shell".to_string()),
+            command_preview: Some("echo hi".to_string()),
+            risk_tags: vec!["write".to_string()],
+            sandbox_backend: Some("linux_native".to_string()),
+            degrade_reason: None,
+        });
+        app.state.input = "tmp".to_string();
+        app.state.input_cursor = 3;
+
+        dismiss_overlay(&mut app);
+
+        assert!(app.state.pending_approval.is_some());
+        assert!(app.state.input.is_empty());
+        assert_eq!(app.state.input_cursor, 0);
+        let status = app
+            .state
+            .live_messages
+            .first()
+            .expect("status should be visible");
+        assert_eq!(status.role, "status");
+        assert_eq!(
+            status.content,
+            "Approval pending: choose Approve or Deny when ready"
+        );
+    }
 }

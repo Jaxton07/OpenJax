@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use tui_next::app::{App, FooterMode};
 use tui_next::state::{PendingApproval, PolicyPickerState};
 
@@ -13,8 +11,6 @@ fn make_pending_approval() -> PendingApproval {
         risk_tags: vec![],
         sandbox_backend: None,
         degrade_reason: None,
-        requested_at: Instant::now(),
-        timeout_ms: 300_000,
     }
 }
 
@@ -86,7 +82,7 @@ fn footer_line_contains_correct_policy_label() {
         ("allow", "allow"),
         ("ask", "ask"),
         ("deny", "deny"),
-        ("unknown", "ask"),  // fallback
+        ("unknown", "ask"), // fallback
     ] {
         app.state.policy_default = Some(input.to_string());
         let line = app.footer_line();
@@ -102,7 +98,9 @@ fn footer_line_contains_correct_policy_label() {
 fn policy_picker_lines_highlights_correct_index() {
     let mut app = App::default();
     app.state.policy_picker = Some(PolicyPickerState { selected_index: 2 }); // deny
-    let lines = app.policy_picker_lines().expect("picker lines should exist");
+    let lines = app
+        .policy_picker_lines()
+        .expect("picker lines should exist");
     // 2 header lines + 3 options = 5 lines; option at index 2 is lines[4]
     let strict_line_text: String = lines[4].spans.iter().map(|s| s.content.as_ref()).collect();
     assert!(

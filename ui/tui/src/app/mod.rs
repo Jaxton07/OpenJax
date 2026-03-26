@@ -165,7 +165,7 @@ impl App {
                     });
                 }
                 Some(ApprovalSelection::Later) => {
-                    self.set_live_status("Approval pending: choose Approve or Deny when ready");
+                    self.defer_pending_approval();
                     return None;
                 }
                 None => {
@@ -346,6 +346,12 @@ impl App {
             role: "status",
             content: text.into(),
         }];
+    }
+
+    pub fn defer_pending_approval(&mut self) {
+        self.state.input.clear();
+        self.state.input_cursor = 0;
+        self.set_live_status("Approval pending: choose Approve or Deny when ready");
     }
 
     pub fn set_status_running(&mut self, label: impl Into<String>) {

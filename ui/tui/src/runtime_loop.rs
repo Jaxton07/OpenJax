@@ -231,7 +231,6 @@ pub(crate) async fn handle_submit_action(
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Instant;
 
     use super::handle_submit_action;
     use crate::app::{App, SubmitAction};
@@ -266,8 +265,6 @@ mod tests {
             risk_tags: vec!["write".to_string()],
             sandbox_backend: Some("linux_native".to_string()),
             degrade_reason: None,
-            requested_at: Instant::now(),
-            timeout_ms: 300_000,
         });
         app.state.approval_selection = ApprovalSelection::Deny;
 

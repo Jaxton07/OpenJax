@@ -2,7 +2,6 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
-use std::time::Duration;
 use std::time::Instant;
 use unicode_width::UnicodeWidthStr;
 
@@ -114,8 +113,8 @@ impl App {
         let picker = self.state.policy_picker.as_ref()?;
         let options: [(&str, &str); 3] = [
             ("allow", "Allow all tools without asking"),
-            ("ask",   "Ask before risky operations (default)"),
-            ("deny",  "Deny all risky operations"),
+            ("ask", "Ask before risky operations (default)"),
+            ("deny", "Deny all risky operations"),
         ];
         let mut lines = Vec::new();
         lines.push(Line::from(Span::styled(
@@ -138,10 +137,7 @@ impl App {
             lines.push(Line::from(vec![
                 Span::styled(marker, style),
                 Span::styled(format!("{:<12}", name), style),
-                Span::styled(
-                    desc.to_string(),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(desc.to_string(), Style::default().fg(Color::DarkGray)),
             ]));
         }
         Some(lines)
@@ -342,10 +338,7 @@ impl App {
     ) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         lines.push(Line::from(Span::styled(
-            format!(
-                "Approval Required ({} remaining)",
-                self.approval_remaining_text(pending)
-            ),
+            "Approval Required".to_string(),
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
@@ -408,21 +401,13 @@ impl App {
         };
         Some((action_base + offset).min(total_lines.saturating_sub(1)))
     }
-
-    fn approval_remaining_text(&self, pending: &crate::state::PendingApproval) -> String {
-        let elapsed = pending.requested_at.elapsed();
-        let timeout = Duration::from_millis(pending.timeout_ms);
-        let remaining = timeout.saturating_sub(elapsed);
-        let secs = remaining.as_secs();
-        format!("{:02}:{:02}", secs / 60, secs % 60)
-    }
 }
 
 fn policy_level_display(level: Option<&str>) -> (&'static str, Color) {
     match level {
         Some("allow") => ("allow", Color::Cyan),
-        Some("deny")  => ("deny", Color::Yellow),
-        _             => ("ask", Color::White),
+        Some("deny") => ("deny", Color::Yellow),
+        _ => ("ask", Color::White),
     }
 }
 
