@@ -92,7 +92,7 @@
 
 按"目标状态"中的表格重写 `BUILTIN_CATALOG`：
 - Kimi：`protocol` 改为 `anthropic_messages`，移除 `request_profile: Some("kimi_coding_v1")`（该 profile 是 chat_completions 专用的 User-Agent hack）
-- MiniMax：`base_url` 改为 `https://api.minimax.io/anthropic/v1`，`protocol` 改为 `anthropic_messages`
+- MiniMax：`base_url` 改为 `https://api.minimax.com/anthropic/v1`，`protocol` 改为 `anthropic_messages`
 - GLM：`base_url` 改为 `https://open.bigmodel.cn/api/anthropic`，`protocol` 改为 `anthropic_messages`
 - Anthropic：`base_url` 保持 `https://api.anthropic.com`，确认 `protocol` 为 `anthropic_messages`
 - OpenAI：保持不变
@@ -111,7 +111,7 @@ anthropic-beta: interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025
 
 **4b. 统一 User-Agent**：
 ```
-User-Agent: openjax/{VERSION}
+User-Agent: opencode/{VERSION}
 ```
 所有 provider 统一附加，移除 kimi profile 中的 `KimiCLI/0.77`。
 
@@ -133,7 +133,7 @@ Anthropic 协议不设置 temperature（`None`），由 provider 使用自身默
 仅当 `request_profile` 有明确要求时设置具体值。
 
 **5b. 统一 User-Agent**：
-与 anthropic 客户端一致，附加 `User-Agent: openjax/{VERSION}`。
+与 anthropic 客户端一致，附加 `User-Agent: opencode/{VERSION}`。
 
 **5c. `max_tokens` 始终设置**：
 同 Task 4c，使用 `min(context_window_size, 32000)`。
