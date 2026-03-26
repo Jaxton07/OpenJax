@@ -229,6 +229,7 @@ pub async fn create_provider(
         model_name,
         api_key,
         &payload.provider_type,
+        "chat_completions",
         payload.context_window_size,
     )?;
     Ok(Json(ProviderMutationResponse {
@@ -265,6 +266,7 @@ pub async fn update_provider(
             base_url,
             model_name,
             api_key,
+            "chat_completions",
             payload.context_window_size,
         )?
         .ok_or_else(|| {
@@ -341,6 +343,7 @@ mod tests {
             model_name: "kimi-for-coding".to_string(),
             api_key: "secret".to_string(),
             provider_type: "built_in".to_string(),
+            protocol: "chat_completions".to_string(),
             context_window_size: 256000,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),

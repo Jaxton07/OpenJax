@@ -232,6 +232,7 @@ impl AppState {
         model_name: &str,
         api_key: &str,
         provider_type: &str,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
         let store = self.store.as_ref();
@@ -242,6 +243,7 @@ impl AppState {
             model_name,
             api_key,
             provider_type,
+            protocol,
             context_window_size,
         )
         .map_err(map_store_error)
@@ -254,6 +256,7 @@ impl AppState {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         let store = self.store.as_ref();
@@ -264,6 +267,7 @@ impl AppState {
             base_url,
             model_name,
             api_key,
+            protocol,
             context_window_size,
         )
         .map_err(map_store_error)

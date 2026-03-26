@@ -210,6 +210,7 @@ mod tests {
             model_name: model_name.to_string(),
             api_key: "secret".to_string(),
             provider_type: "built_in".to_string(),
+            protocol: "chat_completions".to_string(),
             context_window_size: 256_000,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
