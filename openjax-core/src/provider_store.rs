@@ -150,18 +150,6 @@ pub fn normalize_model_id(raw: &str) -> String {
     s.trim_matches('_').to_string()
 }
 
-pub fn provider_protocol(base_url: &str, provider_name: &str) -> &'static str {
-    let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
-    if marker.contains("anthropic_messages")
-        || marker.contains("protocol=anthropic")
-        || marker.contains("/v1/messages")
-    {
-        "anthropic_messages"
-    } else {
-        "chat_completions"
-    }
-}
-
 pub fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
     let marker = format!("{base_url} {provider_name}").to_ascii_lowercase();
     if marker.contains("anthropic") || marker.contains("claude") {
@@ -249,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn anthropic_provider_infers_anthropic_profile_without_db_field() {
+    fn anthropic_provider_with_anthropic_messages_protocol_infers_anthropic_profile() {
         let config = build_config_from_providers(
             vec![sample_provider(
                 "Anthropic",
@@ -266,5 +254,25 @@ mod tests {
             .and_then(|model| model.models.get("anthropic"))
             .and_then(|entry| entry.request_profile.as_deref());
         assert_eq!(profile, Some("anthropic_default"));
+    }
+
+    #[test]
+    fn unknown_protocol_leaves_request_profile_empty() {
+        let config = build_config_from_providers(
+            vec![sample_provider(
+                "Custom",
+                "https://api.example.com/v1",
+                "custom-model",
+                "custom_protocol",
+            )],
+            Some("provider_1"),
+        );
+
+        let profile = config
+            .model
+            .as_ref()
+            .and_then(|model| model.models.get("custom"))
+            .and_then(|entry| entry.request_profile.as_deref());
+        assert_eq!(profile, None);
     }
 }

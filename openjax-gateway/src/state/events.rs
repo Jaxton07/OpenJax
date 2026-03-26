@@ -671,7 +671,6 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openjax_core::provider_protocol;
     use std::collections::HashSet;
 
     #[test]
@@ -800,9 +799,4 @@ mod tests {
         assert_eq!(turn_id, Some(7));
     }
 
-    #[test]
-    fn provider_protocol_defaults_to_chat_completions_for_glm_style_base_url() {
-        let protocol = provider_protocol("https://open.bigmodel.cn/api/paas/v4", "glm-main");
-        assert_eq!(protocol, "chat_completions");
-    }
 }
