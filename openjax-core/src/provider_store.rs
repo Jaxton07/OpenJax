@@ -90,9 +90,7 @@ pub fn build_config_from_providers(
                 provider: Some(
                     provider_vendor(&provider.base_url, &provider.provider_name).to_string(),
                 ),
-                protocol: Some(
-                    provider_protocol(&provider.base_url, &provider.provider_name).to_string(),
-                ),
+                protocol: Some(provider.protocol.clone()),
                 model: Some(provider.model_name),
                 base_url: Some(provider.base_url),
                 api_key: Some(provider.api_key),
@@ -178,22 +176,10 @@ pub fn provider_vendor(base_url: &str, provider_name: &str) -> &'static str {
 }
 
 fn infer_request_profile(provider: &ProviderRecord) -> Option<String> {
-    if provider_protocol(&provider.base_url, &provider.provider_name) == "anthropic_messages"
-        || provider_vendor(&provider.base_url, &provider.provider_name) == "anthropic"
-    {
+    if provider.protocol == "anthropic_messages" {
         return Some("anthropic_default".to_string());
     }
-
-    let marker = format!(
-        "{} {} {}",
-        provider.provider_name, provider.base_url, provider.model_name
-    )
-    .to_ascii_lowercase();
-    if marker.contains("kimi") && marker.contains("coding") {
-        Some("kimi_coding_v1".to_string())
-    } else {
-        None
-    }
+    None
 }
 
 #[cfg(test)]
@@ -202,7 +188,12 @@ mod tests {
 
     use super::build_config_from_providers;
 
-    fn sample_provider(provider_name: &str, base_url: &str, model_name: &str) -> ProviderRecord {
+    fn sample_provider(
+        provider_name: &str,
+        base_url: &str,
+        model_name: &str,
+        protocol: &str,
+    ) -> ProviderRecord {
         ProviderRecord {
             provider_id: "provider_1".to_string(),
             provider_name: provider_name.to_string(),
@@ -210,7 +201,7 @@ mod tests {
             model_name: model_name.to_string(),
             api_key: "secret".to_string(),
             provider_type: "built_in".to_string(),
-            protocol: "chat_completions".to_string(),
+            protocol: protocol.to_string(),
             context_window_size: 256_000,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
@@ -218,12 +209,13 @@ mod tests {
     }
 
     #[test]
-    fn kimi_provider_infers_kimi_profile_without_db_field() {
+    fn kimi_provider_infers_anthropic_profile_when_using_anthropic_messages_protocol() {
         let config = build_config_from_providers(
             vec![sample_provider(
                 "Kimi Coding",
                 "https://api.kimi.com/coding/v1",
                 "kimi-for-coding",
+                "anthropic_messages",
             )],
             Some("provider_1"),
         );
@@ -233,7 +225,7 @@ mod tests {
             .as_ref()
             .and_then(|model| model.models.get("kimi_coding"))
             .and_then(|entry| entry.request_profile.as_deref());
-        assert_eq!(profile, Some("kimi_coding_v1"));
+        assert_eq!(profile, Some("anthropic_default"));
     }
 
     #[test]
@@ -243,6 +235,7 @@ mod tests {
                 "OpenAI",
                 "https://api.openai.com/v1",
                 "gpt-4.1-mini",
+                "chat_completions",
             )],
             Some("provider_1"),
         );
@@ -262,6 +255,7 @@ mod tests {
                 "Anthropic",
                 "https://api.anthropic.com",
                 "claude-sonnet-4-6",
+                "anthropic_messages",
             )],
             Some("provider_1"),
         );
