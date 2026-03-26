@@ -254,8 +254,17 @@ async fn degrade_approval_has_escalation_kind() {
         },
     };
 
-    let result = request_degrade_approval(&invocation, "echo test", "none_escalated", "seatbelt unavailable").await;
-    assert!(result.is_ok(), "degrade approval should succeed when handler accepts: {result:?}");
+    let result = request_degrade_approval(
+        &invocation,
+        "echo test",
+        "none_escalated",
+        "seatbelt unavailable",
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "degrade approval should succeed when handler accepts: {result:?}"
+    );
 
     // 检查发出的 ApprovalRequested 事件
     let mut found_kind = None;
@@ -283,10 +292,7 @@ async fn degrade_approval_escalation_from_policy_center() {
     let (tx, mut rx) = unbounded_channel::<Event>();
 
     // 构造一个强制 Escalate 的 policy runtime
-    let runtime = PolicyRuntime::new(PolicyStore::new(
-        DecisionKind::Escalate,
-        vec![],
-    ));
+    let runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Escalate, vec![]));
 
     let invocation = ToolInvocation {
         tool_name: "shell".to_string(),
@@ -308,8 +314,17 @@ async fn degrade_approval_escalation_from_policy_center() {
         },
     };
 
-    let result = request_degrade_approval(&invocation, "echo test", "none_escalated", "backend unavailable").await;
-    assert!(result.is_ok(), "degrade approval should succeed: {result:?}");
+    let result = request_degrade_approval(
+        &invocation,
+        "echo test",
+        "none_escalated",
+        "backend unavailable",
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "degrade approval should succeed: {result:?}"
+    );
 
     let mut found_kind = None;
     while let Ok(event) = rx.try_recv() {
@@ -336,10 +351,7 @@ async fn degrade_approval_denied_by_policy_center() {
 
     let (tx, mut rx) = unbounded_channel::<Event>();
 
-    let runtime = PolicyRuntime::new(PolicyStore::new(
-        DecisionKind::Deny,
-        vec![],
-    ));
+    let runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Deny, vec![]));
 
     let invocation = ToolInvocation {
         tool_name: "shell".to_string(),
@@ -361,15 +373,27 @@ async fn degrade_approval_denied_by_policy_center() {
         },
     };
 
-    let result = request_degrade_approval(&invocation, "echo test", "none_escalated", "backend unavailable").await;
+    let result = request_degrade_approval(
+        &invocation,
+        "echo test",
+        "none_escalated",
+        "backend unavailable",
+    )
+    .await;
     assert!(
         matches!(result, Err(FunctionCallError::Internal(_))),
         "policy Deny should produce Internal error, got: {result:?}"
     );
 
     // 确认没有 ApprovalRequested 事件被发出
-    let has_approval_event = rx.try_recv().map(|e| matches!(e, Event::ApprovalRequested { .. })).unwrap_or(false);
-    assert!(!has_approval_event, "policy Deny should NOT emit ApprovalRequested event");
+    let has_approval_event = rx
+        .try_recv()
+        .map(|e| matches!(e, Event::ApprovalRequested { .. }))
+        .unwrap_or(false);
+    assert!(
+        !has_approval_event,
+        "policy Deny should NOT emit ApprovalRequested event"
+    );
 }
 
 /// 带 destructive 风险标签的 shell 命令（如 rm -rf /tmp/test_dir）经 Policy Center 后，

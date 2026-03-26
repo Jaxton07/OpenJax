@@ -19,7 +19,6 @@ fn shell_default_timeout() -> u64 {
     30_000
 }
 
-
 pub struct ShellCommandHandler;
 
 #[async_trait]

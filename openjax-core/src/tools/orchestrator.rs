@@ -83,27 +83,27 @@ impl ToolOrchestrator {
         }
 
         // 为 shell 工具内联构建 ApprovalContext（提供命令预览和风险标签）
-        let approval_context: Option<ApprovalContext> =
-            if is_shell_like_tool(&invocation.tool_name) {
-                extract_shell_command(&invocation).map(|(cmd, require_escalated)| {
-                    let normalized = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                    let preview = truncate_preview(&normalized, 160);
-                    let risk_tags = extract_shell_risk_tags(&normalized, require_escalated);
-                    ApprovalContext {
-                        tool_name: invocation.tool_name.clone(),
-                        raw_command: Some(cmd.clone()),
-                        normalized_command: Some(normalized),
-                        command_preview: Some(preview),
-                        risk_tags,
-                        reason: policy_center_decision.reason.clone(),
-                        sandbox_backend: None,
-                        degrade_reason: None,
-                        fallback_plan: None,
-                    }
-                })
-            } else {
-                None
-            };
+        let approval_context: Option<ApprovalContext> = if is_shell_like_tool(&invocation.tool_name)
+        {
+            extract_shell_command(&invocation).map(|(cmd, require_escalated)| {
+                let normalized = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
+                let preview = truncate_preview(&normalized, 160);
+                let risk_tags = extract_shell_risk_tags(&normalized, require_escalated);
+                ApprovalContext {
+                    tool_name: invocation.tool_name.clone(),
+                    raw_command: Some(cmd.clone()),
+                    normalized_command: Some(normalized),
+                    command_preview: Some(preview),
+                    risk_tags,
+                    reason: policy_center_decision.reason.clone(),
+                    sandbox_backend: None,
+                    degrade_reason: None,
+                    fallback_plan: None,
+                }
+            })
+        } else {
+            None
+        };
 
         let has_reusable_approval = self.should_reuse_mutating_approval(&invocation, is_mutating);
         let requires_approval = matches!(
