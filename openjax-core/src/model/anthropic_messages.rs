@@ -47,11 +47,6 @@ fn model_stream_debug_enabled() -> bool {
     })
 }
 
-fn is_legacy_glm_chat_base_url(url: &str) -> bool {
-    let normalized = url.trim_end_matches('/').to_ascii_lowercase();
-    normalized.ends_with("/v4") || normalized.contains("/api/coding/paas/")
-}
-
 fn build_messages_endpoint(base_url: &str) -> String {
     let normalized = base_url.trim_end_matches('/');
     if normalized.ends_with("/v1") {
@@ -160,6 +155,18 @@ impl AnthropicMessagesClient {
         )
     }
 
+    pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
+        Self::from_provider_config(
+            config,
+            "OPENJAX_MINIMAX_API_KEY",
+            "OPENJAX_MINIMAX_MODEL",
+            "OPENJAX_MINIMAX_BASE_URL",
+            "MiniMax-M2.7",
+            "https://api.minimax.com/anthropic/v1",
+            "minimax-anthropic-messages",
+        )
+    }
+
     pub(crate) fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
         Self::from_provider_config(
             config,
@@ -201,12 +208,6 @@ impl AnthropicMessagesClient {
             .filter(|v| !v.trim().is_empty());
         let base_url = if let Some(value) = env_base_url {
             value
-        } else if backend_name == "glm-anthropic-messages" {
-            match config_base_url {
-                Some(value) if is_legacy_glm_chat_base_url(&value) => default_base_url.to_string(),
-                Some(value) => value,
-                None => default_base_url.to_string(),
-            }
         } else {
             config_base_url.unwrap_or_else(|| default_base_url.to_string())
         };
@@ -828,7 +829,7 @@ mod tests {
     use super::{
         AnthropicMessagesClient, build_messages_endpoint, extract_content_from_body,
         extract_delta_content_from_body, extract_delta_thinking_from_body,
-        extract_thinking_from_body, is_legacy_glm_chat_base_url,
+        extract_thinking_from_body,
     };
     use crate::model::registry::RegisteredModel;
     use crate::model::types::{CapabilityFlags, ModelRequest, ModelStage};
@@ -894,19 +895,6 @@ mod tests {
 
         let thinking = extract_delta_thinking_from_body(&body);
         assert_eq!(thinking.as_deref(), Some("partial"));
-    }
-
-    #[test]
-    fn detect_legacy_glm_chat_base_url() {
-        assert!(is_legacy_glm_chat_base_url(
-            "https://open.bigmodel.cn/api/coding/paas/v4"
-        ));
-        assert!(is_legacy_glm_chat_base_url(
-            "https://open.bigmodel.cn/api/coding/paas/v4/"
-        ));
-        assert!(!is_legacy_glm_chat_base_url(
-            "https://open.bigmodel.cn/api/anthropic"
-        ));
     }
 
     #[test]

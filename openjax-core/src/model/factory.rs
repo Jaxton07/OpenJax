@@ -51,7 +51,7 @@ pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn M
     }
 
     if adapters.is_empty() {
-        if let Some(client) = ChatCompletionsClient::from_minimax_config(config) {
+        if let Some(client) = AnthropicMessagesClient::from_minimax_config(config) {
             return Box::new(client);
         }
         if let Some(client) = AnthropicMessagesClient::from_anthropic_config(config) {
@@ -61,9 +61,6 @@ pub fn build_model_client_with_config(config: Option<&ModelConfig>) -> Box<dyn M
             return Box::new(client);
         }
         if let Some(client) = ChatCompletionsClient::from_openai_config(config) {
-            return Box::new(client);
-        }
-        if let Some(client) = ChatCompletionsClient::from_glm_config(config) {
             return Box::new(client);
         }
         return Box::new(MissingConfigModelClient::new(

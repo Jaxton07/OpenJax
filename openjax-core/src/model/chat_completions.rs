@@ -98,18 +98,6 @@ impl ChatCompletionsClient {
         }))
     }
 
-    pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
-        Self::from_provider_config(
-            config,
-            "OPENJAX_MINIMAX_API_KEY",
-            "OPENJAX_MINIMAX_MODEL",
-            "OPENJAX_MINIMAX_BASE_URL",
-            "codex-MiniMax-M2.1",
-            "https://api.minimaxi.com/v1",
-            "minimax-chat-completions",
-        )
-    }
-
     pub(crate) fn from_openai_config(config: Option<&ModelConfig>) -> Option<Self> {
         Self::from_provider_config(
             config,
@@ -119,18 +107,6 @@ impl ChatCompletionsClient {
             "gpt-4.1-mini",
             "https://api.openai.com/v1",
             "openai-chat-completions",
-        )
-    }
-
-    pub(crate) fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
-        Self::from_provider_config(
-            config,
-            "OPENJAX_GLM_API_KEY",
-            "OPENJAX_GLM_MODEL",
-            "OPENJAX_GLM_BASE_URL",
-            "GLM-4.7",
-            "https://open.bigmodel.cn/api/coding/paas/v4",
-            "glm-chat-completions",
         )
     }
 
@@ -233,8 +209,6 @@ impl ChatCompletionsClient {
 fn default_api_key_for_provider(provider: &str) -> Option<String> {
     let key = match provider {
         "kimi" => "OPENJAX_KIMI_API_KEY",
-        "minimax" => "OPENJAX_MINIMAX_API_KEY",
-        "glm" => "OPENJAX_GLM_API_KEY",
         _ => "OPENAI_API_KEY",
     };
     std::env::var(key).ok().filter(|v| !v.trim().is_empty())
@@ -243,8 +217,6 @@ fn default_api_key_for_provider(provider: &str) -> Option<String> {
 fn default_base_url_for_provider(provider: &str) -> &'static str {
     match provider {
         "kimi" => "https://api.kimi.com/coding/v1",
-        "minimax" => "https://api.minimaxi.com/v1",
-        "glm" => "https://open.bigmodel.cn/api/coding/paas/v4",
         _ => "https://api.openai.com/v1",
     }
 }
