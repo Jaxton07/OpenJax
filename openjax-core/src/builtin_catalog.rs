@@ -89,8 +89,8 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
     CatalogProvider {
         catalog_key: "glm_coding",
         display_name: "GLM Coding",
-        base_url: "https://open.bigmodel.cn/api/coding/paas/v4",
-        protocol: "chat_completions",
+        base_url: "https://open.bigmodel.cn/api/anthropic",
+        protocol: "anthropic_messages",
         request_profile: None,
         default_model: "glm-4.7",
         models: &[CatalogModel {
@@ -103,8 +103,8 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
         catalog_key: "kimi_coding",
         display_name: "Kimi Coding",
         base_url: "https://api.kimi.com/coding/v1",
-        protocol: "chat_completions",
-        request_profile: Some("kimi_coding_v1"),
+        protocol: "anthropic_messages",
+        request_profile: None,
         default_model: "kimi-for-coding",
         models: &[CatalogModel {
             model_id: "kimi-for-coding",
@@ -115,8 +115,8 @@ pub static BUILTIN_CATALOG: &[CatalogProvider] = &[
     CatalogProvider {
         catalog_key: "minimax_coding",
         display_name: "MiniMax Coding",
-        base_url: "https://api.minimaxi.com/v1",
-        protocol: "chat_completions",
+        base_url: "https://api.minimax.com/anthropic/v1",
+        protocol: "anthropic_messages",
         request_profile: None,
         default_model: "MiniMax-M2.7",
         models: &[CatalogModel {
