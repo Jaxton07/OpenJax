@@ -213,7 +213,6 @@ export class GatewayClient {
         base_url: payload.baseUrl,
         model_name: payload.modelName,
         api_key: payload.apiKey,
-        provider_type: payload.providerType,
         protocol: payload.protocol,
         context_window_size: payload.contextWindowSize
       })

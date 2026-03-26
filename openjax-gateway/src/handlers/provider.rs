@@ -423,4 +423,26 @@ mod tests {
         let err = serde_json::from_value::<UpdateProviderRequest>(payload).expect_err("must fail");
         assert!(err.to_string().contains("unknown field `request_profile`"));
     }
+
+    #[test]
+    fn create_provider_request_accepts_protocol_field() {
+        let payload_with_protocol = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "api_key": "secret",
+            "protocol": "anthropic_messages"
+        });
+        let _req = serde_json::from_value::<CreateProviderRequest>(payload_with_protocol)
+            .expect("must succeed");
+
+        let payload_default = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "api_key": "secret"
+        });
+        let _req_default = serde_json::from_value::<CreateProviderRequest>(payload_default)
+            .expect("must succeed with default protocol");
+    }
 }

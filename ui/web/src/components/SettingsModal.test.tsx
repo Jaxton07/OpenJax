@@ -13,7 +13,7 @@ const providerItem = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
   provider_type: "custom" as const,
-  protocol: "chat_completions",
+  protocol: "chat_completions" as const,
   context_window_size: 128000
 };
 

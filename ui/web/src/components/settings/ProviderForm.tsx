@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CatalogModel } from "../../types/gateway";
+import type { CatalogModel, ProviderProtocol } from "../../types/gateway";
 
 interface ProviderFormValue {
   providerName: string;
@@ -7,7 +7,7 @@ interface ProviderFormValue {
   modelName: string;
   apiKey: string;
   providerType: "built_in" | "custom";
-  protocol: string;
+  protocol: ProviderProtocol;
   contextWindowSize: number;
   catalogModels?: CatalogModel[];
 }
@@ -171,7 +171,7 @@ export default function ProviderForm(props: ProviderFormProps) {
           协议
           <select
             value={draft.protocol}
-            onChange={(e) => setDraft((p) => ({ ...p, protocol: e.target.value }))}
+            onChange={(e) => setDraft((p) => ({ ...p, protocol: e.target.value as ProviderProtocol }))}
           >
             <option value="chat_completions">OpenAI Compatible</option>
             <option value="anthropic_messages">Anthropic Compatible (Claude / Kimi / MiniMax / GLM)</option>
