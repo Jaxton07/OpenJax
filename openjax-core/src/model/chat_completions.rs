@@ -206,19 +206,13 @@ impl ChatCompletionsClient {
     }
 }
 
-fn default_api_key_for_provider(provider: &str) -> Option<String> {
-    let key = match provider {
-        "kimi" => "OPENJAX_KIMI_API_KEY",
-        _ => "OPENAI_API_KEY",
-    };
+fn default_api_key_for_provider(_provider: &str) -> Option<String> {
+    let key = "OPENAI_API_KEY";
     std::env::var(key).ok().filter(|v| !v.trim().is_empty())
 }
 
-fn default_base_url_for_provider(provider: &str) -> &'static str {
-    match provider {
-        "kimi" => "https://api.kimi.com/coding/v1",
-        _ => "https://api.openai.com/v1",
-    }
+fn default_base_url_for_provider(_provider: &str) -> &'static str {
+    "https://api.openai.com/v1"
 }
 
 fn response_snippet(body: &str) -> String {
