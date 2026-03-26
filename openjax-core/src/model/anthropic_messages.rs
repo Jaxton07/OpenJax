@@ -278,7 +278,7 @@ impl AnthropicMessagesClient {
                 "anthropic-beta",
                 "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
             )
-            .header("User-Agent", "opencode/0.1.0")
+            .header("User-Agent", concat!("openjax/", env!("CARGO_PKG_VERSION")))
     }
 }
 
@@ -964,6 +964,21 @@ mod tests {
                 .get("anthropic-version")
                 .and_then(|value| value.to_str().ok()),
             Some("2023-06-01")
+        );
+        assert_eq!(
+            http_request
+                .headers()
+                .get("anthropic-beta")
+                .and_then(|v| v.to_str().ok()),
+            Some("interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14")
+        );
+        let expected_ua = concat!("openjax/", env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            http_request
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok()),
+            Some(expected_ua)
         );
     }
 
