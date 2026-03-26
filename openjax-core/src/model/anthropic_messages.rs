@@ -261,8 +261,8 @@ impl AnthropicMessagesClient {
                 role: "user".to_string(),
                 content: request.user_input.to_string(),
             }],
-            max_tokens: request.options.max_output_tokens.unwrap_or(4096),
-            temperature: Some(0.2),
+            max_tokens: request.options.max_output_tokens.unwrap_or(32000),
+            temperature: None,
             stream: stream.then_some(true),
             thinking,
         }
@@ -274,6 +274,11 @@ impl AnthropicMessagesClient {
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", &self.anthropic_version)
             .header("accept", accept)
+            .header(
+                "anthropic-beta",
+                "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+            )
+            .header("User-Agent", "opencode/0.1.0")
     }
 }
 
@@ -950,8 +955,8 @@ mod tests {
             .build()
             .expect("build request");
 
-        assert_eq!(req.max_tokens, 4096);
-        assert_eq!(req.temperature, Some(0.2));
+        assert_eq!(req.max_tokens, 32000);
+        assert_eq!(req.temperature, None);
         assert_eq!(req.stream, Some(true));
         assert_eq!(
             http_request
