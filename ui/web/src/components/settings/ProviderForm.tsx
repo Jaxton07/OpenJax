@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CatalogModel, ProviderProtocol } from "../../types/gateway";
+import { EyeOpenIcon, EyeOffIcon } from "../../pic/icon/index";
 
 interface ProviderFormValue {
   providerName: string;
@@ -191,13 +192,12 @@ export default function ProviderForm(props: ProviderFormProps) {
           />
           <button
             type="button"
-            className="btn-ghost provider-key-toggle"
+            className="provider-key-toggle"
             onClick={() => setShowApiKey((v) => !v)}
           >
-            {showApiKey ? "隐藏" : "显示"}
+            {showApiKey ? <EyeOffIcon width={18} height={18} /> : <EyeOpenIcon width={18} height={18} />}
           </button>
         </div>
-        {props.mode === "edit" && <span className="field-tip">留空将保持现有 API Key。</span>}
       </label>
 
       <div className="provider-form-actions">
