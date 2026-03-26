@@ -53,7 +53,8 @@ struct StreamOptions {
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
-    temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -201,8 +202,8 @@ impl ChatCompletionsClient {
                     content: request.user_input.to_string(),
                 },
             ],
-            temperature: 0.2,
-            max_tokens: self.profile.resolve_max_tokens(request),
+            temperature: None,
+            max_tokens: self.profile.resolve_max_tokens(request).or(Some(32000)),
             stream: stream.then_some(true),
             stream_options: if stream && self.profile.include_stream_options() {
                 Some(StreamOptions {
@@ -219,7 +220,8 @@ impl ChatCompletionsClient {
             .client
             .post(&self.endpoint)
             .bearer_auth(&self.api_key)
-            .header("accept", accept);
+            .header("accept", accept)
+            .header("User-Agent", concat!("openjax/", env!("CARGO_PKG_VERSION")));
         if let Some(user_agent) = self.profile.user_agent() {
             builder.header("User-Agent", user_agent)
         } else {
@@ -836,7 +838,7 @@ mod tests {
 
         let stream = client.build_request(&request, true);
 
-        assert!(stream.max_tokens.is_none());
+        assert_eq!(stream.max_tokens, Some(32000));
         assert!(stream.stream_options.is_some());
     }
 
@@ -860,7 +862,7 @@ mod tests {
                 .headers()
                 .get("user-agent")
                 .and_then(|value| value.to_str().ok()),
-            Some("KimiCLI/0.77")
+            Some(concat!("openjax/", env!("CARGO_PKG_VERSION")))
         );
     }
 
