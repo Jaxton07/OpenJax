@@ -9,7 +9,8 @@ export function shouldCloseReasoningOnEvent(event: StreamEvent): boolean {
     event.type === "tool_batch_completed" ||
     event.type === "response_completed" ||
     event.type === "response_error" ||
-    event.type === "turn_completed"
+    event.type === "turn_completed" ||
+    event.type === "turn_interrupted"
   );
 }
 
