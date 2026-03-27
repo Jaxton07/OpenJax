@@ -4,6 +4,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use openjax_core::Config;
+use openjax_policy::overlay::SessionOverlay;
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::store::PolicyStore;
 use openjax_protocol::Event;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
@@ -355,17 +358,36 @@ pub async fn run_turn_task(
     turn_id_tx: oneshot::Sender<Result<String, ApiError>>,
 ) {
     let (event_sink_tx, mut event_sink_rx) = mpsc::unbounded_channel();
+    let (policy_level_override, overlay_rules, agent) = {
+        let guard = session_runtime.lock().await;
+        (
+            guard.policy_level_override.clone(),
+            guard.policy_overlay_rules.clone(),
+            guard.agent.clone(),
+        )
+    };
     let policy_runtime = {
         let policy_state = gateway_policy_state(&app_state.store);
         let guard = match policy_state.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        guard.runtime.clone()
-    };
-    let agent = {
-        let guard = session_runtime.lock().await;
-        guard.agent.clone()
+        if let Some(override_decision) = policy_level_override {
+            // User explicitly set a policy level for this session.
+            // Build an independent runtime so the gateway global default (Ask)
+            // does not overwrite the user's choice on every turn.
+            let store = PolicyStore::new(override_decision, vec![]);
+            let fresh = PolicyRuntime::new(store);
+            if !overlay_rules.is_empty() {
+                fresh.set_session_overlay(
+                    &session_id,
+                    SessionOverlay::new(overlay_rules),
+                );
+            }
+            fresh
+        } else {
+            guard.runtime.clone()
+        }
     };
     let session_id_for_core = session_id.clone();
 

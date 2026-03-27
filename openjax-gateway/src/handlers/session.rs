@@ -601,16 +601,15 @@ pub async fn get_policy_level(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
 ) -> Result<Json<GetPolicyLevelResponse>, ApiError> {
-    let agent_arc = {
-        let session_runtime = state.get_session(&session_id).await?;
+    let session_runtime = state.get_session(&session_id).await?;
+    let level = {
         let session = session_runtime.lock().await;
-        session.agent.clone()
+        session
+            .policy_level_override
+            .as_ref()
+            .map(|d| d.as_str().to_string())
+            .unwrap_or_else(|| "ask".to_string())
     };
-    let level = agent_arc
-        .lock()
-        .await
-        .policy_default_decision_name()
-        .to_string();
     Ok(Json(GetPolicyLevelResponse { session_id, level }))
 }
 
@@ -630,13 +629,12 @@ pub async fn set_policy_level(
         )
     })?;
 
-    // Take Arc to agent (releasing session map lock before locking agent)
-    let agent_arc = {
-        let session_runtime = state.get_session(&session_id).await?;
-        let session = session_runtime.lock().await;
-        session.agent.clone()
-    };
-    agent_arc.lock().await.set_policy_level(level);
+    let session_runtime = state.get_session(&session_id).await?;
+    // Save override on session so run_turn_task picks it up on next turn
+    {
+        let mut session = session_runtime.lock().await;
+        session.policy_level_override = Some(level.to_decision_kind());
+    }
 
     Ok(Json(SetPolicyLevelResponse {
         level: level.as_str().to_string(),

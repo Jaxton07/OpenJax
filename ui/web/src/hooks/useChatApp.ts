@@ -598,13 +598,24 @@ export function useChatApp() {
     }
     try {
       await withAuthRetry(() => client.abortTurn(state.activeSessionId!));
-      // 乐观更新：abort 请求成功后立即将 turnPhase 置为 completed，
-      // 不等待 SSE 的 turn_interrupted 事件，避免按钮状态延迟恢复
+      // 乐观更新：abort 请求成功后立即将 turnPhase 置为 completed 并关闭
+      // 进行中的 reasoning block，不等待 SSE 的 turn_interrupted 事件
       setState((prev) => {
         if (!prev.activeSessionId) return prev;
         const sessions = prev.sessions.map((s) => {
           if (s.id !== prev.activeSessionId || s.turnPhase !== "streaming") return s;
-          return { ...s, turnPhase: "completed" as const };
+          const turnId =
+            s.streaming?.turnId ??
+            s.messages.find(
+              (m) => m.role === "assistant" && m.reasoningBlocks?.some((b) => !b.closed)
+            )?.turnId;
+          const withClosedReasoning = closeOpenReasoningBlockInSession(
+            s,
+            turnId,
+            undefined,
+            new Date().toISOString()
+          );
+          return { ...withClosedReasoning, turnPhase: "completed" as const };
         });
         return { ...prev, sessions };
       });

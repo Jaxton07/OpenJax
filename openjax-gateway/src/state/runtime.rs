@@ -8,7 +8,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
 use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, Config, approval_timeout_ms_from_env};
-use openjax_policy::schema::PolicyRule;
+use openjax_policy::schema::{DecisionKind, PolicyRule};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, broadcast, oneshot};
@@ -116,6 +116,7 @@ pub struct SessionRuntime {
     pub approval_handler: Arc<GatewayApprovalHandler>,
     pub active_provider_id: Option<String>,
     pub policy_overlay_rules: Vec<PolicyRule>,
+    pub policy_level_override: Option<DecisionKind>,
     pub status: SessionStatus,
     pub turns: HashMap<String, TurnRuntime>,
     pub core_turn_to_public: HashMap<u64, String>,
@@ -144,6 +145,7 @@ impl SessionRuntime {
             approval_handler,
             active_provider_id: None,
             policy_overlay_rules: Vec::new(),
+            policy_level_override: None,
             status: SessionStatus::Active,
             turns: HashMap::new(),
             core_turn_to_public: HashMap::new(),
@@ -168,6 +170,7 @@ impl SessionRuntime {
         self.approval_handler = approval_handler;
         self.active_provider_id = None;
         self.policy_overlay_rules.clear();
+        self.policy_level_override = None;
         self.status = SessionStatus::Active;
         self.turns.clear();
         self.core_turn_to_public.clear();
@@ -187,6 +190,7 @@ impl SessionRuntime {
         self.agent = Arc::new(Mutex::new(agent));
         self.approval_handler = approval_handler;
         self.policy_overlay_rules.clear();
+        self.policy_level_override = None;
         self.status = SessionStatus::Active;
         self.turns.clear();
         self.core_turn_to_public.clear();
