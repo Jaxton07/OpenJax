@@ -176,6 +176,7 @@ mod tests {
 
     #[test]
     fn workspace_overrides_user_for_same_skill_name() {
+        let _guard = crate::slash_commands::registry::DYNAMIC_COMMANDS_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().expect("tempdir");
         let home = tmp.path().join("home");
         fs::create_dir_all(home.join(".openjax/skills/dup")).expect("create user skill");
@@ -192,6 +193,7 @@ mod tests {
 
     #[test]
     fn ignores_folders_without_skill_manifest() {
+        let _guard = crate::slash_commands::registry::DYNAMIC_COMMANDS_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path().join("home/.openjax/skills");
         fs::create_dir_all(root.join("no_manifest")).expect("create skill dir");
@@ -201,6 +203,7 @@ mod tests {
 
     #[test]
     fn default_slash_command_uses_directory_name() {
+        let _guard = crate::slash_commands::registry::DYNAMIC_COMMANDS_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path().join("home/.openjax/skills");
         fs::create_dir_all(root.join("my-skill")).expect("create skill dir");
@@ -218,6 +221,7 @@ mod tests {
 
     #[test]
     fn slash_command_with_leading_slash_is_normalized() {
+        let _guard = crate::slash_commands::registry::DYNAMIC_COMMANDS_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path().join("home/.openjax/skills");
         fs::create_dir_all(root.join("skill-a")).expect("create skill dir");
@@ -235,6 +239,7 @@ mod tests {
 
     #[test]
     fn slash_command_conflicting_with_builtin_alias_is_ignored() {
+        let _guard = crate::slash_commands::registry::DYNAMIC_COMMANDS_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path().join("home/.openjax/skills");
         fs::create_dir_all(root.join("bad-skill")).expect("create skill dir");
