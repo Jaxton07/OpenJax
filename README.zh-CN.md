@@ -34,12 +34,20 @@
 
 OpenJax 追求的是安全可控、轻量易部署的自动化，而不是放任式自动执行。
 
+## Web UI 截图
+
+![Web UI 首页](docs/assets/screenshots/web-ui/webui_demo1.gif)
+
+## TUI 截图
+
+![Rust TUI](docs/assets/screenshots/tui/tui_demo1.gif)
+
 ## 目录
 
 - [核心能力](#核心能力)
 - [为什么选择 OpenJax](#为什么选择-openjax)
-- [快速开始](#快速开始)
 - [Web UI 截图](#web-ui-截图)
+- [快速开始](#快速开始)
 - [安装方式](#安装方式)
 - [配置项](#配置项)
 - [架构概览](#架构概览)
@@ -94,14 +102,6 @@ LLM Provider 和 API Key 在启动后通过 **Web UI 设置页面** 配置。本
 tui_next
 ```
 
-## Web UI 截图
-
-![Web UI 首页](docs/assets/screenshots/web-ui/chat_page_01.png)
-![Web UI 会话页](docs/assets/screenshots/web-ui/chat_page_02.png)
-
-## TUI 截图
-
-![Rust TUI](docs/assets/screenshots/tui/openjax_tui.png)
 
 ## 安装方式
 

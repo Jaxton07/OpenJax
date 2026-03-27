@@ -34,12 +34,20 @@
 
 OpenJax prioritizes secure, controllable, and lightweight automation, not just aggressive autonomy.
 
+## Web UI Screenshots
+
+![Web UI Home](docs/assets/screenshots/web-ui/webui_demo1.gif)
+
+## TUI Screenshots
+
+![Rust TUI](docs/assets/screenshots/tui/tui_demo1.gif)
+
 ## Contents
 
 - [Highlights](#highlights)
 - [Why OpenJax](#why-openjax)
-- [Quick Start](#quick-start)
 - [Web UI Screenshots](#web-ui-screenshots)
+- [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
@@ -94,14 +102,6 @@ If you prefer terminal interaction after install:
 tui_next
 ```
 
-## Web UI Screenshots
-
-![Web UI Home](docs/assets/screenshots/web-ui/chat_page_01.png)
-![Web UI Session](docs/assets/screenshots/web-ui/chat_page_02.png)
-
-## TUI Screenshots
-
-![Rust TUI](docs/assets/screenshots/tui/openjax_tui.png)
 
 ## Installation
 
