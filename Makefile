@@ -78,14 +78,14 @@ build-web-release:
 	(cd ui/web && pnpm build)
 
 build-release-mac:
-	$(CARGO) build --release --locked -p tui_next -p openjaxd -p openjax-gateway
+	$(CARGO) build --release --locked -p tui_next -p openjaxd -p openjax-gateway -p openjax-cli
 
 package-mac:
 	$(MAKE) build-web-release
 	bash scripts/release/package_macos.sh
 
 build-release-linux:
-	$(CARGO) build --release --locked -p tui_next -p openjaxd -p openjax-gateway
+	$(CARGO) build --release --locked -p tui_next -p openjaxd -p openjax-gateway -p openjax-cli
 
 package-linux:
 	$(MAKE) build-web-release
@@ -118,7 +118,7 @@ uninstall-local:
 	fi
 
 install-source:
-	$(CARGO) build --release --locked -p tui_next -p openjaxd -p openjax-gateway
+	$(CARGO) build --release --locked -p tui_next -p openjaxd -p openjax-gateway -p openjax-cli
 	@if ! command -v pnpm >/dev/null 2>&1; then \
 		echo "[install-source] missing pnpm for web build"; \
 		exit 1; \
@@ -133,8 +133,9 @@ install-source:
 	cp target/release/tui_next "$(PREFIX)/bin/tui_next"
 	cp target/release/openjaxd "$(PREFIX)/bin/openjaxd"
 	cp target/release/openjax-gateway "$(PREFIX)/bin/openjax-gateway"
+	cp target/release/openjax "$(PREFIX)/bin/openjax"
 	cp -R ui/web/dist/. "$(PREFIX)/web/"
-	chmod +x "$(PREFIX)/bin/tui_next" "$(PREFIX)/bin/openjaxd" "$(PREFIX)/bin/openjax-gateway"
+	chmod +x "$(PREFIX)/bin/tui_next" "$(PREFIX)/bin/openjaxd" "$(PREFIX)/bin/openjax-gateway" "$(PREFIX)/bin/openjax"
 	@echo "Installed to $(PREFIX)/bin"
 	@echo "Web assets installed to $(PREFIX)/web"
 	@echo "If needed: export PATH=\"$(PREFIX)/bin:\$$PATH\""

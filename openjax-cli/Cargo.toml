@@ -1,0 +1,24 @@
+[package]
+name = "openjax-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenJax CLI — manage and update your OpenJax installation"
+
+[[bin]]
+name = "openjax"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+dirs.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+flate2 = "1"
+sha2 = "0.10"
+tar = "0.4"

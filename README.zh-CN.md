@@ -144,7 +144,13 @@ tui_next
 升级到最新版本：
 
 ```bash
-bash scripts/release/upgrade.sh --yes
+openjax update
+```
+
+升级到指定版本：
+
+```bash
+openjax update --version 1.2.3
 ```
 
 Linux/macOS 的打包命令与完整部署说明见 [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)。
