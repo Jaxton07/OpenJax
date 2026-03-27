@@ -144,7 +144,13 @@ Web runtime is included in the package (`~/.local/openjax/web`) and served by `o
 Upgrade to the latest release:
 
 ```bash
-bash scripts/release/upgrade.sh --yes
+openjax update
+```
+
+To target a specific version:
+
+```bash
+openjax update --version 1.2.3
 ```
 
 For Linux/macOS package commands and full deployment flow, see [docs/deployment.md](docs/deployment.md).

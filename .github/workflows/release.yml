@@ -67,6 +67,7 @@ jobs:
           test -x "$PREFIX/bin/tui_next"
           test -x "$PREFIX/bin/openjaxd"
           test -x "$PREFIX/bin/openjax-gateway"
+          test -x "$PREFIX/bin/openjax"
           test -f "$PREFIX/web/index.html"
           GATEWAY_BIND="127.0.0.1:18765"
           OPENJAX_GATEWAY_BIND="$GATEWAY_BIND" "$PREFIX/bin/openjax-gateway" >/tmp/openjax-gateway.log 2>&1 &

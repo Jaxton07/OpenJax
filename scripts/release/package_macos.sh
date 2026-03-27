@@ -24,7 +24,7 @@ if [[ -z "${VERSION}" ]]; then
   exit 1
 fi
 
-for bin in tui_next openjaxd openjax-gateway; do
+for bin in tui_next openjaxd openjax-gateway openjax; do
   if [[ ! -f "${TARGET_DIR}/${bin}" ]]; then
     echo "[package] error: missing binary ${TARGET_DIR}/${bin}. run: make build-release-mac"
     exit 1
@@ -46,12 +46,13 @@ mkdir -p "${STAGE_DIR}/web"
 cp "${TARGET_DIR}/tui_next" "${STAGE_DIR}/bin/tui_next"
 cp "${TARGET_DIR}/openjaxd" "${STAGE_DIR}/bin/openjaxd"
 cp "${TARGET_DIR}/openjax-gateway" "${STAGE_DIR}/bin/openjax-gateway"
+cp "${TARGET_DIR}/openjax" "${STAGE_DIR}/bin/openjax"
 cp -R "${WEB_DIST_DIR}/." "${STAGE_DIR}/web/"
 cp "${SCRIPT_DIR}/install.sh" "${STAGE_DIR}/install.sh"
 cp "${SCRIPT_DIR}/uninstall.sh" "${STAGE_DIR}/uninstall.sh"
 cp "${SCRIPT_DIR}/README-install.md" "${STAGE_DIR}/README-install.md"
 
-chmod +x "${STAGE_DIR}/bin/tui_next" "${STAGE_DIR}/bin/openjaxd" "${STAGE_DIR}/bin/openjax-gateway"
+chmod +x "${STAGE_DIR}/bin/tui_next" "${STAGE_DIR}/bin/openjaxd" "${STAGE_DIR}/bin/openjax-gateway" "${STAGE_DIR}/bin/openjax"
 chmod +x "${STAGE_DIR}/install.sh" "${STAGE_DIR}/uninstall.sh"
 
 mkdir -p "${DIST_DIR}"

@@ -75,8 +75,9 @@ mkdir -p "${PREFIX}/web"
 cp "${BIN_SRC_DIR}/tui_next" "${PREFIX}/bin/tui_next"
 cp "${BIN_SRC_DIR}/openjaxd" "${PREFIX}/bin/openjaxd"
 cp "${BIN_SRC_DIR}/openjax-gateway" "${PREFIX}/bin/openjax-gateway"
+cp "${BIN_SRC_DIR}/openjax" "${PREFIX}/bin/openjax"
 cp -R "${WEB_SRC_DIR}/." "${PREFIX}/web/"
-chmod +x "${PREFIX}/bin/tui_next" "${PREFIX}/bin/openjaxd" "${PREFIX}/bin/openjax-gateway"
+chmod +x "${PREFIX}/bin/tui_next" "${PREFIX}/bin/openjaxd" "${PREFIX}/bin/openjax-gateway" "${PREFIX}/bin/openjax"
 
 echo "[install] done: ${PREFIX}/bin"
 
@@ -121,7 +122,9 @@ else
 fi
 
 echo "[install] run checks:"
+echo "  ${PREFIX}/bin/openjax --version"
 echo "  ${PREFIX}/bin/tui_next --help"
 echo "  ${PREFIX}/bin/openjaxd --help"
 echo "  ${PREFIX}/bin/openjax-gateway --help"
 echo "[install] gateway serves web from: ${PREFIX}/web"
+echo "[install] to update in future: openjax update"

@@ -202,6 +202,13 @@ pub fn register_skill_command(
     Ok(())
 }
 
+/// Test-only mutex that must be held by any test touching DYNAMIC_SKILL_COMMANDS.
+/// Prevents race conditions caused by discover_registry clearing global state while
+/// another test is between its clear and its find/assertion.
+#[cfg(test)]
+pub(crate) static DYNAMIC_COMMANDS_TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,6 +301,7 @@ mod tests {
 
     #[test]
     fn test_register_skill_command_rejects_reserved_name_or_alias() {
+        let _guard = DYNAMIC_COMMANDS_TEST_LOCK.lock().unwrap();
         SlashCommandRegistry::clear_dynamic_commands();
         assert_eq!(
             register_skill_command("help", "desc"),
