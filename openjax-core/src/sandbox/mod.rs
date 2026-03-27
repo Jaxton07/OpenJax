@@ -46,10 +46,14 @@ pub async fn execute_shell(
     // 用于降级审批（degrade approval）是否需要触发的判断。
     // - 有写/网络能力 → AskApproval
     // - 只读命令 → Allow
-    let shell_trace_decision = if shell_capabilities
-        .iter()
-        .any(|cap| matches!(cap, self::policy::SandboxCapability::FsWrite | self::policy::SandboxCapability::EnvWrite | self::policy::SandboxCapability::Network))
-    {
+    let shell_trace_decision = if shell_capabilities.iter().any(|cap| {
+        matches!(
+            cap,
+            self::policy::SandboxCapability::FsWrite
+                | self::policy::SandboxCapability::EnvWrite
+                | self::policy::SandboxCapability::Network
+        )
+    }) {
         PolicyDecision::AskApproval
     } else {
         PolicyDecision::Allow
@@ -268,7 +272,6 @@ fn evaluate_runtime_status(output: &runtime::SandboxExecutionResult) -> (bool, O
 
     (true, None)
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,7 @@
 export type OutputMode = "sse" | "polling";
 
+export type ProviderProtocol = "chat_completions" | "anthropic_messages";
+
 export interface AppSettings {
   baseUrl: string;
   outputMode: OutputMode;
@@ -16,6 +18,7 @@ export interface LlmProvider {
   created_at: string;
   updated_at: string;
   provider_type: "built_in" | "custom";
+  protocol: ProviderProtocol;
   context_window_size: number;
 }
 
@@ -29,7 +32,7 @@ export interface CatalogProvider {
   catalog_key: string;
   display_name: string;
   base_url: string;
-  protocol: string;
+  protocol: ProviderProtocol;
   default_model: string;
   models: CatalogModel[];
 }
@@ -129,7 +132,7 @@ export interface TurnStatusResponse {
 export interface SessionActionResponse {
   request_id: string;
   session_id: string;
-  status: "cleared" | "shutdown" | "resolved";
+  status: "cleared" | "shutdown" | "resolved" | "compacted" | "aborted";
   approval_id?: string;
   timestamp: string;
 }
@@ -225,6 +228,7 @@ export interface StreamEvent {
     | "approval_resolved"
     | "context_usage_updated"
     | "turn_completed"
+    | "turn_interrupted"
     | "session_shutdown"
     | "error";
   payload: Record<string, unknown>;

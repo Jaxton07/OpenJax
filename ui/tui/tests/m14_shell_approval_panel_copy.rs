@@ -2,7 +2,7 @@ use openjax_protocol::Event;
 use tui_next::app::App;
 
 #[test]
-fn shell_approval_panel_uses_compact_english_copy_with_countdown() {
+fn shell_approval_panel_uses_compact_english_copy() {
     let mut app = App::default();
     app.apply_core_event(Event::ApprovalRequested {
         turn_id: 1,
@@ -25,7 +25,7 @@ fn shell_approval_panel_uses_compact_english_copy_with_countdown() {
         .map(|l| l.to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("Approval Required ("));
+    assert!(text.contains("Approval Required"));
     assert!(text.contains("Command: ps aux --sort=-%cpu | head -10"));
     assert!(text.contains("Reason: Sandbox denied execution; fallback needs approval"));
     assert!(text.contains("Approve and run without sandbox"));

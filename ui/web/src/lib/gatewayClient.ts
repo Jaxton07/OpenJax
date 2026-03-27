@@ -150,6 +150,12 @@ export class GatewayClient {
     });
   }
 
+  async abortTurn(sessionId: string): Promise<void> {
+    await this.request(`/api/v1/sessions/${sessionId}:abort`, {
+      method: "POST"
+    });
+  }
+
   async shutdownSession(sessionId: string): Promise<SessionActionResponse> {
     return this.request(`/api/v1/sessions/${sessionId}`, {
       method: "DELETE"
@@ -177,6 +183,7 @@ export class GatewayClient {
     modelName: string;
     apiKey: string;
     providerType?: "built_in" | "custom";
+    protocol?: string;
     contextWindowSize?: number;
   }): Promise<ProviderMutationResponse> {
     return this.request("/api/v1/providers", {
@@ -187,6 +194,7 @@ export class GatewayClient {
         model_name: payload.modelName,
         api_key: payload.apiKey,
         provider_type: payload.providerType,
+        protocol: payload.protocol,
         context_window_size: payload.contextWindowSize
       })
     });
@@ -200,6 +208,7 @@ export class GatewayClient {
         modelName: string;
         apiKey?: string;
         providerType?: "built_in" | "custom";
+        protocol?: string;
         contextWindowSize?: number;
       }
   ): Promise<ProviderMutationResponse> {
@@ -210,7 +219,7 @@ export class GatewayClient {
         base_url: payload.baseUrl,
         model_name: payload.modelName,
         api_key: payload.apiKey,
-        provider_type: payload.providerType,
+        protocol: payload.protocol,
         context_window_size: payload.contextWindowSize
       })
     });

@@ -264,7 +264,10 @@ pub fn preferred_backend(policy: crate::tools::context::SandboxPolicy) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::{PolicyDecision, SandboxCapability, detect_capabilities, evaluate_tool_invocation_policy, extract_shell_risk_tags};
+    use super::{
+        PolicyDecision, SandboxCapability, detect_capabilities, evaluate_tool_invocation_policy,
+        extract_shell_risk_tags,
+    };
     use std::sync::Arc;
 
     use crate::approval::StdinApprovalHandler;

@@ -864,10 +864,7 @@ async fn create_session_for_test(app: &axum::Router, access_token: &str) -> Stri
         .expect("create session response");
     assert_eq!(resp.status(), StatusCode::OK);
     let body = response_json(resp).await;
-    body["session_id"]
-        .as_str()
-        .expect("session_id")
-        .to_string()
+    body["session_id"].as_str().expect("session_id").to_string()
 }
 
 #[tokio::test]

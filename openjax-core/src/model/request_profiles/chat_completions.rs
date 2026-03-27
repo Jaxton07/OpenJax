@@ -2,7 +2,6 @@ use anyhow::{Result, anyhow};
 
 use crate::model::types::ModelRequest;
 
-const KIMI_CLI_USER_AGENT: &str = "KimiCLI/0.77";
 const KIMI_DEFAULT_MAX_TOKENS: u32 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +38,7 @@ impl ChatCompletionsRequestProfile {
     pub(crate) fn user_agent(self) -> Option<&'static str> {
         match self {
             Self::Default => None,
-            Self::KimiCodingV1 => Some(KIMI_CLI_USER_AGENT),
+            Self::KimiCodingV1 => None,
         }
     }
 }
@@ -74,9 +73,9 @@ mod tests {
     }
 
     #[test]
-    fn kimi_profile_sets_cli_user_agent() {
+    fn kimi_profile_user_agent_is_none() {
         let profile = ChatCompletionsRequestProfile::KimiCodingV1;
-        assert_eq!(profile.user_agent(), Some("KimiCLI/0.77"));
+        assert_eq!(profile.user_agent(), None);
     }
 
     #[test]

@@ -107,7 +107,7 @@ export function useChatApp() {
           if (session.id !== sessionId) {
             return session;
           }
-          const withReasoningClosed = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq);
+          const withReasoningClosed = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq, event.timestamp);
           const next = touchAssistantTextSeqInSession(
             withReasoningClosed,
             event.turn_id,
@@ -164,7 +164,7 @@ export function useChatApp() {
           }
           const withReasoningClosed =
             event.type === "response_completed"
-              ? closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq)
+              ? closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq, event.timestamp)
               : session;
           const next = applyResponseCompletedSession(withReasoningClosed, event, finalizedContent);
           changed = changed || next !== session;
@@ -179,6 +179,9 @@ export function useChatApp() {
       streamRenderStore.fail(sessionId, event.turn_id, event.event_seq);
     }
     if (event.type === "turn_completed") {
+      streamRenderStore.clear(sessionId, event.turn_id);
+    }
+    if (event.type === "turn_interrupted") {
       streamRenderStore.clear(sessionId, event.turn_id);
     }
 
@@ -212,6 +215,13 @@ export function useChatApp() {
   const activeSession = useMemo(
     () => state.sessions.find((session) => session.id === state.activeSessionId) ?? null,
     [state.activeSessionId, state.sessions]
+  );
+  const isStreaming = useMemo(
+    () =>
+      activeSession != null &&
+      activeSession.turnPhase === "streaming" &&
+      activeSession.pendingApprovals.length === 0,
+    [activeSession]
   );
 
   const clearAuthState = useCallback((message: string) => {
@@ -582,6 +592,36 @@ export function useChatApp() {
     });
   }, [clearAuthState, client, state.activeSessionId, withAuthRetry]);
 
+  const abortTurn = useCallback(async () => {
+    if (!state.activeSessionId) {
+      return;
+    }
+    try {
+      await withAuthRetry(() => client.abortTurn(state.activeSessionId!));
+      // 乐观更新：abort 请求成功后立即将 turnPhase 置为 completed 并关闭
+      // 进行中的 reasoning block，不等待 SSE 的 turn_interrupted 事件
+      setState((prev) => {
+        if (!prev.activeSessionId) return prev;
+        const sessions = prev.sessions.map((s) => {
+          if (s.id !== prev.activeSessionId || s.turnPhase !== "streaming") return s;
+          const turnId =
+            s.streaming?.turnId ??
+            s.messages.find(
+              (m) => m.role === "assistant" && m.reasoningBlocks?.some((b) => !b.closed)
+            )?.turnId;
+          const withClosedReasoning = closeOpenReasoningBlockInSession(
+            s,
+            turnId,
+            undefined,
+            new Date().toISOString()
+          );
+          return { ...withClosedReasoning, turnPhase: "completed" as const };
+        });
+        return { ...prev, sessions };
+      });
+    } catch {}
+  }, [client, state.activeSessionId, withAuthRetry]);
+
   const updateSettings = useCallback((next: AppSettings) => {
     const normalizedSettings: AppSettings = {
       ...next,
@@ -639,6 +679,7 @@ export function useChatApp() {
       modelName: string;
       apiKey: string;
       providerType?: "built_in" | "custom";
+      protocol?: string;
       contextWindowSize?: number;
     }): Promise<LlmProvider> => {
       const data = await withAuthRetry(() => client.createProvider(payload));
@@ -656,6 +697,7 @@ export function useChatApp() {
         modelName: string;
         apiKey?: string;
         providerType?: "built_in" | "custom";
+        protocol?: string;
         contextWindowSize?: number;
       }
     ): Promise<LlmProvider> => {
@@ -744,6 +786,7 @@ export function useChatApp() {
   return {
     state,
     activeSession,
+    isStreaming,
     isAuthenticated: state.auth.authenticated,
     authenticate,
     logout,
@@ -754,6 +797,7 @@ export function useChatApp() {
     resolveApproval,
     clearConversation,
     compactConversation,
+    abortTurn,
     updateSettings,
     testConnection,
     listAuthSessions,

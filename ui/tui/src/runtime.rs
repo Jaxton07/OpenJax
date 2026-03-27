@@ -23,6 +23,38 @@ use crate::runtime_loop::{
 };
 use crate::tui::Tui;
 
+fn dismiss_overlay(
+    app: &mut App,
+    turn_task: &mut Option<tokio::task::JoinHandle<()>>,
+    core_event_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>>,
+) {
+    if app.state.policy_picker.is_some() {
+        app.dismiss_policy_picker();
+    } else if app.is_slash_palette_active() {
+        app.dismiss_slash_palette();
+    } else if app.state.pending_approval.is_some() {
+        app.defer_pending_approval();
+    } else if turn_task.is_some() {
+        abort_turn(app, turn_task, core_event_rx);
+    } else {
+        app.clear();
+    }
+}
+
+fn abort_turn(
+    app: &mut App,
+    turn_task: &mut Option<tokio::task::JoinHandle<()>>,
+    core_event_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>>,
+) {
+    if let Some(task) = turn_task.take() {
+        task.abort();
+    }
+    core_event_rx.take();
+    let turn_id = app.state.active_turn_id.unwrap_or(0);
+    app.apply_core_event(openjax_protocol::Event::TurnCompleted { turn_id });
+    app.set_live_status("已中断");
+}
+
 pub async fn run() -> anyhow::Result<()> {
     init_split_logger("openjax.log", "openjax_tui.log");
     info!("tui runtime starting");
@@ -138,13 +170,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
             InputAction::Append(text) => app.append_input(&text),
             InputAction::DismissOverlay => {
-                if app.state.policy_picker.is_some() {
-                    app.dismiss_policy_picker();
-                } else if app.is_slash_palette_active() {
-                    app.dismiss_slash_palette();
-                } else if app.state.pending_approval.is_none() {
-                    app.clear();
-                }
+                dismiss_overlay(&mut app, &mut turn_task, &mut core_event_rx)
             }
             InputAction::None => {}
         }
@@ -164,4 +190,67 @@ pub async fn run() -> anyhow::Result<()> {
     let _ = write!(stdout, "\r\n");
     let _ = stdout.flush();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{abort_turn, dismiss_overlay};
+    use crate::app::App;
+    use crate::state::PendingApproval;
+
+    #[test]
+    fn dismiss_overlay_with_pending_approval_defers_request() {
+        let mut app = App::default();
+        app.state.pending_approval = Some(PendingApproval {
+            request_id: "req-1".to_string(),
+            target: "target".to_string(),
+            reason: "reason".to_string(),
+            tool_name: Some("shell".to_string()),
+            command_preview: Some("echo hi".to_string()),
+            risk_tags: vec!["write".to_string()],
+            sandbox_backend: Some("linux_native".to_string()),
+            degrade_reason: None,
+        });
+        app.state.input = "tmp".to_string();
+        app.state.input_cursor = 3;
+
+        let mut turn_task: Option<tokio::task::JoinHandle<()>> = None;
+        let mut core_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>> =
+            None;
+        dismiss_overlay(&mut app, &mut turn_task, &mut core_event_rx);
+
+        assert!(app.state.pending_approval.is_some());
+        assert!(app.state.input.is_empty());
+        assert_eq!(app.state.input_cursor, 0);
+        let status = app
+            .state
+            .live_messages
+            .first()
+            .expect("status should be visible");
+        assert_eq!(status.role, "status");
+        assert_eq!(
+            status.content,
+            "Approval pending: choose Approve or Deny when ready"
+        );
+    }
+
+    #[tokio::test]
+    async fn abort_turn_clears_task_and_sets_status() {
+        let mut app = App::default();
+        app.apply_core_event(openjax_protocol::Event::TurnStarted { turn_id: 42 });
+        let mut turn_task: Option<tokio::task::JoinHandle<()>> = Some(tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(9999)).await
+        }));
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<openjax_protocol::Event>();
+        drop(tx);
+        let mut core_event_rx = Some(rx);
+
+        abort_turn(&mut app, &mut turn_task, &mut core_event_rx);
+
+        assert!(turn_task.is_none());
+        assert!(core_event_rx.is_none());
+        assert!(app.state.active_turn_id.is_none());
+        let status = app.state.live_messages.first().expect("status should exist");
+        assert!(status.content.contains("已中断"));
+    }
 }

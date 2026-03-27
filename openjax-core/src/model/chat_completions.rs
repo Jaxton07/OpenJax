@@ -53,7 +53,8 @@ struct StreamOptions {
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
-    temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,18 +98,6 @@ impl ChatCompletionsClient {
         }))
     }
 
-    pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
-        Self::from_provider_config(
-            config,
-            "OPENJAX_MINIMAX_API_KEY",
-            "OPENJAX_MINIMAX_MODEL",
-            "OPENJAX_MINIMAX_BASE_URL",
-            "codex-MiniMax-M2.1",
-            "https://api.minimaxi.com/v1",
-            "minimax-chat-completions",
-        )
-    }
-
     pub(crate) fn from_openai_config(config: Option<&ModelConfig>) -> Option<Self> {
         Self::from_provider_config(
             config,
@@ -118,18 +107,6 @@ impl ChatCompletionsClient {
             "gpt-4.1-mini",
             "https://api.openai.com/v1",
             "openai-chat-completions",
-        )
-    }
-
-    pub(crate) fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
-        Self::from_provider_config(
-            config,
-            "OPENJAX_GLM_API_KEY",
-            "OPENJAX_GLM_MODEL",
-            "OPENJAX_GLM_BASE_URL",
-            "GLM-4.7",
-            "https://open.bigmodel.cn/api/coding/paas/v4",
-            "glm-chat-completions",
         )
     }
 
@@ -201,8 +178,8 @@ impl ChatCompletionsClient {
                     content: request.user_input.to_string(),
                 },
             ],
-            temperature: 0.2,
-            max_tokens: self.profile.resolve_max_tokens(request),
+            temperature: None,
+            max_tokens: self.profile.resolve_max_tokens(request).or(Some(32000)),
             stream: stream.then_some(true),
             stream_options: if stream && self.profile.include_stream_options() {
                 Some(StreamOptions {
@@ -219,7 +196,8 @@ impl ChatCompletionsClient {
             .client
             .post(&self.endpoint)
             .bearer_auth(&self.api_key)
-            .header("accept", accept);
+            .header("accept", accept)
+            .header("User-Agent", concat!("openjax/", env!("CARGO_PKG_VERSION")));
         if let Some(user_agent) = self.profile.user_agent() {
             builder.header("User-Agent", user_agent)
         } else {
@@ -228,23 +206,13 @@ impl ChatCompletionsClient {
     }
 }
 
-fn default_api_key_for_provider(provider: &str) -> Option<String> {
-    let key = match provider {
-        "kimi" => "OPENJAX_KIMI_API_KEY",
-        "minimax" => "OPENJAX_MINIMAX_API_KEY",
-        "glm" => "OPENJAX_GLM_API_KEY",
-        _ => "OPENAI_API_KEY",
-    };
+fn default_api_key_for_provider(_provider: &str) -> Option<String> {
+    let key = "OPENAI_API_KEY";
     std::env::var(key).ok().filter(|v| !v.trim().is_empty())
 }
 
-fn default_base_url_for_provider(provider: &str) -> &'static str {
-    match provider {
-        "kimi" => "https://api.kimi.com/coding/v1",
-        "minimax" => "https://api.minimaxi.com/v1",
-        "glm" => "https://open.bigmodel.cn/api/coding/paas/v4",
-        _ => "https://api.openai.com/v1",
-    }
+fn default_base_url_for_provider(_provider: &str) -> &'static str {
+    "https://api.openai.com/v1"
 }
 
 fn response_snippet(body: &str) -> String {
@@ -836,7 +804,7 @@ mod tests {
 
         let stream = client.build_request(&request, true);
 
-        assert!(stream.max_tokens.is_none());
+        assert_eq!(stream.max_tokens, Some(32000));
         assert!(stream.stream_options.is_some());
     }
 
@@ -860,7 +828,7 @@ mod tests {
                 .headers()
                 .get("user-agent")
                 .and_then(|value| value.to_str().ok()),
-            Some("KimiCLI/0.77")
+            Some(concat!("openjax/", env!("CARGO_PKG_VERSION")))
         );
     }
 

@@ -20,6 +20,7 @@ pub struct ProviderItem {
     model_name: String,
     api_key_set: bool,
     provider_type: String,
+    protocol: String,
     context_window_size: u32,
     created_at: String,
     updated_at: String,
@@ -72,12 +73,18 @@ pub struct CreateProviderRequest {
     api_key: String,
     #[serde(default = "default_provider_type")]
     provider_type: String,
+    #[serde(default = "default_protocol")]
+    protocol: String,
     #[serde(default)]
     context_window_size: u32,
 }
 
 fn default_provider_type() -> String {
     "custom".to_string()
+}
+
+fn default_protocol() -> String {
+    "chat_completions".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,6 +94,8 @@ pub struct UpdateProviderRequest {
     base_url: String,
     model_name: String,
     api_key: Option<String>,
+    #[serde(default = "default_protocol")]
+    protocol: String,
     #[serde(default)]
     context_window_size: u32,
 }
@@ -132,6 +141,7 @@ fn to_provider_item(provider: openjax_store::ProviderRecord) -> ProviderItem {
         model_name: provider.model_name,
         api_key_set: !provider.api_key.trim().is_empty(),
         provider_type: provider.provider_type,
+        protocol: provider.protocol,
         context_window_size: provider.context_window_size,
         created_at: provider.created_at,
         updated_at: provider.updated_at,
@@ -229,6 +239,7 @@ pub async fn create_provider(
         model_name,
         api_key,
         &payload.provider_type,
+        &payload.protocol,
         payload.context_window_size,
     )?;
     Ok(Json(ProviderMutationResponse {
@@ -265,6 +276,7 @@ pub async fn update_provider(
             base_url,
             model_name,
             api_key,
+            &payload.protocol,
             payload.context_window_size,
         )?
         .ok_or_else(|| {
@@ -341,6 +353,7 @@ mod tests {
             model_name: "kimi-for-coding".to_string(),
             api_key: "secret".to_string(),
             provider_type: "built_in".to_string(),
+            protocol: "chat_completions".to_string(),
             context_window_size: 256000,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
@@ -409,5 +422,47 @@ mod tests {
 
         let err = serde_json::from_value::<UpdateProviderRequest>(payload).expect_err("must fail");
         assert!(err.to_string().contains("unknown field `request_profile`"));
+    }
+
+    #[test]
+    fn create_provider_request_accepts_protocol_field() {
+        let payload_with_protocol = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "api_key": "secret",
+            "protocol": "anthropic_messages"
+        });
+        let _req = serde_json::from_value::<CreateProviderRequest>(payload_with_protocol)
+            .expect("must succeed");
+
+        let payload_default = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "api_key": "secret"
+        });
+        let _req_default = serde_json::from_value::<CreateProviderRequest>(payload_default)
+            .expect("must succeed with default protocol");
+    }
+
+    #[test]
+    fn update_provider_request_accepts_protocol_field() {
+        let payload_with_protocol = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding",
+            "protocol": "anthropic_messages"
+        });
+        let _req = serde_json::from_value::<UpdateProviderRequest>(payload_with_protocol)
+            .expect("must succeed");
+
+        let payload_default = json!({
+            "provider_name": "Kimi",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "model_name": "kimi-for-coding"
+        });
+        let _req_default = serde_json::from_value::<UpdateProviderRequest>(payload_default)
+            .expect("must succeed with default protocol");
     }
 }

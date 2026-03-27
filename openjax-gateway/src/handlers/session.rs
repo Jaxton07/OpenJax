@@ -212,6 +212,24 @@ pub async fn submit_turn(
                 json!({ "session_id": session_id }),
             ));
         }
+        if session.turn_submit_in_flight || session.current_turn_abort_handle.is_some() {
+            return Err(ApiError::conflict(
+                "another turn is still running",
+                json!({ "session_id": session_id }),
+            ));
+        }
+        if let Some((running_turn_id, _)) = session
+            .turns
+            .iter()
+            .find(|(_, turn)| matches!(turn.status, TurnStatus::Running))
+        {
+            return Err(ApiError::conflict(
+                "another turn is still running",
+                json!({ "session_id": session_id, "turn_id": running_turn_id }),
+            ));
+        }
+        session.turn_abort_requested = false;
+        session.turn_submit_in_flight = true;
         if !input.is_empty() {
             state.append_message(&session_id, None, "user", &input)?;
             let user_event = session.create_gateway_event(
@@ -374,6 +392,25 @@ pub async fn session_action(
             request_id: ctx.request_id,
             session_id: session_id.to_string(),
             status: "compacted",
+            timestamp: now_rfc3339(),
+        }));
+    }
+    if normalized == "abort" {
+        let handle = {
+            let mut session = session_runtime.lock().await;
+            let handle = session.current_turn_abort_handle.take();
+            if handle.is_some() {
+                session.turn_abort_requested = true;
+            }
+            handle
+        };
+        if let Some(handle) = handle {
+            handle.abort();
+        }
+        return Ok(Json(SessionActionResponse {
+            request_id: ctx.request_id,
+            session_id: session_id.to_string(),
+            status: "aborted",
             timestamp: now_rfc3339(),
         }));
     }
@@ -564,16 +601,15 @@ pub async fn get_policy_level(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
 ) -> Result<Json<GetPolicyLevelResponse>, ApiError> {
-    let agent_arc = {
-        let session_runtime = state.get_session(&session_id).await?;
+    let session_runtime = state.get_session(&session_id).await?;
+    let level = {
         let session = session_runtime.lock().await;
-        session.agent.clone()
+        session
+            .policy_level_override
+            .as_ref()
+            .map(|d| d.as_str().to_string())
+            .unwrap_or_else(|| "ask".to_string())
     };
-    let level = agent_arc
-        .lock()
-        .await
-        .policy_default_decision_name()
-        .to_string();
     Ok(Json(GetPolicyLevelResponse { session_id, level }))
 }
 
@@ -593,15 +629,26 @@ pub async fn set_policy_level(
         )
     })?;
 
-    // Take Arc to agent (releasing session map lock before locking agent)
-    let agent_arc = {
-        let session_runtime = state.get_session(&session_id).await?;
-        let session = session_runtime.lock().await;
-        session.agent.clone()
-    };
-    agent_arc.lock().await.set_policy_level(level);
+    let session_runtime = state.get_session(&session_id).await?;
+    // Save override on session so run_turn_task picks it up on next turn
+    {
+        let mut session = session_runtime.lock().await;
+        session.policy_level_override = Some(level.to_decision_kind());
+    }
 
     Ok(Json(SetPolicyLevelResponse {
         level: level.as_str().to_string(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_session_action, parse_session_action};
+
+    #[test]
+    fn abort_action_parses_correctly() {
+        let (session_id, action) = parse_session_action("sess_abc123:abort").expect("parse");
+        assert_eq!(session_id, "sess_abc123");
+        assert_eq!(normalize_session_action(action), "abort");
+    }
 }

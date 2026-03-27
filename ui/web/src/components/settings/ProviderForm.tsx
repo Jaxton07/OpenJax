@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CatalogModel } from "../../types/gateway";
+import type { CatalogModel, ProviderProtocol } from "../../types/gateway";
+import { EyeOpenIcon, EyeOffIcon } from "../../pic/icon/index";
 
 interface ProviderFormValue {
   providerName: string;
@@ -7,6 +8,7 @@ interface ProviderFormValue {
   modelName: string;
   apiKey: string;
   providerType: "built_in" | "custom";
+  protocol: ProviderProtocol;
   contextWindowSize: number;
   catalogModels?: CatalogModel[];
 }
@@ -46,6 +48,7 @@ export default function ProviderForm(props: ProviderFormProps) {
     normalizedDraft.baseUrl !== normalizedInitial.baseUrl ||
     normalizedDraft.modelName !== normalizedInitial.modelName ||
     normalizedDraft.apiKey !== normalizedInitial.apiKey ||
+    normalizedDraft.protocol !== normalizedInitial.protocol ||
     normalizedDraft.contextWindowSize !== normalizedInitial.contextWindowSize;
 
   const isBuiltIn = draft.providerType === "built_in";
@@ -163,6 +166,20 @@ export default function ProviderForm(props: ProviderFormProps) {
         )}
       </label>
 
+      {/* 协议 */}
+      {!isBuiltIn && (
+        <label>
+          协议
+          <select
+            value={draft.protocol}
+            onChange={(e) => setDraft((p) => ({ ...p, protocol: e.target.value as ProviderProtocol }))}
+          >
+            <option value="chat_completions">OpenAI Compatible</option>
+            <option value="anthropic_messages">Anthropic Compatible (Claude / Kimi / MiniMax / GLM)</option>
+          </select>
+        </label>
+      )}
+
       {/* API Key */}
       <label>
         API Key
@@ -175,13 +192,12 @@ export default function ProviderForm(props: ProviderFormProps) {
           />
           <button
             type="button"
-            className="btn-ghost provider-key-toggle"
+            className="provider-key-toggle"
             onClick={() => setShowApiKey((v) => !v)}
           >
-            {showApiKey ? "隐藏" : "显示"}
+            {showApiKey ? <EyeOffIcon width={18} height={18} /> : <EyeOpenIcon width={18} height={18} />}
           </button>
         </div>
-        {props.mode === "edit" && <span className="field-tip">留空将保持现有 API Key。</span>}
       </label>
 
       <div className="provider-form-actions">

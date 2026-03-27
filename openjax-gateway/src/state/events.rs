@@ -4,6 +4,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use openjax_core::Config;
+use openjax_policy::overlay::SessionOverlay;
+use openjax_policy::runtime::PolicyRuntime;
+use openjax_policy::store::PolicyStore;
 use openjax_protocol::Event;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
@@ -232,6 +235,7 @@ impl AppState {
         model_name: &str,
         api_key: &str,
         provider_type: &str,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
         let store = self.store.as_ref();
@@ -242,6 +246,7 @@ impl AppState {
             model_name,
             api_key,
             provider_type,
+            protocol,
             context_window_size,
         )
         .map_err(map_store_error)
@@ -254,6 +259,7 @@ impl AppState {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         let store = self.store.as_ref();
@@ -264,6 +270,7 @@ impl AppState {
             base_url,
             model_name,
             api_key,
+            protocol,
             context_window_size,
         )
         .map_err(map_store_error)
@@ -351,17 +358,36 @@ pub async fn run_turn_task(
     turn_id_tx: oneshot::Sender<Result<String, ApiError>>,
 ) {
     let (event_sink_tx, mut event_sink_rx) = mpsc::unbounded_channel();
+    let (policy_level_override, overlay_rules, agent) = {
+        let guard = session_runtime.lock().await;
+        (
+            guard.policy_level_override.clone(),
+            guard.policy_overlay_rules.clone(),
+            guard.agent.clone(),
+        )
+    };
     let policy_runtime = {
         let policy_state = gateway_policy_state(&app_state.store);
         let guard = match policy_state.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        guard.runtime.clone()
-    };
-    let agent = {
-        let guard = session_runtime.lock().await;
-        guard.agent.clone()
+        if let Some(override_decision) = policy_level_override {
+            // User explicitly set a policy level for this session.
+            // Build an independent runtime so the gateway global default (Ask)
+            // does not overwrite the user's choice on every turn.
+            let store = PolicyStore::new(override_decision, vec![]);
+            let fresh = PolicyRuntime::new(store);
+            if !overlay_rules.is_empty() {
+                fresh.set_session_overlay(
+                    &session_id,
+                    SessionOverlay::new(overlay_rules),
+                );
+            }
+            fresh
+        } else {
+            guard.runtime.clone()
+        }
     };
     let session_id_for_core = session_id.clone();
 
@@ -374,7 +400,18 @@ pub async fn run_turn_task(
             .await
     });
 
+    let should_abort_now = {
+        let mut session = session_runtime.lock().await;
+        session.current_turn_abort_handle = Some(submit_task.abort_handle());
+        session.turn_submit_in_flight = false;
+        session.turn_abort_requested
+    };
+    if should_abort_now {
+        submit_task.abort();
+    }
+
     let mut sent_turn_id = false;
+    let mut last_known_public_turn_id: Option<String> = None;
     let mut pending_turn_id_tx = Some(turn_id_tx);
     while let Some(event) = event_sink_rx.recv().await {
         let mapped = {
@@ -388,13 +425,20 @@ pub async fn run_turn_task(
                 &mut pending_turn_id_tx,
             )
         };
-        if mapped.is_some() {
+        if let Some(turn_id) = mapped {
             sent_turn_id = true;
+            last_known_public_turn_id = Some(turn_id);
         }
     }
 
     match submit_task.await {
         Ok(events) => {
+            {
+                let mut session = session_runtime.lock().await;
+                session.current_turn_abort_handle = None;
+                session.turn_submit_in_flight = false;
+                session.turn_abort_requested = false;
+            }
             if !sent_turn_id {
                 let mut session = session_runtime.lock().await;
                 if let Some(core_turn_id) = first_turn_id(&events) {
@@ -407,12 +451,54 @@ pub async fn run_turn_task(
                 }
             }
         }
-        Err(_) => {
+        Err(join_error) => {
+            {
+                let mut session = session_runtime.lock().await;
+                session.current_turn_abort_handle = None;
+                session.turn_submit_in_flight = false;
+                session.turn_abort_requested = false;
+            }
+
+            if join_error.is_cancelled() {
+                let mut session = session_runtime.lock().await;
+                let public_turn_id = last_known_public_turn_id.clone().or_else(|| {
+                    session
+                        .turns
+                        .iter()
+                        .find(|(_, turn)| turn.status == TurnStatus::Running)
+                        .map(|(turn_id, _)| turn_id.clone())
+                });
+                if let Some(turn_id) = public_turn_id.as_ref()
+                    && let Some(turn) = session.turns.get_mut(turn_id)
+                {
+                    if matches!(turn.status, TurnStatus::Queued | TurnStatus::Running) {
+                        turn.status = TurnStatus::Failed;
+                        turn.error = Some(ApiTurnError {
+                            code: "TURN_ABORTED".to_string(),
+                            message: "turn aborted by user".to_string(),
+                            retryable: false,
+                            details: json!({ "reason": "user_abort" }),
+                        });
+                    }
+                }
+                let envelope = session.create_gateway_event(
+                    &request_id,
+                    &session_id,
+                    public_turn_id.clone(),
+                    "turn_interrupted",
+                    json!({ "reason": "user_abort" }),
+                    Some("synthetic"),
+                );
+                publish_and_persist_event(&app_state, &mut session, envelope);
+            }
+
             if let Some(tx) = pending_turn_id_tx.take() {
-                let _ = tx.send(Err(ApiError::upstream_unavailable(
-                    "core execution task failed",
-                    json!({}),
-                )));
+                let err = if join_error.is_cancelled() {
+                    ApiError::conflict("turn aborted by user", json!({ "reason": "user_abort" }))
+                } else {
+                    ApiError::upstream_unavailable("core execution task failed", json!({}))
+                };
+                let _ = tx.send(Err(err));
             }
         }
     }
@@ -450,6 +536,16 @@ fn apply_turn_runtime_event(turn: &mut TurnRuntime, event_type: &str, payload: &
                 .get("retryable")
                 .and_then(|value| value.as_bool())
                 .unwrap_or(false),
+            details: payload.clone(),
+        });
+        return;
+    }
+    if event_type == "turn_interrupted" {
+        turn.status = TurnStatus::Failed;
+        turn.error = Some(ApiTurnError {
+            code: "TURN_ABORTED".to_string(),
+            message: "turn aborted by user".to_string(),
+            retryable: false,
             details: payload.clone(),
         });
         return;
@@ -667,7 +763,6 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openjax_core::provider_protocol;
     use std::collections::HashSet;
 
     #[test]
@@ -797,8 +892,17 @@ mod tests {
     }
 
     #[test]
-    fn provider_protocol_defaults_to_chat_completions_for_glm_style_base_url() {
-        let protocol = provider_protocol("https://open.bigmodel.cn/api/paas/v4", "glm-main");
-        assert_eq!(protocol, "chat_completions");
+    fn turn_interrupted_marks_turn_failed_with_abort_error() {
+        let mut turn = TurnRuntime::queued();
+        apply_turn_runtime_event(
+            &mut turn,
+            "turn_interrupted",
+            &json!({ "reason": "user_abort" }),
+        );
+        assert_eq!(turn.status, TurnStatus::Failed);
+        let error = turn.error.expect("abort error");
+        assert_eq!(error.code, "TURN_ABORTED");
+        assert_eq!(error.retryable, false);
     }
+
 }

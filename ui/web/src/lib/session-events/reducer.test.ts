@@ -212,6 +212,79 @@ describe("session-events/reducer", () => {
     expect(assistantMessage.messages.find((message) => message.turnId === "turn_fallback")?.content).toBe("draft");
   });
 
+  it("marks assistant message interrupted on turn_interrupted", () => {
+    const session = baseSession();
+    const streaming = applySessionEvents(session, [
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_abort",
+        event_seq: 1,
+        timestamp: "2026-01-01T00:00:01Z",
+        type: "response_started",
+        payload: {}
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_abort",
+        event_seq: 2,
+        timestamp: "2026-01-01T00:00:02Z",
+        type: "response_text_delta",
+        payload: { content_delta: "hello" }
+      }
+    ]);
+    const interrupted = applySessionEvent(streaming, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_abort",
+      event_seq: 3,
+      timestamp: "2026-01-01T00:00:03Z",
+      type: "turn_interrupted",
+      payload: { reason: "user_abort" }
+    });
+
+    expect(interrupted.turnPhase).toBe("completed");
+    const assistant = interrupted.messages.find(
+      (message) => message.role === "assistant" && message.turnId === "turn_abort"
+    );
+    expect(assistant?.interrupted).toBe(true);
+    expect(assistant?.isDraft).toBe(false);
+  });
+
+  it("does not mark unrelated assistant messages when turn_interrupted has no turn_id", () => {
+    const session = applySessionEvents(baseSession(), [
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_a",
+        event_seq: 1,
+        timestamp: "2026-01-01T00:00:01Z",
+        type: "response_completed",
+        payload: { content: "A" }
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_b",
+        event_seq: 2,
+        timestamp: "2026-01-01T00:00:02Z",
+        type: "response_completed",
+        payload: { content: "B" }
+      }
+    ]);
+    const interrupted = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      event_seq: 3,
+      timestamp: "2026-01-01T00:00:03Z",
+      type: "turn_interrupted",
+      payload: { reason: "user_abort" }
+    });
+    const assistantMessages = interrupted.messages.filter((message) => message.role === "assistant");
+    expect(assistantMessages.every((message) => message.interrupted !== true)).toBe(true);
+  });
+
   it("marks connection closed on session_shutdown", () => {
     const session = { ...baseSession(), turnPhase: "streaming" as const };
     const next = applySessionEvent(session, {

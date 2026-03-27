@@ -221,7 +221,7 @@ fn normalize_model_entry(
 
 fn infer_protocol(provider: &str) -> &'static str {
     match provider {
-        "anthropic" | "glm" => "anthropic_messages",
+        "anthropic" | "glm" | "kimi" | "minimax" => "anthropic_messages",
         _ => "chat_completions",
     }
 }
@@ -230,7 +230,7 @@ fn default_model_name(provider: &str) -> &'static str {
     match provider {
         "glm" => "GLM-4.7",
         "anthropic" => "claude-sonnet-4-5",
-        "minimax" => "codex-MiniMax-M2.1",
+        "minimax" => "MiniMax-M2.7",
         _ => "gpt-4.1-mini",
     }
 }
@@ -255,22 +255,11 @@ fn default_capabilities(protocol: &str) -> CapabilityFlags {
 fn infer_request_profile(
     provider: &str,
     protocol: &str,
-    base_url: Option<&str>,
-    model: Option<&str>,
+    _base_url: Option<&str>,
+    _model: Option<&str>,
 ) -> Option<String> {
     if protocol == "anthropic_messages" || provider.contains("anthropic") {
         return Some("anthropic_default".to_string());
-    }
-
-    let marker = format!(
-        "{} {} {}",
-        provider,
-        base_url.unwrap_or_default(),
-        model.unwrap_or_default()
-    )
-    .to_ascii_lowercase();
-    if marker.contains("kimi") && marker.contains("coding") {
-        return Some("kimi_coding_v1".to_string());
     }
     None
 }
@@ -444,9 +433,9 @@ mod tests {
             "kimi".to_string(),
             ProviderModelConfig {
                 provider: Some("kimi".to_string()),
-                protocol: Some("chat_completions".to_string()),
-                model: Some("kimi-for-coding".to_string()),
-                base_url: Some("https://api.kimi.com/coding/v1".to_string()),
+                protocol: None,
+                model: Some("kimi-k2".to_string()),
+                base_url: Some("https://api.kimi.ai/anthropic/v1".to_string()),
                 api_key: Some("test-key".to_string()),
                 api_key_env: None,
                 request_profile: None,
@@ -470,13 +459,9 @@ mod tests {
         };
 
         let registry = ModelRegistry::from_config(Some(&config));
-        assert_eq!(
-            registry
-                .models
-                .get("kimi")
-                .and_then(|model| model.request_profile.as_deref()),
-            Some("kimi_coding_v1")
-        );
+        let kimi = registry.models.get("kimi").expect("kimi model registered");
+        assert_eq!(kimi.protocol, "anthropic_messages");
+        assert_eq!(kimi.request_profile.as_deref(), Some("anthropic_default"));
     }
 
     #[test]

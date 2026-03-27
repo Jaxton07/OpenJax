@@ -146,6 +146,7 @@ pub fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
             &model_name,
             &api_key,
             "custom",
+            "chat_completions",
             0,
         );
     }
@@ -175,6 +176,7 @@ pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
             KIMI_BASE_URL,
             KIMI_MODEL,
             None,
+            &provider.protocol,
             KIMI_CONTEXT_WINDOW,
         );
     }
@@ -196,6 +198,7 @@ mod tests {
             "k2.5",
             "key",
             "built_in",
+            "chat_completions",
             256000,
         )
         .expect("create provider");

@@ -40,7 +40,11 @@ mod tests {
 
     #[test]
     fn from_str_round_trips() {
-        for level in [PolicyLevel::Permissive, PolicyLevel::Standard, PolicyLevel::Strict] {
+        for level in [
+            PolicyLevel::Permissive,
+            PolicyLevel::Standard,
+            PolicyLevel::Strict,
+        ] {
             assert_eq!(PolicyLevel::from_str(level.as_str()), Some(level));
         }
     }
@@ -54,7 +58,10 @@ mod tests {
 
     #[test]
     fn to_decision_kind_maps_correctly() {
-        assert_eq!(PolicyLevel::Permissive.to_decision_kind(), DecisionKind::Allow);
+        assert_eq!(
+            PolicyLevel::Permissive.to_decision_kind(),
+            DecisionKind::Allow
+        );
         assert_eq!(PolicyLevel::Standard.to_decision_kind(), DecisionKind::Ask);
         assert_eq!(PolicyLevel::Strict.to_decision_kind(), DecisionKind::Deny);
     }

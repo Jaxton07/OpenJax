@@ -113,6 +113,7 @@ impl SqliteStore {
                 base_url TEXT NOT NULL,
                 model_name TEXT NOT NULL,
                 api_key TEXT NOT NULL,
+                protocol TEXT NOT NULL DEFAULT 'chat_completions',
                 request_profile TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -178,6 +179,22 @@ impl SqliteStore {
         if !has_request_profile {
             conn.execute_batch("ALTER TABLE llm_providers ADD COLUMN request_profile TEXT")
                 .context("migrate: add request_profile to llm_providers")?;
+        }
+
+        // llm_providers: add protocol
+        let has_protocol: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('llm_providers') WHERE name = 'protocol'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_protocol {
+            conn.execute_batch(
+                "ALTER TABLE llm_providers ADD COLUMN protocol TEXT NOT NULL DEFAULT 'chat_completions'",
+            )
+            .context("migrate: add protocol to llm_providers")?;
         }
 
         // llm_runtime_settings: add context_window_size
@@ -504,6 +521,7 @@ impl SqliteStore {
         model_name: &str,
         api_key: &str,
         provider_type: &str,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<ProviderRecord> {
         <Self as ProviderRepository>::create_provider(
@@ -513,6 +531,7 @@ impl SqliteStore {
             model_name,
             api_key,
             provider_type,
+            protocol,
             context_window_size,
         )
     }
@@ -524,6 +543,7 @@ impl SqliteStore {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<Option<ProviderRecord>> {
         <Self as ProviderRepository>::update_provider(
@@ -533,6 +553,7 @@ impl SqliteStore {
             base_url,
             model_name,
             api_key,
+            protocol,
             context_window_size,
         )
     }
@@ -546,6 +567,7 @@ impl ProviderRepository for SqliteStore {
         model_name: &str,
         api_key: &str,
         provider_type: &str,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<ProviderRecord> {
         let provider_id = format!("provider_{}", Uuid::new_v4().simple());
@@ -554,9 +576,9 @@ impl ProviderRepository for SqliteStore {
             let conn = self.conn.lock().expect("store db mutex poisoned");
             conn.execute(
                 "INSERT INTO llm_providers
-                 (provider_id, provider_name, base_url, model_name, api_key, provider_type, context_window_size, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-                params![provider_id, provider_name, base_url, model_name, api_key, provider_type, context_window_size, now],
+                 (provider_id, provider_name, base_url, model_name, api_key, provider_type, protocol, context_window_size, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                params![provider_id, provider_name, base_url, model_name, api_key, provider_type, protocol, context_window_size, now],
             )
             .with_context(|| format!("insert provider {}", provider_name))?;
         }
@@ -571,6 +593,7 @@ impl ProviderRepository for SqliteStore {
         base_url: &str,
         model_name: &str,
         api_key: Option<&str>,
+        protocol: &str,
         context_window_size: u32,
     ) -> Result<Option<ProviderRecord>> {
         let now = now_rfc3339();
@@ -582,14 +605,16 @@ impl ProviderRepository for SqliteStore {
                      base_url = ?2,
                      model_name = ?3,
                      api_key = COALESCE(?4, api_key),
-                     context_window_size = ?5,
-                     updated_at = ?6
-                 WHERE provider_id = ?7",
+                     protocol = ?5,
+                     context_window_size = ?6,
+                     updated_at = ?7
+                 WHERE provider_id = ?8",
                 params![
                     provider_name,
                     base_url,
                     model_name,
                     api_key,
+                    protocol,
                     context_window_size,
                     now,
                     provider_id
@@ -631,7 +656,7 @@ impl ProviderRepository for SqliteStore {
         let conn = self.conn.lock().expect("store db mutex poisoned");
         conn.query_row(
             "SELECT provider_id, provider_name, base_url, model_name, api_key,
-                    provider_type, context_window_size, created_at, updated_at
+                    provider_type, protocol, context_window_size, created_at, updated_at
              FROM llm_providers
              WHERE provider_id = ?1",
             params![provider_id],
@@ -643,9 +668,10 @@ impl ProviderRepository for SqliteStore {
                     model_name: row.get(3)?,
                     api_key: row.get(4)?,
                     provider_type: row.get(5)?,
-                    context_window_size: row.get::<_, u32>(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    protocol: row.get(6)?,
+                    context_window_size: row.get::<_, u32>(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             },
         )
@@ -658,7 +684,7 @@ impl ProviderRepository for SqliteStore {
         let mut stmt = conn
             .prepare(
                 "SELECT provider_id, provider_name, base_url, model_name, api_key,
-                        provider_type, context_window_size, created_at, updated_at
+                        provider_type, protocol, context_window_size, created_at, updated_at
                  FROM llm_providers
                  ORDER BY created_at DESC",
             )
@@ -672,9 +698,10 @@ impl ProviderRepository for SqliteStore {
                     model_name: row.get(3)?,
                     api_key: row.get(4)?,
                     provider_type: row.get(5)?,
-                    context_window_size: row.get::<_, u32>(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    protocol: row.get(6)?,
+                    context_window_size: row.get::<_, u32>(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             })
             .context("query list providers")?;
@@ -879,6 +906,7 @@ mod tests {
                 "gpt-4.1",
                 "sk-1",
                 "built_in",
+                "chat_completions",
                 128000,
             )
             .expect("create first");
@@ -888,6 +916,7 @@ mod tests {
             "gpt-4.1-mini",
             "sk-2",
             "built_in",
+            "chat_completions",
             128000,
         );
         assert!(dup.is_err());
@@ -903,6 +932,7 @@ mod tests {
                 "glm-4",
                 "key-a",
                 "custom",
+                "chat_completions",
                 0,
             )
             .expect("create");
@@ -913,6 +943,7 @@ mod tests {
                 "https://open.bigmodel.cn/api/paas/v4",
                 "glm-4-plus",
                 Some("key-b"),
+                "chat_completions",
                 0,
             )
             .expect("update")
@@ -927,6 +958,7 @@ mod tests {
                 "https://open.bigmodel.cn/api/paas/v4",
                 "glm-4-air",
                 None,
+                "chat_completions",
                 0,
             )
             .expect("update no key")
@@ -953,6 +985,7 @@ mod tests {
                 "gpt-4.1-mini",
                 "sk-1",
                 "built_in",
+                "chat_completions",
                 128000,
             )
             .expect("create first");
@@ -963,6 +996,7 @@ mod tests {
                 "glm-4.7",
                 "sk-2",
                 "built_in",
+                "chat_completions",
                 128000,
             )
             .expect("create second");
@@ -1020,6 +1054,7 @@ mod tests {
             "gpt-4o",
             "sk-test",
             "built_in",
+            "chat_completions",
             128000,
         )
         .expect("create provider");
@@ -1034,6 +1069,7 @@ mod tests {
             "https://api.openai.com/v1",
             "gpt-4o-mini",
             None,
+            "chat_completions",
             128000,
         )
         .expect("update provider")
@@ -1055,6 +1091,7 @@ mod tests {
                 "kimi-for-coding",
                 "key",
                 "built_in",
+                "chat_completions",
                 256000,
             )
             .expect("create");
@@ -1079,6 +1116,7 @@ mod tests {
                 "gpt-4o",
                 "key",
                 "built_in",
+                "chat_completions",
                 128000,
             )
             .expect("create");
@@ -1094,6 +1132,7 @@ mod tests {
                 "https://api.openai.com/v1",
                 "gpt-5.3-codex",
                 None,
+                "chat_completions",
                 200000,
             )
             .expect("update");
@@ -1107,7 +1146,7 @@ mod tests {
     fn migration_is_idempotent() {
         let store = setup_store();
         let _ = store
-            .create_provider("X", "https://x.com/v1", "m", "k", "custom", 0)
+            .create_provider("X", "https://x.com/v1", "m", "k", "custom", "chat_completions", 0)
             .expect("create");
         // Call migrate_schema twice on the same connection — must not error
         let conn = store.conn.lock().expect("lock");

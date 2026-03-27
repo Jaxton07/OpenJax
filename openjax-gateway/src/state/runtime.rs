@@ -8,7 +8,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use openjax_core::streaming::ReplayBuffer;
 use openjax_core::{Agent, ApprovalHandler, ApprovalRequest, Config, approval_timeout_ms_from_env};
-use openjax_policy::schema::PolicyRule;
+use openjax_policy::schema::{DecisionKind, PolicyRule};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, broadcast, oneshot};
@@ -116,6 +116,7 @@ pub struct SessionRuntime {
     pub approval_handler: Arc<GatewayApprovalHandler>,
     pub active_provider_id: Option<String>,
     pub policy_overlay_rules: Vec<PolicyRule>,
+    pub policy_level_override: Option<DecisionKind>,
     pub status: SessionStatus,
     pub turns: HashMap<String, TurnRuntime>,
     pub core_turn_to_public: HashMap<u64, String>,
@@ -124,6 +125,9 @@ pub struct SessionRuntime {
     pub event_log: ReplayBuffer<StreamEventEnvelope>,
     pub event_tx: broadcast::Sender<StreamEventEnvelope>,
     pub resolved_approvals: HashSet<String>,
+    pub current_turn_abort_handle: Option<tokio::task::AbortHandle>,
+    pub turn_submit_in_flight: bool,
+    pub turn_abort_requested: bool,
     last_event_emitted_at: Option<Instant>,
     replay_capacity: usize,
 }
@@ -141,6 +145,7 @@ impl SessionRuntime {
             approval_handler,
             active_provider_id: None,
             policy_overlay_rules: Vec::new(),
+            policy_level_override: None,
             status: SessionStatus::Active,
             turns: HashMap::new(),
             core_turn_to_public: HashMap::new(),
@@ -149,6 +154,9 @@ impl SessionRuntime {
             event_log: ReplayBuffer::with_capacity(replay_capacity),
             event_tx,
             resolved_approvals: HashSet::new(),
+            current_turn_abort_handle: None,
+            turn_submit_in_flight: false,
+            turn_abort_requested: false,
             last_event_emitted_at: None,
             replay_capacity,
         }
@@ -162,12 +170,16 @@ impl SessionRuntime {
         self.approval_handler = approval_handler;
         self.active_provider_id = None;
         self.policy_overlay_rules.clear();
+        self.policy_level_override = None;
         self.status = SessionStatus::Active;
         self.turns.clear();
         self.core_turn_to_public.clear();
         self.resolved_approvals.clear();
         self.turn_event_seq.clear();
         self.event_log = ReplayBuffer::with_capacity(self.replay_capacity);
+        self.current_turn_abort_handle = None;
+        self.turn_submit_in_flight = false;
+        self.turn_abort_requested = false;
         self.last_event_emitted_at = None;
     }
 
@@ -178,12 +190,16 @@ impl SessionRuntime {
         self.agent = Arc::new(Mutex::new(agent));
         self.approval_handler = approval_handler;
         self.policy_overlay_rules.clear();
+        self.policy_level_override = None;
         self.status = SessionStatus::Active;
         self.turns.clear();
         self.core_turn_to_public.clear();
         self.resolved_approvals.clear();
         self.turn_event_seq.clear();
         self.event_log = ReplayBuffer::with_capacity(self.replay_capacity);
+        self.current_turn_abort_handle = None;
+        self.turn_submit_in_flight = false;
+        self.turn_abort_requested = false;
         self.last_event_emitted_at = None;
     }
 
@@ -302,5 +318,32 @@ impl ApprovalHandler for GatewayApprovalHandler {
         };
         self.pending.lock().await.remove(&approval_id);
         outcome
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_runtime_abort_handle_starts_none() {
+        let runtime = SessionRuntime::new_with_config(Config::default());
+        assert!(runtime.current_turn_abort_handle.is_none());
+        assert!(!runtime.turn_submit_in_flight);
+        assert!(!runtime.turn_abort_requested);
+    }
+
+    #[test]
+    fn clear_context_resets_abort_handle() {
+        let mut runtime = SessionRuntime::new_with_config(Config::default());
+        let rt = tokio::runtime::Runtime::new().expect("create runtime");
+        let handle = rt.spawn(async {}).abort_handle();
+        runtime.current_turn_abort_handle = Some(handle);
+        runtime.turn_submit_in_flight = true;
+        runtime.turn_abort_requested = true;
+        runtime.clear_context();
+        assert!(runtime.current_turn_abort_handle.is_none());
+        assert!(!runtime.turn_submit_in_flight);
+        assert!(!runtime.turn_abort_requested);
     }
 }

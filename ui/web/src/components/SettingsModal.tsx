@@ -192,6 +192,7 @@ export default function SettingsModal(props: SettingsModalProps) {
           modelName: pendingCatalogEntry.default_model,
           apiKey: "",
           providerType: "built_in",
+          protocol: pendingCatalogEntry.protocol ?? "chat_completions",
           contextWindowSize:
             pendingCatalogEntry.models.find(
               (m) => m.model_id === pendingCatalogEntry.default_model
@@ -205,6 +206,7 @@ export default function SettingsModal(props: SettingsModalProps) {
           modelName: "",
           apiKey: "",
           providerType: "custom",
+          protocol: "chat_completions",
           contextWindowSize: 0
         }
       : selectedProvider
@@ -214,6 +216,7 @@ export default function SettingsModal(props: SettingsModalProps) {
             modelName: selectedProvider.model_name,
             apiKey: "",
             providerType: selectedProvider.provider_type,
+            protocol: selectedProvider.protocol ?? "chat_completions",
             contextWindowSize: selectedProvider.context_window_size,
             catalogModels:
               selectedProvider.provider_type === "built_in"
@@ -230,6 +233,7 @@ export default function SettingsModal(props: SettingsModalProps) {
             modelName: "",
             apiKey: "",
             providerType: "custom",
+            protocol: "chat_completions",
             contextWindowSize: 0
           };
 
@@ -358,6 +362,7 @@ export default function SettingsModal(props: SettingsModalProps) {
         modelName: modelId,
         apiKey: "",
         providerType: provider.provider_type,
+        protocol: provider.protocol ?? "chat_completions",
         contextWindowSize: contextWindow
       });
       setProviders((prev) =>

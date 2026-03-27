@@ -47,11 +47,6 @@ fn model_stream_debug_enabled() -> bool {
     })
 }
 
-fn is_legacy_glm_chat_base_url(url: &str) -> bool {
-    let normalized = url.trim_end_matches('/').to_ascii_lowercase();
-    normalized.ends_with("/v4") || normalized.contains("/api/coding/paas/")
-}
-
 fn build_messages_endpoint(base_url: &str) -> String {
     let normalized = base_url.trim_end_matches('/');
     if normalized.ends_with("/v1") {
@@ -160,6 +155,18 @@ impl AnthropicMessagesClient {
         )
     }
 
+    pub(crate) fn from_minimax_config(config: Option<&ModelConfig>) -> Option<Self> {
+        Self::from_provider_config(
+            config,
+            "OPENJAX_MINIMAX_API_KEY",
+            "OPENJAX_MINIMAX_MODEL",
+            "OPENJAX_MINIMAX_BASE_URL",
+            "MiniMax-M2.7",
+            "https://api.minimaxi.com/anthropic/v1",
+            "minimax-anthropic-messages",
+        )
+    }
+
     pub(crate) fn from_glm_config(config: Option<&ModelConfig>) -> Option<Self> {
         Self::from_provider_config(
             config,
@@ -201,12 +208,6 @@ impl AnthropicMessagesClient {
             .filter(|v| !v.trim().is_empty());
         let base_url = if let Some(value) = env_base_url {
             value
-        } else if backend_name == "glm-anthropic-messages" {
-            match config_base_url {
-                Some(value) if is_legacy_glm_chat_base_url(&value) => default_base_url.to_string(),
-                Some(value) => value,
-                None => default_base_url.to_string(),
-            }
         } else {
             config_base_url.unwrap_or_else(|| default_base_url.to_string())
         };
@@ -261,8 +262,8 @@ impl AnthropicMessagesClient {
                 role: "user".to_string(),
                 content: request.user_input.to_string(),
             }],
-            max_tokens: request.options.max_output_tokens.unwrap_or(4096),
-            temperature: Some(0.2),
+            max_tokens: request.options.max_output_tokens.unwrap_or(32000),
+            temperature: None,
             stream: stream.then_some(true),
             thinking,
         }
@@ -274,6 +275,11 @@ impl AnthropicMessagesClient {
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", &self.anthropic_version)
             .header("accept", accept)
+            .header(
+                "anthropic-beta",
+                "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+            )
+            .header("User-Agent", concat!("openjax/", env!("CARGO_PKG_VERSION")))
     }
 }
 
@@ -823,7 +829,7 @@ mod tests {
     use super::{
         AnthropicMessagesClient, build_messages_endpoint, extract_content_from_body,
         extract_delta_content_from_body, extract_delta_thinking_from_body,
-        extract_thinking_from_body, is_legacy_glm_chat_base_url,
+        extract_thinking_from_body,
     };
     use crate::model::registry::RegisteredModel;
     use crate::model::types::{CapabilityFlags, ModelRequest, ModelStage};
@@ -892,19 +898,6 @@ mod tests {
     }
 
     #[test]
-    fn detect_legacy_glm_chat_base_url() {
-        assert!(is_legacy_glm_chat_base_url(
-            "https://open.bigmodel.cn/api/coding/paas/v4"
-        ));
-        assert!(is_legacy_glm_chat_base_url(
-            "https://open.bigmodel.cn/api/coding/paas/v4/"
-        ));
-        assert!(!is_legacy_glm_chat_base_url(
-            "https://open.bigmodel.cn/api/anthropic"
-        ));
-    }
-
-    #[test]
     fn build_messages_endpoint_supports_base_with_or_without_v1() {
         assert_eq!(
             build_messages_endpoint("https://api.anthropic.com/v1"),
@@ -950,8 +943,8 @@ mod tests {
             .build()
             .expect("build request");
 
-        assert_eq!(req.max_tokens, 4096);
-        assert_eq!(req.temperature, Some(0.2));
+        assert_eq!(req.max_tokens, 32000);
+        assert_eq!(req.temperature, None);
         assert_eq!(req.stream, Some(true));
         assert_eq!(
             http_request
@@ -959,6 +952,21 @@ mod tests {
                 .get("anthropic-version")
                 .and_then(|value| value.to_str().ok()),
             Some("2023-06-01")
+        );
+        assert_eq!(
+            http_request
+                .headers()
+                .get("anthropic-beta")
+                .and_then(|v| v.to_str().ok()),
+            Some("interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14")
+        );
+        let expected_ua = concat!("openjax/", env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            http_request
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok()),
+            Some(expected_ua)
         );
     }
 

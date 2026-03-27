@@ -93,7 +93,7 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   if (turnId && shouldCloseReasoningOnEvent(event)) {
-    closeOpenReasoningBlock(next.messages, turnId, event.event_seq);
+    closeOpenReasoningBlock(next.messages, turnId, event.event_seq, event.timestamp);
   }
   if (event.type === "turn_started" || event.type === "response_started" || event.type === "response_resumed") {
     next.turnPhase = "streaming";
@@ -129,6 +129,24 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
     sealAssistantMessage(next.messages, turnId, String(event.payload.content ?? ""), event.timestamp, event);
   }
 
+  if (event.type === "turn_interrupted" && turnId) {
+    for (let i = 0; i < next.messages.length; i += 1) {
+      const message = next.messages[i];
+      if (message.role !== "assistant") {
+        continue;
+      }
+      if (turnId && message.turnId !== turnId) {
+        continue;
+      }
+      next.messages[i] = {
+        ...message,
+        isDraft: false,
+        interrupted: true,
+        lastEventSeq: Math.max(message.lastEventSeq ?? event.event_seq, event.event_seq)
+      };
+    }
+  }
+
   if (event.type === "tool_calls_proposed") {
     upsertToolBatchSummary(next.messages, event, "running");
   }
@@ -162,6 +180,10 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
   }
 
   if (event.type === "turn_completed" || event.type === "response_completed") {
+    next.turnPhase = "completed";
+    markTurnDraftFinal(next.messages, turnId);
+  }
+  if (event.type === "turn_interrupted") {
     next.turnPhase = "completed";
     markTurnDraftFinal(next.messages, turnId);
   }

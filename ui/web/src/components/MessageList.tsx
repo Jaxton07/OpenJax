@@ -166,7 +166,12 @@ function TimelineRow({
             onStreamEnd={onDraftStreamEnd}
           />
         ) : message.role === "assistant" ? (
-          <AssistantMessage content={message.content} mode={assistantRenderMode} final />
+          <AssistantMessage
+            content={message.content}
+            mode={assistantRenderMode}
+            final
+            interrupted={message.interrupted === true}
+          />
         ) : (
           <div className="message-text">{message.content}</div>
         )}
@@ -211,6 +216,7 @@ function AssistantDraftMessage({
       content={content}
       mode={assistantRenderMode}
       final={!snapshot.isActive}
+      interrupted={false}
     />
   );
 }
@@ -218,11 +224,13 @@ function AssistantDraftMessage({
 function AssistantMessage({
   content,
   mode,
-  final
+  final,
+  interrupted
 }: {
   content: string;
   mode: AssistantRenderMode;
   final: boolean;
+  interrupted: boolean;
 }) {
   if (mode === "markdown") {
     return (
@@ -235,12 +243,14 @@ function AssistantMessage({
             deferNodesUntilVisible={false}
           />
         </div>
+        {interrupted ? <span className="message-interrupted-badge">[已中断]</span> : null}
       </>
     );
   }
   return (
     <>
       <div className="message-text">{content}</div>
+      {interrupted ? <span className="message-interrupted-badge">[已中断]</span> : null}
     </>
   );
 }

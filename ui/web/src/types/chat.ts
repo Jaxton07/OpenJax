@@ -56,6 +56,7 @@ export interface ChatMessage {
   turnId?: string;
   isDraft?: boolean;
   hasCanonicalDelta?: boolean;
+  interrupted?: boolean;
   toolSteps?: ToolStep[];
   reasoningBlocks?: ReasoningBlock[];
 }

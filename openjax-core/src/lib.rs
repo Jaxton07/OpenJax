@@ -36,8 +36,7 @@ use tokio::sync::mpsc::UnboundedSender;
 pub use model::build_model_client;
 pub use model::build_model_client_with_config;
 pub use provider_store::{
-    build_config_from_providers, load_runtime_config, normalize_model_id, provider_protocol,
-    provider_vendor,
+    build_config_from_providers, load_runtime_config, normalize_model_id, provider_vendor,
 };
 pub use tools::SandboxMode;
 

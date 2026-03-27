@@ -10,6 +10,9 @@ use crate::tools::ToolCall;
 const READ_MAX_LINE_LENGTH: usize = 500;
 const READ_TAB_WIDTH: usize = 4;
 const READ_COMMENT_PREFIXES: &[&str] = &["#", "//", "--"];
+/// Maximum tokens allowed in a single read response (~4 chars per token).
+const READ_MAX_TOKENS: usize = 25_000;
+const READ_MAX_CHARS: usize = READ_MAX_TOKENS * 4;
 
 #[derive(Deserialize)]
 struct ReadFileArgs {
@@ -155,6 +158,22 @@ async fn read_file_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec
 
     if seen < offset {
         return Err(anyhow!("offset exceeds file length"));
+    }
+
+    let output_chars: usize = collected.iter().map(|s| s.len()).sum();
+    if output_chars > READ_MAX_CHARS {
+        let estimated_tokens = output_chars / 4;
+        let file_bytes = tokio::fs::metadata(path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let file_estimated_tokens = file_bytes as usize / 4;
+        return Err(anyhow!(
+            "File content ({estimated_tokens} estimated tokens) exceeds maximum allowed tokens \
+             ({READ_MAX_TOKENS}). Total file is approximately {file_estimated_tokens} tokens \
+             ({file_bytes} bytes). Use offset and limit parameters to read specific portions \
+             of the file, or search for specific content instead of reading the whole file."
+        ));
     }
 
     Ok(collected)
@@ -401,6 +420,24 @@ mod tests {
         assert_eq!(
             lines,
             vec!["L1: first".to_string(), "L2: second".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn errors_when_output_exceeds_token_limit() {
+        let mut temp = NamedTempFile::new().unwrap();
+        // 210 lines × 500 chars ≈ 106,000 chars > READ_MAX_CHARS (100,000)
+        let long_line = "x".repeat(READ_MAX_LINE_LENGTH);
+        for _ in 0..210 {
+            writeln!(temp, "{long_line}").unwrap();
+        }
+
+        let err = read_file_slice(temp.path(), 1, 2000)
+            .await
+            .expect_err("should error when output exceeds token limit");
+        assert!(
+            err.to_string().contains("exceeds maximum allowed tokens"),
+            "unexpected error: {err}"
         );
     }
 

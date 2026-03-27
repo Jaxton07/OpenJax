@@ -53,7 +53,9 @@ export default function App() {
     fetchCatalog,
     dismissGlobalError,
     dismissToast,
-    sendPolicyLevel
+    sendPolicyLevel,
+    isStreaming,
+    abortTurn
   } = useChatApp();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -210,6 +212,8 @@ export default function App() {
           onNewChat={() => void newChat()}
           policyLevel={activeSession?.policyLevel ?? "ask"}
           onPolicyLevelChange={(level) => void sendPolicyLevel(activeSession!.id, level)}
+          isStreaming={isStreaming}
+          onStop={() => void abortTurn()}
         />
       </main>
 

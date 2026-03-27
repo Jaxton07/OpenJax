@@ -1,9 +1,7 @@
 use openjax_protocol::Event;
-use std::time::Instant;
 use tracing::info;
 
 use crate::state::{ApprovalSelection, LiveMessage, PendingApproval};
-use openjax_core::approval_timeout_ms_from_env;
 
 use super::App;
 use super::tool_output::sanitize_target_for_title;
@@ -106,8 +104,6 @@ impl App {
                 degrade_reason,
                 ..
             } => {
-                let now = Instant::now();
-                let timeout_ms = approval_timeout_ms_from_env();
                 let mut dedup_request_id: Option<String> = None;
                 if let Some(existing) = self.state.pending_approval.as_mut()
                     && existing.request_id == request_id
@@ -131,8 +127,6 @@ impl App {
                     if existing.degrade_reason.is_none() {
                         existing.degrade_reason = degrade_reason.clone();
                     }
-                    existing.requested_at = now;
-                    existing.timeout_ms = timeout_ms;
                     self.state.approval_selection = ApprovalSelection::Approve;
                     dedup_request_id = Some(existing.request_id.clone());
                 }
@@ -151,8 +145,6 @@ impl App {
                     risk_tags,
                     sandbox_backend,
                     degrade_reason,
-                    requested_at: now,
-                    timeout_ms,
                 });
                 self.dismiss_slash_palette();
                 self.state.approval_selection = ApprovalSelection::Approve;
@@ -271,8 +263,6 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use openjax_protocol::{Event, StreamSource};
 
     use super::App;
@@ -394,8 +384,6 @@ mod tests {
             risk_tags: vec!["write".to_string()],
             sandbox_backend: Some("linux_native".to_string()),
             degrade_reason: None,
-            requested_at: Instant::now(),
-            timeout_ms: 30_000,
         });
         app.state.live_messages = vec![LiveMessage {
             role: "approval",
