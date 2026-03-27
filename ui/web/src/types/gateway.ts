@@ -132,7 +132,7 @@ export interface TurnStatusResponse {
 export interface SessionActionResponse {
   request_id: string;
   session_id: string;
-  status: "cleared" | "shutdown" | "resolved";
+  status: "cleared" | "shutdown" | "resolved" | "compacted" | "aborted";
   approval_id?: string;
   timestamp: string;
 }
@@ -228,6 +228,7 @@ export interface StreamEvent {
     | "approval_resolved"
     | "context_usage_updated"
     | "turn_completed"
+    | "turn_interrupted"
     | "session_shutdown"
     | "error";
   payload: Record<string, unknown>;

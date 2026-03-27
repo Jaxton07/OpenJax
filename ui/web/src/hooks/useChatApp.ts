@@ -181,6 +181,9 @@ export function useChatApp() {
     if (event.type === "turn_completed") {
       streamRenderStore.clear(sessionId, event.turn_id);
     }
+    if (event.type === "turn_interrupted") {
+      streamRenderStore.clear(sessionId, event.turn_id);
+    }
 
     setState((prev) => {
       let changed = false;
@@ -212,6 +215,13 @@ export function useChatApp() {
   const activeSession = useMemo(
     () => state.sessions.find((session) => session.id === state.activeSessionId) ?? null,
     [state.activeSessionId, state.sessions]
+  );
+  const isStreaming = useMemo(
+    () =>
+      activeSession != null &&
+      activeSession.turnPhase === "streaming" &&
+      activeSession.pendingApprovals.length === 0,
+    [activeSession]
   );
 
   const clearAuthState = useCallback((message: string) => {
@@ -582,6 +592,15 @@ export function useChatApp() {
     });
   }, [clearAuthState, client, state.activeSessionId, withAuthRetry]);
 
+  const abortTurn = useCallback(async () => {
+    if (!state.activeSessionId) {
+      return;
+    }
+    try {
+      await withAuthRetry(() => client.abortTurn(state.activeSessionId!));
+    } catch {}
+  }, [client, state.activeSessionId, withAuthRetry]);
+
   const updateSettings = useCallback((next: AppSettings) => {
     const normalizedSettings: AppSettings = {
       ...next,
@@ -746,6 +765,7 @@ export function useChatApp() {
   return {
     state,
     activeSession,
+    isStreaming,
     isAuthenticated: state.auth.authenticated,
     authenticate,
     logout,
@@ -756,6 +776,7 @@ export function useChatApp() {
     resolveApproval,
     clearConversation,
     compactConversation,
+    abortTurn,
     updateSettings,
     testConnection,
     listAuthSessions,

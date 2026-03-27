@@ -23,16 +23,36 @@ use crate::runtime_loop::{
 };
 use crate::tui::Tui;
 
-fn dismiss_overlay(app: &mut App) {
+fn dismiss_overlay(
+    app: &mut App,
+    turn_task: &mut Option<tokio::task::JoinHandle<()>>,
+    core_event_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>>,
+) {
     if app.state.policy_picker.is_some() {
         app.dismiss_policy_picker();
     } else if app.is_slash_palette_active() {
         app.dismiss_slash_palette();
     } else if app.state.pending_approval.is_some() {
         app.defer_pending_approval();
+    } else if turn_task.is_some() {
+        abort_turn(app, turn_task, core_event_rx);
     } else {
         app.clear();
     }
+}
+
+fn abort_turn(
+    app: &mut App,
+    turn_task: &mut Option<tokio::task::JoinHandle<()>>,
+    core_event_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>>,
+) {
+    if let Some(task) = turn_task.take() {
+        task.abort();
+    }
+    core_event_rx.take();
+    let turn_id = app.state.active_turn_id.unwrap_or(0);
+    app.apply_core_event(openjax_protocol::Event::TurnCompleted { turn_id });
+    app.set_live_status("已中断");
 }
 
 pub async fn run() -> anyhow::Result<()> {
@@ -149,7 +169,9 @@ pub async fn run() -> anyhow::Result<()> {
                 }
             }
             InputAction::Append(text) => app.append_input(&text),
-            InputAction::DismissOverlay => dismiss_overlay(&mut app),
+            InputAction::DismissOverlay => {
+                dismiss_overlay(&mut app, &mut turn_task, &mut core_event_rx)
+            }
             InputAction::None => {}
         }
     }
@@ -172,7 +194,7 @@ pub async fn run() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::dismiss_overlay;
+    use super::{abort_turn, dismiss_overlay};
     use crate::app::App;
     use crate::state::PendingApproval;
 
@@ -192,7 +214,10 @@ mod tests {
         app.state.input = "tmp".to_string();
         app.state.input_cursor = 3;
 
-        dismiss_overlay(&mut app);
+        let mut turn_task: Option<tokio::task::JoinHandle<()>> = None;
+        let mut core_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>> =
+            None;
+        dismiss_overlay(&mut app, &mut turn_task, &mut core_event_rx);
 
         assert!(app.state.pending_approval.is_some());
         assert!(app.state.input.is_empty());
@@ -207,5 +232,25 @@ mod tests {
             status.content,
             "Approval pending: choose Approve or Deny when ready"
         );
+    }
+
+    #[tokio::test]
+    async fn abort_turn_clears_task_and_sets_status() {
+        let mut app = App::default();
+        app.apply_core_event(openjax_protocol::Event::TurnStarted { turn_id: 42 });
+        let mut turn_task: Option<tokio::task::JoinHandle<()>> = Some(tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(9999)).await
+        }));
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<openjax_protocol::Event>();
+        drop(tx);
+        let mut core_event_rx = Some(rx);
+
+        abort_turn(&mut app, &mut turn_task, &mut core_event_rx);
+
+        assert!(turn_task.is_none());
+        assert!(core_event_rx.is_none());
+        assert!(app.state.active_turn_id.is_none());
+        let status = app.state.live_messages.first().expect("status should exist");
+        assert!(status.content.contains("已中断"));
     }
 }

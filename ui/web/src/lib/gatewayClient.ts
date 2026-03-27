@@ -150,6 +150,12 @@ export class GatewayClient {
     });
   }
 
+  async abortTurn(sessionId: string): Promise<void> {
+    await this.request(`/api/v1/sessions/${sessionId}:abort`, {
+      method: "POST"
+    });
+  }
+
   async shutdownSession(sessionId: string): Promise<SessionActionResponse> {
     return this.request(`/api/v1/sessions/${sessionId}`, {
       method: "DELETE"

@@ -17,6 +17,8 @@ interface ComposerProps {
   contextUsage?: ContextUsageState | null;
   policyLevel?: "allow" | "ask" | "deny";
   onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
+  isStreaming?: boolean;
+  onStop?: () => void;
 }
 
 export default function Composer({
@@ -29,6 +31,8 @@ export default function Composer({
   contextUsage,
   policyLevel,
   onPolicyLevelChange,
+  isStreaming,
+  onStop
 }: ComposerProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -161,6 +165,8 @@ export default function Composer({
         onSlashClose={handleSlashClose}
         policyLevel={policyLevel}
         onPolicyLevelChange={onPolicyLevelChange}
+        isStreaming={isStreaming}
+        onStop={onStop}
       />
     </div>
   );

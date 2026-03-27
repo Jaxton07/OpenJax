@@ -212,6 +212,24 @@ pub async fn submit_turn(
                 json!({ "session_id": session_id }),
             ));
         }
+        if session.turn_submit_in_flight || session.current_turn_abort_handle.is_some() {
+            return Err(ApiError::conflict(
+                "another turn is still running",
+                json!({ "session_id": session_id }),
+            ));
+        }
+        if let Some((running_turn_id, _)) = session
+            .turns
+            .iter()
+            .find(|(_, turn)| matches!(turn.status, TurnStatus::Running))
+        {
+            return Err(ApiError::conflict(
+                "another turn is still running",
+                json!({ "session_id": session_id, "turn_id": running_turn_id }),
+            ));
+        }
+        session.turn_abort_requested = false;
+        session.turn_submit_in_flight = true;
         if !input.is_empty() {
             state.append_message(&session_id, None, "user", &input)?;
             let user_event = session.create_gateway_event(
@@ -374,6 +392,25 @@ pub async fn session_action(
             request_id: ctx.request_id,
             session_id: session_id.to_string(),
             status: "compacted",
+            timestamp: now_rfc3339(),
+        }));
+    }
+    if normalized == "abort" {
+        let handle = {
+            let mut session = session_runtime.lock().await;
+            let handle = session.current_turn_abort_handle.take();
+            if handle.is_some() {
+                session.turn_abort_requested = true;
+            }
+            handle
+        };
+        if let Some(handle) = handle {
+            handle.abort();
+        }
+        return Ok(Json(SessionActionResponse {
+            request_id: ctx.request_id,
+            session_id: session_id.to_string(),
+            status: "aborted",
             timestamp: now_rfc3339(),
         }));
     }
@@ -604,4 +641,16 @@ pub async fn set_policy_level(
     Ok(Json(SetPolicyLevelResponse {
         level: level.as_str().to_string(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_session_action, parse_session_action};
+
+    #[test]
+    fn abort_action_parses_correctly() {
+        let (session_id, action) = parse_session_action("sess_abc123:abort").expect("parse");
+        assert_eq!(session_id, "sess_abc123");
+        assert_eq!(normalize_session_action(action), "abort");
+    }
 }

@@ -123,6 +123,37 @@
   height: 34px;
 }
 
+.composer-stop-btn {
+  border: none;
+  background: transparent;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink);
+  --stop-icon-outer: #000;
+  --stop-icon-inner: #fff;
+  transition: opacity 0.14s ease;
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+}
+
+[data-theme="dark"] .composer-stop-btn {
+  --stop-icon-outer: #fff;
+  --stop-icon-inner: #000;
+}
+
+.composer-stop-btn:hover {
+  opacity: 0.88;
+}
+
+.composer-stop-btn svg {
+  width: 34px;
+  height: 34px;
+}
+
 .context-usage-ring {
   position: absolute;
   left: 10px;

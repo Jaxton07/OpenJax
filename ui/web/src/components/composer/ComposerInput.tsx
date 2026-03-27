@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { SendIcon } from "../../pic/icon";
+import { SendIcon, StopCircleIcon } from "../../pic/icon";
 import type { ContextUsageState } from "../../types/chat";
 import type { SlashCommandDto } from "../../types/gateway";
 import ContextUsageRing from "./ContextUsageRing";
@@ -19,6 +19,8 @@ interface ComposerInputProps {
   onSlashClose?: () => void;
   policyLevel?: "allow" | "ask" | "deny";
   onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
+  isStreaming?: boolean;
+  onStop?: () => void;
 }
 
 export default function ComposerInput({
@@ -34,6 +36,8 @@ export default function ComposerInput({
   onSlashClose,
   policyLevel,
   onPolicyLevelChange,
+  isStreaming,
+  onStop
 }: ComposerInputProps) {
   const hasContent = value.trim().length > 0;
 
@@ -73,16 +77,28 @@ export default function ComposerInput({
           }
         }}
       />
-      <button
-        type="button"
-        className={`composer-send-btn ${hasContent && !disabled ? "ready" : ""}`}
-        onClick={onSubmit}
-        disabled={disabled || !hasContent}
-        aria-label="发送"
-        title="发送"
-      >
-        <SendIcon aria-hidden="true" />
-      </button>
+      {isStreaming ? (
+        <button
+          type="button"
+          className="composer-stop-btn"
+          onClick={onStop}
+          aria-label="停止"
+          title="停止"
+        >
+          <StopCircleIcon aria-hidden="true" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={`composer-send-btn ${hasContent && !disabled ? "ready" : ""}`}
+          onClick={onSubmit}
+          disabled={disabled || !hasContent}
+          aria-label="发送"
+          title="发送"
+        >
+          <SendIcon aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }

@@ -57,6 +57,15 @@ export function SendIcon(props: IconProps) {
   );
 }
 
+export function StopCircleIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <circle cx="512" cy="512" r="469.333333" fill={props.fill ?? "var(--stop-icon-outer, currentColor)"} />
+      <rect x="298.666667" y="298.666667" width="426.666667" height="426.666667" rx="37.333333" fill="var(--stop-icon-inner, var(--bg))" />
+    </svg>
+  );
+}
+
 export function EyeOpenIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" {...props}>
