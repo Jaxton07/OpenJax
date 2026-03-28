@@ -118,6 +118,7 @@ pub(crate) fn refresh_loop_recovery_in_messages(
     *text = refreshed;
 }
 
+#[allow(dead_code)]
 pub(crate) fn build_planner_input(
     user_input: &str,
     history: &[HistoryItem],
@@ -207,6 +208,7 @@ Tool execution history:\n{tool_context}\n"
     prompt
 }
 
+#[allow(dead_code)]
 pub(crate) fn build_json_repair_prompt(previous_output: &str) -> String {
     format!(
         "Your previous response did not match the required JSON schema.\n\

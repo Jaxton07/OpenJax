@@ -12,6 +12,7 @@ use crate::agent::tool_policy::is_approval_blocking_error;
 use crate::agent::turn_engine::TurnEngine;
 use crate::{Agent, tools};
 
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone, Copy)]
 pub(super) struct BatchExecutionResult {
     pub(super) executed_count: usize,
@@ -20,6 +21,7 @@ pub(super) struct BatchExecutionResult {
 }
 
 impl Agent {
+    #[allow(dead_code)]
     pub(super) async fn execute_tool_batch_calls(
         &mut self,
         turn_id: u64,

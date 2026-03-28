@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 // Legacy JSON planner parsing helpers retained for migration traceability and
 // non-primary-path tests. The default runtime path is native tool calling.
 use serde::Deserialize;

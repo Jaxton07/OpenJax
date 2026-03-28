@@ -61,6 +61,7 @@ pub(super) fn summarize_log_preview(text: &str, limit: usize) -> (String, bool) 
     (preview, true)
 }
 
+#[allow(dead_code)]
 pub(super) fn summarize_log_preview_json(text: &str, limit: usize) -> String {
     let (preview, truncated) = summarize_log_preview(text, limit);
     serde_json::json!({

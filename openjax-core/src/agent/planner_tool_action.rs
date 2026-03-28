@@ -342,6 +342,7 @@ impl Agent {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) async fn handle_tool_action(
         &mut self,
         turn_id: u64,

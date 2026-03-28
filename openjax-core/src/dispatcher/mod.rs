@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 // Legacy dispatcher path for historical JSON planner outputs. Kept as a
 // non-primary helper while native tool calling remains the runtime default.
 mod errors;
