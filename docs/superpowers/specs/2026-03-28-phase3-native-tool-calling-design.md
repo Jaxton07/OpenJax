@@ -1,115 +1,130 @@
-# Phase 3: Agent Loop — Native Tool Calling
+# Phase 3 设计规格：Agent 循环层 — Native Tool Calling
 
-> Date: 2026-03-28
-> Status: Draft
- fixes applied
- spec Reviewer feedback
- see CHANGELOG below
-> Parent: `docs/plan/refactor/tools/native-tool-calling-plan.md`
-> Prerequisites: Phase 1 (types.rs) ✅, Phase 2 (adapters) ✅
+> 日期：2026-03-28
+> 状态：Draft
+> 父文档：`docs/plan/refactor/tools/native-tool-calling-plan.md`
+> 前置：Phase 1 (types.rs) ✅、Phase 2 (adapters) ✅
 
 ---
 
-## Goal
+## 目标
 
- Replace the custom "Planner Prompt" loop (JSON text → dispatcher → DispatchOutcome) with a native tool calling loop (ModelResponse.content → tool_use blocks → tool_result blocks). The dispatcher, DecisionJsonStreamParser, and JSON repair paths are removed from the planner's hot path.
+用 Native Tool Calling 对话循环（`ModelResponse.content` → `tool_use` blocks → `tool_result` blocks）替换当前的 "Planner Prompt" 循环（JSON 文本 → dispatcher → `DispatchOutcome`）。dispatcher、`DecisionJsonStreamParser`、JSON 修复路径从 planner 热路径中移除。
 
- The approach
+## 实施策略
 
- Three sequential sub-phases, each independently compilable: | Sub-phase | Scope | Files | Breaks anything? |
-|-----------|-------|-------|-----------------|
-| 3a | Foundation | `router_impl.rs`, `prompt.rs` | No — pure additions |
-| 3b | Stream simplification | `planner_stream_flow.rs` | Planner still uses old path |
-| 3c | Core loop + tests | `planner.rs`, `planner_tool_action.rs`, `tests.rs` | Core rewrite |
+三个顺序子阶段，每个子阶段独立可编译：
+
+| 子阶段 | 范围 | 涉及文件 | 是否破坏编译 |
+|--------|------|---------|-------------|
+| 3a 基础 | 新增接口和函数 | `router_impl.rs`、`prompt.rs` | 否，纯新增 |
+| 3b 流简化 | 去掉 JSON 解析 | `planner_stream_flow.rs` | Planner 仍用旧路径 |
+| 3c 核心重写 | 循环 + 测试 | `planner.rs`、`planner_tool_action.rs`、`tests.rs` | 核心改动 |
 
 ---
 
-## Sub-phase 3a: Foundation
+## 子阶段 3a：基础
 
- ### 3a.1 `tools/router_impl.rs` — expose tool_specs
+### 3a.1 `tools/router_impl.rs` — 暴露 tool_specs
 
- Add one method: ```rust
+新增一个方法：
+
+```rust
 impl ToolRouter {
     pub fn tool_specs(&self) -> Vec<ToolSpec> {
         self.specs.clone()
     }
+}
 ```
 
- `display_name_for()` already exists ( returns `Option<String>` ). No other changes.
+`display_name_for()` 已存在（返回 `Option<String>`），无需重复。
 
- ### 3a.2 `agent/prompt.rs` — new functions alongside old ones Add two new functions. Keep `build_planner_input` and `build_json_repair_prompt` alive (3c deletes them). **`build_system_prompt(skills_context: &str) -> String`** Extract the non-JSON-schema content from `build_planner_input`: persona, behavior rules, tool selection policy, skills context. Strip all JSON format instructions, tool name enumeration, and action schema rules (those are now conveyed via native `tools` parameter).
+### 3a.2 `agent/prompt.rs` — 新增函数（保留旧函数直到 3c）
 
- Content (preserved from `build_planner_input`, minus JSON schema):
- - Persona: "You are OpenJax, an all-purpose personal AI assistant."
+**`build_system_prompt(skills_context: &str) -> String`**
+
+从 `build_planner_input` 提取非 JSON-schema 内容：人设、行为规则、工具选择策略、技能上下文。去掉所有 JSON 格式指令、工具名枚举、action schema 规则（这些现在通过原生 `tools` 参数传递）。
+
+**保留到 system prompt 的内容：**
+- 人设："You are OpenJax, an all-purpose personal AI assistant."
 - "If task can be answered now, respond with the final answer directly."
- - "In final answer, avoid mentioning internal planning, hidden reasoning, or tool traces unless the user explicitly asks."
- - "If required information is missing, ask one concise clarification question."
- - "If verification already shows the requested content/changes are present, respond immediately."
- - Tool selection policy (read_file before edit, apply_patch for multi-file, etc.)
-- apply_patch format rules (argument formatting, not tool discovery)
-- edit_file_range argument rules
-- Shell workspace-relative preference
-- Skills invocation rule: skill markers like `/skill-name` are not shell executables
-- No-repeat policy: "Do NOT repeat the same tool call with the same arguments." - "If verification already show the requested content/changes are present, respond immediately." - Skills context block **Removed from prompt (now handled by native `tools` parameter):**
-- "Return ONLY valid JSON" instruction
-- JSON schema (`{"action":"tool",...}`, `{"action":"final",...}` )
-- Tool name enumeration (`read_file|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|edit_file_range`)
+- "In final answer, avoid mentioning internal planning, hidden reasoning, or tool traces."
+- "If required information is missing, ask one concise clarification question."
+- "If verification already shows the requested content/changes are present, respond immediately."
+- 工具选择策略（优先 read_file、edit_file_range 用于单文件、apply_patch 用于多文件）
+- apply_patch 格式规则（参数格式化规则，不是工具发现）
+- edit_file_range 参数规则
+- Shell 工作区相对路径偏好
+- 技能调用规则：skill 标记如 `/skill-name` 不是 shell 可执行文件
+- 不重复策略："Do NOT repeat the same tool call with the same arguments."
+- 技能上下文块
+
+**从 prompt 中移除的内容（现在由原生 `tools` 参数处理）：**
+- "Return ONLY valid JSON" 指令
+- JSON schema（`{"action":"tool",...}`、`{"action":"final",...}`）
+- 工具名枚举（`read_file|list_dir|grep_files|...`）
 - "At most one action per response"
- - "All values inside args MUST be JSON strings" - "At most one action per response" - **`build_turn_messages(user_input: &str, history: &[HistoryItem], loop_recovery: Option<&str>) -> Vec<ConversationMessage>`** Build the `Vec<ConversationMessage>` for the model request: - If history is non-empty, inject first message as `<prior_conversation>` text summary (same format as current `build_planner_input` history section) - Current `user_input` as the last `ConversationMessage::User(vec![Text { text: user_input }])`  - `loop_recovery` appended to user_input if present **Note:** `tool_traces` (current turn's tool execution history) is not passed to `build_planner_input` but the in the new loop they they are naturally in `messages` via tool_use/tool_result ConversationMessage pairs `commit_turn` still collects `tool_traces` as `Vec<String>` in the same way ( same format as current code: `handle_tool_action` / `execute_tool_batch_calls`), for `commit_turn`. In new loop, `tool_traces` collected from `execute_native_tool_call` by formatting `"tool_name(args) → result_string"` for each executed tool. **This does be `commit_turn` recording.** **Do NOT add this as a parameter to `build_turn_messages`.** `build_turn_messages` handles `history` -> tool_traces not `tool_traces` are injected via `<prior_conversation>` section, which has the `TurnRecord.tool_traces`, and in the loop, `tool_traces` are part of `ConversationMessage` (tool_result blocks).
+- "All values inside args MUST be JSON strings"
 
- ---
+**`build_turn_messages(user_input: &str, history: &[HistoryItem], loop_recovery: Option<&str>) -> Vec<ConversationMessage>`**
 
-## Sub-phase 3b: Stream Flow Simplification
+构建 `Vec<ConversationMessage>` 用于模型请求：
+- 如果 history 非空，注入 `<prior_conversation>` 文本摘要作为第一条 User 消息（格式与当前 `build_planner_input` 历史部分相同）
+- 当前 `user_input` 作为最后一条 `ConversationMessage::User(vec![Text{ text: user_input }])`
+- `loop_recovery` 如果存在，追加到 user_input 文本末尾
 
- ### 3b.1 `agent/planner_stream_flow.rs` — remove JSON parsing **Current flow:**
-1. Stream model output through `DecisionJsonStreamParser`
- 2. Try `parse_model_decision` on result
- 3. If parse fails, try reconstructing from streamed message
- 4. If still fails, fallback to `model_client.complete()` (non-streaming)
- 5. Return `PlannerStreamResult { model_output: String, ... }`
+**关于 `tool_traces`：** `build_turn_messages` 不接受 `tool_traces` 参数。当前 turn 内的工具执行历史通过 `messages` 中的 `ConversationMessage`（tool_use / tool_result 对）自然传递。`commit_turn` 需要的 `tool_traces: Vec<String>` 在 `execute_native_tool_call` 中以 `"tool_name(args) → result_summary"` 格式收集。
 
-**New flow:**
-1. Stream model deltas: Text → orchestrator, ToolUseStart/ArgsDelta/End → events, Reasoning → event) 2. Collect streamed text from Text deltas
-3. Return `PlannerStreamResult` with `response: ModelResponse` directly
- 4. No JSON parsing, no fallback to `complete()`
+**保留的工具函数：** `truncate_for_prompt` 和 `summarize_user_input` — 仍被 `planner_tool_action.rs` 和 `planner_utils.rs` 引用。
 
-**Event emission strategy (critical):**
-The the the **stream phase** (`planner_stream_flow.rs`), only `ToolUseStart`, `ToolCallArgsDelta`, `ToolCallReady` are streaming events. The execution loop in `planner.rs` emits `ToolCallCompleted`. This avoids duplicates `ToolCallStarted`:
-- **Stream phase**: emits `ToolCallArgsDelta` + `ToolCallReady` (arg progress + completion notification)
-- **Execution phase**: emits `ToolCallCompleted` (result + ok/error)
+---
 
-- **Neither phase** re-emits `ToolCallStarted` — this event is a separate dedicated event for "tool call submitted to model for execution" that precedes the streaming. This is NOT `ToolCallStarted` from the current codebase — it's a new behavior to this flow. **ToolCallStarted` is the stream phase signals for "tool call arguments arriving" to TUI can show a progress. **ToolCallReady` in stream phase signals "arguments complete, ready to execute". **ToolCallCompleted` in execution phase signal "execution done, here's the result".
+## 子阶段 3b：流式简化
 
-This design avoids emitting duplicate events types.
+### 3b.1 `agent/planner_stream_flow.rs` — 移除 JSON 解析
 
- Each tool call gets a clean event triple: `ToolCallStarted` (stream) → `ToolCallReady` (stream) → `ToolCallCompleted` (execution).
-Note: Some existing TUI consumers code may emit itsToolCallStarted` separately before execution. In such cases, both the stream event and the separate `ToolCallStarted` would be emitted. If such a consumer exists, it should be updated to subscribe to `ToolCallReady` instead, or the new planner should emit `ToolCallStarted` in the execution phase instead of the stream phase. For Phase 3, we'll keep the stream phase emissions (`ToolCallStarted` + `ToolCallReady`) and NOT re remit `ToolCallStarted` in the execution phase, since existing TUI code already subscri to stream events.
+**当前流程：**
+1. 通过 `DecisionJsonStreamParser` 流式解析模型输出
+2. 尝试 `parse_model_decision` 解析结果
+3. 解析失败则尝试从流式消息重建 JSON
+4. 仍然失败则 fallback 到 `model_client.complete()`（非流式）
+5. 返回 `PlannerStreamResult { model_output: String, ... }`
 
-**New `PlannerStreamResult`:**
+**新流程：**
+1. 流式处理 model deltas：Text → orchestrator、ToolUseStart/ArgsDelta/End → events、Reasoning → event
+2. 从 Text deltas 收集流式文本
+3. 直接返回 `PlannerStreamResult` 包含 `response: ModelResponse`
+4. 无 JSON 解析，无 fallback 到 `complete()`
+
+**新 `PlannerStreamResult`：**
+
 ```rust
 pub(super) struct PlannerStreamResult {
     pub(super) response: ModelResponse,
-    /// Text accumulated from StreamDelta::Text deltas (for final answer streaming).
-
-    /// Unlike old `model_output` (raw JSON string), this is `response.text()` (parsed `ModelResponse`).
+    /// Text deltas 累积的文本（用于 final answer 流式传输）。
+    /// 语义：response.text() 的流式版本，不等同于旧的 model_output（原始 JSON 字符串）。
     pub(super) streamed_text: String,
     pub(super) live_streamed: bool,
     pub(super) usage: Option<ModelUsage>,
 }
 ```
-**Removed:** `DecisionJsonStreamParser` import and usage, `parse_model_decision` call, `action_hint` field, `model_output: String` field, fallback-to-complete logic.
-**Kept:** `emit_synthetic_response_deltas`, TTFT logging, `ResponseStreamOrchestrator`, all `StreamDelta` event handling.
-**Error handling:** If `complete_stream` fails, return error directly — no retry with `complete()`.
+
+**移除：** `DecisionJsonStreamParser` 导入和使用、`parse_model_decision` 调用、`action_hint` 字段、`model_output: String` 字段、fallback-to-complete 逻辑。
+
+**保留：** `emit_synthetic_response_deltas`、TTFT 日志、`ResponseStreamOrchestrator`、所有 `StreamDelta` 事件处理。
+
+**错误处理：** 如果 `complete_stream` 失败，直接返回错误 — 不用 `complete()` 重试。
 
 ---
 
-## Sub-phase 3c: Core Loop Rewrite + Tests
+## 子阶段 3c：核心循环重写 + 测试
 
- ### 3c.1 `agent/planner.rs` — new loop
+### 3c.1 `agent/planner.rs` — 新循环
 
-**Current flow (simplified):**
+**当前流程（简化）：**
+
 ```
-while under limits:
+while 未达限制:
     prompt = build_planner_input(...)
     result = request_planner_model_output(turn_id, &request, true, events)
     routed = dispatcher::route_model_output(result.model_output, ...)
@@ -117,34 +132,36 @@ while under limits:
         ToolBatch → execute_tool_batch_calls
         Tool → handle_tool_action
         Final → emit response, commit_turn, return
-        Repair → attempt JSON repair
+        Repair → 尝试 JSON 修复
         Error → emit error, return
 ```
-**New flow:**
+
+**新流程：**
+
 ```
 system_prompt = build_system_prompt(&skills_context)
 messages = build_turn_messages(user_input, &history, loop_recovery)
 tool_specs = self.tools.tool_specs()
 
-while under limits:
+while 未达限制:
     request = ModelRequest { stage: Planner, system_prompt, messages, tools: tool_specs, options }
     result = request_planner_model_output(turn_id, &request, true, events)
     response = result.response
 
-    // Append assistant response to messages
+    // 将助手响应追加到 messages
     messages.push(ConversationMessage::Assistant(response.content.clone()))
 
     if !response.has_tool_use():
-        // Final answer — emit events, commit, return
+        // 最终回答 — 发射事件、提交、返回
         let final_text = response.text()
         emit_final_response(...)
         commit_turn(user_input, tool_traces, final_text)
         return
 
-    // Collect tool_use blocks, emit ToolCallsProposed
-    // NOTE: planner_stream_flow already emitted ToolCallStarted/ToolCallReady during streaming.
-    // Here we only emit ToolCallCompleted.
-    let tool_uses: Vec<&AssistantContentBlock> = response.tool_uses()
+    // 收集 tool_use blocks，发射 ToolCallsProposed
+    // 注意：planner_stream_flow 已在流式阶段发射了 ToolCallStarted/ToolCallReady
+    // 这里只发射 ToolCallCompleted
+    let tool_uses = response.tool_uses()
     emit ToolCallsProposed event
     let mut tool_result_blocks: Vec<UserContentBlock> = Vec::new()
 
@@ -152,9 +169,8 @@ while under limits:
         let AssistantContentBlock::ToolUse { id, name, input } = tool_use else { continue };
 
         let display_name = self.tools.display_name_for(name);
-        let target = extract_target(name, input);
 
-        // execute_native_tool_call emits ToolCallCompleted internally
+        // execute_native_tool_call 内部发射 ToolCallCompleted
         let outcome = execute_native_tool_call(
             turn_id, id, name, input, events, &mut tool_traces,
             &mut apply_patch_read_guard, &mut consecutive_duplicate_skips,
@@ -163,7 +179,7 @@ while under limits:
 
         match outcome:
             Aborted → emit error, return
-            Result { content, ok } =>
+            Result { content, ok } →
                 tool_result_blocks.push(UserContentBlock::ToolResult {
                     tool_use_id: id.clone(),
                     content,
@@ -171,50 +187,55 @@ while under limits:
                 })
                 executed_count += 1
 
-    // Check all tools completed
+    // 所有工具执行完毕
     emit ToolBatchCompleted { total: tool_uses.len(), ... }
     messages.push(ConversationMessage::User(tool_result_blocks))
-    // continue loop
+    // 继续循环
 ```
 
-**Key changes:**
-- `dispatcher::route_model_output()` — no longer called
-- `DecisionJsonStreamParser` — no longer used
-- JSON repair path — removed entirely
-- `DispatchOutcome` — not used
-- `build_planner_input` — replaced by `build_system_prompt` + `build_turn_messages`
-- Tool execution uses existing `ToolRouter::execute()` with `ToolCall` constructed from `AssistantContentBlock::ToolUse`
+**关键变更：**
+- `dispatcher::route_model_output()` — 不再调用
+- `DecisionJsonStreamParser` — 不再使用
+- JSON 修复路径 — 完全移除
+- `DispatchOutcome` — 不再使用
+- `build_planner_input` — 被 `build_system_prompt` + `build_turn_messages` 替代
+- 工具执行使用现有 `ToolRouter::execute()`，`ToolCall` 从 `AssistantContentBlock::ToolUse` 构造
 
-**Preserved logic (migrated to new loop):**
-- `ApplyPatchReadGuard` — checked in `execute_native_tool_call`
-- Duplicate tool call detection — checked in `execute_native_tool_call`
-- Loop detection via `loop_detector` — checked after each tool execution
-- `TurnEngine` state machine events — `on_response_started/completed/failed`
-- Rate limiting — `apply_rate_limit()` before each model call
-- Skill context construction
-- `max_tool_calls_per_turn` / `max_planner_rounds_per_turn` limits
-- `tool_traces` recording for `commit_turn`
-- Auto-compaction (`check_and_auto_compact`)
-- Flow trace logging
+**迁移保留的逻辑：**
+- `ApplyPatchReadGuard` — 在 `execute_native_tool_call` 中检查
+- 重复工具调用检测 — 在 `execute_native_tool_call` 中检查
+- 循环检测 `loop_detector` — 每次工具执行后检查
+- `TurnEngine` 状态机事件 — `on_response_started/completed/failed`
+- 速率限制 — 每次模型调用前 `apply_rate_limit()`
+- 技能上下文构建
+- `max_tool_calls_per_turn` / `max_planner_rounds_per_turn` 限制
+- `tool_traces` 记录（用于 `commit_turn`）
+- 自动压缩 `check_and_auto_compact`
+- Flow trace 日志
 
- ### 3c.2 `agent/planner_tool_action.rs` — new `execute_native_tool_call`
+### 3c.2 `agent/planner_tool_action.rs` — 新增 `execute_native_tool_call`
 
-New method alongside `handle_tool_action`. Logic is identical but input changes:
+与 `handle_tool_action` 并列的新方法。逻辑相同，但输入格式改变：
 
-**Old:** `handle_tool_action(turn_id, decision: &ModelDecision, ctx: &mut ToolActionContext)`
+**旧：** `handle_tool_action(turn_id, decision: &ModelDecision, ctx: &mut ToolActionContext)`
 
-**New:** `execute_native_tool_call(turn_id, tool_call_id: &str, tool_name: &str, input: &Value, ctx: &mut ToolActionContext)`
+**新：** `execute_native_tool_call(turn_id, tool_call_id: &str, tool_name: &str, input: &Value, ctx: &mut ToolActionContext)`
 
-Key differences:
-- `args` comes from `serde_json::Value` (native tool call input) instead of `HashMap<String, String>` (parsed from JSON text)
-- Convert `Value` to `HashMap<String, String>` by flattening: `Value::String(s) → s`, other values → `serde_json::to_string(&v)`
-- `tool_call_id` provided by model (native), not generated
-- Approval handling preserved
-- All guards preserved (apply_patch_read_guard, duplicate detection, loop detection)
-- Returns `ToolExecOutcome` — `Result { content: String, ok: bool }` or `Aborted`
+关键差异：
+- `args` 来自 `serde_json::Value`（原生 tool call input）而非 `HashMap<String, String>`（从 JSON 文本解析）
+- 将 `Value` 转换为 `HashMap<String, String>`：`Value::String(s) → s`，其他值 → `serde_json::to_string(&v)`
+- `tool_call_id` 由模型提供（原生），不再生成
+- 审批处理保留
+- 所有守卫保留（apply_patch_read_guard、重复检测、循环检测）
+- 返回 `ToolExecOutcome` — `Result { content: String, ok: bool }` 或 `Aborted`
 
-**Note on `ToolActionContext`:** Reuses existing `ToolActionContext` struct from `planner.rs` with the same fields. No new context struct needed. ### 3c.3 Converting ToolUse to ToolCall for ToolRouter
- `ToolRouter::execute()` expects `ToolExecutionRequest` with a `ToolCall { name, args: HashMap<String, String> }`. Conversion: ```rust
+**关于 `ToolActionContext`：** 复用 `planner.rs` 中现有的 `ToolActionContext` 结构体，相同字段。无需新 context 结构体。
+
+### 3c.3 将 ToolUse 转换为 ToolCall
+
+`ToolRouter::execute()` 期望 `ToolExecutionRequest` 包含 `ToolCall { name, args: HashMap<String, String> }`。转换函数：
+
+```rust
 fn tool_use_to_call(name: &str, input: &Value) -> ToolCall {
     let args = match input {
         Value::Object(map) => map.iter().map(|(k, v)| {
@@ -230,81 +251,113 @@ fn tool_use_to_call(name: &str, input: &Value) -> ToolCall {
 }
 ```
 
-### 3c.4 `tests.rs` — update mock models
+### 3c.4 `tests.rs` — 更新 mock models
 
-All mock `ModelClient` implementations must return native content blocks:
+所有 mock `ModelClient` 实现必须返回原生 content blocks：
 
-| Mock | Old return | New return |
-|------|-----------|------------|
-| `ScriptedStreamingModel` | JSON text `{"action":"final","message":"seed"}` | `ModelResponse { content: vec![Text{text:"seed"}], stop_reason: Some(EndTurn) }` |
-| `ScriptedToolBatchModel` | JSON text `{"action":"tool_batch",...}` | `ModelResponse { content: vec![ToolUse{id,name,input}, ...], stop_reason: Some(ToolUse) }` on first call, `Text{text:"batch done"}` + `EndTurn` on second |
-| `DuplicateToolLoopModel` | JSON text `{"action":"tool",...}` | `ToolUse{...}` + `StopReason::ToolUse` every call |
-| `ApprovalBlockedBatchModel` | Same batch pattern | Same ToolUse pattern |
-| `ApprovalCancellationBatchModel` | Same batch pattern | Same ToolUse pattern |
-| `PlannerFallbackModel` | Invalid JSON text (tests fallback) | Tests normal streaming response (no fallback mechanism in native) |
-| `ScriptedToolBatchDependencyModel` | JSON with `depends_on` | ToolUse blocks with `depends_on` handled at execution level |
+| Mock | 旧返回 | 新返回 |
+|------|--------|--------|
+| `ScriptedStreamingModel` | JSON 文本 `{"action":"final","message":"seed"}` | `ModelResponse { content: vec![Text{text:"seed"}], stop_reason: Some(EndTurn) }` |
+| `ScriptedToolBatchModel` | JSON 文本 `{"action":"tool_batch",...}` | 首次调用：`vec![ToolUse{id,name,input}, ...]` + `StopReason::ToolUse`；第二次：`Text{text:"batch done"}` + `EndTurn` |
+| `DuplicateToolLoopModel` | JSON 文本 `{"action":"tool",...}` | 每次调用：`ToolUse{...}` + `StopReason::ToolUse` |
+| `ApprovalBlockedBatchModel` | 同 batch 模式 | 同 ToolUse 模式 |
+| `ApprovalCancellationBatchModel` | 同 batch 模式 | 同 ToolUse 模式 |
+| `PlannerFallbackModel` | 无效 JSON 文本（测试 fallback） | 改为测试正常流式返回（native 无 fallback） |
+| `ScriptedToolBatchDependencyModel` | JSON 含 `depends_on` | ToolUse blocks（depends_on 在执行层处理） |
 
-**Deleted tests:**
-- `planner_prompt_contains_apply_patch_verification_rule` — depends on `build_planner_input`
-- `planner_prompt_contains_skills_section` — depends on `build_planner_input`
-- `planner_stream_parse_failure_falls_back_to_complete_response` — no fallback in native
- `normalizes_tool_name_in_action_with_top_level_args` — depends on `parse_model_decision`
-- `keeps_explicit_tool_shape_unchanged` — depends on `parse_model_decision`
-- `keeps_final_action_unchanged` — depends on `parse_model_decision`
+**删除的测试：**
+- `planner_prompt_contains_apply_patch_verification_rule` — 依赖 `build_planner_input`
+- `planner_prompt_contains_skills_section` — 依赖 `build_planner_input`
+- `planner_stream_parse_failure_falls_back_to_complete_response` — native 无 fallback
+- `normalizes_tool_name_in_action_with_top_level_args` — 依赖 `parse_model_decision`
+- `keeps_explicit_tool_shape_unchanged` — 依赖 `parse_model_decision`
+- `keeps_final_action_unchanged` — 依赖 `parse_model_decision`
 
-**Preserved tests (unchanged):**
-- `duplicate_detection_*` — pure Agent method tests
-- `parse_runtime_policies` — pure config parsing
-- `resolves_turn_limits_from_config_and_env` — pure config parsing
-- `aborts_after_consecutive_duplicate_skips` — pure logic
-- `summarize_user_input_*` — pure utility function
+**保留不变的测试：**
+- `duplicate_detection_*` — 纯 Agent 方法测试
+- `parse_runtime_policies` — 纯配置解析
+- `resolves_turn_limits_from_config_and_env` — 纯配置解析
+- `aborts_after_consecutive_duplicate_skips` — 纯逻辑判断
+- `summarize_user_input_*` — 纯工具函数
 
- ### 3c.5 Cleanup — delete old code paths
+### 3c.5 清理 — 删除旧代码路径
 
- After 3c.4 passes all tests:
- - Delete `build_planner_input` from `prompt.rs`
-- Delete `build_json_repair_prompt` from `prompt.rs`
-- Delete `handle_tool_action` from `planner_tool_action.rs` (replaced by `execute_native_tool_call`)
-- Mark `dispatcher::route_model_output` as `#[deprecated]`
-- Remove `dispatcher_config` and `tool_batch_v2_enabled` from `Agent` struct (or leave as dead fields for now) ---
+3c.4 所有测试通过后：
+- 从 `prompt.rs` 删除 `build_planner_input`
+- 从 `prompt.rs` 删除 `build_json_repair_prompt`
+- 从 `planner_tool_action.rs` 删除 `handle_tool_action`（被 `execute_native_tool_call` 替代）
+- 标记 `dispatcher::route_model_output` 为 `#[deprecated]`
+- 从 `Agent` 结构体移除 `dispatcher_config` 和 `tool_batch_v2_enabled`（或暂时保留为死字段）
 
-## Files Changed Summary
+---
 
- | File | Sub-phase | Change Type |
-|------|-----------|-------------|
-| `tools/router_impl.rs` | 3a | Add `tool_specs()` |
-| `agent/prompt.rs` | 3a | Add `build_system_prompt`, `build_turn_messages` |
-| `agent/planner_stream_flow.rs` | 3b | Rewrite: remove JSON parsing, return ModelResponse |
-| `agent/planner.rs` | 3c | Core rewrite: native tool calling loop |
-| `agent/planner_tool_action.rs` | 3c | Add `execute_native_tool_call` |
-| `tests.rs` | 3c | Update all mocks, delete 6 tests |
-| `agent/decision.rs` | 3c (cleanup) | Unused, mark deprecated |
-| `dispatcher/mod.rs` | 3c (cleanup) | No longer called from planner |
+## 涉及文件总结
 
-## Risks and Mitigations
+| 文件 | 子阶段 | 变更类型 |
+|------|--------|---------|
+| `tools/router_impl.rs` | 3a | 新增 `tool_specs()` |
+| `agent/prompt.rs` | 3a | 新增 `build_system_prompt`、`build_turn_messages` |
+| `agent/planner_stream_flow.rs` | 3b | 重写：移除 JSON 解析，返回 ModelResponse |
+| `agent/planner.rs` | 3c | 核心重写：native tool calling 循环 |
+| `agent/planner_tool_action.rs` | 3c | 新增 `execute_native_tool_call` |
+| `tests.rs` | 3c | 更新所有 mock，删除 6 个测试 |
+| `agent/decision.rs` | 3c（清理） | 不再使用，标记废弃 |
+| `dispatcher/mod.rs` | 3c（清理） | Planner 不再调用 |
 
- 1. **ToolBatchCompleted event compatibility**: TUI and gateway consumers expect this event. New loop must still emit it after all tool_use blocks complete. → Emit `ToolBatchCompleted { total, ... }` after the tool execution loop.
+---
 
-2. **ToolCallsProposed event**: Existing consumers expect `arguments: BTreeMap<String, String>`. Native tool_use has `input: serde_json::Value`. → Flatten Value to String map in the same way as tool_use_to_call conversion.
+## 风险与缓解
 
- ### 3. **Duplicate event emission**: Stream phase emits `ToolCallStarted`/`ToolCallReady`, execution phase emits `ToolCallCompleted`. Current TUI code subscri to stream-phase `ToolCallStarted`. → Keep stream emissions unchanged; execution does NOT re-emit `ToolCallStarted`. Each tool gets a clean triple: `ToolCallStarted` (stream) → `ToolCallReady` (stream) → `ToolCallCompleted` (execution).
+### 1. ToolBatchCompleted 事件兼容性
 
- ### 4. **depends_on handling**: Current batch model has dependency resolution in `planner_tool_batch.rs`. In native tool calling, the model returns all tool_uses in one response and the loop executes them sequentially. → For 3c, execute tool_uses sequentially (no dependency resolution needed since model manages ordering). Batch parallel execution is an an optimization that can be re-added later.
+TUI 和 gateway 消费者期望此事件。新循环必须在所有 tool_use blocks 执行完毕后发射。
 
-5. **context_compressor compatibility**: `commit_turn` expects `tool_traces: Vec<String>`. The new loop records this the same way — in `execute_native_tool_call`, format `"tool_name(key=args) → result_summary"`. No change to `commit_turn` interface.
+**缓解：** 在工具执行循环后发射 `ToolBatchCompleted { total, ... }`。
 
- ### 6. **ModelRequest.for_stage compatibility**: Tests and other callers use `ModelRequest::for_stage()`. The new planner constructs `ModelRequest` directly. → Keep `for_stage()` as convenience constructor for tests.
+### 2. ToolCallsProposed 事件格式
 
- ---
+现有消费者期望 `arguments: BTreeMap<String, String>`。原生 tool_use 的 `input` 是 `serde_json::Value`。
 
-## Testing Strategy
+**缓解：** 用与 `tool_use_to_call` 相同的方式将 Value 扁平化为 String map。
 
- After each sub-phase:
+### 3. 重复事件发射
+
+流式阶段已发射 `ToolCallStarted`/`ToolCallReady`，执行阶段需要发射 `ToolCallCompleted`。
+
+**缓解：** 流式阶段和执行阶段发射不同的事件类型，不会重复：
+- **流式阶段：** `ToolCallStarted`（参数开始到达）→ `ToolCallArgsDelta`（参数进度）→ `ToolCallReady`（参数接收完毕）
+- **执行阶段：** `ToolCallCompleted`（执行结果）
+
+每个工具调用获得干净的事件序列：`ToolCallStarted` → `ToolCallReady` → `ToolCallCompleted`。
+
+### 4. depends_on 处理
+
+当前 batch 模型在 `planner_tool_batch.rs` 中有依赖解析。原生 tool calling 中模型在一个响应中返回所有 tool_uses，循环顺序执行。
+
+**缓解：** 3c 中顺序执行 tool_uses（无需依赖解析，模型管理调用顺序）。批量并行执行是优化，后续可重新添加。
+
+### 5. context_compressor 兼容性
+
+`commit_turn` 期望 `tool_traces: Vec<String>`。
+
+**缓解：** 新循环在 `execute_native_tool_call` 中以相同格式收集 `tool_traces`。`commit_turn` 接口不变。
+
+### 6. ModelRequest::for_stage 兼容性
+
+测试和其他调用者使用 `ModelRequest::for_stage()` 便捷构造器。
+
+**缓解：** 保留 `for_stage()` 作为便捷构造器。新 planner 直接构造 `ModelRequest`。
+
+---
+
+## 测试策略
+
+每个子阶段完成后：
 ```bash
 cargo test -p openjax-core
 ```
 
- After 3c completion (full regression):
+3c 完成后（全量回归）：
 ```bash
 cargo test -p openjax-core --test tools_sandbox_suite
 cargo test -p openjax-core --test approval_suite
