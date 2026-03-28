@@ -49,12 +49,12 @@ async fn shell_guard_blocks_skill_trigger_like_command() {
     assert!(!outcome.success);
     assert!(
         outcome
-            .output
+            .display_output
             .contains("runtime_deny_reason=skill_trigger_not_shell_command")
     );
     assert!(
         outcome
-            .output
+            .display_output
             .contains("selected skill should be executed as workflow steps")
     );
 }
