@@ -339,6 +339,33 @@ pub fn create_edit_file_range_spec() -> ToolSpec {
     }
 }
 
+/// 创建 write_file 工具规范
+pub fn create_write_file_spec() -> ToolSpec {
+    ToolSpec {
+        name: "write_file".to_string(),
+        description: "Write file content to a workspace-relative path. Creates missing parent directories and overwrites existing content.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the file to write"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full content to write to the file"
+                }
+            },
+            "required": ["file_path", "content"]
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "string",
+            "description": "Write summary including path and byte count"
+        })),
+        display_name: "Write File".to_string(),
+    }
+}
+
 /// 创建 process_snapshot 工具规范
 pub fn create_process_snapshot_spec() -> ToolSpec {
     ToolSpec {
@@ -434,6 +461,7 @@ pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
         create_system_load_spec(),
         create_disk_usage_spec(),
         create_edit_file_range_spec(),
+        create_write_file_spec(),
     ];
 
     if !matches!(config.shell_type, ShellToolType::Disabled) {

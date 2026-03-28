@@ -2,7 +2,7 @@ use crate::approval::ApprovalHandler;
 use crate::tools::context::SandboxPolicy;
 use crate::tools::handlers::{
     ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler,
-    ShellCommandHandler,
+    ShellCommandHandler, WriteFileHandler,
 };
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::shell::ShellType;
@@ -81,6 +81,9 @@ pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, V
 
     let edit_range_handler = Arc::new(EditFileRangeHandler);
     builder.register_handler("edit_file_range", edit_range_handler);
+
+    let write_file_handler = Arc::new(WriteFileHandler);
+    builder.register_handler("write_file", write_file_handler);
 
     let process_snapshot_handler = Arc::new(ProcessSnapshotHandler::default());
     builder.register_handler("process_snapshot", process_snapshot_handler);
