@@ -8,3 +8,7 @@ mod edit_file_range_m5;
 mod sandbox_m3;
 #[path = "tools_sandbox/m9_system_tools.rs"]
 mod system_tools_m9;
+#[path = "tools_sandbox/m10_write_file.rs"]
+mod write_file_m10;
+#[path = "tools_sandbox/m11_glob_files.rs"]
+mod glob_files_m11;
