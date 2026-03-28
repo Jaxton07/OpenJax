@@ -277,8 +277,7 @@ impl ChatCompletionsClient {
                                     kind: "function".to_string(),
                                     function: ChatToolCallFunction {
                                         name: name.clone(),
-                                        arguments: serde_json::to_string(input)
-                                            .unwrap_or_default(),
+                                        arguments: serde_json::to_string(input).unwrap_or_default(),
                                     },
                                 })
                             } else {
@@ -435,8 +434,8 @@ fn extract_content_blocks_from_body(body: &serde_json::Value) -> Vec<AssistantCo
                 .and_then(|f| f.get("arguments"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("{}");
-            let input =
-                serde_json::from_str(args_str).unwrap_or(serde_json::Value::Object(Default::default()));
+            let input = serde_json::from_str(args_str)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
             blocks.push(AssistantContentBlock::ToolUse { id, name, input });
         }
     }
@@ -483,7 +482,9 @@ fn extract_delta_reasoning_from_body(body: &serde_json::Value) -> Option<String>
 
 /// Extract streaming tool_call deltas from an SSE frame.
 /// Returns a list of (index, Option<id>, Option<name>, Option<args_delta>).
-fn extract_tool_call_deltas(body: &serde_json::Value) -> Vec<(usize, Option<String>, Option<String>, Option<String>)> {
+fn extract_tool_call_deltas(
+    body: &serde_json::Value,
+) -> Vec<(usize, Option<String>, Option<String>, Option<String>)> {
     let tool_calls = match body
         .get("choices")
         .and_then(|v| v.as_array())
@@ -500,7 +501,10 @@ fn extract_tool_call_deltas(body: &serde_json::Value) -> Vec<(usize, Option<Stri
         .iter()
         .filter_map(|tc| {
             let index = tc.get("index").and_then(|v| v.as_u64())? as usize;
-            let id = tc.get("id").and_then(|v| v.as_str()).map(ToString::to_string);
+            let id = tc
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
             let func = tc.get("function");
             let name = func
                 .and_then(|f| f.get("name"))
@@ -962,7 +966,9 @@ mod tests {
 
         let blocks = extract_content_blocks_from_body(&body);
         assert_eq!(blocks.len(), 1);
-        assert!(matches!(&blocks[0], AssistantContentBlock::Text { text } if text == "hello world"));
+        assert!(
+            matches!(&blocks[0], AssistantContentBlock::Text { text } if text == "hello world")
+        );
     }
 
     #[test]

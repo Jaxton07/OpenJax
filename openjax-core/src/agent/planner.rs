@@ -94,8 +94,11 @@ impl Agent {
             "(skills disabled)".to_string()
         };
         let system_prompt = build_system_prompt(&skills_context);
-        let mut messages =
-            build_turn_messages(user_input, &self.history, self.loop_detector.recovery_prompt());
+        let mut messages = build_turn_messages(
+            user_input,
+            &self.history,
+            self.loop_detector.recovery_prompt(),
+        );
 
         info!(
             turn_id = turn_id,
@@ -268,11 +271,9 @@ impl Agent {
                 .content
                 .iter()
                 .filter_map(|block| match block {
-                    AssistantContentBlock::ToolUse { id, name, input } => Some((
-                        id.clone(),
-                        name.clone(),
-                        input.clone(),
-                    )),
+                    AssistantContentBlock::ToolUse { id, name, input } => {
+                        Some((id.clone(), name.clone(), input.clone()))
+                    }
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -365,13 +366,7 @@ impl Agent {
                     diff_strategy: &mut diff_strategy,
                 };
                 match self
-                    .execute_native_tool_call(
-                        turn_id,
-                        &tool_call_id,
-                        &tool_name,
-                        &input,
-                        &mut ctx,
-                    )
+                    .execute_native_tool_call(turn_id, &tool_call_id, &tool_name, &input, &mut ctx)
                     .await
                 {
                     NativeToolExecOutcome::Result { content, ok } => {

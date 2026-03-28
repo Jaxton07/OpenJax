@@ -60,7 +60,9 @@ pub enum ConversationMessage {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UserContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     ToolResult {
         tool_use_id: String,
         content: String,
@@ -73,7 +75,9 @@ pub enum UserContentBlock {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AssistantContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -275,9 +279,7 @@ mod tests {
         let req = ModelRequest::for_stage(ModelStage::Planner, "hello world");
         assert_eq!(req.user_text(), "hello world");
         assert_eq!(req.messages.len(), 1);
-        assert!(
-            matches!(&req.messages[0], ConversationMessage::User(blocks) if blocks.len() == 1)
-        );
+        assert!(matches!(&req.messages[0], ConversationMessage::User(blocks) if blocks.len() == 1));
     }
 
     #[test]
@@ -301,7 +303,10 @@ mod tests {
     fn stop_reason_from_api_str() {
         assert_eq!(StopReason::from_api_str("end_turn"), StopReason::EndTurn);
         assert_eq!(StopReason::from_api_str("tool_use"), StopReason::ToolUse);
-        assert_eq!(StopReason::from_api_str("max_tokens"), StopReason::MaxTokens);
+        assert_eq!(
+            StopReason::from_api_str("max_tokens"),
+            StopReason::MaxTokens
+        );
         assert_eq!(StopReason::from_api_str("length"), StopReason::MaxTokens);
         // OpenAI "stop" maps to EndTurn
         assert_eq!(StopReason::from_api_str("stop"), StopReason::EndTurn);

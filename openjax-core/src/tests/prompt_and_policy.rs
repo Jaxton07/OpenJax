@@ -61,7 +61,9 @@ fn resolves_turn_limits_from_config_and_env_with_precedence() {
 #[test]
 fn build_system_prompt_contains_verification_rule() {
     let prompt = build_system_prompt("(none)");
-    assert!(prompt.contains("verification already shows the requested content/changes are present"));
+    assert!(
+        prompt.contains("verification already shows the requested content/changes are present")
+    );
     assert!(prompt.contains("respond immediately"));
 }
 

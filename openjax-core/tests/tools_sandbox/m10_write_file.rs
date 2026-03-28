@@ -69,7 +69,8 @@ async fn write_file_creates_new_file_inside_workspace() {
         _ => unreachable!(),
     }
 
-    let content = fs::read_to_string(workspace.join("notes/todo.txt")).expect("new file should exist");
+    let content =
+        fs::read_to_string(workspace.join("notes/todo.txt")).expect("new file should exist");
     assert_eq!(content, "hello-from-m10");
 
     let _ = fs::remove_dir_all(workspace);
@@ -97,7 +98,8 @@ async fn write_file_overwrites_existing_file() {
         _ => unreachable!(),
     }
 
-    let content = fs::read_to_string(workspace.join("todo.txt")).expect("updated file should exist");
+    let content =
+        fs::read_to_string(workspace.join("todo.txt")).expect("updated file should exist");
     assert_eq!(content, "new-content");
 
     let _ = fs::remove_dir_all(workspace);

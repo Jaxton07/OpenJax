@@ -379,10 +379,7 @@ pub async fn run_turn_task(
             let store = PolicyStore::new(override_decision, vec![]);
             let fresh = PolicyRuntime::new(store);
             if !overlay_rules.is_empty() {
-                fresh.set_session_overlay(
-                    &session_id,
-                    SessionOverlay::new(overlay_rules),
-                );
+                fresh.set_session_overlay(&session_id, SessionOverlay::new(overlay_rules));
             }
             fresh
         } else {
@@ -904,5 +901,4 @@ mod tests {
         assert_eq!(error.code, "TURN_ABORTED");
         assert_eq!(error.retryable, false);
     }
-
 }

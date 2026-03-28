@@ -5,9 +5,9 @@ use std::sync::Arc;
 use openjax_protocol::Event;
 
 use super::support::{
-    ApprovalBlockedBatchModel, ApprovalCancellationBatchModel, RejectApprovalHandler,
-    OverflowToolUseModel, ScriptedToolBatchDependencyModel, ScriptedToolBatchModel,
-    SlowProbeTool, ask_policy_runtime, user_turn,
+    ApprovalBlockedBatchModel, ApprovalCancellationBatchModel, OverflowToolUseModel,
+    RejectApprovalHandler, ScriptedToolBatchDependencyModel, ScriptedToolBatchModel, SlowProbeTool,
+    ask_policy_runtime, user_turn,
 };
 use crate::{Agent, SandboxMode};
 
@@ -74,7 +74,10 @@ async fn tool_batch_dependency_unmet_still_emits_started_before_completed() {
             } if tool_call_id == "call_2"
         )
     });
-    assert!(started_idx.is_some(), "expected started event for unresolved call");
+    assert!(
+        started_idx.is_some(),
+        "expected started event for unresolved call"
+    );
     assert!(
         completed_idx.is_some(),
         "expected completed event for unresolved call"
@@ -148,7 +151,9 @@ async fn tool_batch_approval_blocked_cancels_pending_parallel_tool() {
         )
     );
     assert!(
-        !events.iter().any(|evt| matches!(evt, Event::ResponseCompleted { .. })),
+        !events
+            .iter()
+            .any(|evt| matches!(evt, Event::ResponseCompleted { .. })),
         "turn should not continue to final after approval blocked"
     );
     assert!(

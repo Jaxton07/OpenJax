@@ -1,8 +1,8 @@
 use std::time::Instant;
 
 use openjax_protocol::Event;
-use tracing::{info, warn};
 use serde_json::Value;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::agent::decision::ModelDecision;
@@ -304,13 +304,7 @@ impl Agent {
                 ));
 
                 self.record_tool_call(tool_name, &args, false, &err_text);
-                self.emit_tool_call_failed(
-                    turn_id,
-                    tool_call_id,
-                    tool_name,
-                    &err_text,
-                    ctx.events,
-                );
+                self.emit_tool_call_failed(turn_id, tool_call_id, tool_name, &err_text, ctx.events);
                 self.emit_tool_call_completed(
                     turn_id,
                     tool_call_id,

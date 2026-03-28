@@ -40,7 +40,10 @@ async fn final_action_emits_response_text_delta_before_completion() {
 
     assert_eq!(delta_text, "seed");
     assert_eq!(completed_text, "seed");
-    assert!(first_delta_index.is_some(), "expected response text delta events");
+    assert!(
+        first_delta_index.is_some(),
+        "expected response text delta events"
+    );
     assert!(
         response_completed_index.is_some(),
         "expected response_completed event"

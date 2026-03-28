@@ -471,7 +471,6 @@ fn extract_content_blocks_from_body(body: &serde_json::Value) -> Vec<AssistantCo
     result
 }
 
-
 fn extract_thinking_from_body(body: &serde_json::Value) -> Option<String> {
     let blocks = body.get("content")?.as_array()?;
     let mut merged = String::new();
@@ -1079,12 +1078,8 @@ mod tests {
 
         let blocks = extract_content_blocks_from_body(&body);
         assert_eq!(blocks.len(), 2);
-        assert!(
-            matches!(&blocks[0], AssistantContentBlock::Text { text } if text == "hello")
-        );
-        assert!(
-            matches!(&blocks[1], AssistantContentBlock::Text { text } if text == "world")
-        );
+        assert!(matches!(&blocks[0], AssistantContentBlock::Text { text } if text == "hello"));
+        assert!(matches!(&blocks[1], AssistantContentBlock::Text { text } if text == "world"));
     }
 
     #[test]
@@ -1100,7 +1095,9 @@ mod tests {
         let blocks = extract_content_blocks_from_body(&body);
         assert_eq!(blocks.len(), 2);
         assert!(matches!(&blocks[0], AssistantContentBlock::Text { .. }));
-        assert!(matches!(&blocks[1], AssistantContentBlock::ToolUse { name, .. } if name == "shell"));
+        assert!(
+            matches!(&blocks[1], AssistantContentBlock::ToolUse { name, .. } if name == "shell")
+        );
     }
 
     #[test]

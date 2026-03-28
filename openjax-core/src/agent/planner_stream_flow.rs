@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use std::time::Instant;
-use std::{collections::HashMap};
 
 use openjax_protocol::Event;
 use tracing::info;

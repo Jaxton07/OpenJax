@@ -678,9 +678,7 @@ impl ModelClient for ApprovalBlockedBatchModel {
                             delta: delta.to_string(),
                         });
                     }
-                    let _ = sender.send(StreamDelta::ToolUseEnd {
-                        id: id.to_string(),
-                    });
+                    let _ = sender.send(StreamDelta::ToolUseEnd { id: id.to_string() });
                 }
             }
             ModelResponse {
