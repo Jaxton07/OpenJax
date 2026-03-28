@@ -75,7 +75,7 @@ impl Agent {
                 .await
             {
                 Ok(outcome) => {
-                    let output = outcome.output;
+                    let output = outcome.display_output;
                     let ok = outcome.success;
                     let duration_ms = start_time.elapsed().as_millis();
                     info!(

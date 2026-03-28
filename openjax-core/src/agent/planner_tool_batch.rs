@@ -155,7 +155,7 @@ impl Agent {
                     match handle.await {
                         Ok(Ok(outcome)) => {
                             let ok = outcome.success;
-                            let output = outcome.output;
+                            let output = outcome.display_output;
                             if ok {
                                 apply_patch_read_guard.on_tool_success(&call.tool_name);
                             } else {

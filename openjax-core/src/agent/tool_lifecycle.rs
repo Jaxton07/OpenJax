@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use openjax_protocol::Event;
+use openjax_protocol::{Event, ShellExecutionMetadata};
 
 use crate::Agent;
 use crate::agent::planner_utils::{
@@ -93,6 +93,27 @@ impl Agent {
         output: &str,
         events: &mut Vec<Event>,
     ) {
+        self.emit_tool_call_completed_with_metadata(
+            turn_id,
+            tool_call_id,
+            tool_name,
+            ok,
+            output,
+            None,
+            events,
+        );
+    }
+
+    pub(super) fn emit_tool_call_completed_with_metadata(
+        &self,
+        turn_id: u64,
+        tool_call_id: &str,
+        tool_name: &str,
+        ok: bool,
+        output: &str,
+        shell_metadata: Option<ShellExecutionMetadata>,
+        events: &mut Vec<Event>,
+    ) {
         let display_name = self.tools.display_name_for(tool_name);
         self.push_event(
             events,
@@ -102,6 +123,7 @@ impl Agent {
                 tool_name: tool_name.to_string(),
                 ok,
                 output: output.to_string(),
+                shell_metadata,
                 display_name,
             },
         );

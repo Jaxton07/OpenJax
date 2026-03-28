@@ -67,6 +67,17 @@ pub enum Op {
 
 // ============== Event Types ==============
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ShellExecutionMetadata {
+    pub result_class: String,
+    pub backend: String,
+    pub exit_code: i32,
+    pub policy_decision: String,
+    pub runtime_allowed: bool,
+    pub degrade_reason: Option<String>,
+    pub runtime_deny_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Event {
     TurnStarted {
@@ -90,6 +101,8 @@ pub enum Event {
         tool_name: String,
         ok: bool,
         output: String,
+        #[serde(default)]
+        shell_metadata: Option<ShellExecutionMetadata>,
         #[serde(default)]
         display_name: Option<String>,
     },

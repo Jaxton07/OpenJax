@@ -8,8 +8,8 @@ use super::support::{
     MixedTextToolUseModel, NativeStreamingFinalModel, NativeStreamingToolUseModel,
     RejectApprovalHandler, ScriptedStreamingModel, ShellToolResultEchoModel, user_turn,
 };
-use crate::{Agent, SandboxMode};
 use crate::tools::{ToolCall, ToolExecutionRequest, ToolRouter, ToolRuntimeConfig};
+use crate::{Agent, SandboxMode};
 
 #[tokio::test]
 async fn final_action_emits_response_text_delta_before_completion() {
@@ -231,8 +231,21 @@ fn tool_exec_outcome_keeps_model_content_separate_from_display_output() {
         .expect("shell execution should succeed");
 
     assert!(
-        !outcome.output.contains("result_class=") && !outcome.output.contains("command="),
+        !outcome.model_content.contains("result_class=")
+            && !outcome.model_content.contains("command="),
         "model-facing content should be clean and not include display metadata"
+    );
+    assert!(
+        outcome.display_output.contains("result_class="),
+        "display output should preserve shell metadata"
+    );
+    assert!(
+        outcome.shell_metadata.is_some(),
+        "shell execution should expose structured metadata"
+    );
+    assert_ne!(
+        outcome.model_content, outcome.display_output,
+        "model and display channels should be split for shell output"
     );
 }
 

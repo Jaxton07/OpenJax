@@ -203,7 +203,7 @@ impl Agent {
             .await
         {
             Ok(outcome) => {
-                let output = outcome.output;
+                let output = outcome.display_output;
                 let ok = outcome.success;
                 ctx.apply_patch_read_guard.on_tool_success(tool_name);
 
@@ -523,7 +523,7 @@ impl Agent {
             .await
         {
             Ok(outcome) => {
-                let output = outcome.output;
+                let output = outcome.display_output;
                 let ok = outcome.success;
                 ctx.apply_patch_read_guard.on_tool_success(&tool_name);
 
