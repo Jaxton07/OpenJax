@@ -277,7 +277,7 @@ describe("session-events/tools", () => {
     expect(err?.content).toBe("boom");
   });
 
-  it("tracks tool batch proposed/completed in one summary card", () => {
+  it("does not render tool batch proposed/completed as standalone cards", () => {
     const session = baseSession();
     const proposed = applySessionEvent(session, {
       request_id: "req",
@@ -298,12 +298,7 @@ describe("session-events/tools", () => {
       payload: { total: 1, succeeded: 1, failed: 0 }
     });
     const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
-    expect(stepMessages).toHaveLength(1);
-    expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
-    expect(stepMessages[0].toolSteps?.[0].output).toContain("succeeded=1");
-    expect(stepMessages[0].toolSteps?.[0].startEventSeq).toBe(1);
-    expect(stepMessages[0].toolSteps?.[0].lastEventSeq).toBe(2);
-    expect(stepMessages[0].toolSteps?.[0].endEventSeq).toBe(2);
+    expect(stepMessages).toHaveLength(0);
   });
 
   it("derives degraded shell warnings from shell_metadata", () => {

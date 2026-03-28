@@ -12,10 +12,8 @@ import {
 } from "./assistant";
 import { looksLikeSequenceReset } from "./sequence";
 import {
-  batchStatusFromPayload,
   isToolStepEvent,
   toolCallIdFromPayload,
-  upsertToolBatchSummary,
   upsertToolStepMessage
 } from "./tools";
 
@@ -145,14 +143,6 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
         lastEventSeq: Math.max(message.lastEventSeq ?? event.event_seq, event.event_seq)
       };
     }
-  }
-
-  if (event.type === "tool_calls_proposed") {
-    upsertToolBatchSummary(next.messages, event, "running");
-  }
-
-  if (event.type === "tool_batch_completed") {
-    upsertToolBatchSummary(next.messages, event, batchStatusFromPayload(event.payload));
   }
 
   if (isToolStepEvent(event)) {

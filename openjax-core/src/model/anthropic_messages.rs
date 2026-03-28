@@ -604,6 +604,10 @@ fn process_tool_use_frame(
     }
 }
 
+fn is_message_stop_frame(payload: &serde_json::Value) -> bool {
+    payload.get("type").and_then(|v| v.as_str()) == Some("message_stop")
+}
+
 fn extract_delta_thinking_from_body(body: &serde_json::Value) -> Option<String> {
     if let Some(delta_thinking) = body
         .get("delta")
@@ -756,6 +760,7 @@ impl ModelClient for AnthropicMessagesClient {
         let mut pending_tool_name = String::new();
         let mut pending_tool_args = String::new();
         let mut stream_stop_reason: Option<StopReason> = None;
+        let mut saw_message_stop = false;
 
         let mut parser = AnthropicSseParser::default();
         let stream_debug = model_stream_debug_enabled();
@@ -816,6 +821,9 @@ impl ModelClient for AnthropicMessagesClient {
                         response_snippet(&frame)
                     )
                 })?;
+                if is_message_stop_frame(&payload) {
+                    saw_message_stop = true;
+                }
 
                 if let Some(delta) = extract_delta_content_from_body(&payload)
                     && !delta.is_empty()
@@ -880,6 +888,9 @@ impl ModelClient for AnthropicMessagesClient {
                     response_snippet(&frame)
                 )
             })?;
+            if is_message_stop_frame(&payload) {
+                saw_message_stop = true;
+            }
             if let Some(delta) = extract_delta_content_from_body(&payload)
                 && !delta.is_empty()
             {
@@ -960,6 +971,7 @@ impl ModelClient for AnthropicMessagesClient {
             model_id = %self.model_id,
             stage = request.stage.as_str(),
             done_seen = parser.saw_done_marker(),
+            message_stop_seen = saw_message_stop,
             ended_by_eof = ended_by_eof,
             chunk_count = chunk_seq,
             frame_count = frame_seq,
@@ -967,11 +979,12 @@ impl ModelClient for AnthropicMessagesClient {
             "model_stream_done_check"
         );
 
-        if !parser.saw_done_marker() {
+        if !parser.saw_done_marker() && !saw_message_stop {
             warn!(
                 backend = self.backend_name,
                 model_id = %self.model_id,
                 stage = request.stage.as_str(),
+                message_stop_seen = saw_message_stop,
                 ended_by_eof = ended_by_eof,
                 chunk_count = chunk_seq,
                 frame_count = frame_seq,
@@ -979,7 +992,7 @@ impl ModelClient for AnthropicMessagesClient {
                 "model_stream_done_missing"
             );
             return Err(anyhow!(
-                "anthropic messages stream ended before [DONE]; treating as protocol error"
+                "anthropic messages stream ended without message_stop or [DONE]; treating as protocol error"
             ));
         }
 
@@ -1059,7 +1072,7 @@ mod tests {
     use super::{
         AnthropicMessagesClient, build_messages_endpoint, extract_content_blocks_from_body,
         extract_delta_content_from_body, extract_delta_thinking_from_body,
-        extract_thinking_from_body,
+        extract_thinking_from_body, is_message_stop_frame,
     };
     use crate::model::registry::RegisteredModel;
     use crate::model::types::{CapabilityFlags, ModelRequest, ModelStage};
@@ -1158,6 +1171,27 @@ mod tests {
             build_messages_endpoint("https://open.bigmodel.cn/api/anthropic"),
             "https://open.bigmodel.cn/api/anthropic/v1/messages"
         );
+    }
+
+    #[test]
+    fn detects_message_stop_frame_as_completion_signal() {
+        let payload = json!({
+            "type": "message_stop"
+        });
+
+        assert!(is_message_stop_frame(&payload));
+    }
+
+    #[test]
+    fn ignores_non_message_stop_frames_for_completion_signal() {
+        let payload = json!({
+            "type": "message_delta",
+            "delta": {
+                "stop_reason": "tool_use"
+            }
+        });
+
+        assert!(!is_message_stop_frame(&payload));
     }
 
     fn sample_registered_model(request_profile: Option<&str>) -> RegisteredModel {
