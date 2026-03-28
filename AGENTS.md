@@ -186,6 +186,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 ### 其他
 - (重要)在处理 Rust 项目文件时，优先使用 JetBrains / RustRover 的 `rustrover-index` MCP server 进行符号、引用、实现、类型层级和文本索引查询；不要先使用 `rg`、`grep`、`find` 等本地搜索。只有在确认当前会话无法使用该 MCP，或其能力不足以完成当前任务时，才允许退回本地搜索；退回前必须明确说明失败点属于“未配置 / 未连接 / 当前 agent 无工具暴露 / 其他”中的哪一类。
 - (重要)在分派subagent 任务时记得告知subagent 也可以使用`rustrover-index` MCP，复杂任务分配子代理使用gpt-5.3-codex 模型
+- 编辑修改文件时尽量使用自带的apply patch 工具，不用shell 的sed 命令
 - 本地开发环境通过make run-web-dev 启动前端和后台时需要预览时不要输入localhost 访问，统一输入127.0.0.1 加端口号访问
 - 在修改过程中如果发现某个文件内容过多，或者代码量很大，记得提醒用户规划拆分计划
 - 在针对某部分做修改时优先根据README 索引了解对应模块的上下文，避免自己全量搜索查看以看到太多无关内容。
