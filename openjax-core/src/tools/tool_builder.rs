@@ -1,8 +1,8 @@
 use crate::approval::ApprovalHandler;
 use crate::tools::context::SandboxPolicy;
 use crate::tools::handlers::{
-    ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler,
-    ShellCommandHandler, WriteFileHandler,
+    ApplyPatchHandler, EditFileRangeHandler, GlobFilesHandler, GrepFilesHandler, ListDirHandler,
+    ReadFileHandler, ShellCommandHandler, WriteFileHandler,
 };
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::shell::ShellType;
@@ -62,6 +62,9 @@ pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, V
 
     let grep_handler = Arc::new(GrepFilesHandler);
     builder.register_handler("grep_files", grep_handler);
+
+    let glob_handler = Arc::new(GlobFilesHandler);
+    builder.register_handler("glob_files", glob_handler);
 
     let read_handler = Arc::new(ReadFileHandler);
     builder.register_handler("read_file", read_handler);

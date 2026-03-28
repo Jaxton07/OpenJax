@@ -136,7 +136,10 @@ async fn glob_files_respects_limit() {
             assert!(*ok);
             let files = ["src/limit_a.rs", "src/limit_b.rs", "src/limit_c.rs"];
             let matched = files.iter().filter(|name| output.contains(**name)).count();
-            assert_eq!(matched, 2, "expected exactly 2 matched files, output: {output}");
+            assert_eq!(
+                matched, 2,
+                "expected exactly 2 matched files, output: {output}"
+            );
         }
         _ => unreachable!(),
     }

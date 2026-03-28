@@ -38,17 +38,8 @@ Tool selection policy:\n\
 - Prefer edit_file_range for single-file edits when exact line range is known.\n\
 - For multi-file edits or file operations (add/delete/move/rename), use apply_patch.\n\
 - Prefer process_snapshot/system_load/disk_usage for process/host metrics over shell ps/top/df.\n\
-- For apply_patch, use this EXACT format:\n\
-  *** Begin Patch\n\
-  *** Update File: <filepath>\n\
-  @@\n\
-   context line (MUST start with space)\n\
-  -line to remove (starts with -)\n\
-  +line to add (starts with +)\n\
-  *** End Patch\n\
-  Operations: *** Add File:, *** Update File:, *** Delete File:, *** Move File: from -> to, *** Move to:\n\
-  IMPORTANT: In Update File, every line after @@ MUST start with space (context), - (remove), or + (add).\n\
-  IMPORTANT: When modifying existing files, preserve the source file's formatting and style.\n\
+- For apply_patch, follow the format contract in the apply_patch tool description.\n\
+- When modifying existing files, preserve the source file's formatting and style.\n\
 - For edit_file_range, provide args: file_path, start_line, end_line, new_text.\n\
 - For shell, prefer workspace-relative commands; avoid absolute-path `cd` unless required.\n\
 - Skill markers like /skill-name are not shell executables; convert selected skills into concrete tool steps.\n\
@@ -185,17 +176,8 @@ Rules:\n\
 - Skills invocation rule: skill markers like `/skill-name` are not shell executables.\n\
 - Do not call shell with a lone slash-trigger command (e.g. `/xxx`); convert selected skills into concrete tool steps.\n\
 - Prefer process_snapshot/system_load/disk_usage for process and host metrics instead of shell ps/top/df commands when possible.\n\
-- For apply_patch, use this EXACT format (note the space prefix for context lines):\n\
-  *** Begin Patch\n\
-  *** Update File: <filepath>\n\
-  @@\n\
-   context line (MUST start with space)\n\
-  -line to remove (starts with -)\n\
-  +line to add (starts with +)\n\
-  *** End Patch\n\
-  Operations: *** Add File:, *** Update File:, *** Delete File:, *** Move File: from -> to\n\
-  IMPORTANT: In Update File, every line after @@ MUST start with space (context), - (remove), or + (add).\n\
-  IMPORTANT: When modifying existing files, preserve the source file's formatting and style (indentation, line endings, spacing, quotes, trailing commas, and surrounding conventions).\n\
+- For apply_patch, follow the format contract in the apply_patch tool description.\n\
+- When modifying existing files, preserve the source file's formatting and style (indentation, line endings, spacing, quotes, trailing commas, and surrounding conventions).\n\
 - For edit_file_range, provide args: file_path, start_line, end_line, new_text.\n\
 - Tool selection policy:\n\
   - Prefer edit_file_range for single-file edits when exact line range is known.\n\

@@ -49,11 +49,24 @@ pub struct FreeformFormat {
     pub definition: String,
 }
 
+const APPLY_PATCH_FORMAT_DETAIL: &str = r#"Patch format contract:
+- Start with `*** Begin Patch` and end with `*** End Patch`.
+- Use one or more operations: `*** Add File: <path>`, `*** Update File: <path>`, `*** Delete File: <path>`.
+- For file moves/renames, include `*** Move to: <path>` directly after `*** Update File: <path>`.
+- In `*** Update File` hunks, after `@@`, every line must start with exactly one prefix:
+  - ` ` for context lines
+  - `-` for removed lines
+  - `+` for added lines
+- Preserve source formatting/style when editing existing files."#;
+
 /// 创建 apply_patch Freeform 工具规范
 pub fn create_apply_patch_freeform_spec() -> ToolSpec {
     ToolSpec {
         name: "apply_patch".to_string(),
-        description: r#"Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON."#.to_string(),
+        description: format!(
+            "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.\n\n{}",
+            APPLY_PATCH_FORMAT_DETAIL
+        ),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -82,6 +95,40 @@ pub fn create_apply_patch_freeform_spec() -> ToolSpec {
             "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
         })),
         display_name: "Apply Patch".to_string(),
+    }
+}
+
+/// 创建 glob_files 工具规范
+pub fn create_glob_files_spec() -> ToolSpec {
+    ToolSpec {
+        name: "glob_files".to_string(),
+        description: "Search file paths by glob pattern under a workspace-relative base path. Returns matching file paths sorted by modification time (newest first), one path per line.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern to match files (e.g., src/**/*.rs, *.md)"
+                },
+                "base_path": {
+                    "type": "string",
+                    "description": "Workspace-relative directory to evaluate the glob from (default: .)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Maximum number of matched paths to return (default: 100, max: 2000)",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 2000
+                }
+            },
+            "required": ["pattern"]
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "string",
+            "description": "Matched file paths, one path per line"
+        })),
+        display_name: "Glob Files".to_string(),
     }
 }
 
@@ -283,7 +330,10 @@ pub fn create_exec_command_spec() -> ToolSpec {
 pub fn create_apply_patch_spec() -> ToolSpec {
     ToolSpec {
         name: "apply_patch".to_string(),
-        description: "Apply a patch to the workspace. Supports adding, deleting, moving, renaming, and updating files. Returns a summary of applied changes. The patch format uses '*** Begin Patch' and '*** End Patch' delimiters with operations like '*** Add File:', '*** Delete File:', '*** Update File:', '*** Move File:', and '*** Rename File:'.".to_string(),
+        description: format!(
+            "Apply a patch to the workspace and return a summary of applied changes.\n\n{}",
+            APPLY_PATCH_FORMAT_DETAIL
+        ),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -454,6 +504,7 @@ pub fn create_disk_usage_spec() -> ToolSpec {
 /// 构建所有工具规范
 pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
     let mut specs = vec![
+        create_glob_files_spec(),
         create_grep_files_spec(),
         create_read_file_spec(),
         create_list_dir_spec(),
