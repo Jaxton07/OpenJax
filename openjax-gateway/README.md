@@ -199,6 +199,15 @@ zsh -lc "cargo run -p openjax-gateway"
 - `context_compacted`（上下文压缩事件，payload 含 `compressed_turns`、`retained_turns`、`summary_preview`）
 5. 若收到 `response_error.code=REPLAY_WINDOW_EXCEEDED`，应提示前端重新发起会话流连接。
 
+`tool_call_completed` payload 当前透传协议字段：
+
+- `tool_call_id`
+- `tool_name`
+- `ok`
+- `output`
+- `display_name`
+- `shell_metadata`（可选，仅 shell 类工具存在）
+
 ## Timeline 接口（冷启动恢复）
 
 - `GET /api/v1/sessions/:session_id/timeline`

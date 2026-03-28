@@ -65,7 +65,7 @@ fn map_misc(event: &Event) -> Option<CoreEventMapping> {
 
 #[cfg(test)]
 mod tests {
-    use openjax_protocol::Event;
+    use openjax_protocol::{Event, ShellExecutionMetadata};
 
     use super::map_core_event_payload;
 
@@ -106,5 +106,33 @@ mod tests {
                 > 0.03
         );
         assert_eq!(mapping.stream_source, None);
+    }
+
+    #[test]
+    fn maps_tool_call_completed_with_shell_metadata() {
+        let mapping = map_core_event_payload(&Event::ToolCallCompleted {
+            turn_id: 7,
+            tool_call_id: "call_1".to_string(),
+            tool_name: "shell".to_string(),
+            ok: true,
+            output: "done".to_string(),
+            shell_metadata: Some(ShellExecutionMetadata {
+                result_class: "success".to_string(),
+                backend: "sandbox".to_string(),
+                exit_code: 0,
+                policy_decision: "allow".to_string(),
+                runtime_allowed: true,
+                degrade_reason: None,
+                runtime_deny_reason: None,
+            }),
+            display_name: Some("Run Shell".to_string()),
+        })
+        .expect("mapping should exist");
+
+        assert_eq!(mapping.core_turn_id, Some(7));
+        assert_eq!(mapping.event_type, "tool_call_completed");
+        assert_eq!(mapping.payload["tool_call_id"], "call_1");
+        assert_eq!(mapping.payload["display_name"], "Run Shell");
+        assert_eq!(mapping.payload["shell_metadata"]["backend"], "sandbox");
     }
 }

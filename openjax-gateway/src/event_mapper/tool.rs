@@ -43,11 +43,19 @@ pub fn map(event: &Event) -> Option<CoreEventMapping> {
             tool_name,
             ok,
             output,
+            shell_metadata,
             display_name,
         } => Some(CoreEventMapping {
             core_turn_id: Some(*turn_id),
             event_type: "tool_call_completed",
-            payload: json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "ok": ok, "output": output, "display_name": display_name }),
+            payload: json!({
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "ok": ok,
+                "output": output,
+                "shell_metadata": shell_metadata,
+                "display_name": display_name
+            }),
             stream_source: None,
         }),
         Event::ToolCallArgsDelta {
