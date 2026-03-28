@@ -1,5 +1,10 @@
-import type { ChatMessage, ToolStep } from "../../types/chat";
-import type { StreamEvent } from "../../types/gateway";
+import type { ChatMessage, ToolStep, ToolStepMeta } from "../../types/chat";
+import type {
+  ShellExecutionMetadata,
+  StreamEvent,
+  ToolCallCompletedPayload,
+  ToolCallStartedPayload
+} from "../../types/gateway";
 
 export function isToolStepEvent(event: StreamEvent): boolean {
   return (
@@ -80,7 +85,7 @@ export function upsertToolBatchSummary(
     endEventSeq: event.type === "tool_batch_completed" ? event.event_seq : undefined,
     startedAt: event.type === "tool_calls_proposed" ? event.timestamp : undefined,
     endedAt: event.type === "tool_batch_completed" ? event.timestamp : undefined,
-    meta: event.payload
+    meta: { rawPayload: event.payload }
   };
   if (idx >= 0) {
     const previous = messages[idx].toolSteps?.[0];
@@ -201,32 +206,37 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
     return {
       id: resolveToolStepId(event, "tool_call_started"),
       type: "tool",
-      title: (event.payload.display_name as string | undefined) ?? String(event.payload.tool_name ?? "tool"),
-      subtitle: String(event.payload.target ?? ""),
+      title: toolStartedPayload(event).display_name ?? String(toolStartedPayload(event).tool_name ?? "tool"),
+      subtitle: String(toolStartedPayload(event).target ?? ""),
       status: "running",
       time: event.timestamp,
       startEventSeq: event.event_seq,
       lastEventSeq: event.event_seq,
       startedAt: event.timestamp,
       toolCallId: toolCallIdFromPayload(event),
-      meta: event.payload
+      meta: { rawPayload: event.payload }
     };
   }
 
   if (event.type === "tool_call_completed") {
+    const payload = toolCompletedPayload(event);
+    const shellMetadata = payload.shell_metadata;
+    const partial = isPartialResult(shellMetadata, payload.output);
+    const meta = buildToolStepMeta(event.payload, shellMetadata, partial, payload.output);
     return {
       id: resolveToolStepId(event, "tool_call_completed"),
       type: "tool",
-      title: (event.payload.display_name as string | undefined) ?? String(event.payload.tool_name ?? "tool"),
-      status: "success",
-      output: String(event.payload.output ?? ""),
+      title: payload.display_name ?? String(payload.tool_name ?? "tool"),
+      status: payload.ok === false ? "failed" : "success",
+      description: partial ? partialDescription(shellMetadata) : undefined,
+      output: String(payload.output ?? ""),
       time: event.timestamp,
       startEventSeq: event.event_seq,
       lastEventSeq: event.event_seq,
       endEventSeq: event.event_seq,
       endedAt: event.timestamp,
       toolCallId: toolCallIdFromPayload(event),
-      meta: event.payload
+      meta
     };
   }
 
@@ -251,7 +261,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       startedAt: event.timestamp,
       approvalId: String(event.payload.approval_id ?? ""),
       toolCallId: toolCallIdFromPayload(event),
-      meta: event.payload
+      meta: { rawPayload: event.payload }
     };
   }
 
@@ -268,7 +278,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       endedAt: event.timestamp,
       approvalId: String(event.payload.approval_id ?? ""),
       toolCallId: toolCallIdFromPayload(event),
-      meta: event.payload
+      meta: { rawPayload: event.payload }
     };
   }
 
@@ -282,8 +292,135 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
     startEventSeq: event.event_seq,
     lastEventSeq: event.event_seq,
     endEventSeq: event.event_seq,
-    meta: event.payload
+    meta: { rawPayload: event.payload }
   };
+}
+
+export function toolStartedPayload(event: StreamEvent): ToolCallStartedPayload {
+  return event.payload as ToolCallStartedPayload;
+}
+
+export function toolCompletedPayload(event: StreamEvent): ToolCallCompletedPayload {
+  return event.payload as ToolCallCompletedPayload;
+}
+
+function buildToolStepMeta(
+  rawPayload: Record<string, unknown>,
+  shellMetadata: ShellExecutionMetadata | undefined,
+  partial: boolean,
+  output: string | undefined
+): ToolStepMeta {
+  return {
+    rawPayload,
+    shellMetadata,
+    backendSummary: extractBackendSummary(shellMetadata, output),
+    riskSummary: degradedRiskSummary(shellMetadata, output),
+    hint: skillTriggerGuardHint(shellMetadata, output),
+    partial
+  };
+}
+
+function partialDescription(shellMetadata: ShellExecutionMetadata | undefined): string {
+  if (!shellMetadata) {
+    return "Partial success";
+  }
+  return `Partial success (exit code ${shellMetadata.exit_code})`;
+}
+
+function isPartialResult(
+  shellMetadata: ShellExecutionMetadata | undefined,
+  output: string | undefined
+): boolean {
+  return (
+    shellMetadata?.result_class === "partial_success" ||
+    String(output ?? "").includes("result_class=partial_success")
+  );
+}
+
+function extractBackendSummary(
+  shellMetadata: ShellExecutionMetadata | undefined,
+  output: string | undefined
+): string | undefined {
+  const backend = shellMetadata?.backend ?? findOutputField(output, "backend");
+  if (!backend) {
+    return undefined;
+  }
+  return `sandbox: ${backendLabel(backend)}`;
+}
+
+function backendLabel(backend: string): string {
+  switch (backend) {
+    case "macos_seatbelt":
+      return "sandbox-exec (macos_seatbelt)";
+    case "linux_native":
+      return "bwrap (linux_native)";
+    case "none_escalated":
+      return "none (degraded)";
+    default:
+      return backend;
+  }
+}
+
+function degradedRiskSummary(
+  shellMetadata: ShellExecutionMetadata | undefined,
+  output: string | undefined
+): string | undefined {
+  const backend = shellMetadata?.backend ?? findOutputField(output, "backend");
+  if (backend !== "none_escalated") {
+    return undefined;
+  }
+  const command = (findOutputField(output, "command") ?? "").toLowerCase();
+  const policyDecision = (
+    shellMetadata?.policy_decision ??
+    findOutputField(output, "policy_decision") ??
+    ""
+  ).toLowerCase();
+  const mutating = isMutatingCommand(command) || policyDecision.includes("askapproval");
+  return mutating ? "risk: mutating command ran unsandboxed" : "degraded: executed outside sandbox";
+}
+
+function skillTriggerGuardHint(
+  shellMetadata: ShellExecutionMetadata | undefined,
+  output: string | undefined
+): string | undefined {
+  const denyReason =
+    shellMetadata?.runtime_deny_reason ?? findOutputField(output, "runtime_deny_reason");
+  return denyReason === "skill_trigger_not_shell_command"
+    ? "hint: detected skill trigger string in shell; use skill workflow steps"
+    : undefined;
+}
+
+function findOutputField(output: string | undefined, field: string): string | undefined {
+  return output
+    ?.split("\n")
+    .find((line) => line.startsWith(`${field}=`))
+    ?.slice(field.length + 1)
+    .trim();
+}
+
+function isMutatingCommand(command: string): boolean {
+  return [
+    "git add ",
+    "git commit",
+    "git merge",
+    "git rebase",
+    "git cherry-pick",
+    "git reset --hard",
+    "git clean -fd",
+    "rm ",
+    "mv ",
+    "cp ",
+    "chmod ",
+    "chown ",
+    "touch ",
+    "mkdir ",
+    "rmdir ",
+    "sed -i",
+    "perl -i",
+    "truncate ",
+    ">",
+    ">>"
+  ].some((token) => command.includes(token));
 }
 
 function resolveToolStepId(event: StreamEvent, prefix: string): string {

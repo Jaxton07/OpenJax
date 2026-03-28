@@ -25,7 +25,7 @@ describe("session-events/tools", () => {
       event_seq: 1,
       timestamp: "2026-01-01T00:00:01Z",
       type: "tool_call_started",
-      payload: { tool_call_id: "call_1", tool_name: "shell", target: "pwd" }
+      payload: { tool_call_id: "call_1", tool_name: "shell", display_name: "Run Shell", target: "pwd" }
     });
     const completed = applySessionEvent(started, {
       request_id: "req",
@@ -34,7 +34,22 @@ describe("session-events/tools", () => {
       event_seq: 2,
       timestamp: "2026-01-01T00:00:02Z",
       type: "tool_call_completed",
-      payload: { tool_call_id: "call_1", tool_name: "shell", output: "ok" }
+      payload: {
+        tool_call_id: "call_1",
+        tool_name: "shell",
+        display_name: "Run Shell",
+        ok: true,
+        output: "stdout:\nok\nstderr:\n",
+        shell_metadata: {
+          result_class: "partial_success",
+          backend: "macos_seatbelt",
+          exit_code: 141,
+          policy_decision: "allow",
+          runtime_allowed: true,
+          degrade_reason: null,
+          runtime_deny_reason: null
+        }
+      }
     });
 
     const startedStep = started.messages.find((message) => message.kind === "tool_steps")?.toolSteps?.[0];
@@ -46,7 +61,11 @@ describe("session-events/tools", () => {
     expect(legacyToolMessages).toHaveLength(0);
     expect(startedStep?.status).toBe("running");
     expect(stepMessages[0].toolSteps?.[0].status).toBe("success");
-    expect(stepMessages[0].toolSteps?.[0].output).toBe("ok");
+    expect(stepMessages[0].toolSteps?.[0].title).toBe("Run Shell");
+    expect(stepMessages[0].toolSteps?.[0].description).toContain("Partial success");
+    expect(stepMessages[0].toolSteps?.[0].meta?.backendSummary).toBe(
+      "sandbox: sandbox-exec (macos_seatbelt)"
+    );
     expect(stepMessages[0].toolSteps?.[0].durationSec).toBe(1);
     expect(stepMessages[0].toolSteps?.[0].startEventSeq).toBe(1);
     expect(stepMessages[0].toolSteps?.[0].lastEventSeq).toBe(2);
@@ -285,5 +304,40 @@ describe("session-events/tools", () => {
     expect(stepMessages[0].toolSteps?.[0].startEventSeq).toBe(1);
     expect(stepMessages[0].toolSteps?.[0].lastEventSeq).toBe(2);
     expect(stepMessages[0].toolSteps?.[0].endEventSeq).toBe(2);
+  });
+
+  it("derives degraded shell warnings from shell_metadata", () => {
+    const session = baseSession();
+    const next = applySessionEvent(session, {
+      request_id: "req",
+      session_id: "sess_1",
+      turn_id: "turn_1",
+      event_seq: 1,
+      timestamp: "2026-01-01T00:00:01Z",
+      type: "tool_call_completed",
+      payload: {
+        tool_call_id: "call_2",
+        tool_name: "shell",
+        ok: true,
+        output: "command=git add -A && git commit -m \"x\"\nstdout:\nok\nstderr:\n",
+        shell_metadata: {
+          result_class: "success",
+          backend: "none_escalated",
+          exit_code: 0,
+          policy_decision: "AskApproval",
+          runtime_allowed: true,
+          degrade_reason: "macos_seatbelt: denied",
+          runtime_deny_reason: "skill_trigger_not_shell_command"
+        }
+      }
+    });
+
+    const step = next.messages.find((message) => message.kind === "tool_steps")?.toolSteps?.[0];
+    expect(step?.status).toBe("success");
+    expect(step?.meta?.backendSummary).toBe("sandbox: none (degraded)");
+    expect(step?.meta?.riskSummary).toBe("risk: mutating command ran unsandboxed");
+    expect(step?.meta?.hint).toBe(
+      "hint: detected skill trigger string in shell; use skill workflow steps"
+    );
   });
 });
