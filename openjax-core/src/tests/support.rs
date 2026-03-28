@@ -12,7 +12,8 @@ use tokio::time::{Duration, sleep};
 
 use crate::approval::{ApprovalHandler, ApprovalRequest};
 use crate::model::{
-    AssistantContentBlock, ModelClient, ModelRequest, ModelResponse, StopReason, StreamDelta,
+    AssistantContentBlock, ConversationMessage, ModelClient, ModelRequest, ModelResponse,
+    StopReason, StreamDelta, UserContentBlock,
 };
 use crate::tools::context::{FunctionCallOutputBody, ToolOutput};
 use crate::tools::error::FunctionCallError;
@@ -437,6 +438,92 @@ impl ModelClient for NativeStreamingToolUseModel {
 
     fn name(&self) -> &'static str {
         "native-streaming-tool-use"
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct ShellToolResultEchoModel {
+    stream_calls: Arc<Mutex<usize>>,
+}
+
+impl ShellToolResultEchoModel {
+    pub(super) fn new() -> Self {
+        Self {
+            stream_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn latest_tool_result_content(request: &ModelRequest) -> String {
+        request
+            .messages
+            .iter()
+            .rev()
+            .find_map(|message| match message {
+                ConversationMessage::User(blocks) => blocks.iter().rev().find_map(|block| {
+                    if let UserContentBlock::ToolResult { content, .. } = block {
+                        Some(content.clone())
+                    } else {
+                        None
+                    }
+                }),
+                _ => None,
+            })
+            .unwrap_or_else(|| "tool result missing".to_string())
+    }
+}
+
+#[async_trait]
+impl ModelClient for ShellToolResultEchoModel {
+    async fn complete(&self, _request: &ModelRequest) -> Result<ModelResponse> {
+        Ok(text_response("unused"))
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &ModelRequest,
+        delta_sender: Option<UnboundedSender<StreamDelta>>,
+    ) -> Result<ModelResponse> {
+        let mut calls = self.stream_calls.lock().expect("stream_calls lock");
+        *calls += 1;
+
+        if *calls == 1 {
+            if let Some(sender) = delta_sender {
+                let _ = sender.send(StreamDelta::ToolUseStart {
+                    id: "call_shell".to_string(),
+                    name: "shell".to_string(),
+                });
+                let _ = sender.send(StreamDelta::ToolArgsDelta {
+                    id: "call_shell".to_string(),
+                    delta: "{\"cmd\":\"printf split-contract\"}".to_string(),
+                });
+                let _ = sender.send(StreamDelta::ToolUseEnd {
+                    id: "call_shell".to_string(),
+                });
+            }
+            Ok(ModelResponse {
+                content: vec![AssistantContentBlock::ToolUse {
+                    id: "call_shell".to_string(),
+                    name: "shell".to_string(),
+                    input: serde_json::json!({"cmd": "printf split-contract"}),
+                }],
+                stop_reason: Some(StopReason::ToolUse),
+                ..ModelResponse::default()
+            })
+        } else {
+            let content = Self::latest_tool_result_content(request);
+            if let Some(sender) = delta_sender {
+                let _ = sender.send(StreamDelta::Text(content.clone()));
+            }
+            Ok(ModelResponse {
+                content: vec![AssistantContentBlock::Text { text: content }],
+                stop_reason: Some(StopReason::EndTurn),
+                ..ModelResponse::default()
+            })
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "shell-tool-result-echo"
     }
 }
 

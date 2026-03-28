@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use openjax_protocol::Event;
 
 use super::support::{
     MixedTextToolUseModel, NativeStreamingFinalModel, NativeStreamingToolUseModel,
-    ScriptedStreamingModel, user_turn,
+    RejectApprovalHandler, ScriptedStreamingModel, ShellToolResultEchoModel, user_turn,
 };
 use crate::{Agent, SandboxMode};
+use crate::tools::{ToolCall, ToolExecutionRequest, ToolRouter, ToolRuntimeConfig};
 
 #[tokio::test]
 async fn final_action_emits_response_text_delta_before_completion() {
@@ -201,4 +204,72 @@ async fn tool_use_round_does_not_emit_intermediate_response_text_delta() {
         .collect::<Vec<_>>();
 
     assert_eq!(deltas, vec!["done".to_string()]);
+}
+
+#[test]
+fn tool_exec_outcome_keeps_model_content_separate_from_display_output() {
+    let mut args = HashMap::new();
+    args.insert("cmd".to_string(), "printf split-contract".to_string());
+    let call = ToolCall {
+        name: "shell".to_string(),
+        args,
+    };
+    let router = ToolRouter::new();
+    let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+    let outcome = runtime
+        .block_on(router.execute(ToolExecutionRequest {
+            turn_id: 1,
+            session_id: None,
+            tool_call_id: "contract_split".to_string(),
+            call: &call,
+            cwd: PathBuf::from(".").as_path(),
+            config: ToolRuntimeConfig::default(),
+            approval_handler: Arc::new(RejectApprovalHandler),
+            event_sink: None,
+            policy_runtime: None,
+        }))
+        .expect("shell execution should succeed");
+
+    assert!(
+        !outcome.output.contains("result_class=") && !outcome.output.contains("command="),
+        "model-facing content should be clean and not include display metadata"
+    );
+}
+
+#[tokio::test]
+async fn native_tool_result_uses_model_content_not_display_output() {
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
+    agent.model_client = Box::new(ShellToolResultEchoModel::new());
+
+    let events = agent.submit(user_turn("native shell split")).await;
+
+    let completed_output = events.iter().find_map(|event| match event {
+        Event::ToolCallCompleted {
+            tool_name, output, ..
+        } if tool_name == "shell" => Some(output.clone()),
+        _ => None,
+    });
+    let final_message = events.iter().rev().find_map(|event| match event {
+        Event::ResponseCompleted { content, .. } => Some(content.clone()),
+        _ => None,
+    });
+
+    let completed_output = completed_output.expect("expected shell completed output");
+    let final_message = final_message.expect("expected response completed content");
+    assert!(
+        !final_message.is_empty(),
+        "model-visible tool result should not be empty"
+    );
+    assert!(
+        completed_output.contains("result_class="),
+        "display output should retain shell execution classification"
+    );
+    assert!(
+        !final_message.contains("result_class=") && !final_message.contains("command="),
+        "model-facing content should not include display metadata"
+    );
+    assert_ne!(
+        final_message, completed_output,
+        "model content should be separated from event/display output"
+    );
 }

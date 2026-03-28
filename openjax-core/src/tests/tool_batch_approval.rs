@@ -6,8 +6,8 @@ use openjax_protocol::Event;
 
 use super::support::{
     ApprovalBlockedBatchModel, ApprovalCancellationBatchModel, OverflowToolUseModel,
-    RejectApprovalHandler, ScriptedToolBatchDependencyModel, ScriptedToolBatchModel, SlowProbeTool,
-    ask_policy_runtime, user_turn,
+    RejectApprovalHandler, ScriptedToolBatchDependencyModel, ScriptedToolBatchModel,
+    ShellToolResultEchoModel, SlowProbeTool, ask_policy_runtime, user_turn,
 };
 use crate::{Agent, SandboxMode};
 
@@ -211,5 +211,32 @@ async fn overflow_tool_uses_are_closed_with_failed_and_completed_events() {
     assert!(
         overflow_completed.is_some(),
         "expected overflow call to emit completed"
+    );
+}
+
+#[tokio::test]
+async fn tool_call_completed_event_contains_structured_shell_metadata() {
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
+    agent.model_client = Box::new(ShellToolResultEchoModel::new());
+
+    let events = agent.submit(user_turn("shell metadata event")).await;
+    let shell_completed = events
+        .iter()
+        .find(|event| {
+            matches!(
+                event,
+                Event::ToolCallCompleted { tool_name, .. } if tool_name == "shell"
+            )
+        })
+        .expect("expected shell ToolCallCompleted event");
+
+    let event_json = serde_json::to_value(shell_completed).expect("serialize event to json");
+    let metadata = event_json
+        .get("ToolCallCompleted")
+        .and_then(|payload| payload.get("shell_metadata"));
+
+    assert!(
+        matches!(metadata, Some(value) if !value.is_null()),
+        "expected shell metadata in ToolCallCompleted, got {event_json}"
     );
 }
