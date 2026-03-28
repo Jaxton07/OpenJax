@@ -13,13 +13,18 @@
 
 ## 实施策略
 
-三个顺序子阶段，每个子阶段独立可编译：
+三个顺序子阶段，其中 3a 独立可编译；3b/3c 共享一次编译边界，需成组落地：
 
 | 子阶段 | 范围 | 涉及文件 | 是否破坏编译 |
 |--------|------|---------|-------------|
 | 3a 基础 | 新增接口和函数 | `router_impl.rs`、`prompt.rs` | 否，纯新增 |
-| 3b 流简化 | 去掉 JSON 解析 | `planner_stream_flow.rs` | Planner 仍用旧路径 |
-| 3c 核心重写 | 循环 + 测试 | `planner.rs`、`planner_tool_action.rs`、`tests.rs` | 核心改动 |
+| 3b 流简化 | 去掉 JSON 解析 | `planner_stream_flow.rs` | 与 3c 成组提交，单独落地会破坏编译 |
+| 3c 核心重写 | 循环 + 测试 | `planner.rs`、`planner_tool_action.rs`、`tests.rs` | 与 3b 一起恢复编译 |
+
+**当前代码基线说明：**
+- 本规格不是从空白 Phase 3 起草，而是建立在当前工作区已落地的 Phase 1/2 迁移代码之上继续推进。
+- 具体前提：`openjax-core/src/model/types.rs` 已切到 `messages/content/tools/stop_reason` 结构，`anthropic_messages.rs` / `chat_completions.rs` 已开始发送和解析原生 `tool_use`。
+- 因此 Phase 3 的任务不是重新设计 model 层，而是把仍停留在旧 JSON planner 路径上的 agent 循环收敛到与现有 model/adapters 一致的单一路径。
 
 ---
 
@@ -75,6 +80,11 @@ impl ToolRouter {
 
 **关于 `tool_traces`：** `build_turn_messages` 不接受 `tool_traces` 参数。当前 turn 内的工具执行历史通过 `messages` 中的 `ConversationMessage`（tool_use / tool_result 对）自然传递。`commit_turn` 需要的 `tool_traces: Vec<String>` 在 `execute_native_tool_call` 中以 `"tool_name(args) → result_summary"` 格式收集。
 
+**关于 loop recovery 刷新：**
+- `build_turn_messages` 只负责构建“跨 turn 基线消息”（历史摘要 + 当前用户输入），不负责修改当前 turn 内已累计的 assistant/tool_result 消息。
+- 3c 需要新增一个小型 helper（例如 `refresh_loop_recovery_in_messages(messages: &mut Vec<ConversationMessage>, user_input: &str, loop_recovery: Option<&str>)`），职责是仅更新“当前 turn 的最后一条用户文本消息”中的 recovery 段。
+- 该 helper 不得重建整个 `messages`，也不得丢弃当前 turn 内已经追加的 `ConversationMessage::Assistant(...)` 与 `ConversationMessage::User(tool_result_blocks)`。
+
 **保留的工具函数：** `truncate_for_prompt` 和 `summarize_user_input` — 仍被 `planner_tool_action.rs` 和 `planner_utils.rs` 引用。
 
 ---
@@ -113,6 +123,15 @@ pub(super) struct PlannerStreamResult {
 
 **保留：** `emit_synthetic_response_deltas`、TTFT 日志、`ResponseStreamOrchestrator`、所有 `StreamDelta` 事件处理。
 
+**事件约束：**
+- `ToolUseStart` → 发 `ToolCallStarted`
+- `ToolArgsDelta` → 发 `ToolCallArgsDelta`
+- `ToolUseEnd` → 发 `ToolCallReady`
+- 对同一个 `tool_call_id`，流式阶段必须缓存 `tool_name`，后续 `ToolCallArgsDelta` / `ToolCallReady` 继续携带真实 `tool_name`，不得发空字符串
+- 如果能从 `ToolRouter` 查到 display name，流式阶段也应复用同一份 `display_name`
+- 执行阶段不得再次对同一个 `tool_call_id` 发 `ToolCallStarted`、`ToolCallArgsDelta`、`ToolCallReady`
+- 执行阶段只负责 `ToolCallProgress`、`ToolCallCompleted`、`ToolCallFailed`
+
 **错误处理：** 如果 `complete_stream` 失败，直接返回错误 — 不用 `complete()` 重试。
 
 ---
@@ -140,10 +159,11 @@ while 未达限制:
 
 ```
 system_prompt = build_system_prompt(&skills_context)
-messages = build_turn_messages(user_input, &history, loop_recovery)
+messages = build_turn_messages(user_input, &history, initial_loop_recovery)
 tool_specs = self.tools.tool_specs()
 
 while 未达限制:
+    refresh_loop_recovery_in_messages(messages, user_input, loop_detector.recovery_prompt())
     request = ModelRequest { stage: Planner, system_prompt, messages, tools: tool_specs, options }
     result = request_planner_model_output(turn_id, &request, true, events)
     response = result.response
@@ -159,8 +179,8 @@ while 未达限制:
         return
 
     // 收集 tool_use blocks，发射 ToolCallsProposed
-    // 注意：planner_stream_flow 已在流式阶段发射了 ToolCallStarted/ToolCallReady
-    // 这里只发射 ToolCallCompleted
+    // 注意：planner_stream_flow 已在流式阶段发射 Started/ArgsDelta/Ready
+    // 执行阶段不得再次补发这些事件
     let tool_uses = response.tool_uses()
     emit ToolCallsProposed event
     let mut tool_result_blocks: Vec<UserContentBlock> = Vec::new()
@@ -168,9 +188,7 @@ while 未达限制:
     for tool_use in tool_uses:
         let AssistantContentBlock::ToolUse { id, name, input } = tool_use else { continue };
 
-        let display_name = self.tools.display_name_for(name);
-
-        // execute_native_tool_call 内部发射 ToolCallCompleted
+        // execute_native_tool_call 内部只发 Progress/Completed/Failed
         let outcome = execute_native_tool_call(
             turn_id, id, name, input, events, &mut tool_traces,
             &mut apply_patch_read_guard, &mut consecutive_duplicate_skips,
@@ -228,8 +246,15 @@ while 未达限制:
 - 审批处理保留
 - 所有守卫保留（apply_patch_read_guard、重复检测、循环检测）
 - 返回 `ToolExecOutcome` — `Result { content: String, ok: bool }` 或 `Aborted`
+- 本方法不再调用 `emit_tool_call_started_sequence`，避免与流式阶段重复发 `Started/ArgsDelta/Ready`
 
 **关于 `ToolActionContext`：** 复用 `planner.rs` 中现有的 `ToolActionContext` 结构体，相同字段。无需新 context 结构体。
+
+**为何保留 `planner_tool_action.rs` 而不是并回 `planner.rs`：**
+- 这是相对原始总计划的有意边界调整，不是遗漏清理。
+- 当前 `planner_tool_action.rs` 已集中承载 apply_patch 守卫、重复调用检测、审批阻塞、loop detector、state epoch 更新等高风险执行逻辑；Phase 3 仅替换入参和事件语义，不重写这部分职责边界。
+- 保留该模块可以避免 `planner.rs` 在主循环重写时继续膨胀，也降低“同时改循环编排和工具执行守卫”带来的回归风险。
+- Phase 3 结束后的清理目标调整为：删除旧 `handle_tool_action`，保留 `planner_tool_action.rs` 作为独立执行模块；是否进一步合并文件，留待后续在代码规模和可读性都验证后再决定。
 
 ### 3c.3 将 ToolUse 转换为 ToolCall
 
@@ -273,6 +298,13 @@ fn tool_use_to_call(name: &str, input: &Value) -> ToolCall {
 - `keeps_explicit_tool_shape_unchanged` — 依赖 `parse_model_decision`
 - `keeps_final_action_unchanged` — 依赖 `parse_model_decision`
 
+**新增替代测试：**
+- `build_system_prompt_contains_verification_rule`
+- `build_system_prompt_contains_skills_section`
+- `build_turn_messages_includes_prior_conversation_summary`
+- `refresh_loop_recovery_only_updates_last_user_text`
+- `planner_stream_tool_events_preserve_tool_name_across_args_delta_and_ready`
+
 **保留不变的测试：**
 - `duplicate_detection_*` — 纯 Agent 方法测试
 - `parse_runtime_policies` — 纯配置解析
@@ -282,12 +314,16 @@ fn tool_use_to_call(name: &str, input: &Value) -> ToolCall {
 
 ### 3c.5 清理 — 删除旧代码路径
 
-3c.4 所有测试通过后：
+3b/3c 成组完成、所有测试通过后：
 - 从 `prompt.rs` 删除 `build_planner_input`
 - 从 `prompt.rs` 删除 `build_json_repair_prompt`
 - 从 `planner_tool_action.rs` 删除 `handle_tool_action`（被 `execute_native_tool_call` 替代）
 - 标记 `dispatcher::route_model_output` 为 `#[deprecated]`
 - 从 `Agent` 结构体移除 `dispatcher_config` 和 `tool_batch_v2_enabled`（或暂时保留为死字段）
+
+**与原始总计划的差异说明：**
+- 原始总计划曾设想在 Phase 3 末尾删除 `planner_tool_action.rs` 并并入 `planner.rs`。
+- 当前规格明确不再以“文件合并”为 Phase 3 完成条件；Phase 3 的完成条件改为“旧 JSON planner 路径被移除，agent 循环与现有 native model/adapters 对齐，并保持工具执行守卫逻辑独立可测”。
 
 ---
 

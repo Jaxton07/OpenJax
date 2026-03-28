@@ -73,6 +73,10 @@ impl ToolRouter {
             .map(|s| s.display_name.clone())
     }
 
+    pub fn tool_specs(&self) -> Vec<ToolSpec> {
+        self.specs.clone()
+    }
+
     pub async fn execute(&self, request: ToolExecutionRequest<'_>) -> Result<ToolExecOutcome> {
         let ToolExecutionRequest {
             turn_id,

@@ -1,11 +1,11 @@
 use std::time::Instant;
+use std::{collections::HashMap};
 
 use openjax_protocol::Event;
-use tracing::{info, warn};
+use tracing::info;
 
-use crate::agent::decision::{DecisionJsonStreamParser, parse_model_decision};
 use crate::logger::AFTER_DISPATCH_LOG_TARGET;
-use crate::model::{ModelRequest, ModelUsage, StreamDelta};
+use crate::model::{ModelRequest, ModelResponse, ModelUsage, StreamDelta};
 use crate::streaming::{
     ResponseStreamOrchestrator, emit_synthetic_response_deltas, run_stream_with_delta_handler,
 };
@@ -21,10 +21,9 @@ fn reasoning_preview(input: &str, max_chars: usize) -> (String, bool) {
 
 #[derive(Debug, Default, Clone)]
 pub(super) struct PlannerStreamResult {
-    pub(super) model_output: String,
-    pub(super) streamed_message: String,
+    pub(super) response: ModelResponse,
+    pub(super) streamed_text: String,
     pub(super) live_streamed: bool,
-    pub(super) action_hint: Option<String>,
     pub(super) usage: Option<ModelUsage>,
 }
 
@@ -42,27 +41,20 @@ impl Agent {
             .model_client
             .complete_stream(planner_request, Some(delta_tx));
 
-        let mut parser = DecisionJsonStreamParser::new();
-        let mut streamed_message = String::new();
+        let mut streamed_text = String::new();
         let mut response_started = false;
         let mut ttft_logged = false;
         let mut delta_event_count = 0u64;
         let mut last_live_delta_at: Option<Instant> = None;
         let mut stream_orchestrator =
             ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
+        let mut tool_names: HashMap<String, String> = HashMap::new();
 
         let stream_result =
             run_stream_with_delta_handler(delta_rx, stream_future, |delta| match delta {
                 StreamDelta::Text(text_delta) => {
                     if text_delta.is_empty() {
                         return;
-                    }
-                    let chunk = parser.push_chunk(&text_delta);
-                    if !emit_live_final_deltas || chunk.message_delta.is_empty() {
-                        return;
-                    }
-                    if !response_started {
-                        response_started = true;
                     }
                     if !ttft_logged {
                         ttft_logged = true;
@@ -72,12 +64,50 @@ impl Agent {
                             "planner_stream_ttft"
                         );
                     }
-                    streamed_message.push_str(&chunk.message_delta);
+                    streamed_text.push_str(&text_delta);
                     delta_event_count = delta_event_count.saturating_add(1);
                     last_live_delta_at = Some(Instant::now());
-                    for event in stream_orchestrator.on_delta(&chunk.message_delta) {
-                        self.push_event(events, event);
-                    }
+                }
+                StreamDelta::ToolUseStart { id, name } => {
+                    let display_name = self.tools.display_name_for(&name);
+                    tool_names.insert(id.clone(), name.clone());
+                    self.push_event(
+                        events,
+                        Event::ToolCallStarted {
+                            turn_id,
+                            tool_call_id: id,
+                            tool_name: name,
+                            target: None,
+                            display_name,
+                        },
+                    );
+                }
+                StreamDelta::ToolArgsDelta { id, delta } => {
+                    let tool_name = tool_names.get(&id).cloned().unwrap_or_default();
+                    let display_name = self.tools.display_name_for(&tool_name);
+                    self.push_event(
+                        events,
+                        Event::ToolCallArgsDelta {
+                            turn_id,
+                            tool_call_id: id,
+                            tool_name,
+                            args_delta: delta,
+                            display_name,
+                        },
+                    );
+                }
+                StreamDelta::ToolUseEnd { id } => {
+                    let tool_name = tool_names.get(&id).cloned().unwrap_or_default();
+                    let display_name = self.tools.display_name_for(&tool_name);
+                    self.push_event(
+                        events,
+                        Event::ToolCallReady {
+                            turn_id,
+                            tool_call_id: id,
+                            tool_name,
+                            display_name,
+                        },
+                    );
                 }
                 StreamDelta::Reasoning(reasoning_delta) => {
                     if reasoning_delta.is_empty() {
@@ -109,70 +139,15 @@ impl Agent {
             })
             .await;
 
-        let mut captured_usage: Option<ModelUsage> = None;
-        let mut fallback_reason: Option<&'static str> = None;
-        let model_output = match stream_result {
-            Ok(response) => {
-                captured_usage = response.usage;
-                let output = response.text;
-                if parse_model_decision(&output).is_some() {
-                    output
-                } else if emit_live_final_deltas
-                    && parser.action() == Some("final")
-                    && !streamed_message.is_empty()
-                {
-                    format!(
-                        "{{\"action\":\"final\",\"message\":{}}}",
-                        serde_json::to_string(&streamed_message)
-                            .unwrap_or_else(|_| "\"\"".to_string())
-                    )
-                } else {
-                    fallback_reason = Some("parse_failed_after_stream");
-                    parser.raw_text().to_string()
-                }
+        let response = stream_result?;
+        if emit_live_final_deltas && !response.has_tool_use() && !streamed_text.is_empty() {
+            response_started = true;
+            for event in stream_orchestrator.on_delta(&streamed_text) {
+                self.push_event(events, event);
             }
-            Err(err) => {
-                warn!(
-                    turn_id = turn_id,
-                    error = %err,
-                    "planner_stream_failed"
-                );
-                fallback_reason = Some("stream_failed");
-                parser.raw_text().to_string()
-            }
-        };
+        }
         let stream_phase_total_ms = started_at.elapsed().as_millis() as u64;
-
-        let mut fallback_complete_ms: Option<u64> = None;
-        let final_output = if parse_model_decision(&model_output).is_some() {
-            model_output
-        } else {
-            if matches!(
-                fallback_reason,
-                Some("parse_failed_after_stream") | Some("parse_failed")
-            ) {
-                info!(
-                    turn_id = turn_id,
-                    planner_stream_parse_error_count = 1,
-                    "planner_stream_metric"
-                );
-            }
-            info!(
-                turn_id = turn_id,
-                fallback_reason = fallback_reason.unwrap_or("parse_failed"),
-                "planner_stream_fallback_to_complete"
-            );
-            info!(
-                turn_id = turn_id,
-                planner_stream_fallback_count = 1,
-                "planner_stream_metric"
-            );
-            let fallback_started_at = Instant::now();
-            let fallback = self.model_client.complete(planner_request).await?;
-            fallback_complete_ms = Some(fallback_started_at.elapsed().as_millis() as u64);
-            captured_usage = fallback.usage;
-            fallback.text
-        };
+        let captured_usage = response.usage.clone();
 
         info!(
             turn_id = turn_id,
@@ -182,16 +157,14 @@ impl Agent {
             tail_silence_ms = last_live_delta_at
                 .map(|ts| ts.elapsed().as_millis() as u64)
                 .unwrap_or(stream_phase_total_ms),
-            fallback_complete_ms = fallback_complete_ms,
-            delta_chars = streamed_message.chars().count(),
+            delta_chars = streamed_text.chars().count(),
             "planner_stream_completed"
         );
 
         Ok(PlannerStreamResult {
-            model_output: final_output,
-            streamed_message,
+            response,
+            streamed_text,
             live_streamed: response_started,
-            action_hint: parser.action().map(ToOwned::to_owned),
             usage: captured_usage,
         })
     }

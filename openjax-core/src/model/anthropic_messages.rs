@@ -12,7 +12,10 @@ use crate::logger::{RAW_RESPONSE_LOG_TARGET, provider_raw_log_enabled};
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::RegisteredModel;
 use crate::model::request_profiles::anthropic_messages::AnthropicMessagesRequestProfile;
-use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage, StreamDelta};
+use crate::model::types::{
+    AssistantContentBlock, CapabilityFlags, ConversationMessage, ModelRequest, ModelResponse,
+    ModelUsage, StopReason, StreamDelta, UserContentBlock,
+};
 use crate::streaming::parser::{SseParser, anthropic::AnthropicSseParser};
 
 const SYSTEM_PROMPT_PERSONA: &str = "You are OpenJax, an all-purpose personal AI assistant in a terminal environment, similar in spirit to a reliable AI butler.";
@@ -84,7 +87,9 @@ struct AnthropicThinking {
 struct AnthropicMessagesRequest {
     model: String,
     system: String,
-    messages: Vec<AnthropicMessage>,
+    messages: Vec<AnthropicApiMessage>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<AnthropicToolDef>,
     max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
@@ -94,10 +99,39 @@ struct AnthropicMessagesRequest {
     thinking: Option<AnthropicThinking>,
 }
 
+/// An API-level message: role + ordered content blocks.
 #[derive(Debug, Serialize)]
-struct AnthropicMessage {
+struct AnthropicApiMessage {
     role: String,
-    content: String,
+    content: Vec<AnthropicContentBlock>,
+}
+
+/// An individual content block for the Anthropic Messages API.
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum AnthropicContentBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        is_error: bool,
+    },
+}
+
+/// Tool definition sent with the request to declare available tools.
+#[derive(Debug, Serialize)]
+struct AnthropicToolDef {
+    name: String,
+    description: String,
+    input_schema: serde_json::Value,
 }
 
 impl AnthropicMessagesClient {
@@ -239,7 +273,7 @@ impl AnthropicMessagesClient {
             capabilities: CapabilityFlags {
                 stream: true,
                 reasoning: true,
-                tool_call: false,
+                tool_call: true,
                 json_mode: false,
             },
         })
@@ -251,17 +285,69 @@ impl AnthropicMessagesClient {
         stream: bool,
         thinking: Option<AnthropicThinking>,
     ) -> AnthropicMessagesRequest {
-        let _profile = self.profile;
+        let messages = request
+            .messages
+            .iter()
+            .map(|msg| match msg {
+                ConversationMessage::User(blocks) => AnthropicApiMessage {
+                    role: "user".to_string(),
+                    content: blocks
+                        .iter()
+                        .map(|b| match b {
+                            UserContentBlock::Text { text } => {
+                                AnthropicContentBlock::Text { text: text.clone() }
+                            }
+                            UserContentBlock::ToolResult {
+                                tool_use_id,
+                                content,
+                                is_error,
+                            } => AnthropicContentBlock::ToolResult {
+                                tool_use_id: tool_use_id.clone(),
+                                content: content.clone(),
+                                is_error: *is_error,
+                            },
+                        })
+                        .collect(),
+                },
+                ConversationMessage::Assistant(blocks) => AnthropicApiMessage {
+                    role: "assistant".to_string(),
+                    content: blocks
+                        .iter()
+                        .map(|b| match b {
+                            AssistantContentBlock::Text { text } => {
+                                AnthropicContentBlock::Text { text: text.clone() }
+                            }
+                            AssistantContentBlock::ToolUse { id, name, input } => {
+                                AnthropicContentBlock::ToolUse {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                    input: input.clone(),
+                                }
+                            }
+                        })
+                        .collect(),
+                },
+            })
+            .collect();
+
+        let tools = request
+            .tools
+            .iter()
+            .map(|spec| AnthropicToolDef {
+                name: spec.name.clone(),
+                description: spec.description.clone(),
+                input_schema: spec.input_schema.clone(),
+            })
+            .collect();
+
         AnthropicMessagesRequest {
             model: self.model.clone(),
             system: request
                 .system_prompt
                 .clone()
                 .unwrap_or_else(default_system_prompt),
-            messages: vec![AnthropicMessage {
-                role: "user".to_string(),
-                content: request.user_input.to_string(),
-            }],
+            messages,
+            tools,
             max_tokens: request.options.max_output_tokens.unwrap_or(32000),
             temperature: None,
             stream: stream.then_some(true),
@@ -346,33 +432,45 @@ fn should_log_thinking() -> bool {
         .is_ok_and(|v| matches!(v.as_str(), "0" | "false" | "FALSE"))
 }
 
-fn extract_content_from_body(body: &serde_json::Value) -> Option<String> {
-    let content = body.get("content")?;
-
-    if let Some(text) = content.as_str() {
-        return Some(text.to_string());
-    }
-
-    if let Some(blocks) = content.as_array() {
-        let mut merged = String::new();
-        for block in blocks {
-            if block.get("type").and_then(|v| v.as_str()) != Some("text") {
-                continue;
-            }
-            if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                if !merged.is_empty() {
-                    merged.push('\n');
+/// Extracts all assistant content blocks (text + tool_use) from a non-streaming response body.
+fn extract_content_blocks_from_body(body: &serde_json::Value) -> Vec<AssistantContentBlock> {
+    let Some(blocks) = body.get("content").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for block in blocks {
+        match block.get("type").and_then(|v| v.as_str()) {
+            Some("text") => {
+                if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
+                    if !text.is_empty() {
+                        result.push(AssistantContentBlock::Text {
+                            text: text.to_string(),
+                        });
+                    }
                 }
-                merged.push_str(text);
             }
-        }
-        if !merged.is_empty() {
-            return Some(merged);
+            Some("tool_use") => {
+                if let (Some(id), Some(name)) = (
+                    block.get("id").and_then(|v| v.as_str()),
+                    block.get("name").and_then(|v| v.as_str()),
+                ) {
+                    let input = block
+                        .get("input")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                    result.push(AssistantContentBlock::ToolUse {
+                        id: id.to_string(),
+                        name: name.to_string(),
+                        input,
+                    });
+                }
+            }
+            _ => {} // skip thinking, tool_result, etc.
         }
     }
-
-    None
+    result
 }
+
 
 fn extract_thinking_from_body(body: &serde_json::Value) -> Option<String> {
     let blocks = body.get("content")?.as_array()?;
@@ -416,6 +514,95 @@ fn extract_delta_content_from_body(body: &serde_json::Value) -> Option<String> {
     }
 
     None
+}
+
+/// Handles tool-use SSE events and updates the streaming state machine.
+///
+/// Processes `content_block_start` (type=tool_use), `content_block_delta` (input_json_delta),
+/// `content_block_stop`, and `message_delta` (stop_reason) frames.
+#[allow(clippy::too_many_arguments)]
+fn process_tool_use_frame(
+    payload: &serde_json::Value,
+    delta_sender: &Option<UnboundedSender<StreamDelta>>,
+    current_block_type: &mut Option<String>,
+    pending_tool_id: &mut String,
+    pending_tool_name: &mut String,
+    pending_tool_args: &mut String,
+    content_blocks: &mut Vec<AssistantContentBlock>,
+    stream_stop_reason: &mut Option<StopReason>,
+) {
+    let frame_type = payload.get("type").and_then(|v| v.as_str());
+    match frame_type {
+        Some("content_block_start") => {
+            if let Some(block) = payload.get("content_block") {
+                let block_type = block.get("type").and_then(|v| v.as_str());
+                *current_block_type = block_type.map(String::from);
+                if block_type == Some("tool_use") {
+                    *pending_tool_id = block
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    *pending_tool_name = block
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    pending_tool_args.clear();
+                    if let Some(sender) = delta_sender {
+                        let _ = sender.send(StreamDelta::ToolUseStart {
+                            id: pending_tool_id.clone(),
+                            name: pending_tool_name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        Some("content_block_delta") => {
+            if current_block_type.as_deref() == Some("tool_use") {
+                if let Some(partial_json) = payload
+                    .get("delta")
+                    .and_then(|v| v.get("partial_json"))
+                    .and_then(|v| v.as_str())
+                {
+                    pending_tool_args.push_str(partial_json);
+                    if let Some(sender) = delta_sender {
+                        let _ = sender.send(StreamDelta::ToolArgsDelta {
+                            id: pending_tool_id.clone(),
+                            delta: partial_json.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        Some("content_block_stop") => {
+            if current_block_type.as_deref() == Some("tool_use") {
+                let input: serde_json::Value = serde_json::from_str(pending_tool_args)
+                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                content_blocks.push(AssistantContentBlock::ToolUse {
+                    id: pending_tool_id.clone(),
+                    name: pending_tool_name.clone(),
+                    input,
+                });
+                if let Some(sender) = delta_sender {
+                    let _ = sender.send(StreamDelta::ToolUseEnd {
+                        id: pending_tool_id.clone(),
+                    });
+                }
+            }
+            *current_block_type = None;
+        }
+        Some("message_delta") => {
+            if let Some(sr) = payload
+                .get("delta")
+                .and_then(|v| v.get("stop_reason"))
+                .and_then(|v| v.as_str())
+            {
+                *stream_stop_reason = Some(StopReason::from_api_str(sr));
+            }
+        }
+        _ => {}
+    }
 }
 
 fn extract_delta_thinking_from_body(body: &serde_json::Value) -> Option<String> {
@@ -497,12 +684,13 @@ impl ModelClient for AnthropicMessagesClient {
             );
         }
 
-        let content = extract_content_from_body(&body_json).ok_or_else(|| {
-            anyhow!(
-                "missing content text in anthropic messages response; status={status}; body_snippet={}",
+        let content_blocks = extract_content_blocks_from_body(&body_json);
+        if content_blocks.is_empty() {
+            return Err(anyhow!(
+                "missing content in anthropic messages response; status={status}; body_snippet={}",
                 response_snippet(&body_text)
-            )
-        })?;
+            ));
+        }
 
         let usage = body_json.get("usage").map(|usage| ModelUsage {
             input_tokens: usage.get("input_tokens").and_then(|v| v.as_u64()),
@@ -510,16 +698,16 @@ impl ModelClient for AnthropicMessagesClient {
             total_tokens: usage.get("total_tokens").and_then(|v| v.as_u64()),
         });
 
-        let finish_reason = body_json
+        let stop_reason = body_json
             .get("stop_reason")
             .and_then(|v| v.as_str())
-            .map(ToString::to_string);
+            .map(StopReason::from_api_str);
 
         Ok(ModelResponse {
-            text: content,
+            content: content_blocks,
             reasoning: extract_thinking_from_body(&body_json),
             usage,
-            finish_reason,
+            stop_reason,
             raw: Some(body_json),
         })
     }
@@ -558,8 +746,18 @@ impl ModelClient for AnthropicMessagesClient {
             ));
         }
 
+        // Assembled content for text blocks (streamed live to the user).
         let mut assembled = String::new();
         let mut thinking_assembled = String::new();
+        // Collected completed content blocks (text + tool_use) in stream order.
+        let mut content_blocks: Vec<AssistantContentBlock> = Vec::new();
+        // Per-block streaming state.
+        let mut current_block_type: Option<String> = None;
+        let mut pending_tool_id = String::new();
+        let mut pending_tool_name = String::new();
+        let mut pending_tool_args = String::new();
+        let mut stream_stop_reason: Option<StopReason> = None;
+
         let mut parser = AnthropicSseParser::default();
         let stream_debug = model_stream_debug_enabled();
         let stream_started_at = Instant::now();
@@ -660,6 +858,18 @@ impl ModelClient for AnthropicMessagesClient {
                         let _ = sender.send(StreamDelta::Reasoning(thinking_delta));
                     }
                 }
+
+                // ---- Tool-use block state machine ----
+                process_tool_use_frame(
+                    &payload,
+                    &delta_sender,
+                    &mut current_block_type,
+                    &mut pending_tool_id,
+                    &mut pending_tool_name,
+                    &mut pending_tool_args,
+                    &mut content_blocks,
+                    &mut stream_stop_reason,
+                );
             }
         }
 
@@ -703,6 +913,17 @@ impl ModelClient for AnthropicMessagesClient {
                     let _ = sender.send(StreamDelta::Reasoning(thinking_delta));
                 }
             }
+
+            process_tool_use_frame(
+                &payload,
+                &delta_sender,
+                &mut current_block_type,
+                &mut pending_tool_id,
+                &mut pending_tool_name,
+                &mut pending_tool_args,
+                &mut content_blocks,
+                &mut stream_stop_reason,
+            );
         }
 
         if self.log_thinking && !thinking_assembled.is_empty() {
@@ -763,21 +984,31 @@ impl ModelClient for AnthropicMessagesClient {
             ));
         }
 
-        if assembled.is_empty() {
+        // Build the final content block list: text block (if any) first, then tool_use blocks
+        // collected during streaming (already in stream order via content_blocks).
+        let mut final_content: Vec<AssistantContentBlock> = Vec::new();
+        if !assembled.is_empty() {
+            final_content.push(AssistantContentBlock::Text { text: assembled });
+        }
+        // Tool-use blocks are already ordered (pushed on content_block_stop events).
+        // Merge: if text arrived before tool_use blocks the order is already correct.
+        final_content.extend(content_blocks);
+
+        if final_content.is_empty() {
             return Err(anyhow!(
-                "missing streaming delta content in anthropic messages response; status={status}"
+                "missing streaming content in anthropic messages response; status={status}"
             ));
         }
 
         Ok(ModelResponse {
-            text: assembled,
+            content: final_content,
             reasoning: if thinking_assembled.is_empty() {
                 None
             } else {
                 Some(thinking_assembled)
             },
             usage: None,
-            finish_reason: None,
+            stop_reason: stream_stop_reason,
             raw: None,
         })
     }
@@ -827,7 +1058,7 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        AnthropicMessagesClient, build_messages_endpoint, extract_content_from_body,
+        AnthropicMessagesClient, build_messages_endpoint, extract_content_blocks_from_body,
         extract_delta_content_from_body, extract_delta_thinking_from_body,
         extract_thinking_from_body,
     };
@@ -837,6 +1068,7 @@ mod tests {
 
     #[test]
     fn extract_content_supports_text_blocks() {
+        use crate::model::types::AssistantContentBlock;
         let body = json!({
             "content": [
                 {"type": "thinking", "thinking": "internal"},
@@ -845,8 +1077,30 @@ mod tests {
             ]
         });
 
-        let content = extract_content_from_body(&body);
-        assert_eq!(content.as_deref(), Some("hello\nworld"));
+        let blocks = extract_content_blocks_from_body(&body);
+        assert_eq!(blocks.len(), 2);
+        assert!(
+            matches!(&blocks[0], AssistantContentBlock::Text { text } if text == "hello")
+        );
+        assert!(
+            matches!(&blocks[1], AssistantContentBlock::Text { text } if text == "world")
+        );
+    }
+
+    #[test]
+    fn extract_content_blocks_includes_tool_use() {
+        use crate::model::types::AssistantContentBlock;
+        let body = json!({
+            "content": [
+                {"type": "text", "text": "sure"},
+                {"type": "tool_use", "id": "toolu_123", "name": "shell", "input": {"cmd": "ls"}}
+            ]
+        });
+
+        let blocks = extract_content_blocks_from_body(&body);
+        assert_eq!(blocks.len(), 2);
+        assert!(matches!(&blocks[0], AssistantContentBlock::Text { .. }));
+        assert!(matches!(&blocks[1], AssistantContentBlock::ToolUse { name, .. } if name == "shell"));
     }
 
     #[test]
@@ -923,7 +1177,7 @@ mod tests {
             capabilities: CapabilityFlags {
                 stream: true,
                 reasoning: true,
-                tool_call: false,
+                tool_call: true,
                 json_mode: false,
             },
         }

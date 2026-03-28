@@ -12,7 +12,10 @@ use crate::logger::{RAW_RESPONSE_LOG_TARGET, provider_raw_log_enabled};
 use crate::model::client::{ModelClient, ProviderAdapter};
 use crate::model::registry::RegisteredModel;
 use crate::model::request_profiles::chat_completions::ChatCompletionsRequestProfile;
-use crate::model::types::{CapabilityFlags, ModelRequest, ModelResponse, ModelUsage, StreamDelta};
+use crate::model::types::{
+    AssistantContentBlock, CapabilityFlags, ConversationMessage, ModelRequest, ModelResponse,
+    ModelUsage, StopReason, StreamDelta, UserContentBlock,
+};
 use crate::streaming::parser::{SseParser, openai::OpenAiSseParser};
 
 const SYSTEM_PROMPT_PERSONA: &str = "You are OpenJax, an all-purpose personal AI assistant in a terminal environment, similar in spirit to a reliable AI butler.";
@@ -52,7 +55,9 @@ struct StreamOptions {
 #[derive(Debug, Serialize)]
 struct ChatCompletionRequest {
     model: String,
-    messages: Vec<ChatMessage>,
+    messages: Vec<ChatApiMessage>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<ChatToolDef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -64,9 +69,48 @@ struct ChatCompletionRequest {
 }
 
 #[derive(Debug, Serialize)]
-struct ChatMessage {
+struct ChatApiMessage {
     role: String,
-    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<ChatToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    function: ChatToolCallFunction,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatToolCallFunction {
+    name: String,
+    arguments: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatToolDef {
+    #[serde(rename = "type")]
+    kind: String,
+    function: ChatToolFunction,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatToolFunction {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+struct PendingToolCall {
+    id: String,
+    name: String,
+    args: String,
 }
 
 impl ChatCompletionsClient {
@@ -156,28 +200,124 @@ impl ChatCompletionsClient {
             capabilities: CapabilityFlags {
                 stream: true,
                 reasoning: false,
-                tool_call: false,
+                tool_call: true,
                 json_mode: false,
             },
         })
     }
 
     fn build_request(&self, request: &ModelRequest, stream: bool) -> ChatCompletionRequest {
+        let system_content = request
+            .system_prompt
+            .clone()
+            .unwrap_or_else(default_system_prompt);
+
+        let mut messages = vec![ChatApiMessage {
+            role: "system".to_string(),
+            content: Some(system_content),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+
+        for msg in &request.messages {
+            match msg {
+                ConversationMessage::User(blocks) => {
+                    let mut text_parts: Vec<&str> = Vec::new();
+                    let mut tool_results: Vec<ChatApiMessage> = Vec::new();
+
+                    for block in blocks {
+                        match block {
+                            UserContentBlock::Text { text } => {
+                                text_parts.push(text.as_str());
+                            }
+                            UserContentBlock::ToolResult {
+                                tool_use_id,
+                                content,
+                                is_error: _,
+                            } => {
+                                tool_results.push(ChatApiMessage {
+                                    role: "tool".to_string(),
+                                    content: Some(content.clone()),
+                                    tool_calls: None,
+                                    tool_call_id: Some(tool_use_id.clone()),
+                                });
+                            }
+                        }
+                    }
+
+                    if !text_parts.is_empty() {
+                        messages.push(ChatApiMessage {
+                            role: "user".to_string(),
+                            content: Some(text_parts.join("\n")),
+                            tool_calls: None,
+                            tool_call_id: None,
+                        });
+                    }
+                    messages.extend(tool_results);
+                }
+                ConversationMessage::Assistant(blocks) => {
+                    let text: String = blocks
+                        .iter()
+                        .filter_map(|b| {
+                            if let AssistantContentBlock::Text { text } = b {
+                                Some(text.as_str())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+
+                    let tool_calls: Vec<ChatToolCall> = blocks
+                        .iter()
+                        .filter_map(|b| {
+                            if let AssistantContentBlock::ToolUse { id, name, input } = b {
+                                Some(ChatToolCall {
+                                    id: id.clone(),
+                                    kind: "function".to_string(),
+                                    function: ChatToolCallFunction {
+                                        name: name.clone(),
+                                        arguments: serde_json::to_string(input)
+                                            .unwrap_or_default(),
+                                    },
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    messages.push(ChatApiMessage {
+                        role: "assistant".to_string(),
+                        content: if text.is_empty() { None } else { Some(text) },
+                        tool_calls: if tool_calls.is_empty() {
+                            None
+                        } else {
+                            Some(tool_calls)
+                        },
+                        tool_call_id: None,
+                    });
+                }
+            }
+        }
+
+        let tools = request
+            .tools
+            .iter()
+            .map(|spec| ChatToolDef {
+                kind: "function".to_string(),
+                function: ChatToolFunction {
+                    name: spec.name.clone(),
+                    description: spec.description.clone(),
+                    parameters: spec.input_schema.clone(),
+                },
+            })
+            .collect();
+
         ChatCompletionRequest {
             model: self.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: request
-                        .system_prompt
-                        .clone()
-                        .unwrap_or_else(default_system_prompt),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: request.user_input.to_string(),
-                },
-            ],
+            messages,
+            tools,
             temperature: None,
             max_tokens: self.profile.resolve_max_tokens(request).or(Some(32000)),
             stream: stream.then_some(true),
@@ -241,24 +381,30 @@ fn model_stream_debug_enabled() -> bool {
     })
 }
 
-fn extract_content_from_body(body: &serde_json::Value) -> Option<String> {
-    let message = body
+/// Extract text content and tool_calls from a non-streaming response body.
+fn extract_content_blocks_from_body(body: &serde_json::Value) -> Vec<AssistantContentBlock> {
+    let message = match body
         .get("choices")
         .and_then(|v| v.as_array())
         .and_then(|arr| arr.first())
-        .and_then(|v| v.get("message"))?;
+        .and_then(|v| v.get("message"))
+    {
+        Some(m) => m,
+        None => return vec![],
+    };
 
-    let content = message.get("content")?;
+    let mut blocks = Vec::new();
 
-    if let Some(text) = content.as_str() {
-        return Some(text.to_string());
-    }
-
-    // Some providers return content blocks like:
-    // [{"type":"text","text":"..."}, ...]
-    if let Some(blocks) = content.as_array() {
+    // Text content (may be null when only tool_calls are present)
+    if let Some(text) = message.get("content").and_then(|v| v.as_str()) {
+        if !text.is_empty() {
+            blocks.push(AssistantContentBlock::Text {
+                text: text.to_string(),
+            });
+        }
+    } else if let Some(content_blocks) = message.get("content").and_then(|v| v.as_array()) {
         let mut merged = String::new();
-        for block in blocks {
+        for block in content_blocks {
             if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                 if !merged.is_empty() {
                     merged.push('\n');
@@ -267,11 +413,35 @@ fn extract_content_from_body(body: &serde_json::Value) -> Option<String> {
             }
         }
         if !merged.is_empty() {
-            return Some(merged);
+            blocks.push(AssistantContentBlock::Text { text: merged });
         }
     }
 
-    None
+    // Tool calls
+    if let Some(tool_calls) = message.get("tool_calls").and_then(|v| v.as_array()) {
+        for tc in tool_calls {
+            let id = tc
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let func = tc.get("function");
+            let name = func
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let args_str = func
+                .and_then(|f| f.get("arguments"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
+            let input =
+                serde_json::from_str(args_str).unwrap_or(serde_json::Value::Object(Default::default()));
+            blocks.push(AssistantContentBlock::ToolUse { id, name, input });
+        }
+    }
+
+    blocks
 }
 
 fn extract_delta_content_from_body(body: &serde_json::Value) -> Option<String> {
@@ -307,6 +477,49 @@ fn extract_delta_reasoning_from_body(body: &serde_json::Value) -> Option<String>
         .and_then(|arr| arr.first())
         .and_then(|v| v.get("delta"))
         .and_then(|v| v.get("reasoning_content"))
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
+}
+
+/// Extract streaming tool_call deltas from an SSE frame.
+/// Returns a list of (index, Option<id>, Option<name>, Option<args_delta>).
+fn extract_tool_call_deltas(body: &serde_json::Value) -> Vec<(usize, Option<String>, Option<String>, Option<String>)> {
+    let tool_calls = match body
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("delta"))
+        .and_then(|v| v.get("tool_calls"))
+        .and_then(|v| v.as_array())
+    {
+        Some(arr) => arr,
+        None => return vec![],
+    };
+
+    tool_calls
+        .iter()
+        .filter_map(|tc| {
+            let index = tc.get("index").and_then(|v| v.as_u64())? as usize;
+            let id = tc.get("id").and_then(|v| v.as_str()).map(ToString::to_string);
+            let func = tc.get("function");
+            let name = func
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+            let args = func
+                .and_then(|f| f.get("arguments"))
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+            Some((index, id, name, args))
+        })
+        .collect()
+}
+
+fn extract_finish_reason(body: &serde_json::Value) -> Option<String> {
+    body.get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("finish_reason"))
         .and_then(|v| v.as_str())
         .map(ToString::to_string)
 }
@@ -358,28 +571,29 @@ impl ModelClient for ChatCompletionsClient {
             ));
         }
 
-        let content = extract_content_from_body(&body_json).ok_or_else(|| {
-            anyhow!(
-                "missing choices[0].message.content in API response; status={status}; body_snippet={}",
+        let content_blocks = extract_content_blocks_from_body(&body_json);
+        if content_blocks.is_empty() {
+            return Err(anyhow!(
+                "missing choices[0].message content in API response; status={status}; body_snippet={}",
                 response_snippet(&body_text)
-            )
-        })?;
+            ));
+        }
 
         let usage = extract_usage_from_payload(&body_json);
 
-        let finish_reason = body_json
+        let stop_reason = body_json
             .get("choices")
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
             .and_then(|v| v.get("finish_reason"))
             .and_then(|v| v.as_str())
-            .map(ToString::to_string);
+            .map(StopReason::from_api_str);
 
         Ok(ModelResponse {
-            text: content,
+            content: content_blocks,
             reasoning: None,
             usage,
-            finish_reason,
+            stop_reason,
             raw: Some(body_json),
         })
     }
@@ -421,6 +635,10 @@ impl ModelClient for ChatCompletionsClient {
         let mut last_delta_at: Option<Instant> = None;
         let mut last_chunk_at: Option<Instant> = None;
         let raw_log_enabled = provider_raw_log_enabled();
+
+        // Tool call streaming state
+        let mut pending_tool_calls: Vec<PendingToolCall> = Vec::new();
+        let mut stream_stop_reason: Option<StopReason> = None;
 
         let mut resp = resp;
         loop {
@@ -509,6 +727,41 @@ impl ModelClient for ChatCompletionsClient {
                     && let Some(sender) = &delta_sender
                 {
                     let _ = sender.send(StreamDelta::Reasoning(reasoning_delta));
+                }
+
+                // Tool call delta processing
+                for (index, id, name, args_delta) in extract_tool_call_deltas(&payload) {
+                    // Grow pending_tool_calls if this is a new tool call
+                    while pending_tool_calls.len() <= index {
+                        let new_id = id.clone().unwrap_or_default();
+                        let new_name = name.clone().unwrap_or_default();
+                        if let Some(sender) = &delta_sender {
+                            let _ = sender.send(StreamDelta::ToolUseStart {
+                                id: new_id.clone(),
+                                name: new_name.clone(),
+                            });
+                        }
+                        pending_tool_calls.push(PendingToolCall {
+                            id: new_id,
+                            name: new_name,
+                            args: String::new(),
+                        });
+                    }
+                    if let Some(args) = args_delta
+                        && !args.is_empty()
+                    {
+                        pending_tool_calls[index].args.push_str(&args);
+                        if let Some(sender) = &delta_sender {
+                            let _ = sender.send(StreamDelta::ToolArgsDelta {
+                                id: pending_tool_calls[index].id.clone(),
+                                delta: args,
+                            });
+                        }
+                    }
+                }
+
+                if let Some(finish_reason) = extract_finish_reason(&payload) {
+                    stream_stop_reason = Some(StopReason::from_api_str(&finish_reason));
                 }
 
                 if let Some(usage) = extract_usage_from_payload(&payload) {
@@ -610,17 +863,35 @@ impl ModelClient for ChatCompletionsClient {
             ));
         }
 
-        if assembled.is_empty() {
+        // Build final content blocks from assembled text + pending tool calls
+        let mut content_blocks: Vec<AssistantContentBlock> = Vec::new();
+        if !assembled.is_empty() {
+            content_blocks.push(AssistantContentBlock::Text { text: assembled });
+        }
+        for tc in &pending_tool_calls {
+            let input = serde_json::from_str(&tc.args)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+            content_blocks.push(AssistantContentBlock::ToolUse {
+                id: tc.id.clone(),
+                name: tc.name.clone(),
+                input,
+            });
+            if let Some(sender) = &delta_sender {
+                let _ = sender.send(StreamDelta::ToolUseEnd { id: tc.id.clone() });
+            }
+        }
+
+        if content_blocks.is_empty() {
             return Err(anyhow!(
-                "missing streaming delta content in API response; status={status}"
+                "missing streaming content in API response; status={status}"
             ));
         }
 
         Ok(ModelResponse {
-            text: assembled,
+            content: content_blocks,
             reasoning: None,
             usage: last_usage,
-            finish_reason: None,
+            stop_reason: stream_stop_reason,
             raw: None,
         })
     }
@@ -670,12 +941,91 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        ChatCompletionsClient, extract_content_from_body, extract_delta_content_from_body,
+        ChatCompletionsClient, extract_content_blocks_from_body, extract_delta_content_from_body,
         extract_delta_reasoning_from_body,
     };
     use crate::model::registry::RegisteredModel;
-    use crate::model::types::{CapabilityFlags, ModelRequest, ModelStage};
+    use crate::model::types::{AssistantContentBlock, CapabilityFlags, ModelRequest, ModelStage};
     use crate::streaming::parser::parse_sse_data_line;
+
+    #[test]
+    fn extract_content_blocks_text_only() {
+        let body = json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": "hello world"
+                    }
+                }
+            ]
+        });
+
+        let blocks = extract_content_blocks_from_body(&body);
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(&blocks[0], AssistantContentBlock::Text { text } if text == "hello world"));
+    }
+
+    #[test]
+    fn extract_content_blocks_includes_tool_calls() {
+        let body = json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": null,
+                        "tool_calls": [
+                            {
+                                "id": "call_abc",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": "{\"location\":\"Paris\"}"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let blocks = extract_content_blocks_from_body(&body);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            AssistantContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "call_abc");
+                assert_eq!(name, "get_weather");
+                assert_eq!(input["location"], "Paris");
+            }
+            other => panic!("expected ToolUse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn extract_content_blocks_text_and_tool_calls() {
+        let body = json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": "Let me check the weather.",
+                        "tool_calls": [
+                            {
+                                "id": "call_xyz",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": "{\"location\":\"Tokyo\"}"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let blocks = extract_content_blocks_from_body(&body);
+        assert_eq!(blocks.len(), 2);
+        assert!(matches!(&blocks[0], AssistantContentBlock::Text { .. }));
+        assert!(matches!(&blocks[1], AssistantContentBlock::ToolUse { .. }));
+    }
 
     #[test]
     fn extract_content_supports_block_array() {
@@ -692,8 +1042,11 @@ mod tests {
             ]
         });
 
-        let content = extract_content_from_body(&body);
-        assert_eq!(content.as_deref(), Some("hello\nworld"));
+        let blocks = extract_content_blocks_from_body(&body);
+        assert_eq!(blocks.len(), 1);
+        assert!(
+            matches!(&blocks[0], AssistantContentBlock::Text { text } if text == "hello\nworld")
+        );
     }
 
     #[test]

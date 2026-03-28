@@ -86,7 +86,7 @@ pub(crate) async fn try_compact(
 
     let request = ModelRequest::for_stage(ModelStage::Planner, prompt);
     let summary_text = match model_client.complete(&request).await {
-        Ok(resp) => resp.text,
+        Ok(resp) => resp.text(),
         Err(err) => {
             warn!(error = %err, "context_compression_model_call_failed_skipping");
             return None;

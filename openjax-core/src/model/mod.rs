@@ -12,4 +12,7 @@ mod types;
 pub use client::ModelClient;
 pub use factory::{build_model_client, build_model_client_with_config};
 #[allow(unused_imports)]
-pub use types::{ModelRequest, ModelResponse, ModelStage, ModelUsage, StreamDelta};
+pub use types::{
+    AssistantContentBlock, ConversationMessage, ModelRequest, ModelResponse, ModelStage,
+    ModelUsage, StopReason, StreamDelta, UserContentBlock,
+};

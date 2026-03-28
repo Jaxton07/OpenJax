@@ -1,3 +1,4 @@
+use crate::model::{ConversationMessage, UserContentBlock};
 use crate::{HistoryItem, MAX_TOOL_OUTPUT_CHARS_FOR_PROMPT};
 
 pub(crate) fn truncate_for_prompt(text: &str, max_chars: usize) -> String {
@@ -20,6 +21,110 @@ pub(crate) fn summarize_user_input(input: &str, preview_limit: usize) -> (String
     let mut preview = normalized.chars().take(preview_limit).collect::<String>();
     preview.push_str("...");
     (preview, true)
+}
+
+pub(crate) fn build_system_prompt(skills_context: &str) -> String {
+    format!(
+        "You are OpenJax, an all-purpose personal AI assistant.\n\n\
+Rules:\n\
+- If task can be answered now, respond with the final answer directly.\n\
+- In final answer, avoid mentioning internal planning, hidden reasoning, or tool traces unless the user explicitly asks.\n\
+- If required information is missing, ask one concise clarification question.\n\
+- If verification already shows the requested content/changes are present, respond immediately.\n\
+- Do NOT repeat the same tool call with the same arguments.\n\
+\n\
+Tool selection policy:\n\
+- Prefer read_file before edit_file_range or apply_patch unless creating a brand-new file.\n\
+- Prefer edit_file_range for single-file edits when exact line range is known.\n\
+- For multi-file edits or file operations (add/delete/move/rename), use apply_patch.\n\
+- Prefer process_snapshot/system_load/disk_usage for process/host metrics over shell ps/top/df.\n\
+- For apply_patch, use this EXACT format:\n\
+  *** Begin Patch\n\
+  *** Update File: <filepath>\n\
+  @@\n\
+   context line (MUST start with space)\n\
+  -line to remove (starts with -)\n\
+  +line to add (starts with +)\n\
+  *** End Patch\n\
+  Operations: *** Add File:, *** Update File:, *** Delete File:, *** Move File: from -> to, *** Move to:\n\
+  IMPORTANT: In Update File, every line after @@ MUST start with space (context), - (remove), or + (add).\n\
+  IMPORTANT: When modifying existing files, preserve the source file's formatting and style.\n\
+- For edit_file_range, provide args: file_path, start_line, end_line, new_text.\n\
+- For shell, prefer workspace-relative commands; avoid absolute-path `cd` unless required.\n\
+- Skill markers like /skill-name are not shell executables; convert selected skills into concrete tool steps.\n\
+\n\
+Available skills (auto-selected):\n\
+{skills_context}"
+    )
+}
+
+pub(crate) fn build_turn_messages(
+    user_input: &str,
+    history: &[HistoryItem],
+    loop_recovery: Option<&str>,
+) -> Vec<ConversationMessage> {
+    let mut messages = Vec::new();
+
+    if !history.is_empty() {
+        let mut turn_num = 0usize;
+        let summary = history
+            .iter()
+            .map(|item| match item {
+                HistoryItem::Turn(r) => {
+                    turn_num += 1;
+                    let tools_section = if r.tool_traces.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\nTools:\n  {}", r.tool_traces.join("\n  "))
+                    };
+                    format!(
+                        "[Turn {}]\nUser: {}{}\nAssistant: {}",
+                        turn_num, r.user_input, tools_section, r.assistant_output
+                    )
+                }
+                HistoryItem::Summary(s) => s.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        messages.push(ConversationMessage::User(vec![UserContentBlock::Text {
+            text: format!("<prior_conversation>\n{summary}\n</prior_conversation>"),
+        }]));
+    }
+
+    let mut input_text = user_input.to_string();
+    if let Some(recovery) = loop_recovery {
+        input_text.push_str("\n\n");
+        input_text.push_str(recovery);
+    }
+    messages.push(ConversationMessage::User(vec![UserContentBlock::Text {
+        text: input_text,
+    }]));
+
+    messages
+}
+
+pub(crate) fn refresh_loop_recovery_in_messages(
+    messages: &mut [ConversationMessage],
+    user_input: &str,
+    loop_recovery: Option<&str>,
+) {
+    let Some(text) = messages.iter_mut().rev().find_map(|message| match message {
+        ConversationMessage::User(blocks) => blocks.iter_mut().find_map(|block| match block {
+            UserContentBlock::Text { text } => Some(text),
+            _ => None,
+        }),
+        _ => None,
+    }) else {
+        return;
+    };
+
+    let mut refreshed = user_input.to_string();
+    if let Some(recovery) = loop_recovery {
+        refreshed.push_str("\n\n");
+        refreshed.push_str(recovery);
+    }
+    *text = refreshed;
 }
 
 pub(crate) fn build_planner_input(
