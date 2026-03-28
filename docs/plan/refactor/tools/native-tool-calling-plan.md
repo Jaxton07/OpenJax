@@ -1,13 +1,19 @@
 # OpenJax Native Tool Calling 迁移计划
 
 > 创建时间：2026-03-27
+> 状态：历史计划（Historical Context）
 > 替代：tool-optimization-plan.md（P1/P2/P3/P5 被本计划吸收，P4/P6/P7 保留为独立子任务）
+> 当前收口基线请改看：
+> - `docs/superpowers/specs/2026-03-28-native-tool-calling-remaining-phases-design.md`
+> - `docs/superpowers/plans/2026-03-28-native-tool-calling-remaining-phases.md`
+
+> 说明：本文保留“迁移发起时”的目标与分解，用于历史追踪。后续 Phase 4-6 的执行口径以上述 remaining phases spec/plan 为准，不再以本文作为 active implementation baseline。
 
 ---
 
-## 一、背景与动机
+## 一、背景与动机（历史视角）
 
-OpenJax 当前的工具调用采用"Planner Prompt"架构：将工具名枚举、格式规则、对话历史全部拼进一条超长 user message，让模型输出自定义 JSON（`{"action":"tool","tool":"..","args":{}}`），再由 OpenJax 解析执行，结果以文本形式拼回下一轮 prompt。
+在本计划创建时，OpenJax 的工具调用采用"Planner Prompt"架构：将工具名枚举、格式规则、对话历史全部拼进一条超长 user message，让模型输出自定义 JSON（`{"action":"tool","tool":"..","args":{}}`），再由 OpenJax 解析执行，结果以文本形式拼回下一轮 prompt。
 
 这与 Claude Code 的 Native Tool Calling 架构存在本质差异：
 

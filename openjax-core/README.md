@@ -12,6 +12,13 @@ OpenJax 核心引擎总览页。
 - `sandbox/`: shell 工具的沙箱策略、后端执行、降级与审计。
 - `skills/`: Claude/OpenClaw 兼容技能加载、匹配与 prompt 注入。
 
+## Native Tool Calling 当前状态（2026-03-28）
+
+- Phase 3 的 native loop 已完成，`openjax-core` 默认主路径为 native tool calling。
+- `planner_tool_action.rs` 继续保持独立模块，承载工具执行守卫与失败收敛逻辑。
+- 工具面已包含 `write_file` 和 `glob_files`。
+- shell 工具结果语义已拆分：模型消费 `model_content`，事件/UI 展示使用 `display_output` 与 `shell_metadata`。
+
 ## 一级文件树
 
 ```text

@@ -1,3 +1,5 @@
+// Legacy JSON planner parsing helpers retained for migration traceability and
+// non-primary-path tests. The default runtime path is native tool calling.
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;

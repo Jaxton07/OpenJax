@@ -7,14 +7,14 @@
 - `bootstrap.rs`: `Agent::new/with_config/with_runtime/with_config_and_runtime`，组装模型客户端、工具路由与运行时策略。
 - `context_compressor.rs`: 上下文压缩模块，负责 history 分割与 LLM 摘要生成。
 - `turn.rs`: `submit`/`submit_with_sink` 入口，分发工具直调模式或自然语言规划模式。
-- `planner.rs`: 自然语言回合主循环（orchestration），驱动 `planner -> tool/final` 决策与回合收敛。
-- `planner_stream_flow.rs`: planner/final 的流式编排（stream request、delta 处理、fallback 收敛、synthetic delta 发射）。
-- `planner_tool_action.rs`: 单工具调用分支编排（重复调用保护、guard 拦截、执行与失败收敛）。
+- `planner.rs`: Native Tool Calling 回合主循环，基于 `ModelResponse.content` 驱动 `tool_use/final` 收敛。
+- `planner_stream_flow.rs`: planner 阶段流式编排（stream request、delta 处理、工具事件发射、synthetic delta 发射）。
+- `planner_tool_action.rs`: 单工具调用分支编排（重复调用保护、guard 拦截、执行与失败收敛），当前保持独立模块。
 - `planner_tool_batch.rs`: `tool_batch` 执行调度（依赖图、并发执行、批次完成统计与错误事件）。
 - `planner_utils.rs`: planner 复用的工具函数与策略辅助（trace 文本、tool error 分类、git diff 策略判定）。
 - `execution.rs`: 单工具调用执行、重试、实时工具事件透传。
-- `decision.rs`: 解析并规范化模型决策 JSON。
-- `prompt.rs`: 构造 planner/final/repair prompt。
+- `decision.rs`: 旧 JSON planner 解析辅助（保留为非主路径兼容/测试支持，不是默认执行路径）。
+- `prompt.rs`: 构造 native loop 所需的 system prompt 与消息辅助文案。
 - `runtime_policy.rs`: 解析审批与沙箱策略，优先级为环境变量 > 配置文件 > 默认值。
 - `state.rs`: 历史记录、限速、重复工具调用检测。
 - `events.rs`: 统一事件推送（写入返回 `Vec<Event>` + 可选 sink）。
@@ -26,17 +26,22 @@
 
 1. `submit` 收到 `Op::UserTurn` 后写入用户历史，并发出 `TurnStarted`。
 2. 若输入匹配 `tool:<name> key=value`，走 `execute_single_tool_call`。
-3. 否则进入 `execute_natural_language_turn`：
-4. 生成 planner prompt，调用 `planner_stream_flow` 获取模型决策（必要时进行一次 JSON repair）。
-5. 决策为 `tool` 时调用工具并记录 trace；决策为 `final` 时输出最终回复。
+3. 否则进入 `execute_natural_language_turn`（native tool calling 主循环）：
+4. 基于 `build_system_prompt + build_turn_messages` 构造请求，调用 `planner_stream_flow` 获取 `ModelResponse.content`。
+5. 若模型返回 `tool_use`，走 `planner_tool_action` 执行并将 `tool_result` 回写到对话消息；若无 `tool_use`，输出最终回复。
 6. 发出 `TurnCompleted` 并返回本回合事件序列。
 
 ### Skills 注入链路
 
 1. `bootstrap.rs` 启动时加载 `SkillRegistry` 和 `SkillRuntimeConfig`。
 2. `planner.rs` 每轮根据 `user_input` 匹配 top-N skills。
-3. `prompt.rs` 在 planner prompt 中注入 `Available skills (auto-selected)` 上下文。
+3. `prompt.rs` 在 system prompt 中注入 `Available skills (auto-selected)` 上下文。
 4. Skills 失败仅记录 warning，不会中断主回合执行。
+
+## 非主路径说明
+
+- Phase 3 之后，`openjax-core` 默认不再走旧 JSON planner 主链路。
+- `decision.rs` 与 `dispatcher/` 的旧解析辅助仍可保留用于历史对照或测试语义，不应被视为当前默认执行入口。
 
 ## 关键约束
 

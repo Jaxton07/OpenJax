@@ -1,8 +1,8 @@
 # Native Tool Calling Remaining Phases Design
 
 > 日期：2026-03-28
-> 状态：Draft
-> 基线提交：`abcbceb2` `♻️ refactor(core): 收口 native tool calling phase 3`
+> 状态：Phase 4-5 已完成，Phase 6 收尾中
+> 基线提交：`4fb54fa2` `fix(core): 收口 native tool calling 剩余阶段回归问题`
 > 关联文档：
 > - `docs/plan/refactor/tools/native-tool-calling-plan.md`
 > - `docs/superpowers/specs/2026-03-28-phase3-native-tool-calling-design.md`
@@ -13,15 +13,15 @@
 
 ## 1. 文档定位
 
-本文不是对 Native Tool Calling 迁移的重新设计，而是基于 `abcbceb2` 已完成事实，对剩余阶段给出新的执行基线。
+本文不是对 Native Tool Calling 迁移的重新设计，而是基于 `4fb54fa2` 已完成事实，对剩余收尾阶段给出执行基线。
 
 约束如下：
 
-- Phase 1-3 已视为完成，本轮不回退、不改写其目标定义。
-- 继续沿用原计划编号，从 Phase 4 开始定义剩余工作。
+- Phase 1-5 已视为完成，本轮不回退、不改写其目标定义。
+- 继续沿用原计划编号，但当前焦点集中在 Phase 6 收尾。
 - 本文只覆盖 `openjax-core` 主链路、相关测试、文档与清理项收口。
 - `planner_tool_action.rs` 保持独立执行模块，不作为本轮默认合并目标。
-- Phase 4 中原计划包含的 `write_file`、`glob_files`、`apply_patch` 描述归位继续保留，不从剩余范围中移除。
+- Phase 4 的 `write_file`、`glob_files`、`apply_patch` 描述归位已完成，本文保留为设计与验收记录。
 
 旧总计划 `docs/plan/refactor/tools/native-tool-calling-plan.md` 继续保留为历史背景与最初迁移意图参考；从本文件开始，后续 Phase 4-6 以“当前真实代码状态”为准，而不是以旧计划中已经失效的前置假设为准。
 
@@ -29,60 +29,55 @@
 
 ## 2. 当前基线
 
-截至 `abcbceb2`，`openjax-core` 内与 Native Tool Calling 直接相关的主链路状态如下：
+截至 `4fb54fa2`，`openjax-core` 内与 Native Tool Calling 直接相关的主链路状态如下：
 
 - agent 主循环已经从旧 JSON planner 路径切换到 native tool calling 路径。
 - `planner_stream_flow.rs` 已移除 `DecisionJsonStreamParser`、`parse_model_decision` 以及 fallback-to-complete。
 - `planner.rs` 已基于 `build_system_prompt + build_turn_messages + ModelResponse.content` 驱动对话循环。
 - `planner_tool_action.rs` 保留为独立模块，并已具备 native 输入执行路径。
+- `write_file`、`glob_files` 已作为正式工具能力接入并纳入权限/执行测试。
+- `apply_patch` 详细格式约束已归位到 tool spec，不再重复依赖 prompt 侧长说明。
 - 流式工具事件已保留真实 `tool_name`，不会在 `ToolCallArgsDelta` / `ToolCallReady` 阶段丢失名称。
 - `tool_use` 轮次不再误发普通 `ResponseTextDelta`。
 - 超出预算的 `tool_use` 不再静默截断，而会补发失败/完成事件进行收口。
+- shell 结果语义已拆分为 `model_content`、`display_output` 与 `shell_metadata`，模型通道与展示通道职责分离。
 - `openjax-core/src/tests.rs` 已拆分为目录模块，测试结构较此前更清晰，但子模块规模仍需关注。
 
 已确认验证状态：
 
 - `zsh -lc "cargo build -p openjax-core"` 通过
 - `zsh -lc "cargo test -p openjax-core --no-run"` 通过
+- `zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite"` 通过
+- `zsh -lc "cargo test -p openjax-core --lib streaming -- --nocapture"` 通过
 
 尚未确认：
 
-- `openjax-core` 全量运行态测试全部通过
 - 剩余旧路径的文档与代码口径是否已完全一致
-- shell 输出是否已经和模型消费内容彻底分离
-- 原计划 Phase 4 工具能力补充是否已补齐
+- Phase 6 文档/清理收尾后的最终验收证据是否已补齐
 
 ---
 
 ## 3. 剩余问题定义
 
-Phase 3 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径已经成立，但还未达到“主链路、测试、文档、清理项全部收口”的状态。剩余问题集中在三个方面：
+Phase 5 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径、工具面和 shell 语义已成立。剩余问题集中在收尾一致性：
 
-### 3.1 工具面仍未补齐
+### 3.1 文档口径仍需统一
 
-原计划中的 `write_file`、`glob_files` 还未作为正式工具能力落地；`apply_patch` 的详细格式约束仍部分停留在 prompt 侧，而不是归位到 tool spec 描述。
+虽然代码主路径已完成迁移，但仍需要统一以下内容：
 
-### 3.2 shell 结果语义仍未彻底分离
-
-当前执行结果仍存在“模型消费内容”和“事件/UI 展示内容”混杂的风险。若不完成结构化分离，则 Native Tool Calling 虽然已完成调用闭环，但模型上下文仍可能被展示性元数据污染，事件消费者也会继续依赖字符串解析。
-
-### 3.3 收尾层面仍存在不一致
-
-虽然主路径已完成迁移，但仍需要统一以下内容：
-
-- `openjax-core` 文档、spec、plan 与当前代码现实的一致性
-- 剩余旧 JSON planner 残留的定位与退出策略
+- `openjax-core` README/模块文档与当前代码现实的一致性
+- 旧 JSON planner 残留结构的“非主路径”身份标注
 - 回归验证矩阵与“什么算真正收口”的 done state
 
 ---
 
 ## 4. 设计目标
 
-本轮剩余阶段的目标不是继续扩展 Native Tool Calling 功能面，而是在 `openjax-core` 范围内完成最短闭环收口：
+本轮剩余阶段的目标不再是扩展能力面，而是在 `openjax-core` 范围内完成最短闭环收口：
 
-1. 补齐原计划中仍未完成的工具能力项。
-2. 完成 shell 输出的模型通道 / 展示通道语义分离。
-3. 统一测试、文档、清理项，使 `openjax-core` 范围内 Native Tool Calling 成为唯一主路径。
+1. 统一文档与计划口径，确认 native tool calling 为唯一主路径。
+2. 对保留旧结构明确“非主路径/历史用途”定位。
+3. 补齐收尾验证证据，形成可追溯 done state。
 
 成功标准：
 
@@ -116,17 +111,17 @@ Phase 3 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径
 
 ## 6. 剩余阶段设计
 
-执行顺序建议保持为：
+执行顺序曾按以下路径推进（现已执行到 Phase 6）：
 
 `Phase 4 -> Phase 5 -> Phase 6`
 
-原因如下：
+设计时原因如下：
 
 - 先补齐工具面，再做主链路数据契约收口，可减少验证返工。
 - shell 输出分离属于高风险语义改造，应在工具集合稳定后集中推进。
 - 文档与验证收尾最适合作为最终阶段统一完成。
 
-### Phase 4：工具能力补充
+### Phase 4：工具能力补充（已完成）
 
 #### 目标
 
@@ -169,7 +164,9 @@ Phase 3 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径
 - schema、handler 入参和事件语义不一致
 - 仅补 happy path 测试，导致工具接入并未真正完成
 
-### Phase 5：Shell 输出分离
+当前状态：`write_file` / `glob_files` 已接入并覆盖权限/执行测试；`apply_patch` 详细格式描述已归位到 tool spec。
+
+### Phase 5：Shell 输出分离（已完成）
 
 #### 目标
 
@@ -213,7 +210,9 @@ Phase 3 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径
 - 流式事件、执行事件与 history/tool trace 之间语义不一致
 - 回归测试未覆盖失败路径与审批/降级路径
 
-### Phase 6：主链路收尾与清理
+当前状态：`ToolExecOutcome` 与 `ToolCallCompleted` 已承载分离后的 shell 语义，planner/tool_action 使用模型通道字段回写 `tool_result`。
+
+### Phase 6：主链路收尾与清理（当前阶段）
 
 #### 目标
 

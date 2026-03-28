@@ -13,12 +13,20 @@
 
 ## 代码结构
 
-- `handlers/`: 通用工具处理器（read_file/list_dir/grep_files/shell/apply_patch/edit_file_range）
+- `handlers/`: 通用工具处理器（read_file/list_dir/grep_files/glob_files/shell/apply_patch/edit_file_range/write_file）
 - `system/`: 系统类只读工具（process_snapshot/system_load/disk_usage）
 - `apply_patch/`: apply_patch 解析与执行子模块
 - `orchestrator.rs`: 工具编排与审批事件联动
 - `spec.rs`: 工具 schema 定义
 - `tool_builder.rs`: 默认工具注册
+
+## 当前受支持工具面
+
+- 文件/代码工具：`read_file`、`list_dir`、`grep_files`、`glob_files`、`write_file`、`edit_file_range`、`apply_patch`
+- 命令执行工具：`shell`（含兼容别名 `exec_command`）
+- 系统观测工具：`process_snapshot`、`system_load`、`disk_usage`
+
+上述工具通过 `tool_builder.rs` 和 `spec.rs` 统一注册与暴露，native tool calling 请求直接消费该工具面。
 
 ## 流式事件约定（与 gateway/webui 对齐）
 
@@ -30,6 +38,12 @@
 4. `ToolCallCompleted` 或 `ToolCallFailed`
 
 审批事件 `ApprovalRequested/ApprovalResolved` 与上述事件在同一 turn 时间线并流输出。
+
+## shell 结果语义（Phase 5 已完成）
+
+- 模型通道：使用 `model_content` 作为 `tool_result` 内容，避免把展示元数据注入模型上下文。
+- 展示通道：使用 `display_output`（含完整可观测文本）和 `shell_metadata`（结构化字段）供事件/UI 消费。
+- 该拆分由 `ToolExecOutcome` 统一承载，planner/tool_action 按通道职责消费对应字段。
 
 ## 迁移说明
 

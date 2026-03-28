@@ -2,13 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Complete Native Tool Calling Phase 4-6 in `openjax-core` by adding the remaining tool capabilities, separating shell model output from display/event output, and closing the remaining testing, docs, and cleanup gaps.
+**Goal:** 收口 Native Tool Calling Phase 6 文档/清理项，并保留 Phase 4-5 的执行记录。
 
-**Architecture:** Keep the Phase 3 native tool loop as the baseline, add the missing tool surface inside `openjax-core/src/tools/`, then perform a focused output-contract refactor for shell execution without collapsing `planner_tool_action.rs` back into `planner.rs`. Finish by aligning tests and docs with the now-single native tool calling path.
+**Architecture:** 以已落地的 Phase 3 native loop + Phase 4 工具补齐 + Phase 5 shell 输出分离为基线，继续保持 `planner_tool_action.rs` 独立，完成文档和收尾验证对齐。
 
 **Tech Stack:** Rust 2024, Cargo, tokio, serde/serde_json, openjax-protocol events, openjax-core tools/sandbox/planner modules
 
 **Spec:** `docs/superpowers/specs/2026-03-28-native-tool-calling-remaining-phases-design.md`
+
+---
+
+## Execution Status (2026-03-28)
+
+- 基线提交：`4fb54fa2`（Phase 4-5 代码与回归收口）
+- 当前阶段：Task 8（Phase 6 docs and cleanup alignment）
+- 计划定位：Task 1-7 保留为历史执行记录；后续以 Task 8/9 的收尾验证为准
 
 ---
 
