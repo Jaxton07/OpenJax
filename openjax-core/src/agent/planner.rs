@@ -369,7 +369,7 @@ impl Agent {
                     .execute_native_tool_call(turn_id, &tool_call_id, &tool_name, &input, &mut ctx)
                     .await
                 {
-                    NativeToolExecOutcome::Result { content, ok } => {
+                    NativeToolExecOutcome::Result { model_content, ok } => {
                         if ok {
                             succeeded = succeeded.saturating_add(1);
                         } else {
@@ -377,7 +377,7 @@ impl Agent {
                         }
                         tool_result_blocks.push(UserContentBlock::ToolResult {
                             tool_use_id: tool_call_id,
-                            content,
+                            content: model_content,
                             is_error: !ok,
                         });
                     }

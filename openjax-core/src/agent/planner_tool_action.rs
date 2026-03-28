@@ -21,7 +21,7 @@ use crate::agent::tool_policy::{
 use crate::{Agent, MAX_CONSECUTIVE_DUPLICATE_SKIPS, tools};
 
 pub(super) enum NativeToolExecOutcome {
-    Result { content: String, ok: bool },
+    Result { model_content: String, ok: bool },
     Aborted,
 }
 
@@ -112,7 +112,7 @@ impl Agent {
             *ctx.executed_count += 1;
             *ctx.consecutive_duplicate_skips = 0;
             return NativeToolExecOutcome::Result {
-                content: message.to_string(),
+                model_content: message.to_string(),
                 ok: false,
             };
         }
@@ -169,7 +169,7 @@ impl Agent {
                 return NativeToolExecOutcome::Aborted;
             }
             return NativeToolExecOutcome::Result {
-                content: message,
+                model_content: message,
                 ok: false,
             };
         }
@@ -203,7 +203,9 @@ impl Agent {
             .await
         {
             Ok(outcome) => {
+                let model_content = outcome.model_content;
                 let output = outcome.display_output;
+                let shell_metadata = outcome.shell_metadata;
                 let ok = outcome.success;
                 ctx.apply_patch_read_guard.on_tool_success(tool_name);
 
@@ -266,20 +268,18 @@ impl Agent {
                 }
 
                 self.record_tool_call(tool_name, &args, ok, &output);
-                self.emit_tool_call_completed(
+                self.emit_tool_call_completed_with_metadata(
                     turn_id,
                     tool_call_id,
                     tool_name,
                     ok,
                     &output,
+                    shell_metadata,
                     ctx.events,
                 );
                 *ctx.executed_count += 1;
                 *ctx.consecutive_duplicate_skips = 0;
-                NativeToolExecOutcome::Result {
-                    content: output,
-                    ok,
-                }
+                NativeToolExecOutcome::Result { model_content, ok }
             }
             Err(err) => {
                 let duration_ms = start_time.elapsed().as_millis();
@@ -335,7 +335,7 @@ impl Agent {
                     return NativeToolExecOutcome::Aborted;
                 }
                 NativeToolExecOutcome::Result {
-                    content: err_text,
+                    model_content: err_text,
                     ok: false,
                 }
             }

@@ -10,6 +10,7 @@ use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput};
 use crate::tools::error::FunctionCallError;
 use crate::tools::shell::Shell;
 use crate::tools::{SandboxMode, SandboxPolicy};
+use openjax_protocol::ShellExecutionMetadata;
 use tracing::info;
 
 use self::classifier::classify_command;
@@ -229,28 +230,44 @@ pub async fn execute_shell(
         "shell completed"
     );
 
-    let model_output = format!(
-        "result_class={}\ncommand={}\nexit_code={}\nbackend={}\ndegrade_reason={}\npolicy_decision={:?}\nruntime_allowed={}\nruntime_deny_reason={}\nstdout:\n{}\nstderr:\n{}",
-        result_class.as_str(),
-        command,
-        output.exit_code,
-        output.backend_used.as_str(),
-        output.degrade_reason.unwrap_or_else(|| "none".to_string()),
-        output.policy_trace.decision,
+    let policy_decision = format!("{:?}", output.policy_trace.decision);
+    let shell_metadata = ShellExecutionMetadata {
+        result_class: result_class.as_str().to_string(),
+        backend: output.backend_used.as_str().to_string(),
+        exit_code: output.exit_code,
+        policy_decision: policy_decision.clone(),
         runtime_allowed,
-        runtime_deny_reason.unwrap_or_else(|| "none".to_string()),
-        output.stdout,
-        output.stderr
+        degrade_reason: output.degrade_reason.clone(),
+        runtime_deny_reason: runtime_deny_reason.clone(),
+    };
+
+    let model_content = format!(
+        "exit_code={}\nstdout:\n{}\nstderr:\n{}",
+        shell_metadata.exit_code, output.stdout, output.stderr
+    );
+    let display_output = format!(
+        "result_class={}\ncommand={}\nbackend={}\npolicy_decision={}\nruntime_allowed={}\ndegrade_reason={}\nruntime_deny_reason={}\n{}",
+        shell_metadata.result_class,
+        command,
+        shell_metadata.backend,
+        shell_metadata.policy_decision,
+        shell_metadata.runtime_allowed,
+        shell_metadata.degrade_reason.as_deref().unwrap_or("none"),
+        shell_metadata
+            .runtime_deny_reason
+            .as_deref()
+            .unwrap_or("none"),
+        model_content
     );
     info!(
         command = %command,
         result_class = result_class.as_str(),
-        output_len = model_output.len(),
+        output_len = display_output.len(),
         "shell output prepared for model"
     );
 
     Ok(ToolOutput::Function {
-        body: FunctionCallOutputBody::Text(model_output),
+        body: FunctionCallOutputBody::Text(display_output),
         success: Some(is_shell_success),
     })
 }
