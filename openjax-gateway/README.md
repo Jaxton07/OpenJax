@@ -204,9 +204,11 @@ zsh -lc "cargo run -p openjax-gateway"
 测试建议按分层入口执行（与 `scripts/test/gateway.sh` 和 `Makefile` 对齐）：
 
 ```bash
+zsh -lc "make gateway-smoke"
 zsh -lc "make gateway-fast"
 zsh -lc "make gateway-doc"
 zsh -lc "make gateway-full"
+zsh -lc "make gateway-baseline"
 ```
 
 - 日常开发推荐使用 `gateway-fast`（快速反馈主链路）。
@@ -214,6 +216,14 @@ zsh -lc "make gateway-full"
 - 文档校验推荐使用 `gateway-doc`（仅 `--doc` / doctest）。
 - 合并前推荐使用 `gateway-full`（覆盖 openjax-gateway 完整测试路径）。
 - 性能排查可使用 `gateway-baseline`；输出会固定分成 `measurements` 与 `per-target` 两段，便于对比 cold/warm/full/fast/doc 与主要 test target 的耗时。
+
+如果需要精确定位某个 suite 或单个 target，再直接使用底层 `cargo test --test ...` 命令，例如：
+
+```bash
+zsh -lc "cargo test -p openjax-gateway --test gateway_api_suite"
+zsh -lc "cargo test -p openjax-gateway --test policy_api_suite"
+zsh -lc "cargo test -p openjax-gateway --test m1_assistant_message_compat_only"
+```
 
 ## WebUI 流式接入（SSE）
 
