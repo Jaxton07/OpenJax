@@ -9,7 +9,6 @@ use crate::agent::planner_utils::summarize_log_preview;
 use crate::agent::prompt::{
     build_system_prompt, build_turn_messages, refresh_loop_recovery_in_messages,
 };
-use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::turn_engine::TurnEngine;
 use crate::logger::AFTER_DISPATCH_LOG_TARGET;
 use crate::model::{
@@ -23,7 +22,6 @@ const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
 pub(crate) struct ToolActionContext<'a> {
     pub events: &'a mut Vec<Event>,
     pub tool_traces: &'a mut Vec<String>,
-    pub apply_patch_read_guard: &'a mut ApplyPatchReadGuard,
     pub consecutive_duplicate_skips: &'a mut usize,
     pub executed_count: &'a mut usize,
     pub turn_engine: &'a mut TurnEngine,
@@ -65,7 +63,6 @@ impl Agent {
         let mut executed_count = 0usize;
         let mut planner_rounds = 0usize;
         let mut consecutive_duplicate_skips = 0usize;
-        let mut apply_patch_read_guard = ApplyPatchReadGuard::default();
         let mut skill_shell_misfire_count = 0usize;
         let mut saw_git_status_short = false;
         let mut saw_git_diff_stat = false;
@@ -356,7 +353,6 @@ impl Agent {
                 let mut ctx = ToolActionContext {
                     events,
                     tool_traces: &mut tool_traces,
-                    apply_patch_read_guard: &mut apply_patch_read_guard,
                     consecutive_duplicate_skips: &mut consecutive_duplicate_skips,
                     executed_count: &mut executed_count,
                     turn_engine: &mut turn_engine,

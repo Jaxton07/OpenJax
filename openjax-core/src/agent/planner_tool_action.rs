@@ -67,56 +67,6 @@ impl Agent {
             }
         }
 
-        if let Some(message) = ctx
-            .apply_patch_read_guard
-            .block_user_message_for_tool(tool_name)
-        {
-            warn!(
-                turn_id = turn_id,
-                tool_call_id = %tool_call_id,
-                reason = ctx.apply_patch_read_guard
-                    .block_log_reason_for_tool(tool_name)
-                    .unwrap_or("unknown"),
-                "apply_patch blocked by read-before-repatch guard"
-            );
-
-            self.push_event(
-                ctx.events,
-                Event::ToolCallFailed {
-                    turn_id,
-                    tool_call_id: tool_call_id.to_string(),
-                    tool_name: tool_name.to_string(),
-                    code: "guard_blocked".to_string(),
-                    message: message.to_string(),
-                    retryable: false,
-                    display_name: self.tools.display_name_for(tool_name),
-                },
-            );
-
-            self.record_tool_call(tool_name, &args, false, message);
-            ctx.tool_traces.push(format!(
-                "tool={tool_name}; ok=false; output={}",
-                truncate_for_prompt(
-                    message,
-                    self.skill_runtime_config.max_diff_chars_for_planner
-                )
-            ));
-            self.emit_tool_call_completed(
-                turn_id,
-                tool_call_id,
-                tool_name,
-                false,
-                message,
-                ctx.events,
-            );
-            *ctx.executed_count += 1;
-            *ctx.consecutive_duplicate_skips = 0;
-            return NativeToolExecOutcome::Result {
-                model_content: message.to_string(),
-                ok: false,
-            };
-        }
-
         if self.is_duplicate_tool_call(tool_name, &args) {
             warn!(
                 turn_id = turn_id,
@@ -207,7 +157,6 @@ impl Agent {
                 let output = outcome.display_output;
                 let shell_metadata = outcome.shell_metadata;
                 let ok = outcome.success;
-                ctx.apply_patch_read_guard.on_tool_success(tool_name);
 
                 if is_mutating_tool(tool_name) {
                     self.state_epoch = self.state_epoch.saturating_add(1);
@@ -284,8 +233,6 @@ impl Agent {
             Err(err) => {
                 let duration_ms = start_time.elapsed().as_millis();
                 let err_text = err.to_string();
-                ctx.apply_patch_read_guard
-                    .on_tool_failure(tool_name, &err_text);
                 info!(
                     turn_id = turn_id,
                     tool_call_id = %tool_call_id,
@@ -385,62 +332,6 @@ impl Agent {
             }
         }
 
-        if let Some(message) = ctx
-            .apply_patch_read_guard
-            .block_user_message_for_tool(&tool_name)
-        {
-            let tool_call_id = Uuid::new_v4().to_string();
-            warn!(
-                turn_id = turn_id,
-                tool_call_id = %tool_call_id,
-                reason = ctx.apply_patch_read_guard
-                    .block_log_reason_for_tool(&tool_name)
-                    .unwrap_or("unknown"),
-                "apply_patch blocked by read-before-repatch guard"
-            );
-
-            self.emit_tool_call_started_sequence(
-                turn_id,
-                &tool_call_id,
-                &tool_name,
-                &args,
-                "executing",
-                ctx.events,
-            );
-            self.push_event(
-                ctx.events,
-                Event::ToolCallFailed {
-                    turn_id,
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    code: "guard_blocked".to_string(),
-                    message: message.to_string(),
-                    retryable: false,
-                    display_name: self.tools.display_name_for(&tool_name),
-                },
-            );
-
-            self.record_tool_call(&tool_name, &args, false, message);
-            ctx.tool_traces.push(format!(
-                "tool={tool_name}; ok=false; output={}",
-                truncate_for_prompt(
-                    message,
-                    self.skill_runtime_config.max_diff_chars_for_planner
-                )
-            ));
-            self.emit_tool_call_completed(
-                turn_id,
-                &tool_call_id,
-                &tool_name,
-                false,
-                message,
-                ctx.events,
-            );
-            *ctx.executed_count += 1;
-            *ctx.consecutive_duplicate_skips = 0;
-            return true;
-        }
-
         if self.is_duplicate_tool_call(&tool_name, &args) {
             warn!(
                 turn_id = turn_id,
@@ -526,7 +417,6 @@ impl Agent {
             Ok(outcome) => {
                 let output = outcome.display_output;
                 let ok = outcome.success;
-                ctx.apply_patch_read_guard.on_tool_success(&tool_name);
 
                 if is_mutating_tool(&tool_name) {
                     self.state_epoch = self.state_epoch.saturating_add(1);
@@ -603,8 +493,6 @@ impl Agent {
             Err(err) => {
                 let duration_ms = start_time.elapsed().as_millis();
                 let err_text = err.to_string();
-                ctx.apply_patch_read_guard
-                    .on_tool_failure(&tool_name, &err_text);
                 info!(
                     turn_id = turn_id,
                     tool_call_id = %tool_call_id,
