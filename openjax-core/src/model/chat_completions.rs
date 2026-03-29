@@ -259,10 +259,10 @@ impl ChatCompletionsClient {
                     let text: String = blocks
                         .iter()
                         .filter_map(|b| {
-                            if let AssistantContentBlock::Text { text } = b {
-                                Some(text.as_str())
-                            } else {
-                                None
+                            match b {
+                                AssistantContentBlock::Text { text } => Some(text.as_str()),
+                                AssistantContentBlock::Reasoning { .. }
+                                | AssistantContentBlock::ToolUse { .. } => None,
                             }
                         })
                         .collect::<Vec<_>>()

@@ -22,7 +22,7 @@ use openjax_store::{ProviderRepository, SessionRepository};
 
 use super::config::{
     build_runtime_config, gateway_db_path, gateway_policy_state, map_store_error,
-    migrate_providers_from_config_if_needed, normalize_builtin_provider_defaults,
+    migrate_providers_from_config_if_needed,
 };
 use super::runtime::{
     ApiTurnError, SessionRuntime, StreamEventEnvelope, TurnRuntime, TurnStatus,
@@ -63,7 +63,6 @@ impl AppState {
         let db_path = gateway_db_path();
         let store = Arc::new(SqliteStore::open(&db_path)?);
         migrate_providers_from_config_if_needed(&store);
-        normalize_builtin_provider_defaults(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),

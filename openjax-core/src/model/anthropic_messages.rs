@@ -110,6 +110,9 @@ struct AnthropicApiMessage {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum AnthropicContentBlock {
+    Thinking {
+        thinking: String,
+    },
     Text {
         text: String,
     },
@@ -314,6 +317,11 @@ impl AnthropicMessagesClient {
                     content: blocks
                         .iter()
                         .map(|b| match b {
+                            AssistantContentBlock::Reasoning { text } => {
+                                AnthropicContentBlock::Thinking {
+                                    thinking: text.clone(),
+                                }
+                            }
                             AssistantContentBlock::Text { text } => {
                                 AnthropicContentBlock::Text { text: text.clone() }
                             }
@@ -1070,12 +1078,15 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        AnthropicMessagesClient, build_messages_endpoint, extract_content_blocks_from_body,
-        extract_delta_content_from_body, extract_delta_thinking_from_body,
-        extract_thinking_from_body, is_message_stop_frame,
+        AnthropicMessagesClient, AnthropicThinking, DEFAULT_ANTHROPIC_VERSION,
+        build_messages_endpoint, extract_content_blocks_from_body, extract_delta_content_from_body,
+        extract_delta_thinking_from_body, extract_thinking_from_body, is_message_stop_frame,
     };
+    use crate::model::request_profiles::anthropic_messages::AnthropicMessagesRequestProfile;
     use crate::model::registry::RegisteredModel;
-    use crate::model::types::{CapabilityFlags, ModelRequest, ModelStage};
+    use crate::model::types::{
+        AssistantContentBlock, CapabilityFlags, ConversationMessage, ModelRequest, ModelStage,
+    };
     use crate::streaming::parser::parse_sse_data_line;
 
     #[test]
@@ -1097,7 +1108,6 @@ mod tests {
 
     #[test]
     fn extract_content_blocks_includes_tool_use() {
-        use crate::model::types::AssistantContentBlock;
         let body = json!({
             "content": [
                 {"type": "text", "text": "sure"},
@@ -1111,6 +1121,60 @@ mod tests {
         assert!(
             matches!(&blocks[1], AssistantContentBlock::ToolUse { name, .. } if name == "shell")
         );
+    }
+
+    #[test]
+    fn build_request_preserves_assistant_reasoning_blocks() {
+        let client = AnthropicMessagesClient {
+            client: reqwest::Client::new(),
+            model_id: "kimi".to_string(),
+            provider: "kimi".to_string(),
+            protocol: "anthropic_messages".to_string(),
+            api_key: "key".to_string(),
+            model: "k2.5".to_string(),
+            endpoint: "https://api.kimi.com/coding/v1/messages".to_string(),
+            anthropic_version: DEFAULT_ANTHROPIC_VERSION.to_string(),
+            _profile: AnthropicMessagesRequestProfile::Default,
+            backend_name: "anthropic-messages",
+            thinking: Some(AnthropicThinking {
+                thinking_type: "enabled".to_string(),
+                budget_tokens: 2000,
+            }),
+            log_thinking: false,
+            capabilities: CapabilityFlags {
+                stream: true,
+                reasoning: true,
+                tool_call: true,
+                json_mode: false,
+            },
+        };
+        let request = ModelRequest {
+            stage: ModelStage::Planner,
+            messages: vec![ConversationMessage::Assistant(vec![
+                AssistantContentBlock::Reasoning {
+                    text: "inspect file".to_string(),
+                },
+                AssistantContentBlock::ToolUse {
+                    id: "tool_1".to_string(),
+                    name: "Read".to_string(),
+                    input: json!({"file_path": "test.md"}),
+                },
+            ])],
+            system_prompt: None,
+            tools: Vec::new(),
+            options: Default::default(),
+        };
+
+        let built = client.build_request(&request, true, client.thinking.clone());
+        let serialized = serde_json::to_value(built).expect("serialize request");
+        let content = serialized["messages"][0]["content"]
+            .as_array()
+            .expect("assistant content array");
+
+        assert_eq!(content[0]["type"], "thinking");
+        assert_eq!(content[0]["thinking"], "inspect file");
+        assert_eq!(content[1]["type"], "tool_use");
+        assert_eq!(content[1]["name"], "Read");
     }
 
     #[test]

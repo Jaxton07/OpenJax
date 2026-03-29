@@ -189,7 +189,9 @@ impl Agent {
                 "model_response_content"
             );
 
-            messages.push(ConversationMessage::Assistant(response.content.clone()));
+            messages.push(ConversationMessage::Assistant(
+                response.assistant_history_blocks(),
+            ));
 
             if !response.has_tool_use() {
                 tracing::info!(

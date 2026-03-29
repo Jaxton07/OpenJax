@@ -75,6 +75,9 @@ pub enum UserContentBlock {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AssistantContentBlock {
+    Reasoning {
+        text: String,
+    },
     Text {
         text: String,
     },
@@ -180,6 +183,19 @@ pub struct ModelResponse {
 }
 
 impl ModelResponse {
+    pub fn assistant_history_blocks(&self) -> Vec<AssistantContentBlock> {
+        let mut blocks = Vec::new();
+        if let Some(reasoning) = self.reasoning.as_ref()
+            && !reasoning.is_empty()
+        {
+            blocks.push(AssistantContentBlock::Reasoning {
+                text: reasoning.clone(),
+            });
+        }
+        blocks.extend(self.content.clone());
+        blocks
+    }
+
     /// Concatenates all `Text` content blocks into a single string.
     pub fn text(&self) -> String {
         self.content
@@ -272,6 +288,43 @@ mod tests {
         assert_eq!(resp.tool_uses().len(), 1);
         assert!(resp.has_tool_use());
         assert!(!resp.stop_is_end_turn());
+    }
+
+    #[test]
+    fn assistant_reasoning_block_roundtrips() {
+        let msg = ConversationMessage::Assistant(vec![
+            AssistantContentBlock::Reasoning {
+                text: "inspect file".to_string(),
+            },
+            AssistantContentBlock::ToolUse {
+                id: "id1".to_string(),
+                name: "read".to_string(),
+                input: serde_json::json!({"file_path": "test.md"}),
+            },
+        ]);
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: ConversationMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn assistant_history_blocks_prepend_reasoning() {
+        let resp = ModelResponse {
+            content: vec![AssistantContentBlock::ToolUse {
+                id: "id1".to_string(),
+                name: "read".to_string(),
+                input: serde_json::json!({"file_path": "test.md"}),
+            }],
+            reasoning: Some("inspect file".to_string()),
+            ..ModelResponse::default()
+        };
+
+        let blocks = resp.assistant_history_blocks();
+        assert!(matches!(
+            &blocks[0],
+            AssistantContentBlock::Reasoning { text } if text == "inspect file"
+        ));
+        assert!(matches!(&blocks[1], AssistantContentBlock::ToolUse { .. }));
     }
 
     #[test]

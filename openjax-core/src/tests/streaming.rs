@@ -6,8 +6,10 @@ use openjax_protocol::Event;
 
 use super::support::{
     MixedTextToolUseModel, NativeStreamingFinalModel, NativeStreamingToolUseModel,
-    RejectApprovalHandler, ScriptedStreamingModel, ShellToolResultEchoModel, user_turn,
+    ReasoningHistoryProbeModel, RejectApprovalHandler, ScriptedStreamingModel,
+    ShellToolResultEchoModel, user_turn,
 };
+use crate::model::{AssistantContentBlock, ConversationMessage};
 use crate::tools::{ToolCall, ToolExecutionRequest, ToolRouter, ToolRuntimeConfig};
 use crate::{Agent, SandboxMode};
 
@@ -204,6 +206,44 @@ async fn tool_use_round_does_not_emit_intermediate_response_text_delta() {
         .collect::<Vec<_>>();
 
     assert_eq!(deltas, vec!["done".to_string()]);
+}
+
+#[tokio::test]
+async fn tool_use_followup_request_preserves_assistant_reasoning_history() {
+    let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
+    let model = ReasoningHistoryProbeModel::new();
+    let model_probe = model.clone();
+    agent.model_client = Box::new(model);
+
+    let events = agent.submit(user_turn("inspect and continue")).await;
+
+    let requests = model_probe.recorded_requests();
+    assert_eq!(requests.len(), 2, "expected initial and follow-up model requests");
+
+    let followup_assistant = requests[1]
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            ConversationMessage::Assistant(blocks) => Some(blocks),
+            _ => None,
+        })
+        .expect("assistant history in follow-up request");
+
+    assert!(matches!(
+        &followup_assistant[0],
+        AssistantContentBlock::Reasoning { text }
+            if text == "inspect environment before tool call"
+    ));
+    assert!(matches!(
+        &followup_assistant[1],
+        AssistantContentBlock::ToolUse { name, .. } if name == "system_load"
+    ));
+
+    let final_message = events.iter().rev().find_map(|event| match event {
+        Event::ResponseCompleted { content, .. } => Some(content.clone()),
+        _ => None,
+    });
+    assert_eq!(final_message.as_deref(), Some("done"));
 }
 
 #[test]

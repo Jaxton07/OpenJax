@@ -90,6 +90,72 @@ impl ModelClient for ScriptedStreamingModel {
 }
 
 #[derive(Clone)]
+pub(super) struct ReasoningHistoryProbeModel {
+    requests: Arc<Mutex<Vec<ModelRequest>>>,
+    stream_calls: Arc<Mutex<usize>>,
+}
+
+impl ReasoningHistoryProbeModel {
+    pub(super) fn new() -> Self {
+        Self {
+            requests: Arc::new(Mutex::new(Vec::new())),
+            stream_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    pub(super) fn recorded_requests(&self) -> Vec<ModelRequest> {
+        self.requests.lock().expect("requests lock").clone()
+    }
+}
+
+#[async_trait]
+impl ModelClient for ReasoningHistoryProbeModel {
+    async fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
+        self.complete_stream(request, None).await
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &ModelRequest,
+        _delta_sender: Option<UnboundedSender<StreamDelta>>,
+    ) -> Result<ModelResponse> {
+        self.requests
+            .lock()
+            .expect("requests lock")
+            .push(request.clone());
+        let mut stream_calls = self.stream_calls.lock().expect("stream_calls lock");
+        *stream_calls += 1;
+
+        let response = if *stream_calls == 1 {
+            ModelResponse {
+                content: vec![AssistantContentBlock::ToolUse {
+                    id: "call_reasoning".to_string(),
+                    name: "system_load".to_string(),
+                    input: serde_json::json!({}),
+                }],
+                reasoning: Some("inspect environment before tool call".to_string()),
+                stop_reason: Some(StopReason::ToolUse),
+                ..ModelResponse::default()
+            }
+        } else {
+            ModelResponse {
+                content: vec![AssistantContentBlock::Text {
+                    text: "done".to_string(),
+                }],
+                stop_reason: Some(StopReason::EndTurn),
+                ..ModelResponse::default()
+            }
+        };
+
+        Ok(response)
+    }
+
+    fn name(&self) -> &'static str {
+        "reasoning-history-probe"
+    }
+}
+
+#[derive(Clone)]
 pub(super) struct ScriptedToolBatchModel {
     complete_calls: Arc<Mutex<usize>>,
 }
