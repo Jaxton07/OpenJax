@@ -29,6 +29,7 @@ struct DirEntry {
     display_name: String,
     depth: usize,
     kind: DirEntryKind,
+    size: Option<u64>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -99,7 +100,7 @@ async fn list_dir_slice(
     collect_dir_entries(path, Path::new(""), depth, &mut entries).await?;
 
     if entries.is_empty() {
-        return Ok(Vec::new());
+        return Ok(vec!["(empty directory)".to_string()]);
     }
 
     entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
@@ -152,6 +153,16 @@ async fn collect_dir_entries(
                 .await
                 .with_context(|| "failed to inspect entry")?;
 
+            let size = if file_type.is_file() {
+                let meta = entry
+                    .metadata()
+                    .await
+                    .with_context(|| "failed to read entry metadata")?;
+                Some(meta.len())
+            } else {
+                None
+            };
+
             let file_name = entry.file_name();
             let relative_path = if prefix.as_os_str().is_empty() {
                 PathBuf::from(&file_name)
@@ -172,6 +183,7 @@ async fn collect_dir_entries(
                     display_name,
                     depth: display_depth,
                     kind,
+                    size,
                 },
             ));
         }
@@ -216,7 +228,25 @@ fn format_dir_entry_line(entry: &DirEntry) -> String {
         DirEntryKind::Other => name.push('?'),
         DirEntryKind::File => {}
     }
-    format!("{indent}{name}")
+    match entry.size {
+        Some(bytes) => format!("{indent}{name}  ({})", format_file_size(bytes)),
+        None => format!("{indent}{name}"),
+    }
+}
+
+fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
 }
 
 #[cfg(test)]
@@ -262,21 +292,21 @@ mod tests {
 
         #[cfg(unix)]
         let expected = vec![
-            "entry.txt".to_string(),
+            "entry.txt  (7 B)".to_string(),
             "link@".to_string(),
             "nested/".to_string(),
-            "  child.txt".to_string(),
+            "  child.txt  (5 B)".to_string(),
             "  deeper/".to_string(),
-            "    grandchild.txt".to_string(),
+            "    grandchild.txt  (10 B)".to_string(),
         ];
 
         #[cfg(not(unix))]
         let expected = vec![
-            "entry.txt".to_string(),
+            "entry.txt  (7 B)".to_string(),
             "nested/".to_string(),
-            "  child.txt".to_string(),
+            "  child.txt  (5 B)".to_string(),
             "  deeper/".to_string(),
-            "    grandchild.txt".to_string(),
+            "    grandchild.txt  (10 B)".to_string(),
         ];
 
         assert_eq!(entries, expected);
@@ -319,7 +349,7 @@ mod tests {
             .expect("list depth 1");
         assert_eq!(
             entries_depth_one,
-            vec!["nested/".to_string(), "root.txt".to_string(),]
+            vec!["nested/".to_string(), "root.txt  (4 B)".to_string(),]
         );
 
         let entries_depth_two = list_dir_slice(dir_path, 1, 20, 2)
@@ -329,9 +359,9 @@ mod tests {
             entries_depth_two,
             vec![
                 "nested/".to_string(),
-                "  child.txt".to_string(),
+                "  child.txt  (5 B)".to_string(),
                 "  deeper/".to_string(),
-                "root.txt".to_string(),
+                "root.txt  (4 B)".to_string(),
             ]
         );
 
@@ -342,10 +372,10 @@ mod tests {
             entries_depth_three,
             vec![
                 "nested/".to_string(),
-                "  child.txt".to_string(),
+                "  child.txt  (5 B)".to_string(),
                 "  deeper/".to_string(),
-                "    grandchild.txt".to_string(),
-                "root.txt".to_string(),
+                "    grandchild.txt  (4 B)".to_string(),
+                "root.txt  (4 B)".to_string(),
             ]
         );
     }
@@ -374,7 +404,7 @@ mod tests {
             first_page,
             vec![
                 "a/".to_string(),
-                "  a_child.txt".to_string(),
+                "  a_child.txt  (1 B)".to_string(),
                 "More than 2 entries found".to_string()
             ]
         );
@@ -384,7 +414,7 @@ mod tests {
             .expect("list page two");
         assert_eq!(
             second_page,
-            vec!["b/".to_string(), "  b_child.txt".to_string()]
+            vec!["b/".to_string(), "  b_child.txt  (1 B)".to_string()]
         );
     }
 
@@ -407,7 +437,7 @@ mod tests {
             .expect("list without overflow");
         assert_eq!(
             entries,
-            vec!["beta.txt".to_string(), "gamma.txt".to_string(),]
+            vec!["beta.txt  (4 B)".to_string(), "gamma.txt  (5 B)".to_string(),]
         );
     }
 
@@ -458,10 +488,21 @@ mod tests {
             entries_depth_three,
             vec![
                 "nested/".to_string(),
-                "  child.txt".to_string(),
+                "  child.txt  (5 B)".to_string(),
                 "  deeper/".to_string(),
                 "More than 3 entries found".to_string()
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn empty_directory_returns_empty_marker() {
+        let temp = tempdir().expect("create tempdir");
+        let dir_path = temp.path();
+
+        let entries = list_dir_slice(dir_path, 1, 25, 2)
+            .await
+            .expect("list empty directory");
+        assert_eq!(entries, vec!["(empty directory)".to_string()]);
     }
 }

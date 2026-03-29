@@ -3,6 +3,16 @@ use std::collections::HashMap;
 use openjax_protocol::{Event, ShellExecutionMetadata};
 
 use crate::Agent;
+
+pub(super) struct ToolCallCompletedFields<'a> {
+    pub turn_id: u64,
+    pub tool_call_id: &'a str,
+    pub tool_name: &'a str,
+    pub ok: bool,
+    pub output: &'a str,
+    pub shell_metadata: Option<ShellExecutionMetadata>,
+}
+
 use crate::agent::planner_utils::{
     extract_tool_target_hint, tool_args_delta_payload, tool_failure_code, tool_failure_retryable,
 };
@@ -18,13 +28,14 @@ impl Agent {
         events: &mut Vec<Event>,
     ) {
         let display_name = self.tools.display_name_for(tool_name);
+        let target = extract_tool_target_hint(tool_name, args);
         self.push_event(
             events,
             Event::ToolCallStarted {
                 turn_id,
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
-                target: extract_tool_target_hint(tool_name, args),
+                target: target.clone(),
                 display_name: display_name.clone(),
             },
         );
@@ -47,6 +58,7 @@ impl Agent {
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
                 display_name: display_name.clone(),
+                target,
             },
         );
         self.push_event(
@@ -93,37 +105,34 @@ impl Agent {
         output: &str,
         events: &mut Vec<Event>,
     ) {
-        self.emit_tool_call_completed_with_metadata(
-            turn_id,
-            tool_call_id,
-            tool_name,
-            ok,
-            output,
-            None,
+        self.emit_tool_call_completed_with_fields(
+            ToolCallCompletedFields {
+                turn_id,
+                tool_call_id,
+                tool_name,
+                ok,
+                output,
+                shell_metadata: None,
+            },
             events,
         );
     }
 
-    pub(super) fn emit_tool_call_completed_with_metadata(
+    pub(super) fn emit_tool_call_completed_with_fields(
         &self,
-        turn_id: u64,
-        tool_call_id: &str,
-        tool_name: &str,
-        ok: bool,
-        output: &str,
-        shell_metadata: Option<ShellExecutionMetadata>,
+        fields: ToolCallCompletedFields<'_>,
         events: &mut Vec<Event>,
     ) {
-        let display_name = self.tools.display_name_for(tool_name);
+        let display_name = self.tools.display_name_for(fields.tool_name);
         self.push_event(
             events,
             Event::ToolCallCompleted {
-                turn_id,
-                tool_call_id: tool_call_id.to_string(),
-                tool_name: tool_name.to_string(),
-                ok,
-                output: output.to_string(),
-                shell_metadata,
+                turn_id: fields.turn_id,
+                tool_call_id: fields.tool_call_id.to_string(),
+                tool_name: fields.tool_name.to_string(),
+                ok: fields.ok,
+                output: fields.output.to_string(),
+                shell_metadata: fields.shell_metadata,
                 display_name,
             },
         );

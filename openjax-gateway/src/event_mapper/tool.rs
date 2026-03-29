@@ -75,10 +75,16 @@ pub fn map(event: &Event) -> Option<CoreEventMapping> {
             tool_call_id,
             tool_name,
             display_name,
+            target,
         } => Some(CoreEventMapping {
             core_turn_id: Some(*turn_id),
             event_type: "tool_call_ready",
-            payload: json!({ "tool_call_id": tool_call_id, "tool_name": tool_name, "display_name": display_name }),
+            payload: json!({
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "display_name": display_name,
+                "target": target,
+            }),
             stream_source: None,
         }),
         Event::ToolCallProgress {

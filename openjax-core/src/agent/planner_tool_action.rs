@@ -18,6 +18,7 @@ use crate::agent::tool_policy::{
     duplicate_tool_call_warning, is_approval_blocking_error,
     should_abort_on_consecutive_duplicate_skips,
 };
+use crate::agent::tool_lifecycle::ToolCallCompletedFields;
 use crate::{Agent, MAX_CONSECUTIVE_DUPLICATE_SKIPS, tools};
 
 pub(super) enum NativeToolExecOutcome {
@@ -217,13 +218,15 @@ impl Agent {
                 }
 
                 self.record_tool_call(tool_name, &args, ok, &output);
-                self.emit_tool_call_completed_with_metadata(
-                    turn_id,
-                    tool_call_id,
-                    tool_name,
-                    ok,
-                    &output,
-                    shell_metadata,
+                self.emit_tool_call_completed_with_fields(
+                    ToolCallCompletedFields {
+                        turn_id,
+                        tool_call_id,
+                        tool_name,
+                        ok,
+                        output: &output,
+                        shell_metadata,
+                    },
                     ctx.events,
                 );
                 *ctx.executed_count += 1;

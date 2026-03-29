@@ -49,6 +49,7 @@ impl Agent {
         let mut stream_orchestrator =
             ResponseStreamOrchestrator::new(turn_id, openjax_protocol::StreamSource::ModelLive);
         let mut tool_names: HashMap<String, String> = HashMap::new();
+        let mut args_accum: HashMap<String, String> = HashMap::new();
 
         let stream_result =
             run_stream_with_delta_handler(delta_rx, stream_future, |delta| match delta {
@@ -89,6 +90,7 @@ impl Agent {
                     );
                 }
                 StreamDelta::ToolArgsDelta { id, delta } => {
+                    args_accum.entry(id.clone()).or_default().push_str(&delta);
                     let tool_name = tool_names.get(&id).cloned().unwrap_or_default();
                     let display_name = self.tools.display_name_for(&tool_name);
                     self.push_event(
@@ -105,6 +107,18 @@ impl Agent {
                 StreamDelta::ToolUseEnd { id } => {
                     let tool_name = tool_names.get(&id).cloned().unwrap_or_default();
                     let display_name = self.tools.display_name_for(&tool_name);
+                    let target = args_accum
+                        .remove(&id)
+                        .and_then(|json_str| serde_json::from_str::<serde_json::Value>(&json_str).ok())
+                        .and_then(|v| {
+                            v.as_object().map(|obj| {
+                                obj.iter()
+                                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                                    .collect::<HashMap<String, String>>()
+                            })
+                        })
+                        .as_ref()
+                        .and_then(|args| crate::agent::planner_utils::extract_tool_target_hint(&tool_name, args));
                     self.push_event(
                         events,
                         Event::ToolCallReady {
@@ -112,6 +126,7 @@ impl Agent {
                             tool_call_id: id,
                             tool_name,
                             display_name,
+                            target,
                         },
                     );
                 }

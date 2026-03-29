@@ -14,6 +14,7 @@ interface ComposerProps {
   sessionId?: string | null;
   onSend: (content: string) => Promise<void> | void;
   onNewChat: () => void;
+  onClear?: () => Promise<void> | void;
   contextUsage?: ContextUsageState | null;
   policyLevel?: "allow" | "ask" | "deny";
   onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
@@ -28,6 +29,7 @@ export default function Composer({
   sessionId,
   onSend,
   onNewChat,
+  onClear,
   contextUsage,
   policyLevel,
   onPolicyLevelChange,
@@ -81,6 +83,12 @@ export default function Composer({
 
     if (cmdName === "policy") {
       resetComposer();
+      return;
+    }
+
+    if (cmdName === "clear") {
+      resetComposer();
+      await onClear?.();
       return;
     }
 

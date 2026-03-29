@@ -84,6 +84,8 @@ tool:Read file_path=README.md
 - 递归列出（depth 参数）
 - 分页支持（offset 和 limit）
 - 文件类型标记（/ 目录、@ 符号链接、? 其他）
+- 文件条目附带大小（如 `1.2 KB`）
+- 空目录返回 `(empty directory)`
 - 缩进显示层级结构
 
 ### 参数
@@ -95,8 +97,10 @@ tool:Read file_path=README.md
 
 ### 输出
 
-- 目录条目，带缩进和类型标记
-- 格式："<indent><name><type_marker>"
+- 文件条目：`<indent><name>  (<size>)`
+- 目录条目：`<indent><name>/`
+- 符号链接：`<indent><name>@`
+- 空目录：`(empty directory)`
 
 ### 示例
 

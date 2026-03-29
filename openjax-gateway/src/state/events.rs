@@ -18,6 +18,7 @@ use crate::auth::{AuthConfig, AuthService};
 use crate::error::ApiError;
 use crate::event_mapper::map_core_event_payload;
 use openjax_store::SqliteStore;
+use openjax_store::repository::{CreateProviderParams, UpdateProviderParams};
 use openjax_store::{ProviderRepository, SessionRepository};
 
 use super::config::{
@@ -229,50 +230,20 @@ impl AppState {
 
     pub fn create_provider(
         &self,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: &str,
-        provider_type: &str,
-        protocol: &str,
-        context_window_size: u32,
+        params: CreateProviderParams<'_>,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
         let store = self.store.as_ref();
-        <SqliteStore as ProviderRepository>::create_provider(
-            store,
-            provider_name,
-            base_url,
-            model_name,
-            api_key,
-            provider_type,
-            protocol,
-            context_window_size,
-        )
-        .map_err(map_store_error)
+        <SqliteStore as ProviderRepository>::create_provider(store, params)
+            .map_err(map_store_error)
     }
 
     pub fn update_provider(
         &self,
-        provider_id: &str,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: Option<&str>,
-        protocol: &str,
-        context_window_size: u32,
+        params: UpdateProviderParams<'_>,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         let store = self.store.as_ref();
-        <SqliteStore as ProviderRepository>::update_provider(
-            store,
-            provider_id,
-            provider_name,
-            base_url,
-            model_name,
-            api_key,
-            protocol,
-            context_window_size,
-        )
-        .map_err(map_store_error)
+        <SqliteStore as ProviderRepository>::update_provider(store, params)
+            .map_err(map_store_error)
     }
 
     pub fn delete_provider(&self, provider_id: &str) -> Result<bool, ApiError> {
@@ -466,16 +437,15 @@ pub async fn run_turn_task(
                 });
                 if let Some(turn_id) = public_turn_id.as_ref()
                     && let Some(turn) = session.turns.get_mut(turn_id)
+                    && matches!(turn.status, TurnStatus::Queued | TurnStatus::Running)
                 {
-                    if matches!(turn.status, TurnStatus::Queued | TurnStatus::Running) {
-                        turn.status = TurnStatus::Failed;
-                        turn.error = Some(ApiTurnError {
-                            code: "TURN_ABORTED".to_string(),
-                            message: "turn aborted by user".to_string(),
-                            retryable: false,
-                            details: json!({ "reason": "user_abort" }),
-                        });
-                    }
+                    turn.status = TurnStatus::Failed;
+                    turn.error = Some(ApiTurnError {
+                        code: "TURN_ABORTED".to_string(),
+                        message: "turn aborted by user".to_string(),
+                        retryable: false,
+                        details: json!({ "reason": "user_abort" }),
+                    });
                 }
                 let envelope = session.create_gateway_event(
                     &request_id,
@@ -899,7 +869,7 @@ mod tests {
         assert_eq!(turn.status, TurnStatus::Failed);
         let error = turn.error.expect("abort error");
         assert_eq!(error.code, "TURN_ABORTED");
-        assert_eq!(error.retryable, false);
+        assert!(!error.retryable);
     }
 
     #[test]

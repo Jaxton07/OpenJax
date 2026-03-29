@@ -120,6 +120,8 @@ pub enum Event {
         tool_name: String,
         #[serde(default)]
         display_name: Option<String>,
+        #[serde(default)]
+        target: Option<String>,
     },
     ToolCallProgress {
         turn_id: u64,

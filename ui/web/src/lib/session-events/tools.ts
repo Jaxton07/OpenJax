@@ -9,6 +9,7 @@ import type {
 export function isToolStepEvent(event: StreamEvent): boolean {
   return (
     event.type === "tool_call_started" ||
+    event.type === "tool_call_ready" ||
     event.type === "tool_call_completed" ||
     event.type === "approval_requested" ||
     event.type === "approval_resolved" ||
@@ -147,6 +148,17 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       toolCallId: toolCallIdFromPayload(event),
       meta: { rawPayload: event.payload }
     };
+  }
+
+  if (event.type === "tool_call_ready") {
+    const payload = event.payload as { tool_call_id?: string; target?: string };
+    const target = payload.target ?? "";
+    return {
+      id: toolCallIdFromPayload(event) || `tool_call_ready:${event.turn_id ?? "unknown"}:${event.event_seq}`,
+      type: "tool" as const,
+      target,
+      toolCallId: toolCallIdFromPayload(event),
+    } as ToolStep;
   }
 
   if (event.type === "tool_call_completed") {
