@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::error::ApiError;
 use crate::middleware::RequestContext;
 use crate::state::AppState;
+use openjax_store::repository::{CreateProviderParams, UpdateProviderParams};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -233,15 +234,15 @@ pub async fn create_provider(
             serde_json::json!({}),
         ));
     }
-    let created = state.create_provider(
+    let created = state.create_provider(CreateProviderParams {
         provider_name,
         base_url,
         model_name,
         api_key,
-        &payload.provider_type,
-        &payload.protocol,
-        payload.context_window_size,
-    )?;
+        provider_type: &payload.provider_type,
+        protocol: &payload.protocol,
+        context_window_size: payload.context_window_size,
+    })?;
     Ok(Json(ProviderMutationResponse {
         request_id: ctx.request_id,
         provider: to_provider_item(created),
@@ -270,15 +271,15 @@ pub async fn update_provider(
         ));
     }
     let updated = state
-        .update_provider(
-            &provider_id,
+        .update_provider(UpdateProviderParams {
+            provider_id: &provider_id,
             provider_name,
             base_url,
             model_name,
             api_key,
-            &payload.protocol,
-            payload.context_window_size,
-        )?
+            protocol: &payload.protocol,
+            context_window_size: payload.context_window_size,
+        })?
         .ok_or_else(|| {
             ApiError::not_found(
                 "provider not found",

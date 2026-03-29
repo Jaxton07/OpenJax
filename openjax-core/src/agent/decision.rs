@@ -478,10 +478,10 @@ pub(crate) fn normalize_model_decision(mut decision: ModelDecision) -> ModelDeci
         return decision;
     }
 
-    if decision.tool.as_deref().is_none_or(|t| t.trim().is_empty()) {
-        if let Some(canonical) = canonical_tool_name(&action_lower) {
-            decision.tool = Some(canonical.to_string());
-        }
+    if decision.tool.as_deref().is_none_or(|t| t.trim().is_empty())
+        && let Some(canonical) = canonical_tool_name(&action_lower)
+    {
+        decision.tool = Some(canonical.to_string());
     }
 
     if decision.args.is_none() {

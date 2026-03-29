@@ -159,6 +159,12 @@ impl Agent {
     }
 }
 
+impl Default for Agent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,11 +210,5 @@ mod tests {
         let decision = runtime.handle().decide(&input);
         // system:destructive_escalate (priority=1000) beats Deny default
         assert_eq!(decision.kind, DecisionKind::Escalate);
-    }
-}
-
-impl Default for Agent {
-    fn default() -> Self {
-        Self::new()
     }
 }

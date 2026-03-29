@@ -449,12 +449,12 @@ fn extract_content_blocks_from_body(body: &serde_json::Value) -> Vec<AssistantCo
     for block in blocks {
         match block.get("type").and_then(|v| v.as_str()) {
             Some("text") => {
-                if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                    if !text.is_empty() {
-                        result.push(AssistantContentBlock::Text {
-                            text: text.to_string(),
-                        });
-                    }
+                if let Some(text) = block.get("text").and_then(|v| v.as_str())
+                    && !text.is_empty()
+                {
+                    result.push(AssistantContentBlock::Text {
+                        text: text.to_string(),
+                    });
                 }
             }
             Some("tool_use") => {
@@ -566,19 +566,18 @@ fn process_tool_use_frame(
             }
         }
         Some("content_block_delta") => {
-            if current_block_type.as_deref() == Some("tool_use") {
-                if let Some(partial_json) = payload
+            if current_block_type.as_deref() == Some("tool_use")
+                && let Some(partial_json) = payload
                     .get("delta")
                     .and_then(|v| v.get("partial_json"))
                     .and_then(|v| v.as_str())
-                {
-                    pending_tool_args.push_str(partial_json);
-                    if let Some(sender) = delta_sender {
-                        let _ = sender.send(StreamDelta::ToolArgsDelta {
-                            id: pending_tool_id.clone(),
-                            delta: partial_json.to_string(),
-                        });
-                    }
+            {
+                pending_tool_args.push_str(partial_json);
+                if let Some(sender) = delta_sender {
+                    let _ = sender.send(StreamDelta::ToolArgsDelta {
+                        id: pending_tool_id.clone(),
+                        delta: partial_json.to_string(),
+                    });
                 }
             }
         }

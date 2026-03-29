@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-use crate::repository::{ProviderRepository, SessionRepository};
+use crate::repository::{CreateProviderParams, ProviderRepository, SessionRepository, UpdateProviderParams};
 use crate::types::{
     ActiveProviderRecord, EventRecord, MessageRecord, ProviderRecord, SessionRecord,
 };
@@ -514,62 +514,17 @@ impl SessionRepository for SqliteStore {
 }
 
 impl SqliteStore {
-    pub fn create_provider(
-        &self,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: &str,
-        provider_type: &str,
-        protocol: &str,
-        context_window_size: u32,
-    ) -> Result<ProviderRecord> {
-        <Self as ProviderRepository>::create_provider(
-            self,
-            provider_name,
-            base_url,
-            model_name,
-            api_key,
-            provider_type,
-            protocol,
-            context_window_size,
-        )
+    pub fn create_provider(&self, params: CreateProviderParams<'_>) -> Result<ProviderRecord> {
+        <Self as ProviderRepository>::create_provider(self, params)
     }
 
-    pub fn update_provider(
-        &self,
-        provider_id: &str,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: Option<&str>,
-        protocol: &str,
-        context_window_size: u32,
-    ) -> Result<Option<ProviderRecord>> {
-        <Self as ProviderRepository>::update_provider(
-            self,
-            provider_id,
-            provider_name,
-            base_url,
-            model_name,
-            api_key,
-            protocol,
-            context_window_size,
-        )
+    pub fn update_provider(&self, params: UpdateProviderParams<'_>) -> Result<Option<ProviderRecord>> {
+        <Self as ProviderRepository>::update_provider(self, params)
     }
 }
 
 impl ProviderRepository for SqliteStore {
-    fn create_provider(
-        &self,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: &str,
-        provider_type: &str,
-        protocol: &str,
-        context_window_size: u32,
-    ) -> Result<ProviderRecord> {
+    fn create_provider(&self, params: CreateProviderParams<'_>) -> Result<ProviderRecord> {
         let provider_id = format!("provider_{}", Uuid::new_v4().simple());
         let now = now_rfc3339();
         {
@@ -578,24 +533,15 @@ impl ProviderRepository for SqliteStore {
                 "INSERT INTO llm_providers
                  (provider_id, provider_name, base_url, model_name, api_key, provider_type, protocol, context_window_size, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
-                params![provider_id, provider_name, base_url, model_name, api_key, provider_type, protocol, context_window_size, now],
+                params![provider_id, params.provider_name, params.base_url, params.model_name, params.api_key, params.provider_type, params.protocol, params.context_window_size, now],
             )
-            .with_context(|| format!("insert provider {}", provider_name))?;
+            .with_context(|| format!("insert provider {}", params.provider_name))?;
         }
         self.get_provider(&provider_id)?
             .context("provider must exist after create")
     }
 
-    fn update_provider(
-        &self,
-        provider_id: &str,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: Option<&str>,
-        protocol: &str,
-        context_window_size: u32,
-    ) -> Result<Option<ProviderRecord>> {
+    fn update_provider(&self, params: UpdateProviderParams<'_>) -> Result<Option<ProviderRecord>> {
         let now = now_rfc3339();
         let changed = {
             let conn = self.conn.lock().expect("store db mutex poisoned");
@@ -610,17 +556,17 @@ impl ProviderRepository for SqliteStore {
                      updated_at = ?7
                  WHERE provider_id = ?8",
                 params![
-                    provider_name,
-                    base_url,
-                    model_name,
-                    api_key,
-                    protocol,
-                    context_window_size,
+                    params.provider_name,
+                    params.base_url,
+                    params.model_name,
+                    params.api_key,
+                    params.protocol,
+                    params.context_window_size,
                     now,
-                    provider_id
+                    params.provider_id
                 ],
             )
-            .with_context(|| format!("update provider {}", provider_id))?
+            .with_context(|| format!("update provider {}", params.provider_id))?
         };
         if changed == 0 {
             return Ok(None);
@@ -633,11 +579,11 @@ impl ProviderRepository for SqliteStore {
                 "UPDATE llm_runtime_settings
                  SET model_name = ?1, context_window_size = ?2, updated_at = ?3
                  WHERE setting_key = 'active_provider' AND provider_id = ?4",
-                params![model_name, context_window_size, now, provider_id],
+                params![params.model_name, params.context_window_size, now, params.provider_id],
             )
-            .with_context(|| format!("sync active provider snapshot {}", provider_id))?;
+            .with_context(|| format!("sync active provider snapshot {}", params.provider_id))?;
         }
-        self.get_provider(provider_id)
+        self.get_provider(params.provider_id)
     }
 
     fn delete_provider(&self, provider_id: &str) -> Result<bool> {
@@ -768,6 +714,7 @@ impl ProviderRepository for SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repository::{CreateProviderParams, UpdateProviderParams};
 
     fn setup_store() -> SqliteStore {
         SqliteStore::open_memory().expect("open in-memory store")
@@ -900,25 +847,25 @@ mod tests {
     fn provider_name_has_unique_constraint() {
         let store = setup_store();
         store
-            .create_provider(
-                "openai-main",
-                "https://api.openai.com/v1",
-                "gpt-4.1",
-                "sk-1",
-                "built_in",
-                "chat_completions",
-                128000,
-            )
+            .create_provider(CreateProviderParams {
+                provider_name: "openai-main",
+                base_url: "https://api.openai.com/v1",
+                model_name: "gpt-4.1",
+                api_key: "sk-1",
+                provider_type: "built_in",
+                protocol: "chat_completions",
+                context_window_size: 128000,
+            })
             .expect("create first");
-        let dup = store.create_provider(
-            "openai-main",
-            "https://api.openai.com/v1",
-            "gpt-4.1-mini",
-            "sk-2",
-            "built_in",
-            "chat_completions",
-            128000,
-        );
+        let dup = store.create_provider(CreateProviderParams {
+            provider_name: "openai-main",
+            base_url: "https://api.openai.com/v1",
+            model_name: "gpt-4.1-mini",
+            api_key: "sk-2",
+            provider_type: "built_in",
+            protocol: "chat_completions",
+            context_window_size: 128000,
+        });
         assert!(dup.is_err());
     }
 
@@ -926,41 +873,41 @@ mod tests {
     fn can_update_and_delete_provider() {
         let store = setup_store();
         let created = store
-            .create_provider(
-                "glm-main",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4",
-                "key-a",
-                "custom",
-                "chat_completions",
-                0,
-            )
+            .create_provider(CreateProviderParams {
+                provider_name: "glm-main",
+                base_url: "https://open.bigmodel.cn/api/paas/v4",
+                model_name: "glm-4",
+                api_key: "key-a",
+                provider_type: "custom",
+                protocol: "chat_completions",
+                context_window_size: 0,
+            })
             .expect("create");
         let updated = store
-            .update_provider(
-                &created.provider_id,
-                "glm-main",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4-plus",
-                Some("key-b"),
-                "chat_completions",
-                0,
-            )
+            .update_provider(UpdateProviderParams {
+                provider_id: &created.provider_id,
+                provider_name: "glm-main",
+                base_url: "https://open.bigmodel.cn/api/paas/v4",
+                model_name: "glm-4-plus",
+                api_key: Some("key-b"),
+                protocol: "chat_completions",
+                context_window_size: 0,
+            })
             .expect("update")
             .expect("exists");
         assert_eq!(updated.model_name, "glm-4-plus");
         assert_eq!(updated.api_key, "key-b");
 
         let updated2 = store
-            .update_provider(
-                &created.provider_id,
-                "glm-main-2",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4-air",
-                None,
-                "chat_completions",
-                0,
-            )
+            .update_provider(UpdateProviderParams {
+                provider_id: &created.provider_id,
+                provider_name: "glm-main-2",
+                base_url: "https://open.bigmodel.cn/api/paas/v4",
+                model_name: "glm-4-air",
+                api_key: None,
+                protocol: "chat_completions",
+                context_window_size: 0,
+            })
             .expect("update no key")
             .expect("exists");
         assert_eq!(updated2.provider_name, "glm-main-2");
@@ -979,26 +926,26 @@ mod tests {
     fn can_set_and_get_active_provider() {
         let store = setup_store();
         let first = store
-            .create_provider(
-                "openai-main",
-                "https://api.openai.com/v1",
-                "gpt-4.1-mini",
-                "sk-1",
-                "built_in",
-                "chat_completions",
-                128000,
-            )
+            .create_provider(CreateProviderParams {
+                provider_name: "openai-main",
+                base_url: "https://api.openai.com/v1",
+                model_name: "gpt-4.1-mini",
+                api_key: "sk-1",
+                provider_type: "built_in",
+                protocol: "chat_completions",
+                context_window_size: 128000,
+            })
             .expect("create first");
         let second = store
-            .create_provider(
-                "glm-main",
-                "https://open.bigmodel.cn/api/paas/v4",
-                "glm-4.7",
-                "sk-2",
-                "built_in",
-                "chat_completions",
-                128000,
-            )
+            .create_provider(CreateProviderParams {
+                provider_name: "glm-main",
+                base_url: "https://open.bigmodel.cn/api/paas/v4",
+                model_name: "glm-4.7",
+                api_key: "sk-2",
+                provider_type: "built_in",
+                protocol: "chat_completions",
+                context_window_size: 128000,
+            })
             .expect("create second");
 
         let selected = store
@@ -1049,13 +996,15 @@ mod tests {
 
         let p = <SqliteStore as ProviderRepository>::create_provider(
             &store,
-            "OpenAI",
-            "https://api.openai.com/v1",
-            "gpt-4o",
-            "sk-test",
-            "built_in",
-            "chat_completions",
-            128000,
+            CreateProviderParams {
+                provider_name: "OpenAI",
+                base_url: "https://api.openai.com/v1",
+                model_name: "gpt-4o",
+                api_key: "sk-test",
+                provider_type: "built_in",
+                protocol: "chat_completions",
+                context_window_size: 128000,
+            },
         )
         .expect("create provider");
 
@@ -1064,13 +1013,15 @@ mod tests {
 
         let updated = <SqliteStore as ProviderRepository>::update_provider(
             &store,
-            &p.provider_id,
-            "OpenAI",
-            "https://api.openai.com/v1",
-            "gpt-4o-mini",
-            None,
-            "chat_completions",
-            128000,
+            UpdateProviderParams {
+                provider_id: &p.provider_id,
+                provider_name: "OpenAI",
+                base_url: "https://api.openai.com/v1",
+                model_name: "gpt-4o-mini",
+                api_key: None,
+                protocol: "chat_completions",
+                context_window_size: 128000,
+            },
         )
         .expect("update provider")
         .expect("provider exists");
@@ -1085,15 +1036,15 @@ mod tests {
     fn active_provider_snapshot_includes_context_window() {
         let store = setup_store();
         let p = store
-            .create_provider(
-                "Kimi",
-                "https://api.kimi.com/coding/v1",
-                "kimi-for-coding",
-                "key",
-                "built_in",
-                "chat_completions",
-                256000,
-            )
+            .create_provider(CreateProviderParams {
+                provider_name: "Kimi",
+                base_url: "https://api.kimi.com/coding/v1",
+                model_name: "kimi-for-coding",
+                api_key: "key",
+                provider_type: "built_in",
+                protocol: "chat_completions",
+                context_window_size: 256000,
+            })
             .expect("create");
         store
             .set_active_provider(&p.provider_id)
@@ -1110,15 +1061,15 @@ mod tests {
     fn active_snapshot_updated_when_provider_model_switches() {
         let store = setup_store();
         let p = store
-            .create_provider(
-                "OpenAI",
-                "https://api.openai.com/v1",
-                "gpt-4o",
-                "key",
-                "built_in",
-                "chat_completions",
-                128000,
-            )
+            .create_provider(CreateProviderParams {
+                provider_name: "OpenAI",
+                base_url: "https://api.openai.com/v1",
+                model_name: "gpt-4o",
+                api_key: "key",
+                provider_type: "built_in",
+                protocol: "chat_completions",
+                context_window_size: 128000,
+            })
             .expect("create");
         store
             .set_active_provider(&p.provider_id)
@@ -1126,15 +1077,15 @@ mod tests {
 
         // switch model
         store
-            .update_provider(
-                &p.provider_id,
-                "OpenAI",
-                "https://api.openai.com/v1",
-                "gpt-5.3-codex",
-                None,
-                "chat_completions",
-                200000,
-            )
+            .update_provider(UpdateProviderParams {
+                provider_id: &p.provider_id,
+                provider_name: "OpenAI",
+                base_url: "https://api.openai.com/v1",
+                model_name: "gpt-5.3-codex",
+                api_key: None,
+                protocol: "chat_completions",
+                context_window_size: 200000,
+            })
             .expect("update");
 
         let active = store.get_active_provider().expect("get").expect("active");
@@ -1146,15 +1097,15 @@ mod tests {
     fn migration_is_idempotent() {
         let store = setup_store();
         let _ = store
-            .create_provider(
-                "X",
-                "https://x.com/v1",
-                "m",
-                "k",
-                "custom",
-                "chat_completions",
-                0,
-            )
+            .create_provider(CreateProviderParams {
+                provider_name: "X",
+                base_url: "https://x.com/v1",
+                model_name: "m",
+                api_key: "k",
+                provider_type: "custom",
+                protocol: "chat_completions",
+                context_window_size: 0,
+            })
             .expect("create");
         // Call migrate_schema twice on the same connection — must not error
         let conn = store.conn.lock().expect("lock");

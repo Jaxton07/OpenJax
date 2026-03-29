@@ -41,13 +41,12 @@ pub(crate) fn extract_backend_summary(
 }
 
 fn backend_label(backend: &str) -> String {
-    let label = match backend {
+    match backend {
         "macos_seatbelt" => "sandbox-exec (macos_seatbelt)".to_string(),
         "linux_native" => "bwrap (linux_native)".to_string(),
         "none_escalated" => "none (degraded)".to_string(),
         other => other.to_string(),
-    };
-    label
+    }
 }
 
 pub(crate) fn sanitize_target_for_title(target: &str, max_chars: usize) -> String {

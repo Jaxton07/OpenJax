@@ -109,7 +109,7 @@ pub async fn run() -> anyhow::Result<()> {
                     let idx = app.state.policy_picker.as_ref().unwrap().selected_index;
                     let levels = ["allow", "ask", "deny"];
                     if let Some(&level_str) = levels.get(idx) {
-                        if let Some(level) = openjax_core::PolicyLevel::from_str(level_str) {
+                        if let Ok(level) = level_str.parse::<openjax_core::PolicyLevel>() {
                             agent.lock().await.set_policy_level(level);
                         }
                         app.apply_policy_pick(level_str);

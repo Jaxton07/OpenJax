@@ -4,6 +4,26 @@ use crate::types::{
     ActiveProviderRecord, EventRecord, MessageRecord, ProviderRecord, SessionRecord,
 };
 
+pub struct CreateProviderParams<'a> {
+    pub provider_name: &'a str,
+    pub base_url: &'a str,
+    pub model_name: &'a str,
+    pub api_key: &'a str,
+    pub provider_type: &'a str,
+    pub protocol: &'a str,
+    pub context_window_size: u32,
+}
+
+pub struct UpdateProviderParams<'a> {
+    pub provider_id: &'a str,
+    pub provider_name: &'a str,
+    pub base_url: &'a str,
+    pub model_name: &'a str,
+    pub api_key: Option<&'a str>,
+    pub protocol: &'a str,
+    pub context_window_size: u32,
+}
+
 pub trait SessionRepository {
     fn create_session(&self, session_id: &str, title: Option<&str>) -> Result<SessionRecord>;
     fn get_session(&self, session_id: &str) -> Result<Option<SessionRecord>>;
@@ -39,26 +59,8 @@ pub trait SessionRepository {
 }
 
 pub trait ProviderRepository {
-    fn create_provider(
-        &self,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: &str,
-        provider_type: &str,
-        protocol: &str,
-        context_window_size: u32,
-    ) -> Result<ProviderRecord>;
-    fn update_provider(
-        &self,
-        provider_id: &str,
-        provider_name: &str,
-        base_url: &str,
-        model_name: &str,
-        api_key: Option<&str>,
-        protocol: &str,
-        context_window_size: u32,
-    ) -> Result<Option<ProviderRecord>>;
+    fn create_provider(&self, params: CreateProviderParams<'_>) -> Result<ProviderRecord>;
+    fn update_provider(&self, params: UpdateProviderParams<'_>) -> Result<Option<ProviderRecord>>;
     fn delete_provider(&self, provider_id: &str) -> Result<bool>;
     fn get_provider(&self, provider_id: &str) -> Result<Option<ProviderRecord>>;
     fn list_providers(&self) -> Result<Vec<ProviderRecord>>;

@@ -480,11 +480,15 @@ fn extract_delta_reasoning_from_body(body: &serde_json::Value) -> Option<String>
         .map(ToString::to_string)
 }
 
+struct ToolCallDelta {
+    index: usize,
+    id: Option<String>,
+    name: Option<String>,
+    args_delta: Option<String>,
+}
+
 /// Extract streaming tool_call deltas from an SSE frame.
-/// Returns a list of (index, Option<id>, Option<name>, Option<args_delta>).
-fn extract_tool_call_deltas(
-    body: &serde_json::Value,
-) -> Vec<(usize, Option<String>, Option<String>, Option<String>)> {
+fn extract_tool_call_deltas(body: &serde_json::Value) -> Vec<ToolCallDelta> {
     let tool_calls = match body
         .get("choices")
         .and_then(|v| v.as_array())
@@ -510,11 +514,16 @@ fn extract_tool_call_deltas(
                 .and_then(|f| f.get("name"))
                 .and_then(|v| v.as_str())
                 .map(ToString::to_string);
-            let args = func
+            let args_delta = func
                 .and_then(|f| f.get("arguments"))
                 .and_then(|v| v.as_str())
                 .map(ToString::to_string);
-            Some((index, id, name, args))
+            Some(ToolCallDelta {
+                index,
+                id,
+                name,
+                args_delta,
+            })
         })
         .collect()
 }
@@ -734,11 +743,11 @@ impl ModelClient for ChatCompletionsClient {
                 }
 
                 // Tool call delta processing
-                for (index, id, name, args_delta) in extract_tool_call_deltas(&payload) {
+                for delta in extract_tool_call_deltas(&payload) {
                     // Grow pending_tool_calls if this is a new tool call
-                    while pending_tool_calls.len() <= index {
-                        let new_id = id.clone().unwrap_or_default();
-                        let new_name = name.clone().unwrap_or_default();
+                    while pending_tool_calls.len() <= delta.index {
+                        let new_id = delta.id.clone().unwrap_or_default();
+                        let new_name = delta.name.clone().unwrap_or_default();
                         if let Some(sender) = &delta_sender {
                             let _ = sender.send(StreamDelta::ToolUseStart {
                                 id: new_id.clone(),
@@ -751,13 +760,13 @@ impl ModelClient for ChatCompletionsClient {
                             args: String::new(),
                         });
                     }
-                    if let Some(args) = args_delta
+                    if let Some(args) = delta.args_delta
                         && !args.is_empty()
                     {
-                        pending_tool_calls[index].args.push_str(&args);
+                        pending_tool_calls[delta.index].args.push_str(&args);
                         if let Some(sender) = &delta_sender {
                             let _ = sender.send(StreamDelta::ToolArgsDelta {
-                                id: pending_tool_calls[index].id.clone(),
+                                id: pending_tool_calls[delta.index].id.clone(),
                                 delta: args,
                             });
                         }

@@ -110,11 +110,6 @@ impl Agent {
                         Ok(Ok(outcome)) => {
                             let ok = outcome.success;
                             let output = outcome.display_output;
-                            if ok {
-                                // no-op
-                            } else {
-                                // no-op
-                            }
                             if is_mutating_tool(&call.tool_name) {
                                 self.state_epoch = self.state_epoch.saturating_add(1);
                             }

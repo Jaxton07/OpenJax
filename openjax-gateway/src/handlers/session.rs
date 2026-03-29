@@ -619,7 +619,7 @@ pub async fn set_policy_level(
     Path(session_id): Path<String>,
     Json(body): Json<SetPolicyLevelRequest>,
 ) -> Result<Json<SetPolicyLevelResponse>, ApiError> {
-    let level = openjax_core::PolicyLevel::from_str(&body.level).ok_or_else(|| {
+    let level = body.level.parse::<openjax_core::PolicyLevel>().map_err(|_| {
         ApiError::invalid_argument(
             format!(
                 "'{}' is not a valid policy level; use allow, ask, or deny",

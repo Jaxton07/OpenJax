@@ -8,6 +8,7 @@ use openjax_policy::runtime::PolicyRuntime;
 use openjax_policy::schema::{DecisionKind, PolicyRule};
 use openjax_policy::store::PolicyStore;
 use openjax_store::SqliteStore;
+use openjax_store::repository::CreateProviderParams;
 use serde_json::json;
 
 use crate::error::ApiError;
@@ -141,20 +142,23 @@ pub fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
         let model_name = entry.model.unwrap_or_else(|| model_id.clone());
         let _ = <SqliteStore as ProviderRepository>::create_provider(
             store,
-            &model_id,
-            &base_url,
-            &model_name,
-            &api_key,
-            "custom",
-            "chat_completions",
-            0,
+            CreateProviderParams {
+                provider_name: &model_id,
+                base_url: &base_url,
+                model_name: &model_name,
+                api_key: &api_key,
+                provider_type: "custom",
+                protocol: "chat_completions",
+                context_window_size: 0,
+            },
         );
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use openjax_store::{ProviderRepository, SqliteStore};
+    use openjax_store::repository::{CreateProviderParams, ProviderRepository};
+    use openjax_store::SqliteStore;
 
     use super::migrate_providers_from_config_if_needed;
 
@@ -163,13 +167,15 @@ mod tests {
         let store = SqliteStore::open_memory().expect("open memory store");
         let provider = <SqliteStore as ProviderRepository>::create_provider(
             &store,
-            "Kimi Coding",
-            "https://api.kimi.com/coding",
-            "k2.5",
-            "key",
-            "built_in",
-            "anthropic_messages",
-            200_000,
+            CreateProviderParams {
+                provider_name: "Kimi Coding",
+                base_url: "https://api.kimi.com/coding",
+                model_name: "k2.5",
+                api_key: "key",
+                provider_type: "built_in",
+                protocol: "anthropic_messages",
+                context_window_size: 200_000,
+            },
         )
         .expect("create provider");
         store

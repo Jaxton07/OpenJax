@@ -109,12 +109,11 @@ fn resolve_prefix(arg: Option<PathBuf>) -> anyhow::Result<PathBuf> {
         return Ok(p);
     }
     // Detect from binary location: <prefix>/bin/openjax -> <prefix>
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(bin) = exe.parent() {
-            if let Some(prefix) = bin.parent() {
-                return Ok(prefix.to_path_buf());
-            }
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(bin) = exe.parent()
+        && let Some(prefix) = bin.parent()
+    {
+        return Ok(prefix.to_path_buf());
     }
     let home = dirs::home_dir().context("cannot determine home directory")?;
     Ok(home.join(".local").join("openjax"))
