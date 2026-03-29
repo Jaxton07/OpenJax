@@ -210,8 +210,10 @@ zsh -lc "make gateway-full"
 ```
 
 - 日常开发推荐使用 `gateway-fast`（快速反馈主链路）。
+- `gateway-smoke` 只跑一组人工挑选的高价值检查，选择源位于 `openjax-gateway/tests/.smoke-targets`；如需替换 smoke 用例，只更新该 manifest，不要修改脚本里的执行逻辑。
 - 文档校验推荐使用 `gateway-doc`（仅 `--doc` / doctest）。
 - 合并前推荐使用 `gateway-full`（覆盖 openjax-gateway 完整测试路径）。
+- 性能排查可使用 `gateway-baseline`；输出会固定分成 `measurements` 与 `per-target` 两段，便于对比 cold/warm/full/fast/doc 与主要 test target 的耗时。
 
 ## WebUI 流式接入（SSE）
 

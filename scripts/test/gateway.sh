@@ -8,12 +8,7 @@ cd "$repo_root"
 cargo_bin="${CARGO:-cargo}"
 time_bin="${TIME_BIN:-/usr/bin/time}"
 package="openjax-gateway"
-
-smoke_targets=(
-  gateway_api_suite::clear_command_submit_and_polling_flow
-  policy_api_suite::policy_rule_create_update_publish_affects_submit_turn
-  m1_assistant_message_compat_only::response_completed_overrides_legacy_assistant_message
-)
+smoke_manifest="openjax-gateway/tests/.smoke-targets"
 
 standalone_targets=(
   m1_assistant_message_compat_only
@@ -25,10 +20,31 @@ Usage: bash scripts/test/gateway.sh <gateway-smoke|gateway-fast|gateway-doc|gate
 EOF
 }
 
+die() {
+  echo "[gateway-test] $*" >&2
+  exit 1
+}
+
 discover_suite_targets() {
   find openjax-gateway/tests -maxdepth 1 -name '*_suite.rs' -print \
     | sed 's|.*/||; s|\.rs$||' \
     | sort
+}
+
+discover_smoke_targets() {
+  [[ -f "$smoke_manifest" ]] || die "missing smoke manifest: ${smoke_manifest}"
+
+  awk '
+    {
+      sub(/\r$/, "", $0)
+      if ($0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/) {
+        next
+      }
+      sub(/^[[:space:]]+/, "", $0)
+      sub(/[[:space:]]+$/, "", $0)
+      print
+    }
+  ' "$smoke_manifest"
 }
 
 target_exists() {
@@ -59,9 +75,18 @@ run_test_case() {
 }
 
 run_smoke() {
-  echo "[gateway-smoke] running ${#smoke_targets[@]} high-value cases"
+  local -a smoke_targets=()
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    smoke_targets+=("$target")
+  done < <(discover_smoke_targets)
+
+  [[ ${#smoke_targets[@]} -gt 0 ]] || die "no smoke targets discovered from ${smoke_manifest}"
+
+  echo "[gateway-smoke] discovered ${#smoke_targets[@]} smoke target(s) from ${smoke_manifest}"
   local entry
   for entry in "${smoke_targets[@]}"; do
+    echo "[gateway-smoke] selected ${entry}"
     if [[ "$entry" == *"::"* ]]; then
       run_test_case "gateway-smoke" "$entry"
     else
@@ -142,50 +167,46 @@ measure_command() {
   printf '%s\n' "$real"
 }
 
-run_baseline() {
-  local cold_real warm_real fast_real doc_real
+print_measurement() {
+  local label="$1"
+  local real="$2"
+  printf '  %-36s %s s\n' "${label}:" "$real"
+}
 
+measure_and_print() {
+  local display_label="$1"
+  shift
+  local real
+  real="$(measure_command "gateway-baseline ${display_label}" "$@")"
+  print_measurement "$display_label" "$real"
+}
+
+run_baseline() {
   echo "[gateway-baseline] cleaning openjax-gateway build artifacts"
   "$cargo_bin" clean -p "$package"
 
-  echo "[gateway-baseline] cold full run"
-  cold_real="$(measure_command "gateway-baseline cold" "$cargo_bin" test -p "$package" --locked)"
-  printf '[gateway-baseline] cold real: %s s\n' "$cold_real"
+  echo "[gateway-baseline] measurements"
+  measure_and_print "cold/full" "$cargo_bin" test -p "$package" --locked
+  measure_and_print "warm/full" "$cargo_bin" test -p "$package" --locked
+  measure_and_print "warm/fast" bash "$0" gateway-fast
+  measure_and_print "warm/doc" bash "$0" gateway-doc
 
-  echo "[gateway-baseline] warm full run"
-  warm_real="$(measure_command "gateway-baseline warm" "$cargo_bin" test -p "$package" --locked)"
-  printf '[gateway-baseline] warm real: %s s\n' "$warm_real"
-
-  echo "[gateway-baseline] warm fast run"
-  fast_real="$(measure_command "gateway-baseline fast" bash "$0" gateway-fast)"
-  printf '[gateway-baseline] fast real: %s s\n' "$fast_real"
-
-  echo "[gateway-baseline] warm doc run"
-  doc_real="$(measure_command "gateway-baseline doc" bash "$0" gateway-doc)"
-  printf '[gateway-baseline] doc real: %s s\n' "$doc_real"
-
-  echo "[gateway-baseline] warm per-target timing"
-  local real
-  real="$(measure_command "gateway-baseline --lib --bins" "$cargo_bin" test -p "$package" --lib --bins --locked --quiet)"
-  printf '[gateway-baseline] --lib --bins real: %s s\n' "$real"
-
+  echo "[gateway-baseline] per-target"
+  measure_and_print "--lib --bins" "$cargo_bin" test -p "$package" --lib --bins --locked --quiet
   if target_exists "gateway_api_suite"; then
-    real="$(measure_command "gateway-baseline --test gateway_api_suite" "$cargo_bin" test -p "$package" --test gateway_api_suite --locked --quiet)"
-    printf '[gateway-baseline] --test gateway_api_suite real: %s s\n' "$real"
+    measure_and_print "gateway_api_suite" "$cargo_bin" test -p "$package" --test gateway_api_suite --locked --quiet
   else
     echo "[gateway-baseline] --test gateway_api_suite unavailable; skipped"
   fi
 
   if target_exists "policy_api_suite"; then
-    real="$(measure_command "gateway-baseline --test policy_api_suite" "$cargo_bin" test -p "$package" --test policy_api_suite --locked --quiet)"
-    printf '[gateway-baseline] --test policy_api_suite real: %s s\n' "$real"
+    measure_and_print "policy_api_suite" "$cargo_bin" test -p "$package" --test policy_api_suite --locked --quiet
   else
     echo "[gateway-baseline] --test policy_api_suite unavailable; skipped"
   fi
 
   if target_exists "m1_assistant_message_compat_only"; then
-    real="$(measure_command "gateway-baseline --test m1_assistant_message_compat_only" "$cargo_bin" test -p "$package" --test m1_assistant_message_compat_only --locked --quiet)"
-    printf '[gateway-baseline] --test m1_assistant_message_compat_only real: %s s\n' "$real"
+    measure_and_print "m1_assistant_message_compat_only" "$cargo_bin" test -p "$package" --test m1_assistant_message_compat_only --locked --quiet
   else
     echo "[gateway-baseline] --test m1_assistant_message_compat_only unavailable; skipped"
   fi
