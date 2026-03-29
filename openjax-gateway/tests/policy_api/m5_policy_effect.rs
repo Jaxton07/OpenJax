@@ -28,10 +28,10 @@ async fn policy_rule_create_update_publish_affects_submit_turn() {
                 .header("Content-Type", "application/json")
                 .body(Body::from(
                     serde_json::json!({
-                        "id": "read_file_gate",
+                        "id": "read_gate",
                         "decision": "deny",
                         "priority": 120,
-                        "tool_name": "read_file",
+                        "tool_name": "Read",
                         "action": "read",
                         "reason": "deny read before review"
                     })
@@ -48,14 +48,14 @@ async fn policy_rule_create_update_publish_affects_submit_turn() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/v1/policy/rules/read_file_gate")
+                .uri("/api/v1/policy/rules/read_gate")
                 .header("Authorization", auth_header(&access_token))
                 .header("Content-Type", "application/json")
                 .body(Body::from(
                     serde_json::json!({
                         "decision": "ask",
                         "priority": 140,
-                        "tool_name": "read_file",
+                        "tool_name": "Read",
                         "action": "read",
                         "reason": "ask before reading file"
                     })
@@ -90,7 +90,7 @@ async fn policy_rule_create_update_publish_affects_submit_turn() {
         &app,
         &access_token,
         &session_id,
-        "tool:read_file path=Cargo.toml",
+        "tool:Read file_path=Cargo.toml",
     )
     .await;
     assert!(submit_body["turn_id"].as_str().is_some());
@@ -110,7 +110,7 @@ async fn policy_rule_create_update_publish_affects_submit_turn() {
     let approval_event = approval_event.expect("approval_requested event should be persisted");
     assert_eq!(
         approval_event["payload"]["matched_rule_id"],
-        Value::String("read_file_gate".to_string())
+        Value::String("read_gate".to_string())
     );
     assert_eq!(
         approval_event["payload"]["policy_version"],

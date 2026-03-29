@@ -1210,14 +1210,14 @@ mod tests {
             Event::ToolCallStarted {
                 turn_id: 1,
                 tool_call_id: "tc_1".to_string(),
-                tool_name: "read_file".to_string(),
+                tool_name: "Read".to_string(),
                 target: None,
                 display_name: None,
             },
             Event::ToolCallCompleted {
                 turn_id: 1,
                 tool_call_id: "tc_1".to_string(),
-                tool_name: "read_file".to_string(),
+                tool_name: "Read".to_string(),
                 ok: true,
                 output: "ok".to_string(),
                 shell_metadata: None,
