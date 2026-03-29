@@ -182,7 +182,7 @@ pub struct ToolRuntimeConfig {
 
 - `sandbox_mode`: 沙箱模式（WorkspaceWrite、DangerFullAccess）
 - `shell_type`: shell 执行类型（`bash/zsh/sh/pwsh`）
-- `tools_config`: 工具注册与规格配置（例如是否禁用 `shell`、`apply_patch` 规格类型）
+- `tools_config`: 工具注册与规格配置（例如是否禁用 `shell` 规格类型）
 - `prevent_shell_skill_trigger`: 启用后会阻止将 `/skill-name` 这类字符串当作 shell 命令执行
 
 > 兼容性说明：本次更新不引入公开 API 破坏性改动，主要修复配置项生效一致性与并发安全问题。

@@ -25,7 +25,6 @@
 - [read.rs](../handlers/read.rs) - Read 工具处理器
 - [list_dir.rs](../handlers/list_dir.rs) - list_dir 工具处理器
 - [shell.rs](../handlers/shell.rs) - shell 命令处理器
-- [apply_patch.rs](../handlers/apply_patch.rs) - apply_patch 工具处理器
 
 ## 系统类工具
 

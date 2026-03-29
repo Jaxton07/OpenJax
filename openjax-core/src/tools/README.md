@@ -15,7 +15,6 @@
 
 - `handlers/`: 通用工具处理器（read/list_dir/grep_files/glob_files/shell/edit/write_file）
 - `system/`: 系统类只读工具（process_snapshot/system_load/disk_usage）
-- `apply_patch/`: apply_patch 解析与执行子模块
 - `orchestrator.rs`: 工具编排与审批事件联动
 - `spec.rs`: 工具 schema 定义
 - `tool_builder.rs`: 默认工具注册

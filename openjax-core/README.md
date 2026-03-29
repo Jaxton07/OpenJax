@@ -7,7 +7,7 @@ OpenJax 核心引擎总览页。
 
 - `agent/`: Agent 生命周期、回合执行、规划循环、事件流。
 - `model/`: 模型抽象、配置注册、多模型路由、协议适配器。
-- `tools/`: 工具注册与调用编排（含审批、沙箱联动、apply_patch）。
+- `tools/`: 工具注册与调用编排（含审批、沙箱联动）。
 - `streaming/`: 流式事件子系统（parser/orchestrator/sink/replay）。
 - `sandbox/`: shell 工具的沙箱策略、后端执行、降级与审计。
 - `skills/`: Claude/OpenClaw 兼容技能加载、匹配与 prompt 注入。

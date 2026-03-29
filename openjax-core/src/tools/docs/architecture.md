@@ -80,9 +80,7 @@ openjax-core/src/tools/
 │   ├── read.rs            # Read 工具处理器
 │   ├── list_dir.rs        # list_dir 工具处理器
 │   ├── shell.rs          # shell 命令处理器
-│   └── apply_patch.rs     # apply_patch 工具处理器
 ├── shell.rs               # shell 命令（原有）
-├── apply_patch.rs            # apply_patch 工具（原有）
 ├── grep_files.rs             # grep_files 工具（原有）
 ├── （legacy internal read module） # 仅内部保留，非对外契约
 └── list_dir.rs               # list_dir 工具（原有）
