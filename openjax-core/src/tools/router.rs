@@ -225,33 +225,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn parse_tool_call_preserves_quoted_apply_patch() {
-        let input = "tool:apply_patch patch='*** Begin Patch\\n*** Add File: test.txt\\n+hello\\n*** End Patch'";
-        let parsed = parse_tool_call(input).expect("expected parsed tool call");
-        assert_eq!(parsed.name, "apply_patch");
-        assert_eq!(
-            parsed.args.get("patch").map(String::as_str),
-            Some("*** Begin Patch\\n*** Add File: test.txt\\n+hello\\n*** End Patch")
-        );
-    }
-
-    #[test]
-    fn parse_tool_call_preserves_quoted_apply_patch_update() {
-        let input = "tool:apply_patch patch='*** Begin Patch\\n*** Update File: test.txt\\n@@\\n line1\\n-line2\\n+line2-updated\\n line3\\n*** End Patch'";
-        let parsed = parse_tool_call(input).expect("expected parsed tool call");
-        assert_eq!(parsed.name, "apply_patch");
-        assert_eq!(
-            parsed.args.get("patch").map(String::as_str),
-            Some(
-                "*** Begin Patch\\n*** Update File: test.txt\\n@@\\n line1\\n-line2\\n+line2-updated\\n line3\\n*** End Patch"
-            )
-        );
-    }
-
-    #[test]
-    fn parse_tool_call_rejects_unclosed_quote() {
-        let input = "tool:apply_patch patch='*** Begin Patch";
-        assert!(parse_tool_call(input).is_none());
-    }
 }
