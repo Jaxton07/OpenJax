@@ -21,7 +21,7 @@
 - 继续沿用原计划编号，但当前焦点集中在 Phase 6 收尾。
 - 本文只覆盖 `openjax-core` 主链路、相关测试、文档与清理项收口。
 - `planner_tool_action.rs` 保持独立执行模块，不作为本轮默认合并目标。
-- Phase 4 的 `write_file`、`glob_files`、`apply_patch` 描述归位已完成，本文保留为设计与验收记录。
+- Phase 4 的 `write_file`、`glob_files` 描述归位已完成，本文保留为设计与验收记录。
 
 旧总计划 `docs/plan/refactor/tools/native-tool-calling-plan.md` 继续保留为历史背景与最初迁移意图参考；从本文件开始，后续 Phase 4-6 以“当前真实代码状态”为准，而不是以旧计划中已经失效的前置假设为准。
 
@@ -36,7 +36,6 @@
 - `planner.rs` 已基于 `build_system_prompt + build_turn_messages + ModelResponse.content` 驱动对话循环。
 - `planner_tool_action.rs` 保留为独立模块，并已具备 native 输入执行路径。
 - `write_file`、`glob_files` 已作为正式工具能力接入并纳入权限/执行测试。
-- `apply_patch` 详细格式约束已归位到 tool spec，不再重复依赖 prompt 侧长说明。
 - 流式工具事件已保留真实 `tool_name`，不会在 `ToolCallArgsDelta` / `ToolCallReady` 阶段丢失名称。
 - `tool_use` 轮次不再误发普通 `ResponseTextDelta`。
 - 超出预算的 `tool_use` 不再静默截断，而会补发失败/完成事件进行收口。
@@ -131,7 +130,6 @@ Phase 5 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径
 
 - 新增 `write_file`
 - 新增 `glob_files`
-- 将 `apply_patch` 的详细格式说明从 prompt 侧归位到 tool spec 描述
 - 补齐对应的 handler、spec、注册、权限声明与测试
 
 #### 组件边界
@@ -149,14 +147,12 @@ Phase 5 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径
 - 不重写 planner 主循环
 - 不引入新的工具调度策略
 - 不把 shell 输出分离混入本阶段
-- 不借机扩大 `apply_patch` handler 行为重构范围
 
 #### 完成定义
 
 - 模型能通过原生 `tools` 参数看到 `write_file` 与 `glob_files`
 - 路由层与执行层可稳定执行
 - 对新增工具具备 `allow`、`ask`/`escalate`、`deny` 三类权限覆盖
-- prompt 中不再保留应归属于 tool description 的冗余 `apply_patch` 格式细节
 
 #### 主要风险
 
@@ -164,7 +160,7 @@ Phase 5 完成后，Native Tool Calling 在 `openjax-core` 范围内的主路径
 - schema、handler 入参和事件语义不一致
 - 仅补 happy path 测试，导致工具接入并未真正完成
 
-当前状态：`write_file` / `glob_files` 已接入并覆盖权限/执行测试；`apply_patch` 详细格式描述已归位到 tool spec。
+当前状态：`write_file` / `glob_files` 已接入并覆盖权限/执行测试。
 
 ### Phase 5：Shell 输出分离（已完成）
 

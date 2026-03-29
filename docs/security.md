@@ -44,7 +44,7 @@ All file operations are validated against:
 ## Risks
 
 1. **Command Execution**: Even with restrictions, dangerous commands can slip through
-2. **File Modification**: `apply_patch` can modify or delete files
+2. **File Modification**: `write_file` and `Edit` tools can modify files
 3. **Data Exfiltration**: In `danger_full_access` mode, any data can be exfiltrated
 4. **Model Misbehavior**: The AI model may generate unexpected commands
 

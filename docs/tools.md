@@ -10,7 +10,7 @@
 | `list_dir` | 列出目录内容 | 只读 |
 | `grep_files` | 递归搜索文件 | 只读 |
 | `shell` | 执行 shell 命令 | 可配置 |
-| `apply_patch` | 应用文件补丁 | 可配置 |
+| `write_file` | 写入文件内容 | 可配置 |
 
 ---
 
@@ -186,121 +186,42 @@ agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(DecisionKind::
 
 ---
 
-## 5. apply_patch
+## 5. write_file
 
-应用文件补丁，支持多种文件操作。
+写入文件内容，支持创建新文件或覆盖已有文件。
 
 ### 参数
 
 | 参数名 | 类型 | 必需 | 说明 |
 |-------|------|------|------|
-| `patch` | string | 是 | 补丁文本 |
-
-### 补丁格式
-
-补丁必须以 `*** Begin Patch` 开始，以 `*** End Patch` 结束。
-
-#### 5.1 Add File - 添加新文件
-
-```
-*** Begin Patch
-*** Add File: path/to/file.txt
-+第一行内容
-+第二行内容
-*** End Patch
-```
-
-#### 5.2 Delete File - 删除文件
-
-```
-*** Begin Patch
-*** Delete File: path/to/file.txt
-*** End Patch
-```
-
-#### 5.3 Update File - 更新文件
-
-使用 hunk 格式进行精确更新：
-
-```
-*** Begin Patch
-*** Update File: path/to/file.txt
-@@
- 上下文行1
--要删除的行
-+要添加的行
- 上下文行2
-@@
- 另一个 hunk
--删除的行
-+添加的行
-*** End Patch
-```
-
-**Hunk 格式说明：**
-- `@@`：标记 hunk 开始
-- ` `（空格）：上下文行（必须匹配）
-- `-`：删除的行（必须匹配）
-- `+`：添加的行
-
-#### 5.4 Move File - 移动文件
-
-```
-*** Begin Patch
-*** Move File: from.txt -> to.txt
-*** End Patch
-```
-
-#### 5.5 Rename File - 重命名文件
-
-```
-*** Begin Patch
-*** Rename File: old.txt -> new.txt
-*** End Patch
-```
+| `file_path` | string | 是 | 文件路径（相对工作区根目录） |
+| `content` | string | 是 | 文件内容 |
 
 ### 使用示例
 
 ```bash
-tool:apply_patch patch='*** Begin Patch
-*** Add File: new.rs
-+// new file
-+fn main() {
-+    println!("Hello");
-+}
-*** End Patch'
+tool:write_file file_path=src/lib.rs content='fn main() {
+    println!("Hello");
+}'
 ```
 
 ### 输出格式
 
-返回操作摘要，每行一个操作：
+返回操作结果：
 
 ```
-patch applied successfully
-ADD new.rs
-UPDATE src/lib.rs
-DELETE old.txt
-MOVE from.txt -> to.txt
+written src/lib.rs (42 bytes)
 ```
-
-### 回滚机制
-
-如果在应用补丁过程中任何操作失败，所有已应用的操作都会自动回滚，确保工作区状态一致。
 
 ### 安全特性
 
 - 路径验证：所有路径都经过验证
-- 重复操作检查：同一文件不能有多个操作
-- 存在性检查：
-  - Add File：目标文件不能已存在
-  - Delete File：目标文件必须存在且为文件
-  - Update File：目标文件必须存在
-  - Move/Rename File：源文件必须存在，目标文件不能已存在
-- Hunk 匹配验证：Update File 的上下文必须完全匹配
+- 父目录不存在时自动创建
+- 文件已存在时直接覆盖
 
 ### 实现位置
 
-[tools.rs:391-821](../openjax-core/src/tools.rs#L391-L821)
+[handlers/write_file.rs](../openjax-core/src/tools/handlers/write_file.rs)
 
 ---
 
@@ -314,7 +235,7 @@ match call.name.as_str() {
     "list_dir" => list_dir(call, cwd).await,
     "grep_files" => grep_files(call, cwd).await,
     "shell" => shell(call, cwd, config).await,
-    "apply_patch" => apply_patch_tool(call, cwd).await,
+    "write_file" => write_file(call, cwd).await,
     _ => Err(anyhow!("unknown tool: {}", call.name))
 }
 ```
@@ -364,7 +285,7 @@ export OPENJAX_SANDBOX_MODE="workspace_write"  # | danger_full_access
 zsh -c "cargo test -p openjax-core tools"
 
 # 运行特定测试
-zsh -c "cargo test -p openjax-core apply_patch_add_file_works"
+zsh -c "cargo test -p openjax-core write_file_works"
 ```
 
 ---

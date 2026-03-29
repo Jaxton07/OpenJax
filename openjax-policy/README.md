@@ -104,7 +104,7 @@ ToolOrchestrator::run()
 |------|--------|-------------|-------------------|----------|
 | `read_file` / `list_dir` / `grep_files` | `read` | `[fs_read]` | `[]` | **Allow** |
 | `process_snapshot` / `system_load` / `disk_usage` | `observe` | `[process_exec]` | `[]` | **Allow** |
-| `apply_patch` / `edit_file_range` | `write` | `[fs_write]` | `[mutating]` | **Ask** |
+| `write_file` / `edit_file_range` | `write` | `[fs_write]` | `[mutating]` | **Ask** |
 | `shell` / `exec_command` | `exec` | `[process_exec]` | `[]`（命令级动态注入） | 见下节 |
 | 未知工具（无 descriptor） | `invoke` | `[]` | `[unknown_tool_descriptor]` | **Ask** |
 
@@ -131,7 +131,7 @@ Shell 的 descriptor 初始 `risk_tags=[]`，orchestrator 调用 `extract_shell_
 
 ## 8. 审批复用机制
 
-- **非 shell 的 mutating 工具**（如 `apply_patch`）：同一 turn 内首次审批通过后，后续同 turn 内的调用自动复用，无需再次弹出审批。
+- **非 shell 的 mutating 工具**（如 `write_file`）：同一 turn 内首次审批通过后，后续同 turn 内的调用自动复用，无需再次弹出审批。
 - **shell 工具**：每次调用都独立审批，不复用。
 
 ## 9. 本地开发与验证

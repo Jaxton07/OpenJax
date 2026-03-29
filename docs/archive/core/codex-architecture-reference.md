@@ -83,7 +83,6 @@ codex/
   - 动态工具过滤和规格定义
 
 - **工具处理器** (`handlers/`):
-  - `apply_patch.rs` - 代码补丁应用
   - `shell.rs` / `unified_exec.rs` - 命令执行
   - `read_file.rs` - 读取文件
   - `list_dir.rs` - 列出目录
@@ -171,27 +170,6 @@ pub async fn process_exec_tool_call(
 - stdout/stderr
 - 是否超时
 
-#### Apply Patch Tool (`core/src/apply_patch.rs`)
-```rust
-pub(crate) async fn apply_patch(
-    turn_context: &TurnContext,
-    action: ApplyPatchAction,
-) -> InternalApplyPatchInvocation
-```
-
-**补丁格式**:
-```
-*** Begin Patch
-*** Add File: <path>
-+<line>
-*** Update File: <path>
-@@
- <context line>
--<old line>
-+<new line>
-*** Delete File: <path>
-*** End Patch
-```
 
 ### 3.3 工具处理器注册
 
@@ -199,7 +177,6 @@ pub(crate) async fn apply_patch(
 // 工具注册示例
 ToolRegistryBuilder::new("codex")
     .with_shell_tool(tools_config.shell_type)
-    .with_apply_patch_tool(tools_config.apply_patch_tool_type)
     .with_file_tools()
     .with_grep_tool()
     // ...
