@@ -110,7 +110,7 @@ impl ToolInvocation {
                 capabilities: vec!["fs_read".to_string()],
                 risk_tags: vec![],
             },
-            "Edit" | "apply_patch" => PolicyDescriptor {
+            "Edit" => PolicyDescriptor {
                 action: "write".to_string(),
                 capabilities: vec!["fs_write".to_string()],
                 risk_tags: vec!["mutating".to_string()],
