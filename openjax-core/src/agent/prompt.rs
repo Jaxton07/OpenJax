@@ -37,9 +37,8 @@ Tool selection policy:\n\
 - Modify existing files only after calling `Read`.\n\
 - Use `Edit` for single-file existing-text edits.\n\
 - If `Edit` fails, call `Read` before retrying.\n\
-- For multi-file edits or file operations (add/delete/move/rename), use apply_patch.\n\
+- For multi-file edits or file operations (add/delete/move/rename), use shell.\n\
 - Prefer process_snapshot/system_load/disk_usage for process/host metrics over shell ps/top/df.\n\
-- For apply_patch, follow the format contract in the apply_patch tool description.\n\
 - When modifying existing files, preserve the source file's formatting and style.\n\
 - For shell, prefer workspace-relative commands; avoid absolute-path `cd` unless required.\n\
 - Skill markers like /skill-name are not shell executables; convert selected skills into concrete tool steps.\n\
@@ -161,7 +160,7 @@ pub(crate) fn build_planner_input(
     let mut prompt = format!(
         "You are OpenJax's planning layer.\n\
 Return ONLY valid JSON with one of two shapes:\n\
-1) Tool call: {{\"action\":\"tool\",\"tool\":\"Read|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|Edit\",\"args\":{{...}}}}\n\
+1) Tool call: {{\"action\":\"tool\",\"tool\":\"Read|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|Edit\",\"args\":{{...}}}}\n\
 2) Final answer: {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Rules:\n\
@@ -177,15 +176,13 @@ Rules:\n\
 - Skills invocation rule: skill markers like `/skill-name` are not shell executables.\n\
 - Do not call shell with a lone slash-trigger command (e.g. `/xxx`); convert selected skills into concrete tool steps.\n\
 - Prefer process_snapshot/system_load/disk_usage for process and host metrics instead of shell ps/top/df commands when possible.\n\
-- For apply_patch, follow the format contract in the apply_patch tool description.\n\
 - When modifying existing files, preserve the source file's formatting and style (indentation, line endings, spacing, quotes, trailing commas, and surrounding conventions).\n\
 - For Edit, provide args: file_path, old_string, new_string.\n\
 - Tool selection policy:\n\
   - Modify existing files only after calling `Read`.\n\
   - Prefer `Edit` for single-file existing-text replacements.\n\
-  - Prefer apply_patch for multi-file edits or file operations (add/delete/move/rename).\n\
+  - For multi-file edits or file operations (add/delete/move/rename), use shell.\n\
   - If `Edit` fails, call `Read` before retrying.\n\
-  - If apply_patch fails with context mismatch (e.g., hunk context not found), call `Read` before any further edits.\n\
 - IMPORTANT: Do NOT repeat the same tool call with the same arguments. Check the tool execution history carefully.\n\
 - If a tool was already called and returned results, use those results to decide the next action.\n\
 - Only call a tool again if you need different arguments or if the previous call failed.\n\
@@ -215,7 +212,7 @@ pub(crate) fn build_json_repair_prompt(previous_output: &str) -> String {
         "Your previous response did not match the required JSON schema.\n\
 Return ONLY valid JSON. Do not include markdown, thoughts, or extra text.\n\
 Allowed outputs:\n\
-1) {{\"action\":\"tool\",\"tool\":\"Read|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|Edit\",\"args\":{{...}}}}\n\
+1) {{\"action\":\"tool\",\"tool\":\"Read|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|Edit\",\"args\":{{...}}}}\n\
 2) {{\"action\":\"final\",\"message\":\"...\"}}\n\
 \n\
 Previous response:\n{previous_output}\n"
