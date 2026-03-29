@@ -1,7 +1,6 @@
 import type { RefObject } from "react";
 import { SendIcon, StopCircleIcon } from "../../pic/icon";
 import type { ContextUsageState } from "../../types/chat";
-import type { SlashCommandDto } from "../../types/gateway";
 import ContextUsageRing from "./ContextUsageRing";
 import PolicyLevelButton from "./PolicyLevelButton";
 
@@ -13,10 +12,10 @@ interface ComposerInputProps {
   onSubmit: () => void;
   contextUsage?: ContextUsageState | null;
   showSlashDropdown?: boolean;
-  slashCommands?: SlashCommandDto[];
   slashSelectedIndex?: number;
   onSlashIndexChange?: (index: number) => void;
   onSlashClose?: () => void;
+  onSlashSubmit?: () => void;
   policyLevel?: "allow" | "ask" | "deny";
   onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
   isStreaming?: boolean;
@@ -34,6 +33,7 @@ export default function ComposerInput({
   slashSelectedIndex,
   onSlashIndexChange,
   onSlashClose,
+  onSlashSubmit,
   policyLevel,
   onPolicyLevelChange,
   isStreaming,
@@ -60,6 +60,10 @@ export default function ComposerInput({
           }
           if (event.key === "Enter" && !event.shiftKey && !disabled) {
             event.preventDefault();
+            if (showSlashDropdown && onSlashSubmit) {
+              onSlashSubmit();
+              return;
+            }
             onSubmit();
           }
           if (showSlashDropdown && onSlashIndexChange && onSlashClose) {

@@ -268,7 +268,7 @@ export interface SlashCommandDto {
   aliases: string[];
   description: string;
   usage_hint: string;
-  kind: "builtin" | "session_action" | "skill";
+  kind: "builtin" | "session_action" | "skill" | "local_picker";
   replaces_input: boolean;
 }
 

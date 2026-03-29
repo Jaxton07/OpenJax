@@ -36,7 +36,7 @@ export default function Composer({
 }: ComposerProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { commands, filterCommands } = useSlashCommands(baseUrl, accessToken);
+  const { commands, filterCommands, findCommand } = useSlashCommands(baseUrl, accessToken);
 
   const [showSlashDropdown, setShowSlashDropdown] = useState(false);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
@@ -69,55 +69,70 @@ export default function Composer({
     }
   }, [input, filterCommands]);
 
-  const submit = async () => {
-    const trimmed = input.trim();
-    if (!trimmed) return;
-
-    // 检测是否是斜杠命令（支持带尾随空格的输入，如从下拉选中后的 "/explain "）
-    const slashMatch = trimmed.match(/^\/([\w]+)$/);
-    if (slashMatch) {
-      const cmdName = slashMatch[1].toLowerCase();
-      // 优先在完整命令列表中查找（不依赖 slashMatches 状态，后者可能因输入变化而过期）
-      const matched = commands.find(
-        (c) => c.name === cmdName || c.aliases.includes(cmdName)
-      );
-
-      if (matched) {
-        if (matched.kind === "session_action") {
-          // clear / compact：调用 /slash API，需要 session_id
-          if (!sessionId) {
-            setInput("");
-            return;
-          }
-          try {
-            await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/slash`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({ command: cmdName }),
-            });
-          } catch {
-            // 网络失败时静默忽略，避免 UI 卡住
-          }
-          setInput("");
-          const el = textareaRef.current;
-          if (el) el.style.height = "";
-          setShowSlashDropdown(false);
-          return;
-        }
-
-        // builtin（如 help）和 skill 类型：作为普通 turn 提交，agent 响应
-      }
-    }
-
-    // 普通消息提交
-    const content = trimmed;
+  const resetComposer = () => {
     setInput("");
     const el = textareaRef.current;
     if (el) el.style.height = "";
     setShowSlashDropdown(false);
+  };
+
+  const submitResolvedCommand = async (command: SlashCommandDto) => {
+    const cmdName = command.name.toLowerCase();
+
+    if (cmdName === "policy") {
+      resetComposer();
+      return;
+    }
+
+    if (command.kind === "session_action") {
+      if (!sessionId) {
+        resetComposer();
+        return;
+      }
+      try {
+        await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/slash`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ command: cmdName }),
+        });
+      } catch {
+        // 网络失败时静默忽略，避免 UI 卡住
+      }
+      resetComposer();
+      return;
+    }
+
+    if (command.kind === "local_picker") {
+      resetComposer();
+      return;
+    }
+
+    resetComposer();
+    try {
+      await onSend(`/${cmdName}`);
+    } catch {
+      // 忽略
+    }
+  };
+
+  const submit = async () => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    const slashMatch = trimmed.match(/^\/([\w]+)$/);
+    if (slashMatch) {
+      const matched = findCommand(trimmed);
+      if (matched) {
+        await submitResolvedCommand(matched);
+        return;
+      }
+    }
+
+    const content = trimmed;
+    resetComposer();
     try {
       await onSend(content);
     } catch {
@@ -133,6 +148,15 @@ export default function Composer({
     setInput(`/${cmd.name} `);
     setShowSlashDropdown(false);
     textareaRef.current?.focus();
+  };
+
+  const handleSlashSubmit = async () => {
+    const matched = slashMatches[effectiveSlashIndex];
+    if (!matched) {
+      await submit();
+      return;
+    }
+    await submitResolvedCommand(matched);
   };
 
   // Clamp selected index to valid range when dropdown is visible
@@ -163,6 +187,7 @@ export default function Composer({
         slashSelectedIndex={effectiveSlashIndex}
         onSlashIndexChange={(i) => setSlashSelectedIndex(i)}
         onSlashClose={handleSlashClose}
+        onSlashSubmit={() => void handleSlashSubmit()}
         policyLevel={policyLevel}
         onPolicyLevelChange={onPolicyLevelChange}
         isStreaming={isStreaming}
