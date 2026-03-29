@@ -48,6 +48,9 @@ export default function ToolStepCard({ defaultExpanded = false, step }: ToolStep
       >
         <span className={dotClass} aria-hidden="true" />
         <span className="step-name">{step.title || step.type || "tool"}</span>
+        {step.target ? (
+          <span className="step-target">{step.target}</span>
+        ) : null}
         {step.subtitle ? (
           <>
             <span className="step-sep" aria-hidden="true">/</span>

@@ -291,6 +291,16 @@
   flex-shrink: 0;
 }
 
+.step-target {
+  color: var(--ink-3);
+  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .step-sep {
   color: var(--ink-5);
   font-size: 11px;

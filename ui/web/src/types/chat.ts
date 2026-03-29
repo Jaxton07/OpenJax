@@ -46,6 +46,7 @@ export interface ToolStep {
   code?: string;
   output?: string;
   delta?: string;
+  target?: string;
   approvalId?: string;
   toolCallId?: string;
   meta?: ToolStepMeta;

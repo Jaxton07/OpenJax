@@ -138,7 +138,7 @@ function createStepFromEvent(event: StreamEvent): ToolStep {
       id: resolveToolStepId(event, "tool_call_started"),
       type: "tool",
       title: toolStartedPayload(event).display_name ?? String(toolStartedPayload(event).tool_name ?? "tool"),
-      subtitle: String(toolStartedPayload(event).target ?? ""),
+      target: String(toolStartedPayload(event).target ?? ""),
       status: "running",
       time: event.timestamp,
       startEventSeq: event.event_seq,

@@ -119,6 +119,39 @@ describe("ToolStepCard", () => {
     expect(screen.getByText("2m 5s")).toBeInTheDocument();
   });
 
+  it("renders target filename when provided", () => {
+    render(
+      <ToolStepCard
+        step={{
+          id: "step_target",
+          type: "tool",
+          title: "Read",
+          target: "/Users/ericw/work/code/ai/openJax/ui/web/src/types/chat.ts",
+          status: "success",
+          time: "2026-01-01T00:00:00Z"
+        }}
+      />
+    );
+
+    expect(screen.getByText("/Users/ericw/work/code/ai/openJax/ui/web/src/types/chat.ts")).toBeInTheDocument();
+  });
+
+  it("does not render target when not provided", () => {
+    render(
+      <ToolStepCard
+        step={{
+          id: "step_no_target",
+          type: "tool",
+          title: "shell",
+          status: "success",
+          time: "2026-01-01T00:00:00Z"
+        }}
+      />
+    );
+
+    expect(document.querySelector(".step-target")).not.toBeInTheDocument();
+  });
+
   it("renders structured shell metadata details", () => {
     render(
       <ToolStepCard
