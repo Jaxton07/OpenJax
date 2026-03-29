@@ -15,7 +15,6 @@ pub struct ToolSpec {
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub struct ToolsConfig {
     pub shell_type: ShellToolType,
-    pub apply_patch_tool_type: Option<ApplyPatchToolType>,
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
@@ -26,76 +25,11 @@ pub enum ShellToolType {
     Disabled,
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-pub enum ApplyPatchToolType {
-    Default,
-    Freeform,
-    Disabled,
-}
-
 impl Default for ToolsConfig {
     fn default() -> Self {
         Self {
             shell_type: ShellToolType::Default,
-            apply_patch_tool_type: Some(ApplyPatchToolType::Disabled),
         }
-    }
-}
-
-/// Freeform 工具格式
-#[derive(Debug, Clone)]
-pub struct FreeformFormat {
-    pub r#type: String,
-    pub syntax: String,
-    pub definition: String,
-}
-
-const APPLY_PATCH_FORMAT_DETAIL: &str = r#"Patch format contract:
-- Start with `*** Begin Patch` and end with `*** End Patch`.
-- Use one or more operations: `*** Add File: <path>`, `*** Update File: <path>`, `*** Delete File: <path>`.
-- For file moves/renames, include `*** Move to: <path>` directly after `*** Update File: <path>`.
-- In `*** Update File` hunks, after `@@`, every line must start with exactly one prefix:
-  - ` ` for context lines
-  - `-` for removed lines
-  - `+` for added lines
-- Preserve source formatting/style when editing existing files."#;
-
-/// 创建 apply_patch Freeform 工具规范
-pub fn create_apply_patch_freeform_spec() -> ToolSpec {
-    ToolSpec {
-        name: "apply_patch".to_string(),
-        description: format!(
-            "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.\n\n{}",
-            APPLY_PATCH_FORMAT_DETAIL
-        ),
-        input_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "format": {
-                    "type": "object",
-                    "properties": {
-                        "type": {
-                            "type": "string",
-                            "description": "Format type (e.g., 'grammar')"
-                        },
-                        "syntax": {
-                            "type": "string",
-                            "description": "Syntax parser (e.g., 'lark')"
-                        },
-                        "definition": {
-                            "type": "string",
-                            "description": "Grammar definition"
-                        }
-                    }
-                }
-            },
-            "required": []
-        }),
-        output_schema: Some(serde_json::json!({
-            "type": "string",
-            "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
-        })),
-        display_name: "Apply Patch".to_string(),
     }
 }
 
@@ -327,32 +261,6 @@ pub fn create_exec_command_spec() -> ToolSpec {
     spec
 }
 
-/// 创建 apply_patch 工具规范
-pub fn create_apply_patch_spec() -> ToolSpec {
-    ToolSpec {
-        name: "apply_patch".to_string(),
-        description: format!(
-            "Apply a patch to the workspace and return a summary of applied changes.\n\n{}",
-            APPLY_PATCH_FORMAT_DETAIL
-        ),
-        input_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "patch": {
-                    "type": "string",
-                    "description": "Patch text to apply"
-                }
-            },
-            "required": ["patch"]
-        }),
-        output_schema: Some(serde_json::json!({
-            "type": "string",
-            "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
-        })),
-        display_name: "Apply Patch".to_string(),
-    }
-}
-
 /// 创建 Edit 工具规范
 pub fn create_edit_spec() -> ToolSpec {
     ToolSpec {
@@ -514,16 +422,6 @@ pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
         specs.push(create_shell_spec());
     }
 
-    if !matches!(
-        config.apply_patch_tool_type,
-        Some(ApplyPatchToolType::Disabled)
-    ) {
-        specs.push(match config.apply_patch_tool_type {
-            Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),
-            _ => create_apply_patch_spec(),
-        });
-    }
-
     specs
 }
 
@@ -546,12 +444,4 @@ mod tests {
         assert!(!names.contains(&"apply_patch".to_string()));
     }
 
-    #[test]
-    fn build_all_specs_hides_apply_patch_when_disabled() {
-        let names: Vec<String> = build_all_specs(&ToolsConfig::default())
-            .into_iter()
-            .map(|spec| spec.name)
-            .collect();
-        assert!(!names.contains(&"apply_patch".to_string()));
-    }
 }
