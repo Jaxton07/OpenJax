@@ -1,4 +1,3 @@
-pub mod apply_patch;
 pub mod edit;
 pub mod glob_files;
 pub mod grep_files;
@@ -7,7 +6,6 @@ pub mod read;
 pub mod shell;
 pub mod write_file;
 
-pub use apply_patch::ApplyPatchHandler;
 pub use edit::EditHandler;
 pub use glob_files::GlobFilesHandler;
 pub use grep_files::GrepFilesHandler;

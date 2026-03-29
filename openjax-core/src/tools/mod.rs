@@ -1,5 +1,3 @@
-pub mod apply_patch;
-pub mod apply_patch_interceptor;
 pub mod common;
 pub mod context;
 pub mod dynamic;
@@ -20,9 +18,6 @@ pub mod shell;
 pub mod spec;
 pub mod system;
 pub mod tool_builder;
-pub use apply_patch::{
-    PlannedAction, apply_patch_actions, normalize_patch_arg, parse_apply_patch, plan_patch_actions,
-};
 pub use common::{
     contains_parent_dir, parse_tool_args, resolve_workspace_path, resolve_workspace_path_for_write,
     take_bytes_at_char_boundary, verify_path_exists,
