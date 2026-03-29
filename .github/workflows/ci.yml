@@ -31,6 +31,40 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace --locked
 
+  gateway-fast:
+    name: Gateway Fast Checks
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run gateway fast checks
+        run: make gateway-fast
+
+  gateway-doc:
+    name: Gateway Doc Checks
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run gateway doc checks
+        run: make gateway-doc
+
   web:
     name: Web Build and Test
     if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository }}

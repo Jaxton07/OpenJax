@@ -56,7 +56,20 @@ openjax-gateway/
 │   │   ├── daemon.rs
 │   │   └── dispatch.rs
 └── tests
-    └── gateway_api.rs
+    ├── gateway_api_suite.rs
+    ├── gateway_api/
+    │   ├── mod.rs
+    │   ├── helpers.rs
+    │   ├── m1_auth.rs
+    │   ├── m2_session_lifecycle.rs
+    │   ├── m3_slash_and_compact.rs
+    │   ├── m4_approval.rs
+    │   ├── m5_stream_and_timeline.rs
+    │   ├── m6_provider.rs
+    │   └── m7_policy_level.rs
+    ├── policy_api_suite.rs
+    ├── policy_api/
+    └── m1_assistant_message_compat_only.rs
 ```
 
 ## 路由概览
@@ -142,7 +155,7 @@ openjax-gateway/
   - `stdio/protocol.rs`：协议信封类型（Request/Response/EventEnvelope）
   - `stdio/daemon.rs`：`SessionState`、`DaemonApprovalHandler`
   - `stdio/dispatch.rs`：消息分发、I/O helpers
-- `tests/gateway_api.rs`：鉴权、`/clear`、审批幂等、SSE 回放窗口等集成测试。
+- `tests/gateway_api_suite.rs` / `tests/gateway_api/`：gateway API 主集成测试入口，按鉴权、session 生命周期、slash/compact、审批、stream/timeline、provider、policy level 分域组织。
 
 ## 事件持久化模型
 
@@ -177,9 +190,20 @@ openjax-gateway/
 
 ```bash
 zsh -lc "cargo build -p openjax-gateway"
-zsh -lc "cargo test -p openjax-gateway"
 zsh -lc "cargo run -p openjax-gateway"
 ```
+
+测试建议按分层入口执行（与 `scripts/test/gateway.sh` 和 `Makefile` 对齐）：
+
+```bash
+zsh -lc "make gateway-fast"
+zsh -lc "make gateway-doc"
+zsh -lc "make gateway-full"
+```
+
+- 日常开发推荐使用 `gateway-fast`（快速反馈主链路）。
+- 文档校验推荐使用 `gateway-doc`（仅 `--doc` / doctest）。
+- 合并前推荐使用 `gateway-full`（覆盖 openjax-gateway 完整测试路径）。
 
 ## WebUI 流式接入（SSE）
 
