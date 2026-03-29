@@ -109,7 +109,7 @@ tool:grep_files pattern=fn main path=src include=*.rs
 ### 2. 读取文件
 
 ```bash
-tool:read_file file_path=src/lib.rs offset=1 limit=50
+tool:Read file_path=src/lib.rs offset=1 limit=50
 ```
 
 ### 3. 列出目录
@@ -122,12 +122,6 @@ tool:list_dir dir_path=src depth=2
 
 ```bash
 tool:shell cmd='cargo test' require_escalated=true
-```
-
-### 5. 应用补丁
-
-```bash
-tool:apply_patch patch='*** Begin Patch\n*** Add File: new.rs\n+// content\n*** End Patch'
 ```
 
 ## 错误处理
@@ -183,7 +177,7 @@ tool:shell cmd='cargo test' timeout_ms=60000
 
 ```bash
 # 使用分页减少数据传输
-tool:read_file file_path=large_file.txt offset=1 limit=100
+tool:Read file_path=large_file.txt offset=1 limit=100
 tool:list_dir dir_path=src offset=1 limit=50
 ```
 

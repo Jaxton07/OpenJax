@@ -12,7 +12,9 @@ export default function ToolStepCard({ defaultExpanded = false, step }: ToolStep
   const [expanded, setExpanded] = useState(defaultExpanded);
   const reactId = useId().replace(/:/g, "");
   const detailId = `step-detail-${reactId}`;
-  const hasBody = Boolean(step.description || step.code || step.output);
+  const detailLines = [step.description, step.meta?.backendSummary, step.meta?.riskSummary, step.meta?.hint]
+    .filter((line): line is string => Boolean(line));
+  const hasBody = detailLines.length > 0 || Boolean(step.code || step.output);
   const timeText = formatStepDuration(step);
 
   const dotClass =
@@ -46,6 +48,9 @@ export default function ToolStepCard({ defaultExpanded = false, step }: ToolStep
       >
         <span className={dotClass} aria-hidden="true" />
         <span className="step-name">{step.title || step.type || "tool"}</span>
+        {step.target ? (
+          <span className="step-target">{step.target}</span>
+        ) : null}
         {step.subtitle ? (
           <>
             <span className="step-sep" aria-hidden="true">/</span>
@@ -76,7 +81,9 @@ export default function ToolStepCard({ defaultExpanded = false, step }: ToolStep
           className={`step-detail${expanded ? " open" : ""}`}
           role="region"
         >
-          {step.description ? <p className="step-desc">{step.description}</p> : null}
+          {detailLines.map((line) => (
+            <p key={line} className="step-desc">{line}</p>
+          ))}
           {step.code ? <pre className="step-code">{renderDiff(step.code)}</pre> : null}
           {step.output ? <pre className="step-output">{step.output}</pre> : null}
         </div>

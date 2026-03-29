@@ -65,7 +65,8 @@ async fn process_snapshot_dispatch_returns_json() {
         .expect("process_snapshot should execute");
 
     assert!(outcome.success);
-    let json: serde_json::Value = serde_json::from_str(&outcome.output).expect("json output");
+    let json: serde_json::Value =
+        serde_json::from_str(&outcome.display_output).expect("json output");
     assert!(json.get("items").is_some());
     assert_eq!(approval.calls.load(Ordering::Relaxed), 0);
 }

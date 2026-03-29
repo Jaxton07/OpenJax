@@ -88,8 +88,6 @@ pub struct Agent {
     max_planner_rounds_per_turn: usize,
     recent_tool_calls: Vec<ToolCallRecord>,
     state_epoch: u64,
-    dispatcher_config: dispatcher::DispatcherConfig,
-    tool_batch_v2_enabled: bool,
     approval_handler: Arc<dyn approval::ApprovalHandler>,
     event_sink: Option<UnboundedSender<Event>>,
     policy_runtime: Option<PolicyRuntime>,

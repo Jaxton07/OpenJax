@@ -54,13 +54,6 @@ ExecParams {
 // 获取平台沙箱
 get_platform_sandbox(windows_enabled: bool) -> Option<SandboxType>
 
-// 评估补丁安全
-assess_patch_safety(
-    action: &ApplyPatchAction,
-    policy: AskForApproval,
-    sandbox_policy: &SandboxPolicy,
-    cwd: &Path,
-) -> SafetyCheck
 ```
 
 ### 工具执行
@@ -73,11 +66,6 @@ process_exec_tool_call(
     sandbox_cwd: &Path,
 ) -> Result<ExecToolCallOutput>
 
-// 应用补丁
-apply_patch(
-    turn_context: &TurnContext,
-    action: ApplyPatchAction,
-) -> InternalApplyPatchInvocation
 ```
 
 ## 文件路径
@@ -89,7 +77,6 @@ codex-rs/
 │   ├── codex.rs           # Codex 主类
 │   ├── client.rs           # 模型客户端
 │   ├── exec.rs            # 执行工具
-│   ├── apply_patch.rs     # 补丁工具
 │   ├── safety.rs          # 安全评估
 │   ├── exec_policy.rs     # 执行策略
 │   ├── agent/             # 代理编排

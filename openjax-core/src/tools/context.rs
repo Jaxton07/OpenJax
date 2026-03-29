@@ -105,12 +105,12 @@ impl std::fmt::Debug for ToolInvocation {
 impl ToolInvocation {
     pub fn policy_descriptor(&self) -> Option<PolicyDescriptor> {
         let descriptor = match self.tool_name.as_str() {
-            "read_file" | "list_dir" | "grep_files" => PolicyDescriptor {
+            "Read" | "list_dir" | "grep_files" => PolicyDescriptor {
                 action: "read".to_string(),
                 capabilities: vec!["fs_read".to_string()],
                 risk_tags: vec![],
             },
-            "apply_patch" | "edit_file_range" => PolicyDescriptor {
+            "Edit" => PolicyDescriptor {
                 action: "write".to_string(),
                 capabilities: vec!["fs_write".to_string()],
                 risk_tags: vec!["mutating".to_string()],

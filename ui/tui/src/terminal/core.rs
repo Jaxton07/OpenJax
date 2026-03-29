@@ -1,7 +1,6 @@
 use std::io;
 use std::io::Stdout;
 use std::io::Write;
-
 use std::ops::Range;
 
 use crossterm::cursor::MoveTo;
@@ -154,7 +153,6 @@ where
             return Ok(());
         }
         let last_cursor_pos = self.last_known_cursor_pos;
-        // DECSTBM uses 1-based inclusive bounds; `region` end here is already screen-row upper bound.
         queue!(
             self.backend,
             SetScrollRegion(region.start + 1..region.end),

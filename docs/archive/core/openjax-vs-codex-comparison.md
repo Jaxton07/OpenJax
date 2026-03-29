@@ -58,7 +58,6 @@ for executed_count in 0..MAX_TOOL_CALLS_PER_TURN {
 ### 3.2 工具系统
 
 **Codex**: `core/src/tools/`
-- `apply_patch.rs` - 代码补丁
 - `shell.rs` / `unified_exec.rs` - 命令执行
 - `read_file.rs` - 读取文件
 - `list_dir.rs` - 列出目录
@@ -74,7 +73,7 @@ for executed_count in 0..MAX_TOOL_CALLS_PER_TURN {
 | `list_dir` | ✅ 防止逃逸 | 列出目录 |
 | `grep_files` | ✅ 防止逃逸 | 文本搜索 |
 | `shell` | ✅ 审批 + 白名单 | Shell 命令执行 |
-| `apply_patch` | ✅ 路径验证 + 回滚 | Add/Update/Delete 文件 |
+| `write_file` | ✅ 路径验证 | 创建/覆盖文件 |
 
 ### 3.3 沙箱机制
 

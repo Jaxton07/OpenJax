@@ -57,6 +57,144 @@ describe("Composer slash commands", () => {
     expect(await screen.findByText("/help")).toBeInTheDocument();
   });
 
+  it("filters policy out of the slash command suggestions", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          commands: [
+            {
+              name: "policy",
+              aliases: [],
+              description: "Switch policy level",
+              usage_hint: "/policy",
+              kind: "local_picker",
+              replaces_input: false,
+            },
+            {
+              name: "clear",
+              aliases: ["cls"],
+              description: "Clear current session context",
+              usage_hint: "/clear",
+              kind: "session_action",
+              replaces_input: false,
+            },
+          ],
+        }),
+      })
+    );
+
+    render(
+      <Composer
+        baseUrl="http://127.0.0.1:8765"
+        accessToken="token-123"
+        sessionId="sess-1"
+        onSend={vi.fn()}
+        onNewChat={vi.fn()}
+      />
+    );
+
+    await userEvent.type(
+      screen.getByPlaceholderText("Ask anything (type / for commands)"),
+      "/"
+    );
+
+    expect(await screen.findByText("/clear")).toBeInTheDocument();
+    expect(screen.queryByText("/policy")).not.toBeInTheDocument();
+  });
+
+  it("submits the selected slash match on enter", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          commands: [
+            {
+              name: "clear",
+              aliases: ["cls"],
+              description: "Clear current session context",
+              usage_hint: "/clear",
+              kind: "session_action",
+              replaces_input: false,
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: "ok",
+          message: "session cleared",
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const onSend = vi.fn();
+
+    render(
+      <Composer
+        baseUrl="http://127.0.0.1:8765"
+        accessToken="token-123"
+        sessionId="sess-clear"
+        onSend={onSend}
+        onNewChat={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("Ask anything (type / for commands)");
+    await userEvent.type(input, "/cle");
+    await userEvent.keyboard("{Enter}");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8765/api/v1/sessions/sess-clear/slash",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ command: "clear" }),
+      })
+    );
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("does not send manual policy input to the model", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        commands: [
+          {
+            name: "policy",
+            aliases: [],
+            description: "Switch policy level",
+            usage_hint: "/policy",
+            kind: "local_picker",
+            replaces_input: false,
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onSend = vi.fn();
+
+    render(
+      <Composer
+        baseUrl="http://127.0.0.1:8765"
+        accessToken="token-123"
+        sessionId="sess-1"
+        onSend={onSend}
+        onNewChat={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("Ask anything (type / for commands)");
+    await userEvent.type(input, "/policy");
+    await userEvent.keyboard("{Enter}");
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(input).toHaveValue("");
+  });
+
   it("shows context usage ring for the active session", async () => {
     vi.stubGlobal(
       "fetch",

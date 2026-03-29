@@ -1,4 +1,4 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use clap::Args;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -70,21 +70,26 @@ pub async fn run(args: UpdateArgs) -> anyhow::Result<()> {
     }
 
     let tmp = tempfile::tempdir().context("creating temp dir")?;
-    let base_url = format!(
-        "https://github.com/{}/releases/download/{}",
-        args.repo, tag
-    );
+    let base_url = format!("https://github.com/{}/releases/download/{}", args.repo, tag);
 
     let artifact_path = tmp.path().join(&artifact);
     println!("[update] downloading {}...", artifact);
-    download_file(&client, &format!("{}/{}", base_url, artifact), &artifact_path)
-        .await
-        .with_context(|| format!("downloading {}", artifact))?;
+    download_file(
+        &client,
+        &format!("{}/{}", base_url, artifact),
+        &artifact_path,
+    )
+    .await
+    .with_context(|| format!("downloading {}", artifact))?;
 
     let checksums_path = tmp.path().join("SHA256SUMS");
-    download_file(&client, &format!("{}/SHA256SUMS", base_url), &checksums_path)
-        .await
-        .context("downloading SHA256SUMS")?;
+    download_file(
+        &client,
+        &format!("{}/SHA256SUMS", base_url),
+        &checksums_path,
+    )
+    .await
+    .context("downloading SHA256SUMS")?;
 
     verify_checksum(&artifact_path, &checksums_path, &artifact)?;
 
@@ -153,11 +158,7 @@ async fn fetch_latest_tag(client: &reqwest::Client, repo: &str) -> anyhow::Resul
     Ok(release.tag_name)
 }
 
-async fn download_file(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-) -> anyhow::Result<()> {
+async fn download_file(client: &reqwest::Client, url: &str, dest: &Path) -> anyhow::Result<()> {
     let bytes = client
         .get(url)
         .send()

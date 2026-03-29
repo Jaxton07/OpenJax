@@ -1146,7 +1146,15 @@ mod tests {
     fn migration_is_idempotent() {
         let store = setup_store();
         let _ = store
-            .create_provider("X", "https://x.com/v1", "m", "k", "custom", "chat_completions", 0)
+            .create_provider(
+                "X",
+                "https://x.com/v1",
+                "m",
+                "k",
+                "custom",
+                "chat_completions",
+                0,
+            )
             .expect("create");
         // Call migrate_schema twice on the same connection — must not error
         let conn = store.conn.lock().expect("lock");

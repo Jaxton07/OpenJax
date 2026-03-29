@@ -82,7 +82,6 @@ mod tests {
             to: Modifier::DIM,
         };
 
-        // Behavioral check: queueing should succeed for mixed add/remove transitions.
         let mut out = Vec::new();
         diff.queue(&mut out).expect("queue should succeed");
         assert!(!out.is_empty());

@@ -68,14 +68,7 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `zsh -lc "cargo clippy --workspace --all-targets -- -D warnings"`
 
 ## 6) 测试命令
-### 全量测试运行
-- `zsh -lc "cargo test"`
-- `zsh -lc "cargo test --workspace"`
-- `zsh -lc "cargo test -p openjax-core"`
-- `zsh -lc "cargo test -p openjax-gateway"`
-- `zsh -lc "cargo test -p openjax-policy --tests"`
-- `zsh -lc "cargo test -p tui_next"`
-- `zsh -lc "cd ui/web && pnpm test"`
+### 推荐入口（core / gateway 分层测试）
 - `zsh -lc "make core-smoke"`
 - `zsh -lc "make core-feature-skills"`
 - `zsh -lc "make core-feature-tools"`
@@ -83,16 +76,33 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 - `zsh -lc "make core-feature-approval"`
 - `zsh -lc "make core-feature-history"`
 - `zsh -lc "make core-full"`
+- `zsh -lc "make core-baseline"`
+- `zsh -lc "make gateway-smoke"`
+- `zsh -lc "make gateway-fast"`
+- `zsh -lc "make gateway-doc"`
+- `zsh -lc "make gateway-full"`
+- `zsh -lc "make gateway-baseline"`
 
-### 单个 Rust 集成测试（重要）
-对于 `tests/` 中的文件，使用 `--test <file_stem>`。
-避免对这些测试文件只使用纯过滤器形式。
+### 其他测试运行
+- `zsh -lc "cargo test"`
+- `zsh -lc "cargo test --workspace"`
+- `zsh -lc "cargo test -p openjax-policy --tests"`
+- `zsh -lc "cargo test -p tui_next"`
+- `zsh -lc "cd ui/web && pnpm test"`
+
+### 单个 Rust 集成测试 / 定位用例（重要）
+对 `openjax-core`、`openjax-gateway` 的日常回归，优先走上面的 `make` / `scripts/test/*.sh` 分层入口。
+需要精确定位某个 suite 或单个 case 时，再直接使用 `cargo test --test <file_stem>`。
 - `zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite"`
 - `zsh -lc "cargo test -p openjax-core --test approval_suite"`
 - `zsh -lc "cargo test -p openjax-core --test approval_events_suite"`
 - `zsh -lc "cargo test -p openjax-core --test streaming_suite"`
 - `zsh -lc "cargo test -p openjax-core --test skills_suite"`
 - `zsh -lc "cargo test -p openjax-core --test core_history_suite"`
+- `zsh -lc "cargo test -p openjax-core --test tools_sandbox_suite system_tools_are_registered_in_specs --locked --quiet"`
+- `zsh -lc "cargo test -p openjax-gateway --test gateway_api_suite"`
+- `zsh -lc "cargo test -p openjax-gateway --test policy_api_suite"`
+- `zsh -lc "cargo test -p openjax-gateway --test m1_assistant_message_compat_only"`
 - `zsh -lc "cargo test -p tui_next --test m1_no_duplicate_history"`
 - `zsh -lc "cargo test -p tui_next --test m10_approval_panel_navigation"`
 

@@ -173,7 +173,8 @@ mod tests {
     use crate::model::client::{ModelClient, ProviderAdapter};
     use crate::model::registry::{ModelRegistry, RegisteredModel, RoutingPlan};
     use crate::model::types::{
-        CapabilityFlags, ModelRequest, ModelResponse, ModelStage, StreamDelta,
+        AssistantContentBlock, CapabilityFlags, ModelRequest, ModelResponse, ModelStage,
+        StreamDelta,
     };
 
     use super::ModelRouter;
@@ -230,7 +231,9 @@ mod tests {
                 Err(anyhow!(err.clone()))
             } else {
                 Ok(ModelResponse {
-                    text: "ok".to_string(),
+                    content: vec![AssistantContentBlock::Text {
+                        text: "ok".to_string(),
+                    }],
                     ..Default::default()
                 })
             }
@@ -246,7 +249,9 @@ mod tests {
                 Err(anyhow!(err.clone()))
             } else {
                 Ok(ModelResponse {
-                    text: "ok".to_string(),
+                    content: vec![AssistantContentBlock::Text {
+                        text: "ok".to_string(),
+                    }],
                     ..Default::default()
                 })
             }

@@ -1,4 +1,4 @@
-use openjax_protocol::Event;
+use openjax_protocol::{Event, ShellExecutionMetadata};
 use tui_next::app::App;
 
 #[test]
@@ -8,9 +8,18 @@ fn tool_completed_renders_partial_status() {
         turn_id: 1,
         tool_call_id: "tc_1".to_string(),
         tool_name: "shell".to_string(),
-        display_name: None,
+        display_name: Some("Run Shell".to_string()),
         ok: true,
-        output: "result_class=partial_success\ncommand=yes | head -n 1\nexit_code=141\nbackend=macos_seatbelt".to_string(),
+        output: "stdout:\nok\nstderr:\n".to_string(),
+        shell_metadata: Some(ShellExecutionMetadata {
+            result_class: "partial_success".to_string(),
+            backend: "macos_seatbelt".to_string(),
+            exit_code: 141,
+            policy_decision: "allow".to_string(),
+            runtime_allowed: true,
+            degrade_reason: None,
+            runtime_deny_reason: None,
+        }),
     });
 
     let cells = app.drain_history_cells();
@@ -21,6 +30,6 @@ fn tool_completed_renders_partial_status() {
         .map(|line| line.to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("shell partial"));
+    assert!(text.contains("Run Shell partial"));
     assert!(text.contains("sandbox: sandbox-exec (macos_seatbelt)"));
 }

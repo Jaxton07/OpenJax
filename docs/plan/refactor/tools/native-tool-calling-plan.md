@@ -1,13 +1,19 @@
 # OpenJax Native Tool Calling 迁移计划
 
 > 创建时间：2026-03-27
+> 状态：历史计划（Historical Context）
 > 替代：tool-optimization-plan.md（P1/P2/P3/P5 被本计划吸收，P4/P6/P7 保留为独立子任务）
+> 当前收口基线请改看：
+> - `docs/superpowers/specs/2026-03-28-native-tool-calling-remaining-phases-design.md`
+> - `docs/superpowers/plans/2026-03-28-native-tool-calling-remaining-phases.md`
+
+> 说明：本文保留“迁移发起时”的目标与分解，用于历史追踪。后续 Phase 4-6 的执行口径以上述 remaining phases spec/plan 为准，不再以本文作为 active implementation baseline。
 
 ---
 
-## 一、背景与动机
+## 一、背景与动机（历史视角）
 
-OpenJax 当前的工具调用采用"Planner Prompt"架构：将工具名枚举、格式规则、对话历史全部拼进一条超长 user message，让模型输出自定义 JSON（`{"action":"tool","tool":"..","args":{}}`），再由 OpenJax 解析执行，结果以文本形式拼回下一轮 prompt。
+在本计划创建时，OpenJax 的工具调用采用"Planner Prompt"架构：将工具名枚举、格式规则、对话历史全部拼进一条超长 user message，让模型输出自定义 JSON（`{"action":"tool","tool":"..","args":{}}`），再由 OpenJax 解析执行，结果以文本形式拼回下一轮 prompt。
 
 这与 Claude Code 的 Native Tool Calling 架构存在本质差异：
 
@@ -520,9 +526,8 @@ pub(crate) fn build_system_prompt(
     format!(
         "{PERSONA}\n\n{BEHAVIOR}\n\n{SAFETY}\n\n\
          <tool_policy>\n\
-         - Prefer read_file before edit_file_range or apply_patch (Update File) unless creating a brand-new file.\n\
+         - Prefer read_file before edit_file_range (Update File) unless creating a brand-new file.\n\
          - Prefer edit_file_range for single-file edits when exact line range is known.\n\
-         - For multi-file edits or file operations (add/delete/move/rename), use apply_patch.\n\
          - Prefer process_snapshot/system_load/disk_usage for process/host metrics over shell ps/top/df.\n\
          - Do NOT repeat the same tool call with the same arguments.\n\
          </tool_policy>\n\n\
@@ -727,7 +732,7 @@ zsh -lc "cargo test -p openjax-core --test core_history_suite"
 
 ### Phase 4：工具能力补充
 
-**目标**：新增 `write_file`、`glob_files` 工具，归位 `apply_patch` 描述。这些改动与 Phase 1-3 无依赖，可与 Phase 2-3 并行准备。
+**目标**：新增 `write_file`、`glob_files` 工具。这些改动与 Phase 1-3 无依赖，可与 Phase 2-3 并行准备。
 
 #### 4.1 新增 `write_file` 工具
 
@@ -743,7 +748,7 @@ struct WriteFileArgs {
 pub struct WriteFileHandler;
 
 impl ToolHandler for WriteFileHandler {
-    // 路径验证：不允许逃逸工作区（复用 apply_patch/planner.rs 的验证逻辑）
+    // 路径验证：不允许逃逸工作区
     // 父目录不存在时自动 create_dir_all
     // 直接 write（覆盖）
     // 返回："written <path> (<n> bytes)"
@@ -823,20 +828,14 @@ glob = "0.3"
 - limit 生效
 - 不存在路径返回空
 
-#### 4.3 `apply_patch` 描述归位
-
-将 `agent/prompt.rs` 中的 apply_patch 格式细节（16 行）移至 `spec.rs` 的 `create_apply_patch_spec()` description 末尾。
-
-`system_prompt.rs` 中仅保留 3 行调度策略（已在 3.1 中展示）。
-
-#### 4.4 涉及文件
+#### 4.3 涉及文件
 
 | 文件 | 改动类型 |
 |------|---------|
 | `openjax-core/src/tools/handlers/write_file.rs` | 新建 |
 | `openjax-core/src/tools/handlers/glob_files.rs` | 新建 |
 | `openjax-core/src/tools/handlers/mod.rs` | pub mod 新增 |
-| `openjax-core/src/tools/spec.rs` | 新增两个 spec 函数，apply_patch 描述扩充 |
+| `openjax-core/src/tools/spec.rs` | 新增两个 spec 函数 |
 | `openjax-core/src/tools/tool_builder.rs` | 注册两个新 handler |
 | `openjax-core/Cargo.toml` | 添加 glob 依赖 |
 | `openjax-core/tests/tools_sandbox/m_write_file.rs` | 新建测试 |
@@ -1049,6 +1048,6 @@ Phase 3 的 `planner.rs` 重写后代码量可能增大，需注意：
 | P2 工具列表动态化 | Phase 3 天然解决：`tool_specs()` 传给 ModelRequest.tools |
 | P3 Shell 输出精简 | Phase 5 完整方案（独立计划变为本文 Phase 5） |
 | P4 write_file | Phase 4 保留 |
-| P5 apply_patch 描述归位 | Phase 4 保留 |
+| P5 工具描述归位 | Phase 4 保留 |
 | P6 glob_files | Phase 4 保留 |
 | P7 先读后写约束 | Phase 3 system_prompt.rs 中直接写入 tool_policy |

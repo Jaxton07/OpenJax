@@ -7,11 +7,11 @@ use tracing::info;
 use crate::agent::decision::NormalizedToolCall;
 use crate::agent::planner_utils::is_mutating_tool;
 use crate::agent::prompt::truncate_for_prompt;
-use crate::agent::tool_guard::ApplyPatchReadGuard;
 use crate::agent::tool_policy::is_approval_blocking_error;
 use crate::agent::turn_engine::TurnEngine;
 use crate::{Agent, tools};
 
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone, Copy)]
 pub(super) struct BatchExecutionResult {
     pub(super) executed_count: usize,
@@ -20,13 +20,13 @@ pub(super) struct BatchExecutionResult {
 }
 
 impl Agent {
+    #[allow(dead_code)]
     pub(super) async fn execute_tool_batch_calls(
         &mut self,
         turn_id: u64,
         mut calls: Vec<NormalizedToolCall>,
         events: &mut Vec<Event>,
         tool_traces: &mut Vec<String>,
-        apply_patch_read_guard: &mut ApplyPatchReadGuard,
         turn_engine: &mut TurnEngine,
     ) -> BatchExecutionResult {
         let mut executed = 0usize;
@@ -67,52 +67,6 @@ impl Agent {
 
                 let mut tasks = Vec::new();
                 for call in ready_calls {
-                    if let Some(message) =
-                        apply_patch_read_guard.block_user_message_for_tool(&call.tool_name)
-                    {
-                        self.emit_tool_call_started_sequence(
-                            turn_id,
-                            &call.tool_call_id,
-                            &call.tool_name,
-                            &call.args,
-                            "executing",
-                            events,
-                        );
-                        self.push_event(
-                            events,
-                            Event::ToolCallFailed {
-                                turn_id,
-                                tool_call_id: call.tool_call_id.clone(),
-                                tool_name: call.tool_name.clone(),
-                                code: "guard_blocked".to_string(),
-                                message: message.to_string(),
-                                retryable: false,
-                                display_name: self.tools.display_name_for(&call.tool_name),
-                            },
-                        );
-                        self.record_tool_call(&call.tool_name, &call.args, false, message);
-                        tool_traces.push(format!(
-                            "tool={}; ok=false; output={}",
-                            call.tool_name,
-                            truncate_for_prompt(
-                                message,
-                                self.skill_runtime_config.max_diff_chars_for_planner
-                            )
-                        ));
-                        self.emit_tool_call_completed(
-                            turn_id,
-                            &call.tool_call_id,
-                            &call.tool_name,
-                            false,
-                            message,
-                            events,
-                        );
-                        completed_ids.insert(call.tool_call_id);
-                        executed += 1;
-                        failed += 1;
-                        continue;
-                    }
-
                     self.emit_tool_call_started_sequence(
                         turn_id,
                         &call.tool_call_id,
@@ -155,11 +109,11 @@ impl Agent {
                     match handle.await {
                         Ok(Ok(outcome)) => {
                             let ok = outcome.success;
-                            let output = outcome.output;
+                            let output = outcome.display_output;
                             if ok {
-                                apply_patch_read_guard.on_tool_success(&call.tool_name);
+                                // no-op
                             } else {
-                                apply_patch_read_guard.on_tool_failure(&call.tool_name, &output);
+                                // no-op
                             }
                             if is_mutating_tool(&call.tool_name) {
                                 self.state_epoch = self.state_epoch.saturating_add(1);
@@ -193,7 +147,6 @@ impl Agent {
                         Ok(Err(err)) => {
                             let err_text = err.to_string();
                             let err_text_lower = err_text.to_ascii_lowercase();
-                            apply_patch_read_guard.on_tool_failure(&call.tool_name, &err_text);
                             tool_traces.push(format!(
                                 "tool={}; ok=false; output={}",
                                 call.tool_name,
@@ -238,8 +191,6 @@ impl Agent {
                                     pending_handle.abort();
                                     let canceled_output =
                                         "tool execution canceled by approval decision".to_string();
-                                    apply_patch_read_guard
-                                        .on_tool_failure(&pending_call.tool_name, &canceled_output);
                                     self.emit_tool_call_failed(
                                         turn_id,
                                         &pending_call.tool_call_id,

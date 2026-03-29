@@ -104,7 +104,7 @@ async fn always_ask_prompts_and_approved_call_succeeds() {
     fs::write(workspace.join("note.txt"), "hello\n").expect("seed file");
 
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
-    // PolicyRuntime(Ask) ensures all tools require approval, even non-mutating read_file
+    // PolicyRuntime(Ask) ensures all tools require approval, even non-mutating Read
     agent.set_policy_runtime(Some(PolicyRuntime::new(PolicyStore::new(
         DecisionKind::Ask,
         vec![],
@@ -114,11 +114,11 @@ async fn always_ask_prompts_and_approved_call_succeeds() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=note.txt".to_string(),
+            input: "tool:Read path=note.txt".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "read_file") {
+    match tool_completion(&events, "Read") {
         Event::ToolCallCompleted { ok, .. } => assert!(*ok),
         _ => unreachable!(),
     }
@@ -139,11 +139,11 @@ async fn on_request_skips_prompt_for_non_mutating_tool() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=note.txt".to_string(),
+            input: "tool:Read path=note.txt".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "read_file") {
+    match tool_completion(&events, "Read") {
         Event::ToolCallCompleted { ok, .. } => assert!(*ok),
         _ => unreachable!(),
     }
@@ -164,12 +164,11 @@ async fn on_request_prompts_for_mutating_tool_and_rejects() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:edit_file_range file_path=todo.txt start_line=1 end_line=1 new_text='x'"
-                .to_string(),
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "edit_file_range") {
+    match tool_completion(&events, "Edit") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
             assert!(output.contains("Approval rejected"));
@@ -190,19 +189,19 @@ async fn policy_deny_blocks_tool_without_approval_prompt() {
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "a\nb\n").expect("seed file");
 
-    // A policy rule that hard-denies edit_file_range without prompting for approval
+    // A policy rule that hard-denies Edit without prompting for approval
     let deny_rule = PolicyRule {
-        id: "deny:edit_file_range".to_string(),
+        id: "deny:Edit".to_string(),
         decision: DecisionKind::Deny,
         priority: 200,
-        tool_name: Some("edit_file_range".to_string()),
+        tool_name: Some("Edit".to_string()),
         action: None,
         session_id: None,
         actor: None,
         resource: None,
         capabilities_all: vec![],
         risk_tags_all: vec![],
-        reason: "edit_file_range blocked by policy".to_string(),
+        reason: "Edit blocked by policy".to_string(),
     };
     let policy_runtime = PolicyRuntime::new(PolicyStore::new(DecisionKind::Ask, vec![deny_rule]));
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, workspace.clone());
@@ -212,12 +211,11 @@ async fn policy_deny_blocks_tool_without_approval_prompt() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:edit_file_range file_path=todo.txt start_line=1 end_line=1 new_text='x'"
-                .to_string(),
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "edit_file_range") {
+    match tool_completion(&events, "Edit") {
         Event::ToolCallCompleted { ok, .. } => assert!(!ok),
         _ => unreachable!(),
     }
@@ -245,8 +243,7 @@ async fn approval_timeout_is_reported_as_timeout() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:edit_file_range file_path=todo.txt start_line=1 end_line=1 new_text='x'"
-                .to_string(),
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'".to_string(),
         })
         .await;
 
@@ -254,7 +251,7 @@ async fn approval_timeout_is_reported_as_timeout() {
         std::env::remove_var("OPENJAX_APPROVAL_TIMEOUT_MS");
     }
 
-    match tool_completion(&events, "edit_file_range") {
+    match tool_completion(&events, "Edit") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
             assert!(output.contains("Approval timed out"));

@@ -1,0 +1,5 @@
+# One <target>::<test_name> per line.
+# Keep this list tiny and high-value; it drives `bash scripts/test/gateway.sh gateway-smoke`.
+gateway_api_suite::clear_command_submit_and_polling_flow
+policy_api_suite::policy_rule_create_update_publish_affects_submit_turn
+m1_assistant_message_compat_only::response_completed_overrides_legacy_assistant_message

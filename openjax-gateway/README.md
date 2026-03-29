@@ -56,7 +56,27 @@ openjax-gateway/
 │   │   ├── daemon.rs
 │   │   └── dispatch.rs
 └── tests
-    └── gateway_api.rs
+    ├── gateway_api_suite.rs
+    ├── gateway_api/
+    │   ├── mod.rs
+    │   ├── helpers.rs
+    │   ├── m1_auth.rs
+    │   ├── m2_session_lifecycle.rs
+    │   ├── m3_slash_and_compact.rs
+    │   ├── m4_approval.rs
+    │   ├── m5_stream_and_timeline.rs
+    │   ├── m6_provider.rs
+    │   └── m7_policy_level.rs
+    ├── policy_api_suite.rs
+    ├── policy_api/
+    │   ├── mod.rs
+    │   ├── helpers.rs
+    │   ├── m1_publish.rs
+    │   ├── m2_rules_crud.rs
+    │   ├── m3_validation.rs
+    │   ├── m4_session_overlay.rs
+    │   └── m5_policy_effect.rs
+    └── m1_assistant_message_compat_only.rs
 ```
 
 ## 路由概览
@@ -142,7 +162,8 @@ openjax-gateway/
   - `stdio/protocol.rs`：协议信封类型（Request/Response/EventEnvelope）
   - `stdio/daemon.rs`：`SessionState`、`DaemonApprovalHandler`
   - `stdio/dispatch.rs`：消息分发、I/O helpers
-- `tests/gateway_api.rs`：鉴权、`/clear`、审批幂等、SSE 回放窗口等集成测试。
+- `tests/gateway_api_suite.rs` / `tests/gateway_api/`：gateway API 主集成测试入口，按鉴权、session 生命周期、slash/compact、审批、stream/timeline、provider、policy level 分域组织。
+- `tests/policy_api_suite.rs` / `tests/policy_api/`：policy API 集成测试入口，按发布、规则 CRUD、请求校验、session overlay、策略生效分域组织。
 
 ## 事件持久化模型
 
@@ -177,8 +198,31 @@ openjax-gateway/
 
 ```bash
 zsh -lc "cargo build -p openjax-gateway"
-zsh -lc "cargo test -p openjax-gateway"
 zsh -lc "cargo run -p openjax-gateway"
+```
+
+测试建议按分层入口执行（与 `scripts/test/gateway.sh` 和 `Makefile` 对齐）：
+
+```bash
+zsh -lc "make gateway-smoke"
+zsh -lc "make gateway-fast"
+zsh -lc "make gateway-doc"
+zsh -lc "make gateway-full"
+zsh -lc "make gateway-baseline"
+```
+
+- 日常开发推荐使用 `gateway-fast`（快速反馈主链路）。
+- `gateway-smoke` 只跑一组人工挑选的高价值检查，选择源位于 `openjax-gateway/tests/.smoke-targets`；如需替换 smoke 用例，只更新该 manifest，不要修改脚本里的执行逻辑。
+- 文档校验推荐使用 `gateway-doc`（仅 `--doc` / doctest）。
+- 合并前推荐使用 `gateway-full`（覆盖 openjax-gateway 完整测试路径）。
+- 性能排查可使用 `gateway-baseline`；输出会固定分成 `measurements` 与 `per-target` 两段，便于对比 cold/warm/full/fast/doc 与主要 test target 的耗时。
+
+如果需要精确定位某个 suite 或单个 target，再直接使用底层 `cargo test --test ...` 命令，例如：
+
+```bash
+zsh -lc "cargo test -p openjax-gateway --test gateway_api_suite"
+zsh -lc "cargo test -p openjax-gateway --test policy_api_suite"
+zsh -lc "cargo test -p openjax-gateway --test m1_assistant_message_compat_only"
 ```
 
 ## WebUI 流式接入（SSE）
@@ -198,6 +242,15 @@ zsh -lc "cargo run -p openjax-gateway"
 - `approval_requested/approval_resolved`
 - `context_compacted`（上下文压缩事件，payload 含 `compressed_turns`、`retained_turns`、`summary_preview`）
 5. 若收到 `response_error.code=REPLAY_WINDOW_EXCEEDED`，应提示前端重新发起会话流连接。
+
+`tool_call_completed` payload 当前透传协议字段：
+
+- `tool_call_id`
+- `tool_name`
+- `ok`
+- `output`
+- `display_name`
+- `shell_metadata`（可选，仅 shell 类工具存在）
 
 ## Timeline 接口（冷启动恢复）
 

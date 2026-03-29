@@ -7,7 +7,6 @@ use crate::agent::runtime_policy::{
     resolve_max_planner_rounds_per_turn, resolve_max_tool_calls_per_turn, resolve_sandbox_mode,
 };
 use crate::agent::state::RateLimitConfig;
-use crate::dispatcher::DispatcherConfig;
 use crate::{Agent, Config, approval, model, skills, tools};
 use openjax_policy::runtime::PolicyRuntime;
 
@@ -46,7 +45,6 @@ impl Agent {
                     .and_then(|m| m.context_window_size)
             })
             .unwrap_or(0);
-        let dispatcher_config = DispatcherConfig::from_env();
         let max_tool_calls_per_turn = resolve_max_tool_calls_per_turn(&config);
         let max_planner_rounds_per_turn = resolve_max_planner_rounds_per_turn(&config);
         let skill_config = config.skills.as_ref();
@@ -73,7 +71,6 @@ impl Agent {
             prefer_lightweight_git_inspection =
                 skill_runtime_config.prefer_lightweight_git_inspection,
             max_diff_chars_for_planner = skill_runtime_config.max_diff_chars_for_planner,
-            dispatcher_heuristic_detect = dispatcher_config.heuristic_detect,
             cwd = %cwd.display(),
             "agent created"
         );
@@ -106,8 +103,6 @@ impl Agent {
             max_planner_rounds_per_turn,
             recent_tool_calls: Vec::new(),
             state_epoch: 0,
-            dispatcher_config,
-            tool_batch_v2_enabled: true,
             approval_handler: Arc::new(approval::StdinApprovalHandler::new()),
             event_sink: None,
             policy_runtime: None,

@@ -1,3 +1,5 @@
+use openjax_protocol::ShellExecutionMetadata;
+
 pub(crate) fn summarize_tool_output(output: &str) -> Vec<String> {
     let mut lines = Vec::new();
     for raw_line in output.lines() {
@@ -24,17 +26,28 @@ pub(crate) fn summarize_tool_output(output: &str) -> Vec<String> {
     ]
 }
 
-pub(crate) fn extract_backend_summary(output: &str) -> Option<String> {
-    let backend = output
-        .lines()
-        .find_map(|line| line.strip_prefix("backend=").map(str::trim))?;
+pub(crate) fn extract_backend_summary(
+    shell_metadata: Option<&ShellExecutionMetadata>,
+    output: &str,
+) -> Option<String> {
+    let backend = shell_metadata
+        .map(|metadata| metadata.backend.as_str())
+        .or_else(|| {
+            output
+                .lines()
+                .find_map(|line| line.strip_prefix("backend=").map(str::trim))
+        })?;
+    Some(format!("sandbox: {}", backend_label(backend)))
+}
+
+fn backend_label(backend: &str) -> String {
     let label = match backend {
         "macos_seatbelt" => "sandbox-exec (macos_seatbelt)".to_string(),
         "linux_native" => "bwrap (linux_native)".to_string(),
         "none_escalated" => "none (degraded)".to_string(),
         other => other.to_string(),
     };
-    Some(format!("sandbox: {label}"))
+    label
 }
 
 pub(crate) fn sanitize_target_for_title(target: &str, max_chars: usize) -> String {
@@ -42,10 +55,26 @@ pub(crate) fn sanitize_target_for_title(target: &str, max_chars: usize) -> Strin
     truncate_chars(&collapsed, max_chars)
 }
 
-pub(crate) fn degraded_risk_summary(output: &str) -> Option<String> {
-    let backend = output
-        .lines()
-        .find_map(|line| line.strip_prefix("backend=").map(str::trim))?;
+pub(crate) fn is_partial_result(
+    shell_metadata: Option<&ShellExecutionMetadata>,
+    output: &str,
+) -> bool {
+    shell_metadata
+        .map(|metadata| metadata.result_class == "partial_success")
+        .unwrap_or_else(|| output.contains("result_class=partial_success"))
+}
+
+pub(crate) fn degraded_risk_summary(
+    shell_metadata: Option<&ShellExecutionMetadata>,
+    output: &str,
+) -> Option<String> {
+    let backend = shell_metadata
+        .map(|metadata| metadata.backend.as_str())
+        .or_else(|| {
+            output
+                .lines()
+                .find_map(|line| line.strip_prefix("backend=").map(str::trim))
+        })?;
     if backend != "none_escalated" {
         return None;
     }
@@ -55,9 +84,13 @@ pub(crate) fn degraded_risk_summary(output: &str) -> Option<String> {
         .find_map(|line| line.strip_prefix("command=").map(str::trim))
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let policy_decision = output
-        .lines()
-        .find_map(|line| line.strip_prefix("policy_decision=").map(str::trim))
+    let policy_decision = shell_metadata
+        .map(|metadata| metadata.policy_decision.as_str())
+        .or_else(|| {
+            output
+                .lines()
+                .find_map(|line| line.strip_prefix("policy_decision=").map(str::trim))
+        })
         .unwrap_or_default()
         .to_ascii_lowercase();
 
@@ -69,8 +102,18 @@ pub(crate) fn degraded_risk_summary(output: &str) -> Option<String> {
     }
 }
 
-pub(crate) fn skill_trigger_guard_hint(output: &str) -> Option<String> {
-    if output.contains("runtime_deny_reason=skill_trigger_not_shell_command") {
+pub(crate) fn skill_trigger_guard_hint(
+    shell_metadata: Option<&ShellExecutionMetadata>,
+    output: &str,
+) -> Option<String> {
+    let deny_reason = shell_metadata
+        .and_then(|metadata| metadata.runtime_deny_reason.as_deref())
+        .or_else(|| {
+            output
+                .lines()
+                .find_map(|line| line.strip_prefix("runtime_deny_reason=").map(str::trim))
+        });
+    if deny_reason == Some("skill_trigger_not_shell_command") {
         Some("hint: detected skill trigger string in shell; use skill workflow steps".to_string())
     } else {
         None
@@ -189,9 +232,11 @@ fn is_mutating_command(command: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use openjax_protocol::ShellExecutionMetadata;
+
     use super::{
-        degraded_risk_summary, extract_backend_summary, sanitize_target_for_title,
-        skill_trigger_guard_hint, summarize_tool_output,
+        degraded_risk_summary, extract_backend_summary, is_partial_result,
+        sanitize_target_for_title, skill_trigger_guard_hint, summarize_tool_output,
     };
 
     #[test]
@@ -213,8 +258,25 @@ mod tests {
     fn extracts_backend_summary() {
         let output = "result_class=success\nbackend=macos_seatbelt\nstdout:\nok";
         assert_eq!(
-            extract_backend_summary(output).as_deref(),
+            extract_backend_summary(None, output).as_deref(),
             Some("sandbox: sandbox-exec (macos_seatbelt)")
+        );
+    }
+
+    #[test]
+    fn extracts_backend_summary_from_metadata() {
+        let metadata = ShellExecutionMetadata {
+            result_class: "success".to_string(),
+            backend: "none_escalated".to_string(),
+            exit_code: 0,
+            policy_decision: "allow".to_string(),
+            runtime_allowed: true,
+            degrade_reason: None,
+            runtime_deny_reason: None,
+        };
+        assert_eq!(
+            extract_backend_summary(Some(&metadata), "").as_deref(),
+            Some("sandbox: none (degraded)")
         );
     }
 
@@ -231,7 +293,24 @@ mod tests {
         let output =
             "command=git add -A\nbackend=none_escalated\npolicy_decision=AskApproval\nstdout:\n";
         assert_eq!(
-            degraded_risk_summary(output).as_deref(),
+            degraded_risk_summary(None, output).as_deref(),
+            Some("risk: mutating command ran unsandboxed")
+        );
+    }
+
+    #[test]
+    fn degraded_risk_uses_metadata_backend_and_policy() {
+        let metadata = ShellExecutionMetadata {
+            result_class: "success".to_string(),
+            backend: "none_escalated".to_string(),
+            exit_code: 0,
+            policy_decision: "AskApproval".to_string(),
+            runtime_allowed: true,
+            degrade_reason: Some("macos_seatbelt: denied".to_string()),
+            runtime_deny_reason: None,
+        };
+        assert_eq!(
+            degraded_risk_summary(Some(&metadata), "command=git add -A").as_deref(),
             Some("risk: mutating command ran unsandboxed")
         );
     }
@@ -239,6 +318,34 @@ mod tests {
     #[test]
     fn skill_trigger_guard_emits_hint() {
         let output = "result_class=failure\nruntime_deny_reason=skill_trigger_not_shell_command\n";
-        assert!(skill_trigger_guard_hint(output).is_some());
+        assert!(skill_trigger_guard_hint(None, output).is_some());
+    }
+
+    #[test]
+    fn skill_trigger_guard_emits_hint_from_metadata() {
+        let metadata = ShellExecutionMetadata {
+            result_class: "failure".to_string(),
+            backend: "macos_seatbelt".to_string(),
+            exit_code: 1,
+            policy_decision: "deny".to_string(),
+            runtime_allowed: false,
+            degrade_reason: None,
+            runtime_deny_reason: Some("skill_trigger_not_shell_command".to_string()),
+        };
+        assert!(skill_trigger_guard_hint(Some(&metadata), "").is_some());
+    }
+
+    #[test]
+    fn partial_result_prefers_metadata() {
+        let metadata = ShellExecutionMetadata {
+            result_class: "partial_success".to_string(),
+            backend: "macos_seatbelt".to_string(),
+            exit_code: 141,
+            policy_decision: "allow".to_string(),
+            runtime_allowed: true,
+            degrade_reason: None,
+            runtime_deny_reason: None,
+        };
+        assert!(is_partial_result(Some(&metadata), ""));
     }
 }

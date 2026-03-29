@@ -1,3 +1,4 @@
+use openjax_protocol::ShellExecutionMetadata;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
@@ -5,7 +6,8 @@ use crate::history_cell::{CellRole, HistoryCell};
 
 use super::App;
 use super::tool_output::{
-    degraded_risk_summary, extract_backend_summary, skill_trigger_guard_hint, summarize_tool_output,
+    degraded_risk_summary, extract_backend_summary, is_partial_result, skill_trigger_guard_hint,
+    summarize_tool_output,
 };
 
 impl App {
@@ -78,18 +80,19 @@ impl App {
 
     pub(crate) fn tool_completed_cell(
         &mut self,
-        tool_name: &str,
+        display_name: &str,
         ok: bool,
         output: &str,
+        shell_metadata: Option<&ShellExecutionMetadata>,
     ) -> HistoryCell {
         let mut lines = Vec::new();
-        let is_partial = output.contains("result_class=partial_success");
+        let is_partial = is_partial_result(shell_metadata, output);
         let (status, dot_color) = if is_partial {
-            (format!("{} partial", tool_name), Color::Yellow)
+            (format!("{} partial", display_name), Color::Yellow)
         } else if ok {
-            (format!("{} completed", tool_name), Color::Green)
+            (format!("{} completed", display_name), Color::Green)
         } else {
-            (format!("{} failed", tool_name), Color::Red)
+            (format!("{} failed", display_name), Color::Red)
         };
         lines.push(Line::from(vec![
             Span::styled(
@@ -98,19 +101,19 @@ impl App {
             ),
             Span::raw(status),
         ]));
-        if let Some(backend) = extract_backend_summary(output) {
+        if let Some(backend) = extract_backend_summary(shell_metadata, output) {
             lines.push(Line::from(vec![
                 Span::styled("  ├ ", Style::default().fg(Color::DarkGray)),
                 Span::styled(backend, Style::default().fg(Color::LightBlue)),
             ]));
         }
-        if let Some(risk) = degraded_risk_summary(output) {
+        if let Some(risk) = degraded_risk_summary(shell_metadata, output) {
             lines.push(Line::from(vec![
                 Span::styled("  ├ ", Style::default().fg(Color::DarkGray)),
                 Span::styled(risk, Style::default().fg(Color::LightRed)),
             ]));
         }
-        if let Some(hint) = skill_trigger_guard_hint(output) {
+        if let Some(hint) = skill_trigger_guard_hint(shell_metadata, output) {
             lines.push(Line::from(vec![
                 Span::styled("  ├ ", Style::default().fg(Color::DarkGray)),
                 Span::styled(hint, Style::default().fg(Color::Yellow)),

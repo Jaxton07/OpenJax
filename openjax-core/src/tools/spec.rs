@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// 工具规范
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolSpec {
     pub name: String,
     pub description: String,
@@ -14,7 +15,6 @@ pub struct ToolSpec {
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub struct ToolsConfig {
     pub shell_type: ShellToolType,
-    pub apply_patch_tool_type: Option<ApplyPatchToolType>,
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
@@ -25,62 +25,45 @@ pub enum ShellToolType {
     Disabled,
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-pub enum ApplyPatchToolType {
-    Default,
-    Freeform,
-}
-
 impl Default for ToolsConfig {
     fn default() -> Self {
         Self {
             shell_type: ShellToolType::Default,
-            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
         }
     }
 }
 
-/// Freeform 工具格式
-#[derive(Debug, Clone)]
-pub struct FreeformFormat {
-    pub r#type: String,
-    pub syntax: String,
-    pub definition: String,
-}
-
-/// 创建 apply_patch Freeform 工具规范
-pub fn create_apply_patch_freeform_spec() -> ToolSpec {
+/// 创建 glob_files 工具规范
+pub fn create_glob_files_spec() -> ToolSpec {
     ToolSpec {
-        name: "apply_patch".to_string(),
-        description: r#"Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON."#.to_string(),
+        name: "glob_files".to_string(),
+        description: "Search file paths by glob pattern under a workspace-relative base path. Returns matching file paths sorted by modification time (newest first), one path per line.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
-                "format": {
-                    "type": "object",
-                    "properties": {
-                        "type": {
-                            "type": "string",
-                            "description": "Format type (e.g., 'grammar')"
-                        },
-                        "syntax": {
-                            "type": "string",
-                            "description": "Syntax parser (e.g., 'lark')"
-                        },
-                        "definition": {
-                            "type": "string",
-                            "description": "Grammar definition"
-                        }
-                    }
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern to match files (e.g., src/**/*.rs, *.md)"
+                },
+                "base_path": {
+                    "type": "string",
+                    "description": "Workspace-relative directory to evaluate the glob from (default: .)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Maximum number of matched paths to return (default: 100, max: 2000)",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 2000
                 }
             },
-            "required": []
+            "required": ["pattern"]
         }),
         output_schema: Some(serde_json::json!({
             "type": "string",
-            "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
+            "description": "Matched file paths, one path per line"
         })),
-        display_name: "Apply Patch".to_string(),
+        display_name: "Glob Files".to_string(),
     }
 }
 
@@ -122,10 +105,10 @@ pub fn create_grep_files_spec() -> ToolSpec {
     }
 }
 
-/// 创建 read_file 工具规范
-pub fn create_read_file_spec() -> ToolSpec {
+/// 创建 Read 工具规范
+pub fn create_read_spec() -> ToolSpec {
     ToolSpec {
-        name: "read_file".to_string(),
+        name: "Read".to_string(),
         description: "Read file contents with support for pagination and indentation-aware reading. Returns file lines with line numbers in the format 'L<line_number>: <content>'.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
@@ -191,7 +174,7 @@ pub fn create_read_file_spec() -> ToolSpec {
             "type": "string",
             "description": "File contents with line numbers, one per line"
         })),
-        display_name: "Read File".to_string(),
+        display_name: "Read".to_string(),
     }
 }
 
@@ -278,34 +261,11 @@ pub fn create_exec_command_spec() -> ToolSpec {
     spec
 }
 
-/// 创建 apply_patch 工具规范
-pub fn create_apply_patch_spec() -> ToolSpec {
+/// 创建 Edit 工具规范
+pub fn create_edit_spec() -> ToolSpec {
     ToolSpec {
-        name: "apply_patch".to_string(),
-        description: "Apply a patch to the workspace. Supports adding, deleting, moving, renaming, and updating files. Returns a summary of applied changes. The patch format uses '*** Begin Patch' and '*** End Patch' delimiters with operations like '*** Add File:', '*** Delete File:', '*** Update File:', '*** Move File:', and '*** Rename File:'.".to_string(),
-        input_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "patch": {
-                    "type": "string",
-                    "description": "Patch text to apply"
-                }
-            },
-            "required": ["patch"]
-        }),
-        output_schema: Some(serde_json::json!({
-            "type": "string",
-            "description": "Summary of applied patch operations (ADD, UPDATE, DELETE, MOVE)"
-        })),
-        display_name: "Apply Patch".to_string(),
-    }
-}
-
-/// 创建 edit_file_range 工具规范
-pub fn create_edit_file_range_spec() -> ToolSpec {
-    ToolSpec {
-        name: "edit_file_range".to_string(),
-        description: "Edit a file by replacing an inclusive line range [start_line, end_line] with new_text. Line numbers are 1-indexed.".to_string(),
+        name: "Edit".to_string(),
+        description: "Edit a file by replacing exactly one existing text occurrence with new text. Use this for single-file existing-text replacements.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -313,28 +273,49 @@ pub fn create_edit_file_range_spec() -> ToolSpec {
                     "type": "string",
                     "description": "Path to the file to edit"
                 },
-                "start_line": {
-                    "type": "number",
-                    "description": "Start line (1-indexed, inclusive)",
-                    "minimum": 1
-                },
-                "end_line": {
-                    "type": "number",
-                    "description": "End line (1-indexed, inclusive)",
-                    "minimum": 1
-                },
-                "new_text": {
+                "old_string": {
                     "type": "string",
-                    "description": "Replacement text for the specified line range. Use empty string to delete the range."
+                    "description": "Exact existing text to replace; must match uniquely in the file"
+                },
+                "new_string": {
+                    "type": "string",
+                    "description": "Replacement text"
                 }
             },
-            "required": ["file_path", "start_line", "end_line", "new_text"]
+            "required": ["file_path", "old_string", "new_string"]
         }),
         output_schema: Some(serde_json::json!({
             "type": "string",
             "description": "Summary of applied edit"
         })),
-        display_name: "Edit File".to_string(),
+        display_name: "Edit".to_string(),
+    }
+}
+
+/// 创建 write_file 工具规范
+pub fn create_write_file_spec() -> ToolSpec {
+    ToolSpec {
+        name: "write_file".to_string(),
+        description: "Write file content to a workspace-relative path. Creates missing parent directories and overwrites existing content.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the file to write"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full content to write to the file"
+                }
+            },
+            "required": ["file_path", "content"]
+        }),
+        output_schema: Some(serde_json::json!({
+            "type": "string",
+            "description": "Write summary including path and byte count"
+        })),
+        display_name: "Write File".to_string(),
     }
 }
 
@@ -426,23 +407,40 @@ pub fn create_disk_usage_spec() -> ToolSpec {
 /// 构建所有工具规范
 pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
     let mut specs = vec![
+        create_glob_files_spec(),
         create_grep_files_spec(),
-        create_read_file_spec(),
+        create_read_spec(),
         create_list_dir_spec(),
         create_process_snapshot_spec(),
         create_system_load_spec(),
         create_disk_usage_spec(),
-        create_edit_file_range_spec(),
+        create_edit_spec(),
+        create_write_file_spec(),
     ];
 
     if !matches!(config.shell_type, ShellToolType::Disabled) {
         specs.push(create_shell_spec());
     }
 
-    specs.push(match config.apply_patch_tool_type {
-        Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),
-        _ => create_apply_patch_spec(),
-    });
-
     specs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ToolsConfig, build_all_specs};
+
+    #[test]
+    fn build_all_specs_exposes_read_edit_contract_names() {
+        let names: Vec<String> = build_all_specs(&ToolsConfig::default())
+            .into_iter()
+            .map(|spec| spec.name)
+            .collect();
+        let legacy_read = format!("{}_{}", "read", "file");
+        let legacy_edit = format!("{}_{}_{}", "edit", "file", "range");
+        assert!(names.contains(&"Read".to_string()));
+        assert!(names.contains(&"Edit".to_string()));
+        assert!(!names.contains(&legacy_read));
+        assert!(!names.contains(&legacy_edit));
+        assert!(!names.contains(&"apply_patch".to_string()));
+    }
 }

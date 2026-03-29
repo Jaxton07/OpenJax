@@ -23,8 +23,8 @@
 | P1 | 修复参数类型约束 | 🔴 高 | 提取 de_usize/de_u64 为公共模块，全工具覆盖；删除错误提示词规则 |
 | P2 | 工具列表动态化 | 🔴 高 | ToolRouter 新增 tool_names()，prompt.rs 动态注入 |
 | P3 | Shell 输出精简 | 🟡 中 | 只暴露 exit_code/stdout/stderr 给模型 |
-| P4 | 新增 write_file 工具 | 🟡 中 | 简单创建/覆盖文件，替代 apply_patch Add File |
-| P5 | apply_patch 描述归位 | 🟡 中 | 格式说明从 prompt.rs 移至 spec.rs description |
+| P4 | 新增 write_file 工具 | 🟡 中 | 简单创建/覆盖文件 |
+| P5 | 工具描述归位 | 🟡 中 | 格式说明从 prompt.rs 移至 spec.rs description |
 | P6 | 新增 glob 工具 | 🟢 低 | 路径模式搜索（补齐与 Claude Code 的工具差距） |
 | P7 | 主动先读后写约束 | 🟢 低 | prompt.rs 追加一行规则 |
 
@@ -99,7 +99,7 @@ pub fn de_u64<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> { ... }
 
 ```
 // prompt.rs L67（规划提示词）
-"tool\":\"read_file|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|apply_patch|edit_file_range\""
+"tool\":\"read_file|list_dir|grep_files|process_snapshot|system_load|disk_usage|shell|edit_file_range\""
 
 // prompt.rs L128（JSON 修复提示词）
 // 同一份列表再次硬编码
@@ -203,7 +203,7 @@ let model_output = if output.exit_code == 0 {
 
 ### 问题根因
 
-当前创建文件需通过 `apply_patch` 的 `*** Add File:` 格式，对模型认知成本高，patch 语法容易出错。
+当前创建文件需要专门的文件写入工具，对模型认知成本高。
 
 ### 工具定义
 
@@ -228,7 +228,7 @@ let model_output = if output.exit_code == 0 {
 ```
 
 **行为**：
-- 路径验证：不允许逃逸工作区根目录（参考 `apply_patch/planner.rs` 的路径验证逻辑）
+- 路径验证：不允许逃逸工作区根目录
 - 父目录不存在时自动创建
 - 文件已存在时直接覆盖
 - 输出：`written <file_path> (<n> bytes)`
@@ -249,26 +249,25 @@ let model_output = if output.exit_code == 0 {
 
 ---
 
-## P5：apply_patch 格式说明归位
+## P5：工具描述归位
 
 ### 问题根因
 
-`prompt.rs` L83-L98 共 16 行 apply_patch 格式细节嵌入全局规划提示词，增加 token 消耗并让规划提示词职责混乱（调度策略 vs 工具格式文档）。
+`prompt.rs` L83-L98 共 16 行工具格式细节嵌入全局规划提示词，增加 token 消耗并让规划提示词职责混乱（调度策略 vs 工具格式文档）。
 
 ### 修改方案
 
-将格式细节从 `prompt.rs` 移至 `spec.rs` 的 `apply_patch` description 字段末尾（追加 Format 部分）。
+将格式细节从 `prompt.rs` 移至 `spec.rs` 的 description 字段末尾（追加 Format 部分）。
 
 `prompt.rs` 保留简短调度策略：
 ```
-- For multi-file edits or file operations (add/delete/move/rename), use apply_patch.
+- For multi-file edits or file operations, use appropriate tools.
 - For single-file range edits with known line numbers, use edit_file_range.
-- If apply_patch fails with context mismatch, call read_file then retry with edit_file_range.
 ```
 
 ### 涉及文件
 
-- `openjax-core/src/tools/spec.rs`（apply_patch description 追加格式说明）
+- `openjax-core/src/tools/spec.rs`（description 追加格式说明）
 - `openjax-core/src/agent/prompt.rs`（L83-98 精简为 3 行）
 
 ---
@@ -305,7 +304,7 @@ let model_output = if output.exit_code == 0 {
 在 `prompt.rs` Tool selection policy 部分追加：
 
 ```
-- ALWAYS call read_file before edit_file_range or apply_patch (Update File) unless creating a brand-new file.
+- ALWAYS call read_file before edit_file_range (Update File) unless creating a brand-new file.
 ```
 
 ### 涉及文件

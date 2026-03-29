@@ -1,4 +1,4 @@
-import type { AppSettings, AuthState, StreamEvent } from "./gateway";
+import type { AppSettings, AuthState, ShellExecutionMetadata, StreamEvent } from "./gateway";
 
 export type SessionConnection = "idle" | "connecting" | "active" | "closing" | "closed";
 export type TurnPhase = "draft" | "submitting" | "streaming" | "completed" | "failed";
@@ -6,6 +6,15 @@ export type MessageRole = "user" | "assistant" | "tool" | "error" | "system";
 export type MessageKind = "text" | "tool_steps";
 export type ToolStepStatus = "running" | "success" | "waiting" | "failed";
 export type ToolStepType = "think" | "tool" | "shell" | "approval" | "summary";
+
+export interface ToolStepMeta {
+  rawPayload?: Record<string, unknown>;
+  shellMetadata?: ShellExecutionMetadata;
+  backendSummary?: string;
+  riskSummary?: string;
+  hint?: string;
+  partial?: boolean;
+}
 
 export interface ReasoningBlock {
   blockId: string;
@@ -37,9 +46,10 @@ export interface ToolStep {
   code?: string;
   output?: string;
   delta?: string;
+  target?: string;
   approvalId?: string;
   toolCallId?: string;
-  meta?: Record<string, unknown>;
+  meta?: ToolStepMeta;
 }
 
 export interface ChatMessage {

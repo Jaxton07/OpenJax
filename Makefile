@@ -13,7 +13,8 @@ export CARGO_HTTP_MULTIPLEXING ?= false
 	run-tui run-web-dev build-web-release build-release-mac package-mac build-release-linux package-linux package-windows install-local install-online upgrade-online upgrade-from-package uninstall-local install-source \
 	build-all test-rust clean-dist \
 	lint format clean \
-	core-smoke core-feature-skills core-feature-tools core-feature-streaming core-feature-approval core-feature-history core-full core-baseline
+	core-smoke core-feature-skills core-feature-tools core-feature-streaming core-feature-approval core-feature-history core-full core-baseline \
+	gateway-smoke gateway-fast gateway-doc gateway-full gateway-baseline
 
 help:
 	@echo "OpenJax Deployment Commands:"
@@ -45,6 +46,13 @@ help:
 	@echo "    make core-feature-history - 运行 openjax-core history 特性测试"
 	@echo "    make core-full          - 运行 openjax-core 全量测试"
 	@echo "    make core-baseline      - 运行 openjax-core 冷/热耗时统计与慢测榜"
+	@echo ""
+	@echo "  openjax-gateway 测试入口:"
+	@echo "    make gateway-smoke      - 运行 openjax-gateway 烟雾测试"
+	@echo "    make gateway-fast       - 运行 openjax-gateway 快速测试"
+	@echo "    make gateway-doc        - 运行 openjax-gateway 文档相关测试"
+	@echo "    make gateway-full       - 运行 openjax-gateway 全量测试"
+	@echo "    make gateway-baseline   - 运行 openjax-gateway 冷/热耗时统计与慢测榜"
 	@echo ""
 	@echo "  校验与清理:"
 	@echo "    make build-all         - 构建整个 Rust workspace"
@@ -169,6 +177,21 @@ core-full:
 
 core-baseline:
 	bash scripts/test/core.sh core-baseline
+
+gateway-smoke:
+	bash scripts/test/gateway.sh gateway-smoke
+
+gateway-fast:
+	bash scripts/test/gateway.sh gateway-fast
+
+gateway-doc:
+	bash scripts/test/gateway.sh gateway-doc
+
+gateway-full:
+	bash scripts/test/gateway.sh gateway-full
+
+gateway-baseline:
+	bash scripts/test/gateway.sh gateway-baseline
 
 clean-dist:
 	rm -rf dist

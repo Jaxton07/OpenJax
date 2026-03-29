@@ -29,10 +29,7 @@ impl SandboxManager {
 
     /// 检查是否为变异操作
     pub fn is_mutating_operation(&self, tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "shell" | "exec_command" | "apply_patch" | "edit_file_range"
-        )
+        matches!(tool_name, "shell" | "exec_command" | "Edit")
     }
 
     /// 获取沙箱描述

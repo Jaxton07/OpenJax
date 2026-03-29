@@ -152,44 +152,14 @@ pub fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
     }
 }
 
-const KIMI_PROVIDER_NAME: &str = "Kimi Coding";
-const KIMI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
-const KIMI_MODEL: &str = "kimi-for-coding";
-const KIMI_CONTEXT_WINDOW: u32 = 200_000;
-pub fn normalize_builtin_provider_defaults(store: &SqliteStore) {
-    use openjax_store::ProviderRepository;
-    let providers = store.list_providers().unwrap_or_default();
-    for provider in providers {
-        if provider.provider_type != "built_in" || provider.provider_name != KIMI_PROVIDER_NAME {
-            continue;
-        }
-        if provider.base_url == KIMI_BASE_URL
-            && provider.model_name == KIMI_MODEL
-            && provider.context_window_size == KIMI_CONTEXT_WINDOW
-        {
-            continue;
-        }
-        let _ = <SqliteStore as ProviderRepository>::update_provider(
-            store,
-            &provider.provider_id,
-            &provider.provider_name,
-            KIMI_BASE_URL,
-            KIMI_MODEL,
-            None,
-            &provider.protocol,
-            KIMI_CONTEXT_WINDOW,
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use openjax_store::{ProviderRepository, SqliteStore};
 
-    use super::{KIMI_CONTEXT_WINDOW, normalize_builtin_provider_defaults};
+    use super::migrate_providers_from_config_if_needed;
 
     #[test]
-    fn normalizes_builtin_kimi_defaults_and_active_snapshot() {
+    fn migration_does_not_overwrite_existing_builtin_kimi_provider() {
         let store = SqliteStore::open_memory().expect("open memory store");
         let provider = <SqliteStore as ProviderRepository>::create_provider(
             &store,
@@ -198,29 +168,30 @@ mod tests {
             "k2.5",
             "key",
             "built_in",
-            "chat_completions",
-            256000,
+            "anthropic_messages",
+            200_000,
         )
         .expect("create provider");
         store
             .set_active_provider(&provider.provider_id)
             .expect("set active provider");
 
-        normalize_builtin_provider_defaults(&store);
+        migrate_providers_from_config_if_needed(&store);
 
         let updated = store
             .get_provider(&provider.provider_id)
             .expect("get provider")
             .expect("provider exists");
-        assert_eq!(updated.base_url, "https://api.kimi.com/coding/v1");
-        assert_eq!(updated.model_name, "kimi-for-coding");
+        assert_eq!(updated.base_url, "https://api.kimi.com/coding");
+        assert_eq!(updated.model_name, "k2.5");
+        assert_eq!(updated.protocol, "anthropic_messages");
 
         let active = store
             .get_active_provider()
             .expect("get active provider")
             .expect("active provider exists");
         assert_eq!(active.provider_id, provider.provider_id);
-        assert_eq!(active.model_name, "kimi-for-coding");
-        assert_eq!(active.context_window_size, KIMI_CONTEXT_WINDOW);
+        assert_eq!(active.model_name, "k2.5");
+        assert_eq!(active.context_window_size, 200_000);
     }
 }

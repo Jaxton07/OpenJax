@@ -91,7 +91,7 @@ OpenJax 工具系统提供以下核心特性：
 - **集中的沙箱和批准管理**：统一的沙箱策略和批准流程
 - **支持多种工具类型**：Function、Mcp、Custom、LocalShell
 - **动态工具支持**：支持运行时注册自定义工具
-- **Freeform 工具支持**：支持 Lark 语法定义的自由格式工具（如 apply_patch）
+- **Freeform 工具支持**：支持 Lark 语法定义的自由格式工具
 - **模块化架构**：工具代码按功能拆分为独立模块，易于维护和扩展
 
 ## 与流式系统对齐
@@ -110,11 +110,10 @@ OpenJax 工具系统提供以下核心特性：
 当前系统包含以下工具：
 
 - **grep_files** - 使用 ripgrep 进行高性能搜索
-- **read_file** - 读取文件内容，支持分页和缩进感知
+- **Read** - 读取文件内容，支持分页和缩进感知
 - **list_dir** - 列出目录内容，支持递归和分页
-- **edit_file_range** - 按行范围精确编辑文件
+- **Edit** - 在文件中唯一匹配并替换已有文本
 - **shell** - 执行 shell 命令，支持批准和沙箱模式
-- **apply_patch** - 应用补丁到工作区
 - **process_snapshot** - 只读进程快照
 - **system_load** - 只读系统负载与内存指标
 - **disk_usage** - 只读磁盘空间指标
@@ -132,7 +131,7 @@ tool:grep_files pattern=fn main path=src include=*.rs
 ### 读取文件
 
 ```bash
-tool:read_file file_path=src/lib.rs offset=1 limit=50
+tool:Read file_path=src/lib.rs offset=1 limit=50
 ```
 
 ### 列出目录
@@ -147,16 +146,10 @@ tool:list_dir dir_path=src depth=2
 tool:shell cmd='cargo test' require_escalated=true
 ```
 
-### 按行范围编辑
+### 精确文本替换
 
 ```bash
-tool:edit_file_range file_path=src/lib.rs start_line=10 end_line=12 new_text='new line a\nnew line b'
-```
-
-### 应用补丁
-
-```bash
-tool:apply_patch patch='*** Begin Patch\n*** Add File: new.rs\n+// content\n*** End Patch'
+tool:Edit file_path=src/lib.rs old_string='let old_value = 1;' new_string='let old_value = 2;'
 ```
 
 ## 获取帮助

@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::sandbox;
-use crate::tools::apply_patch_interceptor;
 use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -58,24 +57,6 @@ impl ToolHandler for ShellCommandHandler {
             return Ok(ToolOutput::Function {
                 body: crate::tools::context::FunctionCallOutputBody::Text(output),
                 success: Some(false),
-            });
-        }
-
-        let command_tokens: Vec<String> =
-            command.split_whitespace().map(|s| s.to_string()).collect();
-        if let Some(output) = apply_patch_interceptor::intercept_apply_patch(
-            &command_tokens,
-            &invocation.turn.cwd,
-            None,
-            &invocation.turn,
-            &invocation.call_id,
-            &invocation.tool_name,
-        )
-        .await?
-        {
-            return Ok(ToolOutput::Function {
-                body: crate::tools::context::FunctionCallOutputBody::Text(output),
-                success: Some(true),
             });
         }
 

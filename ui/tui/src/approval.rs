@@ -1,6 +1,7 @@
+use std::collections::{HashMap, VecDeque};
+
 use async_trait::async_trait;
 use openjax_core::{ApprovalHandler, ApprovalRequest};
-use std::collections::{HashMap, VecDeque};
 use tokio::sync::{Mutex, oneshot};
 
 #[derive(Debug, Default)]

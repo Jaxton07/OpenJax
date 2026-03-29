@@ -22,7 +22,7 @@ use openjax_store::{ProviderRepository, SessionRepository};
 
 use super::config::{
     build_runtime_config, gateway_db_path, gateway_policy_state, map_store_error,
-    migrate_providers_from_config_if_needed, normalize_builtin_provider_defaults,
+    migrate_providers_from_config_if_needed,
 };
 use super::runtime::{
     ApiTurnError, SessionRuntime, StreamEventEnvelope, TurnRuntime, TurnStatus,
@@ -63,7 +63,6 @@ impl AppState {
         let db_path = gateway_db_path();
         let store = Arc::new(SqliteStore::open(&db_path)?);
         migrate_providers_from_config_if_needed(&store);
-        normalize_builtin_provider_defaults(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
@@ -379,10 +378,7 @@ pub async fn run_turn_task(
             let store = PolicyStore::new(override_decision, vec![]);
             let fresh = PolicyRuntime::new(store);
             if !overlay_rules.is_empty() {
-                fresh.set_session_overlay(
-                    &session_id,
-                    SessionOverlay::new(overlay_rules),
-                );
+                fresh.set_session_overlay(&session_id, SessionOverlay::new(overlay_rules));
             }
             fresh
         } else {
@@ -763,6 +759,7 @@ fn first_turn_id(events: &[Event]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openjax_protocol::ShellExecutionMetadata;
     use std::collections::HashSet;
 
     #[test]
@@ -905,4 +902,44 @@ mod tests {
         assert_eq!(error.retryable, false);
     }
 
+    #[test]
+    fn tool_call_completed_replay_event_keeps_shell_metadata() {
+        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
+        let mut session = SessionRuntime::default();
+        let mut turn_id_tx = None;
+
+        let _ = map_core_event(
+            &app_state,
+            &mut session,
+            "sess_1",
+            "req_1",
+            Event::ToolCallCompleted {
+                turn_id: 1,
+                tool_call_id: "call_1".to_string(),
+                tool_name: "shell".to_string(),
+                ok: true,
+                output: "done".to_string(),
+                shell_metadata: Some(ShellExecutionMetadata {
+                    result_class: "success".to_string(),
+                    backend: "sandbox".to_string(),
+                    exit_code: 0,
+                    policy_decision: "allow".to_string(),
+                    runtime_allowed: true,
+                    degrade_reason: None,
+                    runtime_deny_reason: None,
+                }),
+                display_name: Some("Run Shell".to_string()),
+            },
+            &mut turn_id_tx,
+        );
+
+        let replay = session
+            .replay_from(None)
+            .expect("replay events should exist");
+        let event = replay.last().expect("tool call event");
+        assert_eq!(event.event_type, "tool_call_completed");
+        assert_eq!(event.payload["tool_call_id"], "call_1");
+        assert_eq!(event.payload["display_name"], "Run Shell");
+        assert_eq!(event.payload["shell_metadata"]["backend"], "sandbox");
+    }
 }

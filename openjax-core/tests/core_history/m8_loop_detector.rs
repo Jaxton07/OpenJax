@@ -9,7 +9,7 @@ fn test_loop_detector_full_flow() {
 
     // Simulate 5 identical calls -> Warned
     for i in 0..5 {
-        let result = detector.check_and_advance("read_file", "hash_same");
+        let result = detector.check_and_advance("Read", "hash_same");
         if i < 4 {
             assert_eq!(result, LoopSignal::None);
         } else {

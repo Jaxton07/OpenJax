@@ -70,10 +70,10 @@ async fn published_runtime_rule_can_deny_known_tool() {
     let runtime = PolicyRuntime::new(PolicyStore::new(
         DecisionKind::Ask,
         vec![PolicyRule {
-            id: "deny_read_file".to_string(),
+            id: "deny_Read".to_string(),
             decision: DecisionKind::Deny,
             priority: 200,
-            tool_name: Some("read_file".to_string()),
+            tool_name: Some("Read".to_string()),
             action: Some("read".to_string()),
             session_id: None,
             actor: None,
@@ -84,7 +84,7 @@ async fn published_runtime_rule_can_deny_known_tool() {
         }],
     ));
     let invocation = ToolInvocation {
-        tool_name: "read_file".to_string(),
+        tool_name: "Read".to_string(),
         call_id: "call-read-1".to_string(),
         payload: ToolPayload::Function {
             arguments: r#"{"path":"Cargo.toml"}"#.to_string(),
@@ -118,10 +118,10 @@ async fn session_overlay_rule_applies_by_session_id() {
     let runtime = PolicyRuntime::new(PolicyStore::new(
         DecisionKind::Ask,
         vec![PolicyRule {
-            id: "allow_read_file".to_string(),
+            id: "allow_Read".to_string(),
             decision: DecisionKind::Allow,
             priority: 100,
-            tool_name: Some("read_file".to_string()),
+            tool_name: Some("Read".to_string()),
             action: Some("read".to_string()),
             session_id: None,
             actor: None,
@@ -134,10 +134,10 @@ async fn session_overlay_rule_applies_by_session_id() {
     runtime.set_session_overlay(
         "sess_overlay",
         SessionOverlay::new(vec![PolicyRule {
-            id: "overlay_deny_read_file".to_string(),
+            id: "overlay_deny_Read".to_string(),
             decision: DecisionKind::Deny,
             priority: 300,
-            tool_name: Some("read_file".to_string()),
+            tool_name: Some("Read".to_string()),
             action: Some("read".to_string()),
             session_id: Some("sess_overlay".to_string()),
             actor: None,
@@ -148,7 +148,7 @@ async fn session_overlay_rule_applies_by_session_id() {
         }]),
     );
     let invocation = ToolInvocation {
-        tool_name: "read_file".to_string(),
+        tool_name: "Read".to_string(),
         call_id: "call-read-overlay".to_string(),
         payload: ToolPayload::Function {
             arguments: r#"{"path":"Cargo.toml"}"#.to_string(),

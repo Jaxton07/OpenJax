@@ -2,8 +2,6 @@ use std::fmt;
 use std::io;
 use std::io::Write;
 
-use crate::terminal::style_diff::ModifierDiff;
-use crate::wrapping::word_wrap_lines_borrowed;
 use crossterm::Command;
 use crossterm::cursor::MoveTo;
 use crossterm::queue;
@@ -22,6 +20,9 @@ use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::text::Line;
 use ratatui::text::Span;
+
+use crate::terminal::style_diff::ModifierDiff;
+use crate::wrapping::word_wrap_lines_borrowed;
 
 /// Insert `lines` above the viewport using the terminal's backend writer
 /// (avoids direct stdout references).
@@ -152,7 +153,6 @@ impl Command for SetScrollRegion {
 
     #[cfg(windows)]
     fn is_ansi_code_supported(&self) -> bool {
-        // TODO(nornagon): is this supported on Windows?
         true
     }
 }
@@ -172,7 +172,6 @@ impl Command for ResetScrollRegion {
 
     #[cfg(windows)]
     fn is_ansi_code_supported(&self) -> bool {
-        // TODO(nornagon): is this supported on Windows?
         true
     }
 }

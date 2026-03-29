@@ -53,11 +53,11 @@ async fn blocks_absolute_path_read_in_workspace_write() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=/etc/hosts".to_string(),
+            input: "tool:Read file_path=/etc/hosts".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "read_file") {
+    match tool_completion(&events, "Read") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
             assert!(output.contains("absolute paths are not allowed"));
@@ -75,11 +75,11 @@ async fn blocks_parent_traversal_read_in_workspace_write() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=../outside.txt".to_string(),
+            input: "tool:Read file_path=../outside.txt".to_string(),
         })
         .await;
 
-    match tool_completion(&events, "read_file") {
+    match tool_completion(&events, "Read") {
         Event::ToolCallCompleted { ok, output, .. } => {
             assert!(!ok);
             assert!(output.contains("parent traversal is not allowed"));

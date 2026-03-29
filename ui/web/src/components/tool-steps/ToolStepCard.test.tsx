@@ -91,7 +91,7 @@ describe("ToolStepCard", () => {
         step={{
           id: "step_5",
           type: "tool",
-          title: "read_file",
+          title: "Read",
           status: "success",
           time: "2026-01-01T00:00:00Z",
           durationSec: 42
@@ -108,7 +108,7 @@ describe("ToolStepCard", () => {
         step={{
           id: "step_6",
           type: "tool",
-          title: "read_file",
+          title: "Read",
           status: "success",
           time: "2026-01-01T00:00:00Z",
           durationSec: 125
@@ -117,5 +117,67 @@ describe("ToolStepCard", () => {
     );
 
     expect(screen.getByText("2m 5s")).toBeInTheDocument();
+  });
+
+  it("renders target filename when provided", () => {
+    render(
+      <ToolStepCard
+        step={{
+          id: "step_target",
+          type: "tool",
+          title: "Read",
+          target: "/Users/ericw/work/code/ai/openJax/ui/web/src/types/chat.ts",
+          status: "success",
+          time: "2026-01-01T00:00:00Z"
+        }}
+      />
+    );
+
+    expect(screen.getByText("/Users/ericw/work/code/ai/openJax/ui/web/src/types/chat.ts")).toBeInTheDocument();
+  });
+
+  it("does not render target when not provided", () => {
+    render(
+      <ToolStepCard
+        step={{
+          id: "step_no_target",
+          type: "tool",
+          title: "shell",
+          status: "success",
+          time: "2026-01-01T00:00:00Z"
+        }}
+      />
+    );
+
+    expect(document.querySelector(".step-target")).not.toBeInTheDocument();
+  });
+
+  it("renders structured shell metadata details", () => {
+    render(
+      <ToolStepCard
+        step={{
+          id: "step_7",
+          type: "tool",
+          title: "Run Shell",
+          status: "success",
+          time: "2026-01-01T00:00:00Z",
+          description: "Partial success (exit code 141)",
+          meta: {
+            backendSummary: "sandbox: sandbox-exec (macos_seatbelt)",
+            riskSummary: "risk: mutating command ran unsandboxed",
+            hint: "hint: detected skill trigger string in shell; use skill workflow steps"
+          }
+        }}
+      />
+    );
+
+    const toggleBtn = screen.getByRole("button", { name: /run shell/i });
+    fireEvent.click(toggleBtn);
+    expect(screen.getByText("Partial success (exit code 141)")).toBeInTheDocument();
+    expect(screen.getByText("sandbox: sandbox-exec (macos_seatbelt)")).toBeInTheDocument();
+    expect(screen.getByText("risk: mutating command ran unsandboxed")).toBeInTheDocument();
+    expect(
+      screen.getByText("hint: detected skill trigger string in shell; use skill workflow steps")
+    ).toBeInTheDocument();
   });
 });

@@ -49,7 +49,7 @@ async fn approval_event_contains_policy_metadata() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=note.txt".to_string(),
+            input: "tool:Read path=note.txt".to_string(),
         })
         .await;
 

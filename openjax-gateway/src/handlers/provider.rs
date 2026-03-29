@@ -348,13 +348,13 @@ mod tests {
     fn sample_provider_record() -> ProviderRecord {
         ProviderRecord {
             provider_id: "provider_1".to_string(),
-            provider_name: "Kimi".to_string(),
-            base_url: "https://api.kimi.com/coding/v1".to_string(),
-            model_name: "kimi-for-coding".to_string(),
+            provider_name: "Kimi Coding".to_string(),
+            base_url: "https://api.kimi.com/coding".to_string(),
+            model_name: "k2.5".to_string(),
             api_key: "secret".to_string(),
             provider_type: "built_in".to_string(),
-            protocol: "chat_completions".to_string(),
-            context_window_size: 256000,
+            protocol: "anthropic_messages".to_string(),
+            context_window_size: 200000,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
         }
@@ -400,9 +400,9 @@ mod tests {
     #[test]
     fn create_provider_request_rejects_request_profile_field() {
         let payload = json!({
-            "provider_name": "Kimi",
-            "base_url": "https://api.kimi.com/coding/v1",
-            "model_name": "kimi-for-coding",
+            "provider_name": "Kimi Coding",
+            "base_url": "https://api.kimi.com/coding",
+            "model_name": "k2.5",
             "api_key": "secret",
             "request_profile": "kimi_coding_v1"
         });
@@ -414,9 +414,9 @@ mod tests {
     #[test]
     fn update_provider_request_rejects_request_profile_field() {
         let payload = json!({
-            "provider_name": "Kimi",
-            "base_url": "https://api.kimi.com/coding/v1",
-            "model_name": "kimi-for-coding",
+            "provider_name": "Kimi Coding",
+            "base_url": "https://api.kimi.com/coding",
+            "model_name": "k2.5",
             "request_profile": "kimi_coding_v1"
         });
 
@@ -427,9 +427,9 @@ mod tests {
     #[test]
     fn create_provider_request_accepts_protocol_field() {
         let payload_with_protocol = json!({
-            "provider_name": "Kimi",
-            "base_url": "https://api.kimi.com/coding/v1",
-            "model_name": "kimi-for-coding",
+            "provider_name": "Kimi Coding",
+            "base_url": "https://api.kimi.com/coding",
+            "model_name": "k2.5",
             "api_key": "secret",
             "protocol": "anthropic_messages"
         });
@@ -437,9 +437,9 @@ mod tests {
             .expect("must succeed");
 
         let payload_default = json!({
-            "provider_name": "Kimi",
-            "base_url": "https://api.kimi.com/coding/v1",
-            "model_name": "kimi-for-coding",
+            "provider_name": "Kimi Coding",
+            "base_url": "https://api.kimi.com/coding",
+            "model_name": "k2.5",
             "api_key": "secret"
         });
         let _req_default = serde_json::from_value::<CreateProviderRequest>(payload_default)
@@ -449,18 +449,18 @@ mod tests {
     #[test]
     fn update_provider_request_accepts_protocol_field() {
         let payload_with_protocol = json!({
-            "provider_name": "Kimi",
-            "base_url": "https://api.kimi.com/coding/v1",
-            "model_name": "kimi-for-coding",
+            "provider_name": "Kimi Coding",
+            "base_url": "https://api.kimi.com/coding",
+            "model_name": "k2.5",
             "protocol": "anthropic_messages"
         });
         let _req = serde_json::from_value::<UpdateProviderRequest>(payload_with_protocol)
             .expect("must succeed");
 
         let payload_default = json!({
-            "provider_name": "Kimi",
-            "base_url": "https://api.kimi.com/coding/v1",
-            "model_name": "kimi-for-coding"
+            "provider_name": "Kimi Coding",
+            "base_url": "https://api.kimi.com/coding",
+            "model_name": "k2.5"
         });
         let _req_default = serde_json::from_value::<UpdateProviderRequest>(payload_default)
             .expect("must succeed with default protocol");

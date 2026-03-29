@@ -29,7 +29,7 @@ fn workspace() -> PathBuf {
     dir
 }
 
-/// Successful tool:read_file turn should write to history.
+/// Successful tool:Read turn should write to history.
 /// Verify: two consecutive turns both complete (agent does not panic on history operations).
 #[tokio::test]
 async fn successful_tool_turn_increments_history() {
@@ -41,7 +41,7 @@ async fn successful_tool_turn_increments_history() {
     // Turn 1
     let events1 = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=data.txt".to_string(),
+            input: "tool:Read path=data.txt".to_string(),
         })
         .await;
 
@@ -57,15 +57,15 @@ async fn successful_tool_turn_increments_history() {
         events1.iter().any(|e| matches!(
             e,
             Event::ToolCallCompleted { tool_name, ok, .. }
-            if tool_name == "read_file" && *ok
+            if tool_name == "Read" && *ok
         )),
-        "read_file should succeed in turn 1"
+        "Read should succeed in turn 1"
     );
 
     // Turn 2 — agent must not panic from history type issues
     let events2 = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=data.txt".to_string(),
+            input: "tool:Read path=data.txt".to_string(),
         })
         .await;
 
@@ -94,7 +94,7 @@ async fn history_truncation_does_not_panic() {
     for _ in 0..12 {
         let events = agent
             .submit(Op::UserTurn {
-                input: "tool:read_file path=file.txt".to_string(),
+                input: "tool:Read path=file.txt".to_string(),
             })
             .await;
         assert!(
@@ -119,7 +119,7 @@ async fn failed_tool_call_turn_still_completes() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=missing.txt".to_string(),
+            input: "tool:Read path=missing.txt".to_string(),
         })
         .await;
 
@@ -135,7 +135,7 @@ async fn failed_tool_call_turn_still_completes() {
         events.iter().any(|e| matches!(
             e,
             Event::ToolCallCompleted { tool_name, .. }
-            if tool_name == "read_file"
+            if tool_name == "Read"
         )),
         "tool call completed event should exist"
     );

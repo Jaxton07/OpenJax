@@ -71,11 +71,18 @@ impl App {
             }
             Event::ToolCallCompleted {
                 tool_name,
+                display_name,
                 ok,
                 output,
+                shell_metadata,
                 ..
             } => {
-                let cell = self.tool_completed_cell(&tool_name, ok, &output);
+                let cell = self.tool_completed_cell(
+                    display_name.as_deref().unwrap_or(&tool_name),
+                    ok,
+                    &output,
+                    shell_metadata.as_ref(),
+                );
                 self.queue_history_cell(cell);
                 info!(
                     tool_name = %tool_name,

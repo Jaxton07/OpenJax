@@ -777,30 +777,45 @@ fn map_event(session_id: &str, event: Event) -> Option<EventEnvelope> {
         }),
         Event::ToolCallStarted {
             turn_id,
+            tool_call_id,
             tool_name,
             target,
-            ..
+            display_name,
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_started".to_string(),
-            payload: json!({ "tool_name": tool_name, "target": target }),
+            payload: json!({
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "target": target,
+                "display_name": display_name
+            }),
         }),
         Event::ToolCallCompleted {
             turn_id,
+            tool_call_id,
             tool_name,
             ok,
             output,
-            ..
+            shell_metadata,
+            display_name,
         } => Some(EventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             kind: KIND_EVENT,
             session_id: session_id.to_string(),
             turn_id: Some(turn_id.to_string()),
             event_type: "tool_call_completed".to_string(),
-            payload: json!({ "tool_name": tool_name, "ok": ok, "output": output }),
+            payload: json!({
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "ok": ok,
+                "output": output,
+                "shell_metadata": shell_metadata,
+                "display_name": display_name
+            }),
         }),
         Event::ToolCallArgsDelta {
             turn_id,
@@ -1163,7 +1178,7 @@ async fn cleanup_sessions(sessions: Arc<Mutex<HashMap<String, SessionState>>>) {
 #[cfg(test)]
 mod tests {
     use super::{map_event, map_live_event, summarize_turn_events, summarize_user_input};
-    use openjax_protocol::Event;
+    use openjax_protocol::{Event, ShellExecutionMetadata};
 
     #[test]
     fn summarize_user_input_marks_truncated_preview() {
@@ -1195,16 +1210,17 @@ mod tests {
             Event::ToolCallStarted {
                 turn_id: 1,
                 tool_call_id: "tc_1".to_string(),
-                tool_name: "read_file".to_string(),
+                tool_name: "Read".to_string(),
                 target: None,
                 display_name: None,
             },
             Event::ToolCallCompleted {
                 turn_id: 1,
                 tool_call_id: "tc_1".to_string(),
-                tool_name: "read_file".to_string(),
+                tool_name: "Read".to_string(),
                 ok: true,
                 output: "ok".to_string(),
+                shell_metadata: None,
                 display_name: None,
             },
             Event::ApprovalRequested {
@@ -1260,5 +1276,35 @@ mod tests {
         )
         .expect("response_completed still streams");
         assert_eq!(response_completed.event_type, "response_completed");
+    }
+
+    #[test]
+    fn tool_call_completed_stdio_payload_includes_shell_metadata() {
+        let envelope = map_event(
+            "sess_1",
+            Event::ToolCallCompleted {
+                turn_id: 7,
+                tool_call_id: "call_1".to_string(),
+                tool_name: "shell".to_string(),
+                ok: true,
+                output: "done".to_string(),
+                shell_metadata: Some(ShellExecutionMetadata {
+                    result_class: "success".to_string(),
+                    backend: "sandbox".to_string(),
+                    exit_code: 0,
+                    policy_decision: "allow".to_string(),
+                    runtime_allowed: true,
+                    degrade_reason: None,
+                    runtime_deny_reason: None,
+                }),
+                display_name: Some("Run Shell".to_string()),
+            },
+        )
+        .expect("tool event envelope");
+
+        assert_eq!(envelope.event_type, "tool_call_completed");
+        assert_eq!(envelope.payload["tool_call_id"], "call_1");
+        assert_eq!(envelope.payload["display_name"], "Run Shell");
+        assert_eq!(envelope.payload["shell_metadata"]["backend"], "sandbox");
     }
 }

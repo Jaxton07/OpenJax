@@ -5,9 +5,7 @@ pub(super) fn extract_tool_target_hint(
     args: &HashMap<String, String>,
 ) -> Option<String> {
     let keys: &[&str] = match tool_name {
-        "read_file" | "apply_patch" | "edit_file_range" | "write_file" => {
-            &["file_path", "path", "filepath"]
-        }
+        "Read" | "Edit" | "write_file" => &["file_path", "path", "filepath"],
         "disk_usage" => &["path"],
         "shell" | "exec_command" => &["cmd", "command"],
         _ => return None,
@@ -43,10 +41,7 @@ pub(super) fn tool_failure_retryable(error_text: &str) -> bool {
 }
 
 pub(super) fn is_mutating_tool(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "apply_patch" | "edit_file_range" | "shell" | "exec_command"
-    )
+    matches!(tool_name, "Edit" | "shell" | "exec_command")
 }
 
 pub(super) fn summarize_log_preview(text: &str, limit: usize) -> (String, bool) {
@@ -61,6 +56,7 @@ pub(super) fn summarize_log_preview(text: &str, limit: usize) -> (String, bool) 
     (preview, true)
 }
 
+#[allow(dead_code)]
 pub(super) fn summarize_log_preview_json(text: &str, limit: usize) -> String {
     let (preview, truncated) = summarize_log_preview(text, limit);
     serde_json::json!({

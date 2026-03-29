@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use openjax_protocol::ShellExecutionMetadata;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -14,7 +15,9 @@ use crate::approval::ApprovalHandler;
 
 #[derive(Debug, Clone)]
 pub struct ToolExecOutcome {
-    pub output: String,
+    pub model_content: String,
+    pub display_output: String,
+    pub shell_metadata: Option<ShellExecutionMetadata>,
     pub success: bool,
 }
 
@@ -73,6 +76,10 @@ impl ToolRouter {
             .map(|s| s.display_name.clone())
     }
 
+    pub fn tool_specs(&self) -> Vec<ToolSpec> {
+        self.specs.clone()
+    }
+
     pub async fn execute(&self, request: ToolExecutionRequest<'_>) -> Result<ToolExecOutcome> {
         let ToolExecutionRequest {
             turn_id,
@@ -122,32 +129,40 @@ impl ToolRouter {
                 super::context::ToolOutput::Function { body, success } => match body {
                     super::context::FunctionCallOutputBody::Text(text) => {
                         let success = success.unwrap_or(true);
-                        let preview = summarize_preview(&text, 240);
+                        let (model_content, display_output, shell_metadata) =
+                            normalize_tool_output(&call.name, text);
+                        let preview = summarize_preview(&display_output, 240);
                         info!(
                             tool_name = %call.name,
                             success = success,
-                            output_len = text.len(),
+                            output_len = display_output.len(),
                             output_preview = %preview,
                             "tool_execute completed"
                         );
                         Ok(ToolExecOutcome {
-                            output: text.clone(),
+                            model_content,
+                            display_output,
+                            shell_metadata,
                             success,
                         })
                     }
                     super::context::FunctionCallOutputBody::Json(json) => {
                         let success = success.unwrap_or(true);
                         let text = json.to_string();
-                        let preview = summarize_preview(&text, 240);
+                        let (model_content, display_output, shell_metadata) =
+                            normalize_tool_output(&call.name, text);
+                        let preview = summarize_preview(&display_output, 240);
                         info!(
                             tool_name = %call.name,
                             success = success,
-                            output_len = text.len(),
+                            output_len = display_output.len(),
                             output_preview = %preview,
                             "tool_execute completed"
                         );
                         Ok(ToolExecOutcome {
-                            output: text,
+                            model_content,
+                            display_output,
+                            shell_metadata,
                             success,
                         })
                     }
@@ -156,16 +171,20 @@ impl ToolRouter {
                     Ok(r) => {
                         let text = serde_json::to_string(&r)
                             .map_err(|e| anyhow!("failed to serialize mcp result: {}", e))?;
-                        let preview = summarize_preview(&text, 240);
+                        let (model_content, display_output, shell_metadata) =
+                            normalize_tool_output(&call.name, text);
+                        let preview = summarize_preview(&display_output, 240);
                         info!(
                             tool_name = %call.name,
                             success = true,
-                            output_len = text.len(),
+                            output_len = display_output.len(),
                             output_preview = %preview,
                             "tool_execute completed"
                         );
                         Ok(ToolExecOutcome {
-                            output: text,
+                            model_content,
+                            display_output,
+                            shell_metadata,
                             success: true,
                         })
                     }
@@ -198,4 +217,92 @@ fn summarize_preview(text: &str, limit: usize) -> String {
     let mut preview = normalized.chars().take(limit).collect::<String>();
     preview.push_str("...");
     preview
+}
+
+fn normalize_tool_output(
+    tool_name: &str,
+    display_output: String,
+) -> (String, String, Option<ShellExecutionMetadata>) {
+    if is_shell_tool(tool_name)
+        && let Some((model_content, shell_metadata)) = parse_shell_display_output(&display_output)
+    {
+        return (model_content, display_output, Some(shell_metadata));
+    }
+    (display_output.clone(), display_output, None)
+}
+
+fn is_shell_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "shell" | "exec_command")
+}
+
+fn parse_shell_display_output(display_output: &str) -> Option<(String, ShellExecutionMetadata)> {
+    let (header, body) = display_output.split_once("\nstdout:\n")?;
+    let (stdout, stderr) = body.split_once("\nstderr:\n")?;
+
+    let mut result_class: Option<String> = None;
+    let mut backend: Option<String> = None;
+    let mut exit_code: Option<i32> = None;
+    let mut policy_decision: Option<String> = None;
+    let mut runtime_allowed: Option<bool> = None;
+    let mut degrade_reason: Option<String> = None;
+    let mut runtime_deny_reason: Option<String> = None;
+
+    for line in header.lines() {
+        if let Some(v) = line.strip_prefix("result_class=") {
+            result_class = Some(v.to_string());
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("backend=") {
+            backend = Some(v.to_string());
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("exit_code=") {
+            exit_code = v.parse::<i32>().ok();
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("policy_decision=") {
+            policy_decision = Some(v.to_string());
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("runtime_allowed=") {
+            runtime_allowed = v.parse::<bool>().ok();
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("degrade_reason=") {
+            degrade_reason = optional_shell_field(v);
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("runtime_deny_reason=") {
+            runtime_deny_reason = optional_shell_field(v);
+        }
+    }
+
+    let exit_code = exit_code?;
+    let model_content = build_shell_model_content(exit_code, stdout, stderr);
+    let shell_metadata = ShellExecutionMetadata {
+        result_class: result_class?,
+        backend: backend?,
+        exit_code,
+        policy_decision: policy_decision?,
+        runtime_allowed: runtime_allowed?,
+        degrade_reason,
+        runtime_deny_reason,
+    };
+    Some((model_content, shell_metadata))
+}
+
+fn optional_shell_field(value: &str) -> Option<String> {
+    if value.is_empty() || value == "none" {
+        return None;
+    }
+    Some(value.to_string())
+}
+
+fn build_shell_model_content(exit_code: i32, stdout: &str, stderr: &str) -> String {
+    let mut model_content = format!("exit_code={exit_code}\nstdout:\n{stdout}");
+    if !stderr.is_empty() {
+        model_content.push_str("\nstderr:\n");
+        model_content.push_str(stderr);
+    }
+    model_content
 }

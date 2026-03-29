@@ -111,6 +111,32 @@ export interface GatewaySessionTimelineResponse {
   timestamp: string;
 }
 
+export interface ShellExecutionMetadata {
+  result_class: string;
+  backend: string;
+  exit_code: number;
+  policy_decision: string;
+  runtime_allowed: boolean;
+  degrade_reason?: string | null;
+  runtime_deny_reason?: string | null;
+}
+
+export interface ToolCallStartedPayload extends Record<string, unknown> {
+  tool_call_id?: string;
+  tool_name?: string;
+  target?: string;
+  display_name?: string;
+}
+
+export interface ToolCallCompletedPayload extends Record<string, unknown> {
+  tool_call_id?: string;
+  tool_name?: string;
+  display_name?: string;
+  ok?: boolean;
+  output?: string;
+  shell_metadata?: ShellExecutionMetadata;
+}
+
 export interface TurnSubmitted {
   request_id: string;
   session_id: string;
@@ -242,7 +268,7 @@ export interface SlashCommandDto {
   aliases: string[];
   description: string;
   usage_hint: string;
-  kind: "builtin" | "session_action" | "skill";
+  kind: "builtin" | "session_action" | "skill" | "local_picker";
   replaces_input: boolean;
 }
 

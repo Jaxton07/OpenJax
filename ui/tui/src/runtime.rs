@@ -215,8 +215,9 @@ mod tests {
         app.state.input_cursor = 3;
 
         let mut turn_task: Option<tokio::task::JoinHandle<()>> = None;
-        let mut core_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>> =
-            None;
+        let mut core_event_rx: Option<
+            tokio::sync::mpsc::UnboundedReceiver<openjax_protocol::Event>,
+        > = None;
         dismiss_overlay(&mut app, &mut turn_task, &mut core_event_rx);
 
         assert!(app.state.pending_approval.is_some());
@@ -250,7 +251,11 @@ mod tests {
         assert!(turn_task.is_none());
         assert!(core_event_rx.is_none());
         assert!(app.state.active_turn_id.is_none());
-        let status = app.state.live_messages.first().expect("status should exist");
+        let status = app
+            .state
+            .live_messages
+            .first()
+            .expect("status should exist");
         assert!(status.content.contains("已中断"));
     }
 }

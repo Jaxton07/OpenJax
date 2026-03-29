@@ -383,7 +383,7 @@ describe("MessageList", () => {
           {
             id: "step_1",
             type: "tool",
-            title: "read_file",
+            title: "Read",
             status: "success",
             time: "2026-01-01T00:00:10Z",
             startEventSeq: 11,
@@ -441,7 +441,7 @@ describe("MessageList", () => {
     expect(reasoningBlocks.length).toBe(2);
     const reasoning1 = reasoningBlocks[0];
     const reasoning2 = reasoningBlocks[1];
-    const toolNode = screen.getByText("read_file");
+    const toolNode = screen.getByText("Read");
     const assistantNode = screen.getByText("最终回答");
 
     expect(userNode.compareDocumentPosition(reasoning1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

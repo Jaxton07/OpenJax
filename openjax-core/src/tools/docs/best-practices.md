@@ -189,7 +189,7 @@ let result = timeout(Duration::from_secs(30), operation).await
 let timeout = match tool_name.as_str() {
     "grep_files" => Duration::from_secs(30),
     "shell" => Duration::from_secs(60),
-    "read_file" => Duration::from_secs(5),
+    "Read" => Duration::from_secs(5),
     _ => Duration::from_secs(30),
 };
 ```

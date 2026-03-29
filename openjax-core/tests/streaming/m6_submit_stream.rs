@@ -34,7 +34,7 @@ async fn submit_with_sink_emits_events_in_same_order_as_submit_result() {
     let returned_events = agent
         .submit_with_sink(
             Op::UserTurn {
-                input: "tool:read_file path=note.txt".to_string(),
+                input: "tool:Read path=note.txt".to_string(),
             },
             tx,
         )

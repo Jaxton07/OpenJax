@@ -1,8 +1,8 @@
 use crate::approval::ApprovalHandler;
 use crate::tools::context::SandboxPolicy;
 use crate::tools::handlers::{
-    ApplyPatchHandler, EditFileRangeHandler, GrepFilesHandler, ListDirHandler, ReadFileHandler,
-    ShellCommandHandler,
+    EditHandler, GlobFilesHandler, GrepFilesHandler, ListDirHandler, ReadHandler,
+    ShellCommandHandler, WriteFileHandler,
 };
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::shell::ShellType;
@@ -56,15 +56,17 @@ pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, V
     let mut builder = ToolRegistryBuilder::new();
 
     for spec in build_all_specs(config) {
-        let parallel = !spec.name.eq("apply_patch");
-        builder.push_spec(spec, parallel);
+        builder.push_spec(spec, true);
     }
 
     let grep_handler = Arc::new(GrepFilesHandler);
     builder.register_handler("grep_files", grep_handler);
 
-    let read_handler = Arc::new(ReadFileHandler);
-    builder.register_handler("read_file", read_handler);
+    let glob_handler = Arc::new(GlobFilesHandler);
+    builder.register_handler("glob_files", glob_handler);
+
+    let read_handler = Arc::new(ReadHandler);
+    builder.register_handler("Read", read_handler);
 
     let list_handler = Arc::new(ListDirHandler);
     builder.register_handler("list_dir", list_handler);
@@ -76,11 +78,11 @@ pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, V
         builder.register_handler("exec_command", shell_handler);
     }
 
-    let patch_handler = Arc::new(ApplyPatchHandler);
-    builder.register_handler("apply_patch", patch_handler);
+    let edit_handler = Arc::new(EditHandler);
+    builder.register_handler("Edit", edit_handler);
 
-    let edit_range_handler = Arc::new(EditFileRangeHandler);
-    builder.register_handler("edit_file_range", edit_range_handler);
+    let write_file_handler = Arc::new(WriteFileHandler);
+    builder.register_handler("write_file", write_file_handler);
 
     let process_snapshot_handler = Arc::new(ProcessSnapshotHandler::default());
     builder.register_handler("process_snapshot", process_snapshot_handler);
@@ -143,46 +145,30 @@ mod tests {
     use crate::approval::StdinApprovalHandler;
     use crate::tools::context::{SandboxPolicy, ToolPayload};
     use crate::tools::shell::ShellType;
-    use crate::tools::spec::{ApplyPatchToolType, ShellToolType, ToolsConfig};
+    use crate::tools::spec::{ShellToolType, ToolsConfig};
     use std::sync::Arc;
 
     #[test]
     fn default_registry_includes_system_tools() {
         let (registry, specs) = build_default_tool_registry();
+        let legacy_read = format!("{}_{}", "read", "file");
+        let legacy_edit = format!("{}_{}_{}", "edit", "file", "range");
+        assert!(registry.handler("Read").is_some());
+        assert!(registry.handler("Edit").is_some());
+        assert!(registry.handler(&legacy_read).is_none());
+        assert!(registry.handler(&legacy_edit).is_none());
         assert!(registry.handler("process_snapshot").is_some());
         assert!(registry.handler("system_load").is_some());
         assert!(registry.handler("disk_usage").is_some());
 
         let names: Vec<String> = specs.into_iter().map(|s| s.name).collect();
+        assert!(names.contains(&"Read".to_string()));
+        assert!(names.contains(&"Edit".to_string()));
+        assert!(!names.contains(&legacy_read));
+        assert!(!names.contains(&legacy_edit));
         assert!(names.contains(&"process_snapshot".to_string()));
         assert!(names.contains(&"system_load".to_string()));
         assert!(names.contains(&"disk_usage".to_string()));
-    }
-
-    #[test]
-    fn registry_build_respects_apply_patch_tool_type() {
-        let freeform = ToolsConfig {
-            shell_type: crate::tools::spec::ShellToolType::Default,
-            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
-        };
-        let (registry, specs) = build_tool_registry_with_config(&freeform);
-        assert!(registry.handler("apply_patch").is_some());
-        let patch_spec = specs
-            .iter()
-            .find(|spec| spec.name == "apply_patch")
-            .expect("apply_patch spec should exist");
-        assert!(patch_spec.description.contains("FREEFORM"));
-
-        let non_freeform = ToolsConfig {
-            shell_type: crate::tools::spec::ShellToolType::Default,
-            apply_patch_tool_type: Some(ApplyPatchToolType::Default),
-        };
-        let (_, specs) = build_tool_registry_with_config(&non_freeform);
-        let patch_spec = specs
-            .iter()
-            .find(|spec| spec.name == "apply_patch")
-            .expect("apply_patch spec should exist");
-        assert!(!patch_spec.description.contains("FREEFORM"));
     }
 
     #[test]
@@ -209,7 +195,6 @@ mod tests {
     fn registry_build_disables_shell_tools_when_configured() {
         let config = ToolsConfig {
             shell_type: ShellToolType::Disabled,
-            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
         };
         let (registry, specs) = build_tool_registry_with_config(&config);
         assert!(registry.handler("shell").is_none());
