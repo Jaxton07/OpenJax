@@ -1,8 +1,8 @@
 use crate::approval::ApprovalHandler;
 use crate::tools::context::SandboxPolicy;
 use crate::tools::handlers::{
-    EditHandler, GlobFilesHandler, GrepFilesHandler, ListDirHandler,
-    ReadHandler, ShellCommandHandler, WriteFileHandler,
+    EditHandler, GlobFilesHandler, GrepFilesHandler, ListDirHandler, ReadHandler,
+    ShellCommandHandler, WriteFileHandler,
 };
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::shell::ShellType;
