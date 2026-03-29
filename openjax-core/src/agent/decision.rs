@@ -371,7 +371,6 @@ fn canonical_tool_name(name: &str) -> Option<&'static str> {
         "system_load" => Some("system_load"),
         "disk_usage" => Some("disk_usage"),
         "shell" => Some("shell"),
-        "apply_patch" => Some("apply_patch"),
         "edit" => Some("Edit"),
         _ => None,
     }
