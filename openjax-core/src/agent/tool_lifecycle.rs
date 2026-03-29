@@ -18,13 +18,14 @@ impl Agent {
         events: &mut Vec<Event>,
     ) {
         let display_name = self.tools.display_name_for(tool_name);
+        let target = extract_tool_target_hint(tool_name, args);
         self.push_event(
             events,
             Event::ToolCallStarted {
                 turn_id,
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
-                target: extract_tool_target_hint(tool_name, args),
+                target: target.clone(),
                 display_name: display_name.clone(),
             },
         );
@@ -47,6 +48,7 @@ impl Agent {
                 tool_call_id: tool_call_id.to_string(),
                 tool_name: tool_name.to_string(),
                 display_name: display_name.clone(),
+                target,
             },
         );
         self.push_event(
