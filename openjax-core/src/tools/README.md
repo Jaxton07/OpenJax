@@ -22,7 +22,7 @@
 
 ## 当前受支持工具面
 
-- 文件/代码工具：`Read`、`list_dir`、`grep_files`、`glob_files`、`write_file`、`Edit`、`apply_patch`
+- 文件/代码工具：`Read`、`list_dir`、`grep_files`、`glob_files`、`write_file`、`Edit`
 - 命令执行工具：`shell`（含兼容别名 `exec_command`）
 - 系统观测工具：`process_snapshot`、`system_load`、`disk_usage`
 

@@ -91,7 +91,7 @@ OpenJax 工具系统提供以下核心特性：
 - **集中的沙箱和批准管理**：统一的沙箱策略和批准流程
 - **支持多种工具类型**：Function、Mcp、Custom、LocalShell
 - **动态工具支持**：支持运行时注册自定义工具
-- **Freeform 工具支持**：支持 Lark 语法定义的自由格式工具（如 apply_patch）
+- **Freeform 工具支持**：支持 Lark 语法定义的自由格式工具
 - **模块化架构**：工具代码按功能拆分为独立模块，易于维护和扩展
 
 ## 与流式系统对齐
@@ -114,7 +114,6 @@ OpenJax 工具系统提供以下核心特性：
 - **list_dir** - 列出目录内容，支持递归和分页
 - **Edit** - 在文件中唯一匹配并替换已有文本
 - **shell** - 执行 shell 命令，支持批准和沙箱模式
-- **apply_patch** - 应用补丁到工作区
 - **process_snapshot** - 只读进程快照
 - **system_load** - 只读系统负载与内存指标
 - **disk_usage** - 只读磁盘空间指标
@@ -151,12 +150,6 @@ tool:shell cmd='cargo test' require_escalated=true
 
 ```bash
 tool:Edit file_path=src/lib.rs old_string='let old_value = 1;' new_string='let old_value = 2;'
-```
-
-### 应用补丁
-
-```bash
-tool:apply_patch patch='*** Begin Patch\n*** Add File: new.rs\n+// content\n*** End Patch'
 ```
 
 ## 获取帮助

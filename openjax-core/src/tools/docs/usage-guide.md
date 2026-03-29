@@ -124,12 +124,6 @@ tool:list_dir dir_path=src depth=2
 tool:shell cmd='cargo test' require_escalated=true
 ```
 
-### 5. 应用补丁
-
-```bash
-tool:apply_patch patch='*** Begin Patch\n*** Add File: new.rs\n+// content\n*** End Patch'
-```
-
 ## 错误处理
 
 工具执行可能返回以下错误：

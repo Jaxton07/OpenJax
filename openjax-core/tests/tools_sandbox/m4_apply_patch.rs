@@ -54,6 +54,7 @@ fn apply_patch_input(patch: &str) -> String {
 }
 
 #[tokio::test]
+#[ignore = "apply_patch temporarily hidden from model"]
 async fn apply_patch_add_update_delete_successfully() {
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "line1\nline2\nline3").expect("seed file");
@@ -98,6 +99,7 @@ async fn apply_patch_add_update_delete_successfully() {
 }
 
 #[tokio::test]
+#[ignore = "apply_patch temporarily hidden from model"]
 async fn apply_patch_invalid_update_does_not_modify_file() {
     let workspace = create_workspace();
     fs::write(workspace.join("todo.txt"), "line1\nline2\nline3").expect("seed file");
@@ -135,6 +137,7 @@ async fn apply_patch_invalid_update_does_not_modify_file() {
 }
 
 #[tokio::test]
+#[ignore = "apply_patch temporarily hidden from model"]
 async fn apply_patch_rolls_back_when_later_action_fails() {
     let workspace = create_workspace();
     fs::write(workspace.join("blocker"), "I am a file").expect("seed blocker file");
@@ -170,6 +173,7 @@ async fn apply_patch_rolls_back_when_later_action_fails() {
 }
 
 #[tokio::test]
+#[ignore = "apply_patch temporarily hidden from model"]
 async fn apply_patch_fuzzy_level1_trailing_whitespace() {
     let workspace = create_workspace();
     // "context_a" has trailing spaces in the file; the patch omits them.
@@ -218,6 +222,7 @@ async fn apply_patch_fuzzy_level1_trailing_whitespace() {
 }
 
 #[tokio::test]
+#[ignore = "apply_patch temporarily hidden from model"]
 async fn apply_patch_fuzzy_level3_unicode_normalization() {
     let workspace = create_workspace();
     // File contains an em-dash; the patch uses a plain hyphen.
@@ -264,6 +269,7 @@ async fn apply_patch_fuzzy_level3_unicode_normalization() {
 }
 
 #[tokio::test]
+#[ignore = "apply_patch temporarily hidden from model"]
 async fn apply_patch_ambiguous_match_applies_to_first() {
     let workspace = create_workspace();
     // Duplicate context block appears twice; patch should apply to the first occurrence.
