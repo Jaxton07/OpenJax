@@ -31,6 +31,7 @@ struct DirEntry {
     display_name: String,
     depth: usize,
     kind: DirEntryKind,
+    size: Option<u64>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -135,7 +136,7 @@ async fn list_dir_slice(
     collect_dir_entries(path, Path::new(""), depth, &mut entries).await?;
 
     if entries.is_empty() {
-        return Ok(Vec::new());
+        return Ok(vec!["(empty directory)".to_string()]);
     }
 
     entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
@@ -188,6 +189,16 @@ async fn collect_dir_entries(
                 .await
                 .with_context(|| "failed to inspect entry")?;
 
+            let size = if file_type.is_file() {
+                let meta = entry
+                    .metadata()
+                    .await
+                    .with_context(|| "failed to read entry metadata")?;
+                Some(meta.len())
+            } else {
+                None
+            };
+
             let file_name = entry.file_name();
             let relative_path = if prefix.as_os_str().is_empty() {
                 PathBuf::from(&file_name)
@@ -208,6 +219,7 @@ async fn collect_dir_entries(
                     display_name,
                     depth: display_depth,
                     kind,
+                    size,
                 },
             ));
         }
@@ -254,5 +266,23 @@ fn format_dir_entry_line(entry: &DirEntry) -> String {
         DirEntryKind::Other => name.push('?'),
         DirEntryKind::File => {}
     }
-    format!("{indent}{name}")
+    match entry.size {
+        Some(bytes) => format!("{indent}{name}  ({})", format_file_size(bytes)),
+        None => format!("{indent}{name}"),
+    }
+}
+
+fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
 }

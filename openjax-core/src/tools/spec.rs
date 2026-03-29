@@ -182,7 +182,7 @@ pub fn create_read_spec() -> ToolSpec {
 pub fn create_list_dir_spec() -> ToolSpec {
     ToolSpec {
         name: "list_dir".to_string(),
-        description: "List directory contents with support for recursive listing and pagination. Returns directory entries with indentation to show hierarchy. Entries are marked with '/' for directories, '@' for symlinks, and '?' for other types.".to_string(),
+        description: "List directory contents with support for recursive listing and pagination. Returns directory entries with indentation to show hierarchy. Entries are marked with '/' for directories, '@' for symlinks, and '?' for other types. File entries include their size. Returns '(empty directory)' for empty directories.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
