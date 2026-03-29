@@ -104,33 +104,25 @@ describe("Composer slash commands", () => {
     expect(screen.queryByText("/policy")).not.toBeInTheDocument();
   });
 
-  it("submits the selected slash match on enter", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          commands: [
-            {
-              name: "clear",
-              aliases: ["cls"],
-              description: "Clear current session context",
-              usage_hint: "/clear",
-              kind: "session_action",
-              replaces_input: false,
-            },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: "ok",
-          message: "session cleared",
-        }),
-      });
+  it("calls onClear when clear slash command is submitted", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        commands: [
+          {
+            name: "clear",
+            aliases: ["cls"],
+            description: "Clear current session context",
+            usage_hint: "/clear",
+            kind: "session_action",
+            replaces_input: false,
+          },
+        ],
+      }),
+    });
     vi.stubGlobal("fetch", fetchMock);
     const onSend = vi.fn();
+    const onClear = vi.fn();
 
     render(
       <Composer
@@ -139,6 +131,7 @@ describe("Composer slash commands", () => {
         sessionId="sess-clear"
         onSend={onSend}
         onNewChat={vi.fn()}
+        onClear={onClear}
       />
     );
 
@@ -146,14 +139,7 @@ describe("Composer slash commands", () => {
     await userEvent.type(input, "/cle");
     await userEvent.keyboard("{Enter}");
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "http://127.0.0.1:8765/api/v1/sessions/sess-clear/slash",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ command: "clear" }),
-      })
-    );
+    expect(onClear).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
   });
 
