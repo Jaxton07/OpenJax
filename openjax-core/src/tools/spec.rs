@@ -170,10 +170,10 @@ pub fn create_grep_files_spec() -> ToolSpec {
     }
 }
 
-/// 创建 read_file 工具规范
-pub fn create_read_file_spec() -> ToolSpec {
+/// 创建 Read 工具规范
+pub fn create_read_spec() -> ToolSpec {
     ToolSpec {
-        name: "read_file".to_string(),
+        name: "Read".to_string(),
         description: "Read file contents with support for pagination and indentation-aware reading. Returns file lines with line numbers in the format 'L<line_number>: <content>'.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
@@ -239,7 +239,7 @@ pub fn create_read_file_spec() -> ToolSpec {
             "type": "string",
             "description": "File contents with line numbers, one per line"
         })),
-        display_name: "Read File".to_string(),
+        display_name: "Read".to_string(),
     }
 }
 
@@ -352,11 +352,11 @@ pub fn create_apply_patch_spec() -> ToolSpec {
     }
 }
 
-/// 创建 edit_file_range 工具规范
-pub fn create_edit_file_range_spec() -> ToolSpec {
+/// 创建 Edit 工具规范
+pub fn create_edit_spec() -> ToolSpec {
     ToolSpec {
-        name: "edit_file_range".to_string(),
-        description: "Edit a file by replacing an inclusive line range [start_line, end_line] with new_text. Line numbers are 1-indexed.".to_string(),
+        name: "Edit".to_string(),
+        description: "Edit a file by replacing exactly one existing text occurrence with new text. Use this for single-file existing-text replacements.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -364,28 +364,22 @@ pub fn create_edit_file_range_spec() -> ToolSpec {
                     "type": "string",
                     "description": "Path to the file to edit"
                 },
-                "start_line": {
-                    "type": "number",
-                    "description": "Start line (1-indexed, inclusive)",
-                    "minimum": 1
-                },
-                "end_line": {
-                    "type": "number",
-                    "description": "End line (1-indexed, inclusive)",
-                    "minimum": 1
-                },
-                "new_text": {
+                "old_string": {
                     "type": "string",
-                    "description": "Replacement text for the specified line range. Use empty string to delete the range."
+                    "description": "Exact existing text to replace; must match uniquely in the file"
+                },
+                "new_string": {
+                    "type": "string",
+                    "description": "Replacement text"
                 }
             },
-            "required": ["file_path", "start_line", "end_line", "new_text"]
+            "required": ["file_path", "old_string", "new_string"]
         }),
         output_schema: Some(serde_json::json!({
             "type": "string",
             "description": "Summary of applied edit"
         })),
-        display_name: "Edit File".to_string(),
+        display_name: "Edit".to_string(),
     }
 }
 
@@ -506,12 +500,12 @@ pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
     let mut specs = vec![
         create_glob_files_spec(),
         create_grep_files_spec(),
-        create_read_file_spec(),
+        create_read_spec(),
         create_list_dir_spec(),
         create_process_snapshot_spec(),
         create_system_load_spec(),
         create_disk_usage_spec(),
-        create_edit_file_range_spec(),
+        create_edit_spec(),
         create_write_file_spec(),
     ];
 
@@ -525,4 +519,23 @@ pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
     });
 
     specs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ToolsConfig, build_all_specs};
+
+    #[test]
+    fn build_all_specs_exposes_read_edit_contract_names() {
+        let names: Vec<String> = build_all_specs(&ToolsConfig::default())
+            .into_iter()
+            .map(|spec| spec.name)
+            .collect();
+        let legacy_read = format!("{}_{}", "read", "file");
+        let legacy_edit = format!("{}_{}_{}", "edit", "file", "range");
+        assert!(names.contains(&"Read".to_string()));
+        assert!(names.contains(&"Edit".to_string()));
+        assert!(!names.contains(&legacy_read));
+        assert!(!names.contains(&legacy_edit));
+    }
 }

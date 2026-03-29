@@ -68,7 +68,7 @@ async fn emits_approval_requested_and_resolved_events() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=note.txt".to_string(),
+            input: "tool:Read path=note.txt".to_string(),
         })
         .await;
 
@@ -113,7 +113,7 @@ async fn submit_with_sink_emits_approval_requested_before_resolution() {
         agent
             .submit_with_sink(
                 Op::UserTurn {
-                    input: "tool:read_file path=note.txt".to_string(),
+                    input: "tool:Read path=note.txt".to_string(),
                 },
                 sink_tx,
             )

@@ -90,10 +90,10 @@ fn read_default_include_header() -> bool {
     true
 }
 
-pub struct ReadFileHandler;
+pub struct ReadHandler;
 
 #[async_trait]
-impl ToolHandler for ReadFileHandler {
+impl ToolHandler for ReadHandler {
     fn kind(&self) -> ToolKind {
         ToolKind::Function
     }
@@ -105,7 +105,7 @@ impl ToolHandler for ReadFileHandler {
             ToolPayload::Function { arguments } => arguments,
             _ => {
                 return Err(FunctionCallError::RespondToModel(
-                    "read_file handler received unsupported payload".to_string(),
+                    "Read handler received unsupported payload".to_string(),
                 ));
             }
         };
@@ -113,11 +113,11 @@ impl ToolHandler for ReadFileHandler {
         debug!(
             raw_arguments = %arguments,
             cwd = %turn.cwd.display(),
-            "read_file parsing arguments"
+            "Read parsing arguments"
         );
 
         let args: ReadFileArgs = serde_json::from_str(&arguments).map_err(|e| {
-            debug!(error = %e, raw_arguments = %arguments, "read_file failed to parse arguments");
+            debug!(error = %e, raw_arguments = %arguments, "Read failed to parse arguments");
             FunctionCallError::Internal(format!("failed to parse arguments: {}", e))
         })?;
 
@@ -126,7 +126,7 @@ impl ToolHandler for ReadFileHandler {
             offset = args.offset,
             limit = args.limit,
             mode = ?args.mode,
-            "read_file parsed arguments"
+            "Read parsed arguments"
         );
 
         if args.offset == 0 {
@@ -146,12 +146,12 @@ impl ToolHandler for ReadFileHandler {
             .map_err(|e| FunctionCallError::Internal(e.to_string()))?;
 
         let collected = match args.mode {
-            ReadMode::Slice => read_file_slice(&path, args.offset, args.limit)
+            ReadMode::Slice => read_slice(&path, args.offset, args.limit)
                 .await
                 .map_err(|e| FunctionCallError::Internal(e.to_string()))?,
             ReadMode::Indentation => {
                 let indentation = args.indentation.unwrap_or_default();
-                read_file_indentation(&path, args.offset, args.limit, indentation)
+                read_indentation(&path, args.offset, args.limit, indentation)
                     .await
                     .map_err(|e| FunctionCallError::Internal(e.to_string()))?
             }
@@ -164,7 +164,7 @@ impl ToolHandler for ReadFileHandler {
     }
 }
 
-async fn read_file_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec<String>> {
+async fn read_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec<String>> {
     let file = tokio::fs::File::open(path)
         .await
         .with_context(|| "failed to read file")?;
@@ -212,7 +212,7 @@ async fn read_file_slice(path: &Path, offset: usize, limit: usize) -> Result<Vec
     Ok(collected)
 }
 
-async fn read_file_indentation(
+async fn read_indentation(
     path: &Path,
     offset: usize,
     limit: usize,

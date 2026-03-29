@@ -829,11 +829,12 @@ impl ModelClient for ApprovalCancellationBatchModel {
         if let Some(sender) = delta_sender {
             let _ = sender.send(StreamDelta::ToolUseStart {
                 id: "call_approve".to_string(),
-                name: "edit_file_range".to_string(),
+                name: "Edit".to_string(),
             });
             let _ = sender.send(StreamDelta::ToolArgsDelta {
                 id: "call_approve".to_string(),
-                delta: "{\"file_path\":\"todo.txt\",\"start_line\":\"1\",\"end_line\":\"1\",\"new_text\":\"x\"}".to_string(),
+                delta: "{\"file_path\":\"todo.txt\",\"old_string\":\"a\",\"new_string\":\"x\"}"
+                    .to_string(),
             });
             let _ = sender.send(StreamDelta::ToolUseEnd {
                 id: "call_approve".to_string(),
@@ -850,12 +851,11 @@ impl ModelClient for ApprovalCancellationBatchModel {
             content: vec![
                 AssistantContentBlock::ToolUse {
                     id: "call_approve".to_string(),
-                    name: "edit_file_range".to_string(),
+                    name: "Edit".to_string(),
                     input: serde_json::json!({
                         "file_path": "todo.txt",
-                        "start_line": "1",
-                        "end_line": "1",
-                        "new_text": "x"
+                        "old_string": "a",
+                        "new_string": "x"
                     }),
                 },
                 AssistantContentBlock::ToolUse {

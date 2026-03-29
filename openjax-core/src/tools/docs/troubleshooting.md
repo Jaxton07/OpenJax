@@ -56,13 +56,13 @@ tool:grep_files pattern=fn main path=src include=*.rs
 
 ```bash
 # ✅ 好的做法：使用相对路径
-tool:read_file file_path=src/lib.rs
+tool:Read file_path=src/lib.rs
 
 # ❌ 不好的做法：使用绝对路径
-tool:read_file file_path=/path/to/file.rs
+tool:Read file_path=/path/to/file.rs
 
 # ❌ 不好的做法：使用父目录遍历
-tool:read_file file_path=../../file.rs
+tool:Read file_path=../../file.rs
 ```
 
 ### 4. 批准被拒绝
@@ -132,7 +132,7 @@ export OPENJAX_SANDBOX_MODE=danger_full_access
 tool:list_dir dir_path=src
 
 # 然后读取文件
-tool:read_file file_path=src/lib.rs
+tool:Read file_path=src/lib.rs
 ```
 
 ### 8. 权限错误
@@ -205,7 +205,7 @@ for spec in specs {
 tool:grep_files pattern=fn main
 
 # 测试参数
-tool:read_file file_path=src/lib.rs offset=1 limit=10
+tool:Read file_path=src/lib.rs offset=1 limit=10
 ```
 
 ### 4. 查看工具规范

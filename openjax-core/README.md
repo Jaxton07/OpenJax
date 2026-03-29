@@ -69,7 +69,7 @@ let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, cwd);
 
 let events = agent
     .submit(Op::UserTurn {
-        input: "tool:read_file path=README.md".to_string(),
+        input: "tool:Read path=README.md".to_string(),
     })
     .await;
 ```

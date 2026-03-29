@@ -1,8 +1,8 @@
 use crate::approval::ApprovalHandler;
 use crate::tools::context::SandboxPolicy;
 use crate::tools::handlers::{
-    ApplyPatchHandler, EditFileRangeHandler, GlobFilesHandler, GrepFilesHandler, ListDirHandler,
-    ReadFileHandler, ShellCommandHandler, WriteFileHandler,
+    ApplyPatchHandler, EditHandler, GlobFilesHandler, GrepFilesHandler, ListDirHandler,
+    ReadHandler, ShellCommandHandler, WriteFileHandler,
 };
 use crate::tools::registry::{ToolHandler, ToolRegistry};
 use crate::tools::shell::ShellType;
@@ -66,8 +66,8 @@ pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, V
     let glob_handler = Arc::new(GlobFilesHandler);
     builder.register_handler("glob_files", glob_handler);
 
-    let read_handler = Arc::new(ReadFileHandler);
-    builder.register_handler("read_file", read_handler);
+    let read_handler = Arc::new(ReadHandler);
+    builder.register_handler("Read", read_handler);
 
     let list_handler = Arc::new(ListDirHandler);
     builder.register_handler("list_dir", list_handler);
@@ -82,8 +82,8 @@ pub fn build_tool_registry_with_config(config: &ToolsConfig) -> (ToolRegistry, V
     let patch_handler = Arc::new(ApplyPatchHandler);
     builder.register_handler("apply_patch", patch_handler);
 
-    let edit_range_handler = Arc::new(EditFileRangeHandler);
-    builder.register_handler("edit_file_range", edit_range_handler);
+    let edit_handler = Arc::new(EditHandler);
+    builder.register_handler("Edit", edit_handler);
 
     let write_file_handler = Arc::new(WriteFileHandler);
     builder.register_handler("write_file", write_file_handler);
@@ -155,11 +155,21 @@ mod tests {
     #[test]
     fn default_registry_includes_system_tools() {
         let (registry, specs) = build_default_tool_registry();
+        let legacy_read = format!("{}_{}", "read", "file");
+        let legacy_edit = format!("{}_{}_{}", "edit", "file", "range");
+        assert!(registry.handler("Read").is_some());
+        assert!(registry.handler("Edit").is_some());
+        assert!(registry.handler(&legacy_read).is_none());
+        assert!(registry.handler(&legacy_edit).is_none());
         assert!(registry.handler("process_snapshot").is_some());
         assert!(registry.handler("system_load").is_some());
         assert!(registry.handler("disk_usage").is_some());
 
         let names: Vec<String> = specs.into_iter().map(|s| s.name).collect();
+        assert!(names.contains(&"Read".to_string()));
+        assert!(names.contains(&"Edit".to_string()));
+        assert!(!names.contains(&legacy_read));
+        assert!(!names.contains(&legacy_edit));
         assert!(names.contains(&"process_snapshot".to_string()));
         assert!(names.contains(&"system_load".to_string()));
         assert!(names.contains(&"disk_usage".to_string()));

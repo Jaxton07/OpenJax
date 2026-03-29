@@ -2,8 +2,8 @@
 
 #[path = "tools_sandbox/m4_apply_patch.rs"]
 mod apply_patch_m4;
-#[path = "tools_sandbox/m5_edit_file_range.rs"]
-mod edit_file_range_m5;
+#[path = "tools_sandbox/m5_edit.rs"]
+mod edit_m5;
 #[path = "tools_sandbox/m11_glob_files.rs"]
 mod glob_files_m11;
 #[path = "tools_sandbox/m3_sandbox.rs"]

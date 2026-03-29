@@ -19,7 +19,7 @@
 - `state.rs`: 历史记录、限速、重复工具调用检测。
 - `events.rs`: 统一事件推送（写入返回 `Vec<Event>` + 可选 sink）。
 - `lifecycle.rs`: `thread_id/depth/parent` 与子 Agent 生成（保留扩展位）。
-- `tool_guard.rs`: `apply_patch` 成功/失败后强制 `read_file` 的防护规则。
+- `tool_guard.rs`: `apply_patch` 成功/失败后强制 `Read` 的防护规则。
 - `tool_policy.rs`: 重复调用、审批阻断等策略文案与判定函数。
 
 ## 回合执行流程

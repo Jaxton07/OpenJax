@@ -109,7 +109,7 @@ tool:grep_files pattern=fn main path=src include=*.rs
 ### 2. 读取文件
 
 ```bash
-tool:read_file file_path=src/lib.rs offset=1 limit=50
+tool:Read file_path=src/lib.rs offset=1 limit=50
 ```
 
 ### 3. 列出目录
@@ -183,7 +183,7 @@ tool:shell cmd='cargo test' timeout_ms=60000
 
 ```bash
 # 使用分页减少数据传输
-tool:read_file file_path=large_file.txt offset=1 limit=100
+tool:Read file_path=large_file.txt offset=1 limit=100
 tool:list_dir dir_path=src offset=1 limit=50
 ```
 

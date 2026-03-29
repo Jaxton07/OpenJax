@@ -342,10 +342,9 @@ pub(crate) fn normalize_tool_calls(tool_calls: &[ToolCallSpec]) -> Vec<Normalize
         else {
             continue;
         };
-        let tool_name = tool_name.to_ascii_lowercase();
-        if !is_supported_tool_name(&tool_name) {
+        let Some(tool_name) = canonical_tool_name(tool_name) else {
             continue;
-        }
+        };
         let tool_call_id = item
             .tool_call_id
             .as_ref()
@@ -354,7 +353,7 @@ pub(crate) fn normalize_tool_calls(tool_calls: &[ToolCallSpec]) -> Vec<Normalize
             .unwrap_or_else(|| format!("tool_batch_call_{}", index + 1));
         normalized.push(NormalizedToolCall {
             tool_call_id,
-            tool_name,
+            tool_name: tool_name.to_string(),
             args: stringify_map_values(&item.arguments),
             depends_on: item.depends_on.clone(),
             concurrency_group: item.concurrency_group.clone(),
@@ -363,19 +362,23 @@ pub(crate) fn normalize_tool_calls(tool_calls: &[ToolCallSpec]) -> Vec<Normalize
     normalized
 }
 
+fn canonical_tool_name(name: &str) -> Option<&'static str> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "read" => Some("Read"),
+        "list_dir" => Some("list_dir"),
+        "grep_files" => Some("grep_files"),
+        "process_snapshot" => Some("process_snapshot"),
+        "system_load" => Some("system_load"),
+        "disk_usage" => Some("disk_usage"),
+        "shell" => Some("shell"),
+        "apply_patch" => Some("apply_patch"),
+        "edit" => Some("Edit"),
+        _ => None,
+    }
+}
+
 fn is_supported_tool_name(name: &str) -> bool {
-    matches!(
-        name,
-        "read_file"
-            | "list_dir"
-            | "grep_files"
-            | "process_snapshot"
-            | "system_load"
-            | "disk_usage"
-            | "shell"
-            | "apply_patch"
-            | "edit_file_range"
-    )
+    canonical_tool_name(name).is_some()
 }
 
 fn stringify_json_value(value: &Value) -> Option<String> {
@@ -420,7 +423,11 @@ fn collapse_v2_to_v1(mut decision: ModelDecisionV2) -> ModelDecision {
         }
         return ModelDecision {
             action: "tool".to_string(),
-            tool: first.tool_name.map(|name| name.to_ascii_lowercase()),
+            tool: first.tool_name.map(|name| {
+                canonical_tool_name(&name)
+                    .map(|canonical| canonical.to_string())
+                    .unwrap_or(name)
+            }),
             args: Some(stringify_map_values(&first.arguments)),
             message: decision.message,
             extra,
@@ -456,7 +463,15 @@ fn collapse_v2_to_v1(mut decision: ModelDecisionV2) -> ModelDecision {
 
 pub(crate) fn normalize_model_decision(mut decision: ModelDecision) -> ModelDecision {
     let action_lower = decision.action.to_ascii_lowercase();
-    if action_lower == "tool" || action_lower == "final" {
+    if action_lower == "tool" {
+        if let Some(existing) = decision.tool.as_deref()
+            && let Some(canonical) = canonical_tool_name(existing)
+        {
+            decision.tool = Some(canonical.to_string());
+        }
+        return decision;
+    }
+    if action_lower == "final" {
         return decision;
     }
 
@@ -465,7 +480,9 @@ pub(crate) fn normalize_model_decision(mut decision: ModelDecision) -> ModelDeci
     }
 
     if decision.tool.as_deref().is_none_or(|t| t.trim().is_empty()) {
-        decision.tool = Some(action_lower.clone());
+        if let Some(canonical) = canonical_tool_name(&action_lower) {
+            decision.tool = Some(canonical.to_string());
+        }
     }
 
     if decision.args.is_none() {
@@ -496,16 +513,13 @@ mod tests {
         let raw = r#"{
           "action":"tool_batch",
           "tool_calls":[
-            {"tool_call_id":"call_1","tool_name":"read_file","arguments":{"file_path":"/tmp/a"}}
+            {"tool_call_id":"call_1","tool_name":"Read","arguments":{"file_path":"/tmp/a"}}
           ]
         }"#;
         let decision = parse_model_decision_v2(raw).expect("parse v2");
         assert_eq!(decision.action, "tool_batch");
         assert_eq!(decision.tool_calls.len(), 1);
-        assert_eq!(
-            decision.tool_calls[0].tool_name.as_deref(),
-            Some("read_file")
-        );
+        assert_eq!(decision.tool_calls[0].tool_name.as_deref(), Some("Read"));
     }
 
     #[test]
@@ -513,12 +527,12 @@ mod tests {
         let raw = r#"{
           "action":"tool_batch",
           "tool_calls":[
-            {"tool_call_id":"call_1","tool_name":"read_file","arguments":{"file_path":"/tmp/a"}}
+            {"tool_call_id":"call_1","tool_name":"Read","arguments":{"file_path":"/tmp/a"}}
           ]
         }"#;
         let decision = parse_model_decision(raw).expect("parse decision");
         assert_eq!(decision.action, "tool");
-        assert_eq!(decision.tool.as_deref(), Some("read_file"));
+        assert_eq!(decision.tool.as_deref(), Some("Read"));
         assert_eq!(
             decision
                 .args

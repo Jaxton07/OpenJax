@@ -91,7 +91,7 @@ describe("session-events/tools", () => {
       event_seq: 2,
       timestamp: "2026-01-01T00:00:02Z",
       type: "tool_call_started",
-      payload: { tool_call_id: "call_2", tool_name: "read_file", target: "README.md" }
+      payload: { tool_call_id: "call_2", tool_name: "Read", target: "README.md" }
     });
 
     const stepMessages = secondStarted.messages.filter((message) => message.kind === "tool_steps");
@@ -109,7 +109,7 @@ describe("session-events/tools", () => {
       event_seq: 1,
       timestamp: "2026-01-01T00:00:01Z",
       type: "tool_call_started",
-      payload: { tool_call_id: "call_1", tool_name: "read_file", target: "a.txt" }
+      payload: { tool_call_id: "call_1", tool_name: "Read", target: "a.txt" }
     });
     const completed = applySessionEvent(started, {
       request_id: "req",
@@ -118,11 +118,13 @@ describe("session-events/tools", () => {
       event_seq: 2,
       timestamp: "2026-01-01T00:00:02Z",
       type: "tool_call_completed",
-      payload: { tool_call_id: "call_2", tool_name: "read_file", output: "ok" }
+      payload: { tool_call_id: "call_2", tool_name: "Edit", output: "ok" }
     });
 
     const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");
     expect(stepMessages).toHaveLength(2);
+    expect(stepMessages[0]?.toolSteps?.[0].title).toBe("Read");
+    expect(stepMessages[1]?.toolSteps?.[0].title).toBe("Edit");
   });
 
   it("falls back to synthetic ids when tool_call_id is missing", () => {
@@ -242,7 +244,7 @@ describe("session-events/tools", () => {
       event_seq: 1,
       timestamp: "2026-01-01T00:00:01Z",
       type: "tool_call_started",
-      payload: { tool_name: "read_file", target: "a.txt" }
+      payload: { tool_name: "Read", target: "a.txt" }
     });
     const completed = applySessionEvent(started, {
       request_id: "req",
@@ -251,7 +253,7 @@ describe("session-events/tools", () => {
       event_seq: 2,
       timestamp: "2026-01-01T00:00:02Z",
       type: "tool_call_completed",
-      payload: { tool_name: "read_file", output: "ok" }
+      payload: { tool_name: "Read", output: "ok" }
     });
 
     const stepMessages = completed.messages.filter((message) => message.kind === "tool_steps");

@@ -5,7 +5,7 @@ pub(super) fn extract_tool_target_hint(
     args: &HashMap<String, String>,
 ) -> Option<String> {
     let keys: &[&str] = match tool_name {
-        "read_file" | "apply_patch" | "edit_file_range" | "write_file" => {
+        "Read" | "Edit" | "apply_patch" | "write_file" => {
             &["file_path", "path", "filepath"]
         }
         "disk_usage" => &["path"],
@@ -43,10 +43,7 @@ pub(super) fn tool_failure_retryable(error_text: &str) -> bool {
 }
 
 pub(super) fn is_mutating_tool(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "apply_patch" | "edit_file_range" | "shell" | "exec_command"
-    )
+    matches!(tool_name, "Edit" | "apply_patch" | "shell" | "exec_command")
 }
 
 pub(super) fn summarize_log_preview(text: &str, limit: usize) -> (String, bool) {

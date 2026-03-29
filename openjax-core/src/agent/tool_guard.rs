@@ -15,10 +15,10 @@ impl ApplyPatchReadGuardReason {
     fn user_message(self) -> &'static str {
         match self {
             Self::AfterSuccess => {
-                "apply_patch 已成功执行。再次 apply_patch 前请先调用 read_file 获取最新内容；若是单文件连续行修正，请优先使用 edit_file_range。"
+                "apply_patch 已成功执行。再次 apply_patch 前请先调用 Read 获取最新内容；若是单文件连续文本替换，请优先使用 Edit。"
             }
             Self::AfterContextMismatchFailure => {
-                "上一次 apply_patch 报 hunk context not found。请先 read_file 刷新上下文；若是单文件连续行修正，请改用 edit_file_range。"
+                "上一次 apply_patch 报 hunk context not found。请先 Read 刷新上下文；若是单文件连续文本替换，请改用 Edit。"
             }
         }
     }
@@ -46,14 +46,14 @@ impl ApplyPatchReadGuard {
 
     pub(crate) fn on_tool_success(&mut self, tool_name: &str) {
         match tool_name {
-            "read_file" => self.reason = None,
+            "Read" => self.reason = None,
             "apply_patch" => self.reason = Some(ApplyPatchReadGuardReason::AfterSuccess),
             _ => {}
         }
     }
 
     pub(crate) fn on_tool_failure(&mut self, tool_name: &str, err_text: &str) {
-        if tool_name == "read_file" {
+        if tool_name == "Read" {
             self.reason = None;
             return;
         }

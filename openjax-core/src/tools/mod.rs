@@ -11,7 +11,6 @@ pub mod hooks;
 pub mod list_dir;
 pub mod orchestrator;
 pub mod policy;
-pub mod read_file;
 pub mod registry;
 pub mod router;
 pub mod router_impl;
@@ -43,7 +42,6 @@ pub use policy::{
     ApprovalContext, PolicyDecision, PolicyOutcome, PolicyTrace, SandboxBackend, SandboxCapability,
     evaluate_tool_invocation_policy,
 };
-pub use read_file::read_file;
 pub use registry::{ToolHandler, ToolKind, ToolRegistry};
 pub use router::{MAX_AGENT_DEPTH, SandboxMode, ToolCall, ToolRuntimeConfig, parse_tool_call};
 pub use router_impl::{ToolExecOutcome, ToolExecutionRequest, ToolRouter};
@@ -57,8 +55,7 @@ pub use shell::ShellType;
 pub use spec::{
     ApplyPatchToolType, FreeformFormat, ShellToolType, ToolSpec, ToolsConfig, build_all_specs,
     create_apply_patch_freeform_spec, create_apply_patch_spec, create_disk_usage_spec,
-    create_edit_file_range_spec, create_exec_command_spec, create_grep_files_spec,
-    create_list_dir_spec, create_process_snapshot_spec, create_read_file_spec, create_shell_spec,
-    create_system_load_spec,
+    create_edit_spec, create_exec_command_spec, create_grep_files_spec, create_list_dir_spec,
+    create_process_snapshot_spec, create_read_spec, create_shell_spec, create_system_load_spec,
 };
 pub use tool_builder::{ToolRegistryBuilder, build_default_tool_registry, create_tool_invocation};

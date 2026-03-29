@@ -110,9 +110,9 @@ OpenJax 工具系统提供以下核心特性：
 当前系统包含以下工具：
 
 - **grep_files** - 使用 ripgrep 进行高性能搜索
-- **read_file** - 读取文件内容，支持分页和缩进感知
+- **Read** - 读取文件内容，支持分页和缩进感知
 - **list_dir** - 列出目录内容，支持递归和分页
-- **edit_file_range** - 按行范围精确编辑文件
+- **Edit** - 在文件中唯一匹配并替换已有文本
 - **shell** - 执行 shell 命令，支持批准和沙箱模式
 - **apply_patch** - 应用补丁到工作区
 - **process_snapshot** - 只读进程快照
@@ -132,7 +132,7 @@ tool:grep_files pattern=fn main path=src include=*.rs
 ### 读取文件
 
 ```bash
-tool:read_file file_path=src/lib.rs offset=1 limit=50
+tool:Read file_path=src/lib.rs offset=1 limit=50
 ```
 
 ### 列出目录
@@ -147,10 +147,10 @@ tool:list_dir dir_path=src depth=2
 tool:shell cmd='cargo test' require_escalated=true
 ```
 
-### 按行范围编辑
+### 精确文本替换
 
 ```bash
-tool:edit_file_range file_path=src/lib.rs start_line=10 end_line=12 new_text='new line a\nnew line b'
+tool:Edit file_path=src/lib.rs old_string='let old_value = 1;' new_string='let old_value = 2;'
 ```
 
 ### 应用补丁

@@ -180,11 +180,11 @@ mod tests {
     fn test_format_for_prompt_includes_tool_traces() {
         let h = vec![HistoryItem::Turn(TurnRecord {
             user_input: "fix the bug".to_string(),
-            tool_traces: vec!["read_file(main.rs) → ok ✓".to_string()],
+            tool_traces: vec!["Read(main.rs) → ok ✓".to_string()],
             assistant_output: "done".to_string(),
         })];
         let text = format_for_prompt(&h);
-        assert!(text.contains("read_file(main.rs)"));
+        assert!(text.contains("Read(main.rs)"));
         assert!(text.contains("fix the bug"));
         assert!(text.contains("done"));
     }

@@ -140,7 +140,7 @@ describe("session-events/assistant", () => {
       event_seq: 11,
       timestamp: "2026-01-01T00:00:11Z",
       type: "tool_call_started",
-      payload: { tool_name: "read_file", tool_call_id: "call_1" }
+      payload: { tool_name: "Read", tool_call_id: "call_1" }
     });
     const text = applySessionEvent(tool, {
       request_id: "req",

@@ -70,11 +70,11 @@ async fn test_split_for_compression_skips_short_history() {
 
     // Submit exactly 4 turns (the boundary case)
     for i in 0..4 {
-        let events = agent
-            .submit(Op::UserTurn {
-                input: "tool:read_file path=file.txt".to_string(),
-            })
-            .await;
+            let events = agent
+                .submit(Op::UserTurn {
+                    input: "tool:Read path=file.txt".to_string(),
+                })
+                .await;
 
         assert!(
             matches!(events.last(), Some(Event::TurnCompleted { .. })),
@@ -96,7 +96,7 @@ async fn test_split_for_compression_skips_short_history() {
     // Now add one more turn (5 total)
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=file.txt".to_string(),
+            input: "tool:Read path=file.txt".to_string(),
         })
         .await;
 
@@ -143,7 +143,7 @@ async fn test_compact_produces_summary_plus_recent() {
     for _ in 0..8 {
         let _events = agent
             .submit(Op::UserTurn {
-                input: "tool:read_file path=file.txt".to_string(),
+                input: "tool:Read path=file.txt".to_string(),
             })
             .await;
     }
@@ -222,11 +222,11 @@ async fn test_context_window_zero_skips_auto_compact() {
     // Submit many turns (far exceeds the compression threshold)
     // The compression logic requires > 4 turns
     for i in 0..10 {
-        let events = agent
-            .submit(Op::UserTurn {
-                input: "tool:read_file path=file.txt".to_string(),
-            })
-            .await;
+            let events = agent
+                .submit(Op::UserTurn {
+                    input: "tool:Read path=file.txt".to_string(),
+                })
+                .await;
 
         // Each turn should complete
         assert!(

@@ -31,7 +31,7 @@ async fn submit_still_returns_full_turn_event_sequence() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=note.txt".to_string(),
+            input: "tool:Read path=note.txt".to_string(),
         })
         .await;
 
@@ -39,13 +39,13 @@ async fn submit_still_returns_full_turn_event_sequence() {
     assert!(matches!(events.last(), Some(Event::TurnCompleted { .. })));
     assert!(events
         .iter()
-        .any(|event| matches!(event, Event::ToolCallCompleted { tool_name, ok, .. } if tool_name == "read_file" && *ok)));
+        .any(|event| matches!(event, Event::ToolCallCompleted { tool_name, ok, .. } if tool_name == "Read" && *ok)));
     let started_id = events.iter().find_map(|event| match event {
         Event::ToolCallStarted {
             tool_name,
             tool_call_id,
             ..
-        } if tool_name == "read_file" => Some(tool_call_id.as_str()),
+        } if tool_name == "Read" => Some(tool_call_id.as_str()),
         _ => None,
     });
     let completed_id = events.iter().find_map(|event| match event {
@@ -53,7 +53,7 @@ async fn submit_still_returns_full_turn_event_sequence() {
             tool_name,
             tool_call_id,
             ..
-        } if tool_name == "read_file" => Some(tool_call_id.as_str()),
+        } if tool_name == "Read" => Some(tool_call_id.as_str()),
         _ => None,
     });
     assert_eq!(started_id, completed_id);

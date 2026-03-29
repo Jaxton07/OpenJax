@@ -100,13 +100,13 @@ mod tests {
     #[test]
     fn test_normal_calls_return_none() {
         let mut d = fresh();
-        assert_eq!(d.check_and_advance("read_file", "hash_a"), LoopSignal::None);
+        assert_eq!(d.check_and_advance("Read", "hash_a"), LoopSignal::None);
         assert_eq!(
             d.check_and_advance("write_file", "hash_b"),
             LoopSignal::None
         );
         assert_eq!(d.check_and_advance("grep", "hash_c"), LoopSignal::None);
-        assert_eq!(d.check_and_advance("read_file", "hash_d"), LoopSignal::None);
+        assert_eq!(d.check_and_advance("Read", "hash_d"), LoopSignal::None);
         assert_eq!(d.check_and_advance("bash", "hash_e"), LoopSignal::None);
     }
 
@@ -114,12 +114,9 @@ mod tests {
     fn test_five_same_calls_trigger_warned() {
         let mut d = fresh();
         for _ in 0..4 {
-            assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::None);
+            assert_eq!(d.check_and_advance("Read", "hash_x"), LoopSignal::None);
         }
-        assert_eq!(
-            d.check_and_advance("read_file", "hash_x"),
-            LoopSignal::Warned
-        );
+        assert_eq!(d.check_and_advance("Read", "hash_x"), LoopSignal::Warned);
         assert_eq!(d.current_state(), &LoopSignal::Warned);
     }
 
@@ -127,7 +124,7 @@ mod tests {
     fn test_warned_then_different_tool_resets() {
         let mut d = fresh();
         for _ in 0..5 {
-            d.check_and_advance("read_file", "hash_x");
+            d.check_and_advance("Read", "hash_x");
         }
         assert_eq!(
             d.check_and_advance("write_file", "hash_y"),
@@ -140,9 +137,9 @@ mod tests {
     fn test_warned_then_same_call_halts() {
         let mut d = fresh();
         for _ in 0..5 {
-            d.check_and_advance("read_file", "hash_x");
+            d.check_and_advance("Read", "hash_x");
         }
-        assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::Halt);
+        assert_eq!(d.check_and_advance("Read", "hash_x"), LoopSignal::Halt);
         assert_eq!(d.current_state(), &LoopSignal::Halt);
     }
 
@@ -150,7 +147,7 @@ mod tests {
     fn test_reset_clears_state() {
         let mut d = fresh();
         for _ in 0..5 {
-            d.check_and_advance("read_file", "hash_x");
+            d.check_and_advance("Read", "hash_x");
         }
         d.reset();
         assert_eq!(d.current_state(), &LoopSignal::None);
@@ -162,24 +159,21 @@ mod tests {
         let mut d = fresh();
         // 4 same + 1 other
         for _ in 0..4 {
-            assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::None);
+            assert_eq!(d.check_and_advance("Read", "hash_x"), LoopSignal::None);
         }
         assert_eq!(d.check_and_advance("bash", "hash_other"), LoopSignal::None);
         // now 5 same again
         for _ in 0..4 {
-            assert_eq!(d.check_and_advance("read_file", "hash_x"), LoopSignal::None);
+            assert_eq!(d.check_and_advance("Read", "hash_x"), LoopSignal::None);
         }
-        assert_eq!(
-            d.check_and_advance("read_file", "hash_x"),
-            LoopSignal::Warned
-        );
+        assert_eq!(d.check_and_advance("Read", "hash_x"), LoopSignal::Warned);
     }
 
     #[test]
     fn test_recovery_prompt_when_warned() {
         let mut d = fresh();
         for _ in 0..5 {
-            d.check_and_advance("read_file", "hash_x");
+            d.check_and_advance("Read", "hash_x");
         }
         assert!(d.recovery_prompt().is_some());
         let d2 = fresh();

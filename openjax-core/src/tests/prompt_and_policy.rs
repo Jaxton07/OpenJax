@@ -68,6 +68,22 @@ fn build_system_prompt_contains_verification_rule() {
 }
 
 #[test]
+fn build_system_prompt_contains_read_edit_hard_rules() {
+    let prompt = build_system_prompt("(none)");
+    assert!(prompt.contains("Modify existing files only after calling `Read`"));
+    assert!(prompt.contains("Use `Edit` for single-file existing-text edits"));
+}
+
+#[test]
+fn build_system_prompt_does_not_reference_legacy_read_edit_names() {
+    let prompt = build_system_prompt("(none)");
+    let legacy_read = format!("{}_{}", "read", "file");
+    let legacy_edit = format!("{}_{}_{}", "edit", "file", "range");
+    assert!(!prompt.contains(&legacy_read));
+    assert!(!prompt.contains(&legacy_edit));
+}
+
+#[test]
 fn build_system_prompt_contains_skills_section() {
     let prompt = build_system_prompt("- name: rust-debug");
     assert!(prompt.contains("Available skills (auto-selected):"));
@@ -78,7 +94,7 @@ fn build_system_prompt_contains_skills_section() {
 fn build_turn_messages_includes_prior_conversation_summary() {
     let history = vec![HistoryItem::Turn(TurnRecord {
         user_input: "look at src/main.rs".to_string(),
-        tool_traces: vec!["tool=read_file; ok=true; output=fn main() {}".to_string()],
+        tool_traces: vec!["tool=Read; ok=true; output=fn main() {}".to_string()],
         assistant_output: "入口在这里".to_string(),
     })];
 
@@ -92,7 +108,7 @@ fn build_turn_messages_includes_prior_conversation_summary() {
                 UserContentBlock::Text { text }
                     if text.contains("<prior_conversation>")
                         && text.contains("look at src/main.rs")
-                        && text.contains("tool=read_file")
+                        && text.contains("tool=Read")
             )
     ));
     assert!(matches!(
@@ -113,7 +129,7 @@ fn refresh_loop_recovery_only_updates_last_user_text() {
         }]),
         ConversationMessage::Assistant(vec![AssistantContentBlock::ToolUse {
             id: "call_1".to_string(),
-            name: "read_file".to_string(),
+            name: "Read".to_string(),
             input: serde_json::json!({"path": "src/main.rs"}),
         }]),
         ConversationMessage::User(vec![UserContentBlock::ToolResult {

@@ -13,7 +13,7 @@
 
 ## 代码结构
 
-- `handlers/`: 通用工具处理器（read_file/list_dir/grep_files/glob_files/shell/apply_patch/edit_file_range/write_file）
+- `handlers/`: 通用工具处理器（read/list_dir/grep_files/glob_files/shell/apply_patch/edit/write_file）
 - `system/`: 系统类只读工具（process_snapshot/system_load/disk_usage）
 - `apply_patch/`: apply_patch 解析与执行子模块
 - `orchestrator.rs`: 工具编排与审批事件联动
@@ -22,7 +22,7 @@
 
 ## 当前受支持工具面
 
-- 文件/代码工具：`read_file`、`list_dir`、`grep_files`、`glob_files`、`write_file`、`edit_file_range`、`apply_patch`
+- 文件/代码工具：`Read`、`list_dir`、`grep_files`、`glob_files`、`write_file`、`Edit`、`apply_patch`
 - 命令执行工具：`shell`（含兼容别名 `exec_command`）
 - 系统观测工具：`process_snapshot`、`system_load`、`disk_usage`
 

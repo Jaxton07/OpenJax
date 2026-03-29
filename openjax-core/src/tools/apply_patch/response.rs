@@ -5,7 +5,7 @@ use super::types::{HunkWarning, PlannedAction};
 
 /// Number of context lines shown around each edited region in tool responses.
 /// Provides the model with enough surrounding code to verify edits and
-/// reason about line numbers for subsequent operations without a read_file call.
+/// reason about line numbers for subsequent operations without a Read call.
 pub const EDIT_CONTEXT_LINES: usize = 10;
 
 /// Build a rich response string for apply_patch, showing per-action context snippets.
@@ -96,8 +96,8 @@ pub fn build_patch_response(actions: &[PlannedAction], cwd: &Path) -> String {
     parts.join("\n")
 }
 
-/// Build a rich response for edit_file_range, showing the edited region with context.
-pub fn build_edit_range_response(
+/// Build a rich response for Edit, showing the edited region with context.
+pub fn build_edit_response(
     file_path: &str,
     lines: &[String],
     edit_start: usize, // 1-indexed start of edited region

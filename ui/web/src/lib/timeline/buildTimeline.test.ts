@@ -55,7 +55,7 @@ describe("buildTimeline", () => {
           {
             id: "step_1",
             type: "tool",
-            title: "read_file",
+            title: "Read",
             status: "success",
             time: "2026-01-01T00:00:02Z",
             startEventSeq: 11,
@@ -127,7 +127,7 @@ describe("buildTimeline", () => {
           {
             id: "step_1",
             type: "tool",
-            title: "read_file",
+            title: "Read",
             status: "success",
             time: "2026-01-01T00:00:02Z",
             startEventSeq: 5,

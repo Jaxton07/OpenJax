@@ -38,7 +38,7 @@ async fn emits_args_delta_and_progress_before_completion() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:read_file path=note.txt".to_string(),
+            input: "tool:Read path=note.txt".to_string(),
         })
         .await;
 
@@ -82,7 +82,7 @@ async fn approval_rejection_emits_tool_call_failed() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:edit_file_range file_path=todo.txt start_line=1 end_line=1 new_text='x'"
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'"
                 .to_string(),
         })
         .await;

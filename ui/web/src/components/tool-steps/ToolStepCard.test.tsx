@@ -91,7 +91,7 @@ describe("ToolStepCard", () => {
         step={{
           id: "step_5",
           type: "tool",
-          title: "read_file",
+          title: "Read",
           status: "success",
           time: "2026-01-01T00:00:00Z",
           durationSec: 42
@@ -108,7 +108,7 @@ describe("ToolStepCard", () => {
         step={{
           id: "step_6",
           type: "tool",
-          title: "read_file",
+          title: "Read",
           status: "success",
           time: "2026-01-01T00:00:00Z",
           durationSec: 125

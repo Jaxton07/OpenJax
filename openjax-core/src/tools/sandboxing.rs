@@ -31,7 +31,7 @@ impl SandboxManager {
     pub fn is_mutating_operation(&self, tool_name: &str) -> bool {
         matches!(
             tool_name,
-            "shell" | "exec_command" | "apply_patch" | "edit_file_range"
+            "shell" | "exec_command" | "apply_patch" | "Edit"
         )
     }
 
