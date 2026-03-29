@@ -249,6 +249,7 @@ export interface StreamEvent {
     | "response_completed"
     | "response_error"
     | "tool_call_started"
+    | "tool_call_ready"
     | "tool_call_completed"
     | "approval_requested"
     | "approval_resolved"
