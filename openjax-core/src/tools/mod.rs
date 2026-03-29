@@ -48,8 +48,7 @@ pub use sandbox_runtime::{
 pub use sandboxing::SandboxManager;
 pub use shell::ShellType;
 pub use spec::{
-    ApplyPatchToolType, FreeformFormat, ShellToolType, ToolSpec, ToolsConfig, build_all_specs,
-    create_apply_patch_freeform_spec, create_apply_patch_spec, create_disk_usage_spec,
+    ShellToolType, ToolSpec, ToolsConfig, build_all_specs, create_disk_usage_spec,
     create_edit_spec, create_exec_command_spec, create_grep_files_spec, create_list_dir_spec,
     create_process_snapshot_spec, create_read_spec, create_shell_spec, create_system_load_spec,
 };
