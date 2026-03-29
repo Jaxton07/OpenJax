@@ -30,13 +30,14 @@ pub enum ShellToolType {
 pub enum ApplyPatchToolType {
     Default,
     Freeform,
+    Disabled,
 }
 
 impl Default for ToolsConfig {
     fn default() -> Self {
         Self {
             shell_type: ShellToolType::Default,
-            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
+            apply_patch_tool_type: Some(ApplyPatchToolType::Disabled),
         }
     }
 }
@@ -513,10 +514,15 @@ pub fn build_all_specs(config: &ToolsConfig) -> Vec<ToolSpec> {
         specs.push(create_shell_spec());
     }
 
-    specs.push(match config.apply_patch_tool_type {
-        Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),
-        _ => create_apply_patch_spec(),
-    });
+    if !matches!(
+        config.apply_patch_tool_type,
+        Some(ApplyPatchToolType::Disabled)
+    ) {
+        specs.push(match config.apply_patch_tool_type {
+            Some(ApplyPatchToolType::Freeform) => create_apply_patch_freeform_spec(),
+            _ => create_apply_patch_spec(),
+        });
+    }
 
     specs
 }
@@ -537,5 +543,15 @@ mod tests {
         assert!(names.contains(&"Edit".to_string()));
         assert!(!names.contains(&legacy_read));
         assert!(!names.contains(&legacy_edit));
+        assert!(!names.contains(&"apply_patch".to_string()));
+    }
+
+    #[test]
+    fn build_all_specs_hides_apply_patch_when_disabled() {
+        let names: Vec<String> = build_all_specs(&ToolsConfig::default())
+            .into_iter()
+            .map(|spec| spec.name)
+            .collect();
+        assert!(!names.contains(&"apply_patch".to_string()));
     }
 }
