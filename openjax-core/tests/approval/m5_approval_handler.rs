@@ -164,8 +164,7 @@ async fn on_request_prompts_for_mutating_tool_and_rejects() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'"
-                .to_string(),
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'".to_string(),
         })
         .await;
 
@@ -212,8 +211,7 @@ async fn policy_deny_blocks_tool_without_approval_prompt() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'"
-                .to_string(),
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'".to_string(),
         })
         .await;
 
@@ -245,8 +243,7 @@ async fn approval_timeout_is_reported_as_timeout() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'"
-                .to_string(),
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'".to_string(),
         })
         .await;
 

@@ -82,8 +82,7 @@ async fn approval_rejection_emits_tool_call_failed() {
 
     let events = agent
         .submit(Op::UserTurn {
-            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'"
-                .to_string(),
+            input: "tool:Edit file_path=todo.txt old_string='a' new_string='x'".to_string(),
         })
         .await;
 

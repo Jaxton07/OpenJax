@@ -5,9 +5,7 @@ pub(super) fn extract_tool_target_hint(
     args: &HashMap<String, String>,
 ) -> Option<String> {
     let keys: &[&str] = match tool_name {
-        "Read" | "Edit" | "write_file" => {
-            &["file_path", "path", "filepath"]
-        }
+        "Read" | "Edit" | "write_file" => &["file_path", "path", "filepath"],
         "disk_usage" => &["path"],
         "shell" | "exec_command" => &["cmd", "command"],
         _ => return None,
