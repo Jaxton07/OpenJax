@@ -69,6 +69,13 @@ openjax-gateway/
     │   └── m7_policy_level.rs
     ├── policy_api_suite.rs
     ├── policy_api/
+    │   ├── mod.rs
+    │   ├── helpers.rs
+    │   ├── m1_publish.rs
+    │   ├── m2_rules_crud.rs
+    │   ├── m3_validation.rs
+    │   ├── m4_session_overlay.rs
+    │   └── m5_policy_effect.rs
     └── m1_assistant_message_compat_only.rs
 ```
 
@@ -156,6 +163,7 @@ openjax-gateway/
   - `stdio/daemon.rs`：`SessionState`、`DaemonApprovalHandler`
   - `stdio/dispatch.rs`：消息分发、I/O helpers
 - `tests/gateway_api_suite.rs` / `tests/gateway_api/`：gateway API 主集成测试入口，按鉴权、session 生命周期、slash/compact、审批、stream/timeline、provider、policy level 分域组织。
+- `tests/policy_api_suite.rs` / `tests/policy_api/`：policy API 集成测试入口，按发布、规则 CRUD、请求校验、session overlay、策略生效分域组织。
 
 ## 事件持久化模型
 
