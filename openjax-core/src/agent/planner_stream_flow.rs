@@ -67,6 +67,12 @@ impl Agent {
                     streamed_text.push_str(&text_delta);
                     delta_event_count = delta_event_count.saturating_add(1);
                     last_live_delta_at = Some(Instant::now());
+                    if emit_live_final_deltas {
+                        response_started = true;
+                        for event in stream_orchestrator.on_delta(&text_delta) {
+                            self.push_event(events, event);
+                        }
+                    }
                 }
                 StreamDelta::ToolUseStart { id, name } => {
                     let display_name = self.tools.display_name_for(&name);
@@ -140,7 +146,11 @@ impl Agent {
             .await;
 
         let response = stream_result?;
-        if emit_live_final_deltas && !response.has_tool_use() && !streamed_text.is_empty() {
+        if emit_live_final_deltas
+            && !response.has_tool_use()
+            && !streamed_text.is_empty()
+            && !response_started
+        {
             response_started = true;
             for event in stream_orchestrator.on_delta(&streamed_text) {
                 self.push_event(events, event);

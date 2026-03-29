@@ -191,7 +191,7 @@ async fn planner_stream_tool_events_preserve_tool_name_across_args_delta_and_rea
 }
 
 #[tokio::test]
-async fn tool_use_round_does_not_emit_intermediate_response_text_delta() {
+async fn tool_use_round_emits_intermediate_response_text_delta() {
     let mut agent = Agent::with_runtime(SandboxMode::WorkspaceWrite, PathBuf::from("."));
     agent.model_client = Box::new(MixedTextToolUseModel::new());
 
@@ -205,7 +205,7 @@ async fn tool_use_round_does_not_emit_intermediate_response_text_delta() {
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(deltas, vec!["done".to_string()]);
+    assert_eq!(deltas, vec!["working on it".to_string(), "done".to_string()]);
 }
 
 #[tokio::test]
