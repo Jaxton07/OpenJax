@@ -443,5 +443,4 @@ mod tests {
         assert!(!names.contains(&legacy_edit));
         assert!(!names.contains(&"apply_patch".to_string()));
     }
-
 }
