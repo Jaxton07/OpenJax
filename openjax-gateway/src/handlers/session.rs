@@ -7,6 +7,8 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tracing::info;
@@ -96,6 +98,22 @@ pub struct SessionActionResponse {
     timestamp: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateSessionMetadataRequest {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateSessionMetadataResponse {
+    request_id: String,
+    session_id: String,
+    status: &'static str,
+    timestamp: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SessionSummary {
     session_id: String,
@@ -169,13 +187,12 @@ pub async fn list_sessions(
 ) -> Result<Json<SessionListResponse>, ApiError> {
     let limit = normalize_limit(query.limit);
     let decoded_cursor = decode_cursor(query.cursor.as_deref())?;
-    let (entries, next_cursor_raw) = state
-        .list_persisted_sessions(
-            decoded_cursor
-                .as_ref()
-                .map(|cursor| (cursor.updated_at.as_str(), cursor.session_id.as_str())),
-            limit,
-        )?;
+    let (entries, next_cursor_raw) = state.list_persisted_sessions(
+        decoded_cursor
+            .as_ref()
+            .map(|cursor| (cursor.updated_at.as_str(), cursor.session_id.as_str())),
+        limit,
+    )?;
     let sessions = entries
         .into_iter()
         .map(|item| SessionSummary {
@@ -186,10 +203,12 @@ pub async fn list_sessions(
         })
         .collect::<Vec<SessionSummary>>();
     let next_cursor = next_cursor_raw
-        .map(|(updated_at, session_id)| encode_cursor(SessionListCursor {
-            updated_at,
-            session_id,
-        }))
+        .map(|(updated_at, session_id)| {
+            encode_cursor(SessionListCursor {
+                updated_at,
+                session_id,
+            })
+        })
         .transpose()?;
     Ok(Json(SessionListResponse {
         request_id: ctx.request_id,
@@ -497,6 +516,35 @@ pub async fn shutdown_session(
     }))
 }
 
+pub async fn update_session_metadata(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Extension(ctx): Extension<RequestContext>,
+    Json(payload): Json<UpdateSessionMetadataRequest>,
+) -> Result<Json<UpdateSessionMetadataResponse>, ApiError> {
+    let has_title = payload.title.is_some();
+    let has_tags = payload.tags.is_some();
+    if !has_title && !has_tags {
+        return Err(ApiError::invalid_argument(
+            "metadata update requires at least one field",
+            json!({ "required": ["title", "tags"] }),
+        ));
+    }
+    state.get_session(&session_id).await?;
+    if let Some(title) = payload.title {
+        state.update_session_title(&session_id, Some(title))?;
+    }
+    if let Some(tags) = payload.tags {
+        state.update_session_tags(&session_id, tags)?;
+    }
+    Ok(Json(UpdateSessionMetadataResponse {
+        request_id: ctx.request_id,
+        session_id,
+        status: "updated",
+        timestamp: now_rfc3339(),
+    }))
+}
+
 // ---------------------------------------------------------------------------
 // Compact / Clear helpers
 // ---------------------------------------------------------------------------
@@ -613,12 +661,38 @@ fn decode_cursor(cursor: Option<&str>) -> Result<Option<SessionListCursor>, ApiE
     let parsed: SessionListCursor = serde_json::from_slice(&decoded).map_err(|_| {
         ApiError::invalid_argument("invalid cursor", json!({ "cursor": "json_invalid" }))
     })?;
-    Ok(Some(parsed))
+    let normalized_updated_at = normalize_cursor_timestamp(&parsed.updated_at)?;
+    Ok(Some(SessionListCursor {
+        updated_at: normalized_updated_at,
+        session_id: parsed.session_id,
+    }))
 }
 
 fn encode_cursor(cursor: SessionListCursor) -> Result<String, ApiError> {
-    let encoded = serde_json::to_vec(&cursor).map_err(|err| ApiError::internal(err.to_string()))?;
+    let normalized = SessionListCursor {
+        updated_at: normalize_cursor_timestamp(&cursor.updated_at)?,
+        session_id: cursor.session_id,
+    };
+    let encoded =
+        serde_json::to_vec(&normalized).map_err(|err| ApiError::internal(err.to_string()))?;
     Ok(URL_SAFE_NO_PAD.encode(encoded))
+}
+
+fn normalize_cursor_timestamp(ts: &str) -> Result<String, ApiError> {
+    let parsed = OffsetDateTime::parse(ts, &Rfc3339).map_err(|_| {
+        ApiError::invalid_argument("invalid cursor", json!({ "cursor": "ts_invalid" }))
+    })?;
+    let utc = parsed.to_offset(time::UtcOffset::UTC);
+    Ok(format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        utc.year(),
+        u8::from(utc.month()),
+        utc.day(),
+        utc.hour(),
+        utc.minute(),
+        utc.second(),
+        utc.millisecond()
+    ))
 }
 
 pub async fn clear_runtime(
@@ -673,15 +747,18 @@ pub async fn set_policy_level(
     Path(session_id): Path<String>,
     Json(body): Json<SetPolicyLevelRequest>,
 ) -> Result<Json<SetPolicyLevelResponse>, ApiError> {
-    let level = body.level.parse::<openjax_core::PolicyLevel>().map_err(|_| {
-        ApiError::invalid_argument(
-            format!(
-                "'{}' is not a valid policy level; use allow, ask, or deny",
-                body.level
-            ),
-            json!({ "level": body.level }),
-        )
-    })?;
+    let level = body
+        .level
+        .parse::<openjax_core::PolicyLevel>()
+        .map_err(|_| {
+            ApiError::invalid_argument(
+                format!(
+                    "'{}' is not a valid policy level; use allow, ask, or deny",
+                    body.level
+                ),
+                json!({ "level": body.level }),
+            )
+        })?;
 
     let session_runtime = state.get_session(&session_id).await?;
     // Save override on session so run_turn_task picks it up on next turn

@@ -1,5 +1,8 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use serde_json::json;
 use tower::ServiceExt;
 
 use crate::gateway_api::helpers::{app_with_api_key, auth_header, login, response_json};
@@ -25,7 +28,10 @@ async fn shutdown_session_endpoint_returns_shutdown_status() {
         .expect("create response");
     assert_eq!(create_response.status(), StatusCode::OK);
     let create_body = response_json(create_response).await;
-    let session_id = create_body["session_id"].as_str().expect("session_id").to_string();
+    let session_id = create_body["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
 
     let submit_response = app
         .clone()
@@ -42,11 +48,7 @@ async fn shutdown_session_endpoint_returns_shutdown_status() {
         .expect("submit response");
     assert_eq!(submit_response.status(), StatusCode::OK);
 
-    let transcript_session_root = state
-        .transcript
-        .root()
-        .join("sessions")
-        .join(&session_id);
+    let transcript_session_root = state.transcript.root().join("sessions").join(&session_id);
     assert!(
         transcript_session_root.exists(),
         "transcript session dir should exist before shutdown"
@@ -233,6 +235,94 @@ async fn list_sessions_rejects_invalid_cursor() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = response_json(response).await;
     assert_eq!(body["error"]["code"], "INVALID_ARGUMENT");
+}
+
+#[tokio::test]
+async fn list_sessions_rejects_cursor_with_invalid_timestamp() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
+    let cursor_payload = json!({
+        "updated_at": "2026-03-30 10:00:00",
+        "session_id": "sess_x"
+    });
+    let cursor =
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&cursor_payload).expect("serialize cursor"));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!("/api/v1/sessions?cursor={cursor}"))
+                .header("Authorization", auth_header(&access_token))
+                .body(Body::empty())
+                .expect("list sessions request"),
+        )
+        .await
+        .expect("list sessions response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "INVALID_ARGUMENT");
+}
+
+#[tokio::test]
+async fn patch_session_metadata_updates_title_and_keeps_endpoint_compatible() {
+    let api_key = "test-key";
+    let (app, _state) = app_with_api_key(api_key);
+    let (access_token, _, _) = login(&app, api_key).await;
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/sessions")
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .expect("create session request"),
+        )
+        .await
+        .expect("create session response");
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = response_json(create_response).await;
+    let session_id = create_body["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    let update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/sessions/{session_id}"))
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"title":"renamed"}"#))
+                .expect("patch metadata request"),
+        )
+        .await
+        .expect("patch metadata response");
+    assert_eq!(update_response.status(), StatusCode::OK);
+    let update_body = response_json(update_response).await;
+    assert_eq!(update_body["status"], "updated");
+
+    let list_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/v1/sessions?limit=10")
+                .header("Authorization", auth_header(&access_token))
+                .body(Body::empty())
+                .expect("list sessions request"),
+        )
+        .await
+        .expect("list sessions response");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = response_json(list_response).await;
+    let sessions = list_body["sessions"].as_array().expect("sessions array");
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["title"], "renamed");
 }
 
 #[tokio::test]

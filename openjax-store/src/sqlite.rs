@@ -8,7 +8,9 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-use crate::repository::{CreateProviderParams, ProviderRepository, SessionRepository, UpdateProviderParams};
+use crate::repository::{
+    CreateProviderParams, ProviderRepository, SessionRepository, UpdateProviderParams,
+};
 use crate::types::{
     ActiveProviderRecord, EventRecord, MessageRecord, ProviderRecord, SessionRecord,
 };
@@ -290,6 +292,18 @@ impl SessionRepository for SqliteStore {
         Ok(sessions)
     }
 
+    fn touch_session(&self, session_id: &str) -> Result<bool> {
+        let now = now_rfc3339();
+        let conn = self.conn.lock().expect("store db mutex poisoned");
+        let affected = conn
+            .execute(
+                "UPDATE biz_sessions SET updated_at = ?1 WHERE session_id = ?2",
+                params![now, session_id],
+            )
+            .with_context(|| format!("touch session {}", session_id))?;
+        Ok(affected > 0)
+    }
+
     fn delete_session(&self, session_id: &str) -> Result<bool> {
         let conn = self.conn.lock().expect("store db mutex poisoned");
         let affected = conn
@@ -518,7 +532,10 @@ impl SqliteStore {
         <Self as ProviderRepository>::create_provider(self, params)
     }
 
-    pub fn update_provider(&self, params: UpdateProviderParams<'_>) -> Result<Option<ProviderRecord>> {
+    pub fn update_provider(
+        &self,
+        params: UpdateProviderParams<'_>,
+    ) -> Result<Option<ProviderRecord>> {
         <Self as ProviderRepository>::update_provider(self, params)
     }
 }
@@ -579,7 +596,12 @@ impl ProviderRepository for SqliteStore {
                 "UPDATE llm_runtime_settings
                  SET model_name = ?1, context_window_size = ?2, updated_at = ?3
                  WHERE setting_key = 'active_provider' AND provider_id = ?4",
-                params![params.model_name, params.context_window_size, now, params.provider_id],
+                params![
+                    params.model_name,
+                    params.context_window_size,
+                    now,
+                    params.provider_id
+                ],
             )
             .with_context(|| format!("sync active provider snapshot {}", params.provider_id))?;
         }

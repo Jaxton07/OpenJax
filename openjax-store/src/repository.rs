@@ -28,6 +28,7 @@ pub trait SessionRepository {
     fn create_session(&self, session_id: &str, title: Option<&str>) -> Result<SessionRecord>;
     fn get_session(&self, session_id: &str) -> Result<Option<SessionRecord>>;
     fn list_sessions(&self) -> Result<Vec<SessionRecord>>;
+    fn touch_session(&self, session_id: &str) -> Result<bool>;
     fn delete_session(&self, session_id: &str) -> Result<bool>;
     fn append_message(
         &self,

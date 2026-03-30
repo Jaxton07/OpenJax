@@ -55,6 +55,8 @@ openjax-gateway/
 │   │   └── dispatch.rs
 │   └── transcript/
 │       ├── mod.rs
+│       ├── session_index_store.rs
+│       ├── session_index_types.rs
 │       ├── store.rs
 │       └── types.rs
 └── tests
@@ -89,6 +91,7 @@ openjax-gateway/
 - `GET /`（可选：托管 web 静态首页，需存在 `index.html`）
 - `GET /assets/*path`（可选：托管 web 构建产物资源）
 - `POST /api/v1/sessions`
+- `GET /api/v1/sessions`（支持 `cursor/limit` 分页，响应可带 `next_cursor`）
 - `POST /api/v1/sessions/:session_id/turns`
 - `GET /api/v1/sessions/:session_id/turns/:turn_id`
 - `POST /api/v1/sessions/:session_id/slash`
@@ -155,6 +158,8 @@ openjax-gateway/
   - `state/turn_orchestrator.rs`：turn worker 编排（submit_with_sink 接入、中断与失败兜底）
   - `state/config.rs`：配置构建、provider 迁移、环境变量解析
 - `src/transcript/`：transcript JSONL 持久化模块
+  - `transcript/session_index_store.rs`：会话索引存储（`index.snapshot.json + index.log.ndjson + session.json`）
+  - `transcript/session_index_types.rs`：会话索引 schema（`IndexSessionEntry` 等）
   - `transcript/store.rs`：manifest/segment append、replay、rotate、gc、tail recovery
   - `transcript/types.rs`：`TranscriptRecord` / `TranscriptManifest` schema
 - `src/event_mapper/`：core 事件到 gateway 事件的薄映射层（response/tool/approval）。
@@ -178,6 +183,13 @@ openjax-gateway/
 - transcript-first：会话事件以 `manifest + segment-*.jsonl` 组织，按 `event_seq` 单调追加。
 - append-then-publish：事件仅在 append 成功后才允许广播到 SSE，避免“先发后落盘”不一致。
 - timeline/replay：`GET /timeline` 与 SSE 恢复都基于 transcript 回放窗口读取，保持同一事件序列语义。
+
+## 会话索引模型
+
+- 会话列表来源已切换为 file-only 索引：`sessions/index.snapshot.json + sessions/index.log.ndjson`。
+- 会话级元数据位于 `sessions/<session_id>/session.json`，与 transcript 目录共存。
+- `GET /api/v1/sessions` 只读取内存索引快照并支持分页，不再扫描全部会话目录。
+- 启动恢复顺序：`snapshot -> log replay -> startup audit`；损坏时自动从 `sessions/*` 重建。
 
 ## 环境变量
 

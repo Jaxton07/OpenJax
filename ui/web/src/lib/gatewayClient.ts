@@ -97,8 +97,16 @@ export class GatewayClient {
     });
   }
 
-  async listChatSessions(): Promise<GatewaySessionListResponse> {
-    return this.request("/api/v1/sessions", { method: "GET" });
+  async listChatSessions(params?: { cursor?: string; limit?: number }): Promise<GatewaySessionListResponse> {
+    const query = new URLSearchParams();
+    if (params?.cursor) {
+      query.set("cursor", params.cursor);
+    }
+    if (params?.limit && params.limit > 0) {
+      query.set("limit", String(params.limit));
+    }
+    const suffix = query.toString().length > 0 ? `?${query.toString()}` : "";
+    return this.request(`/api/v1/sessions${suffix}`, { method: "GET" });
   }
 
   async listSessionMessages(sessionId: string): Promise<GatewaySessionMessagesResponse> {

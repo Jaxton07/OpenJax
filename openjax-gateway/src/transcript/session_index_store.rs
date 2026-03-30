@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::sync::Mutex;
+use tracing::warn;
 
 use super::session_index_types::{
     INDEX_LOG_FILE, INDEX_SNAPSHOT_FILE, IndexLogOpKind, IndexSessionEntry,
@@ -37,7 +37,7 @@ pub struct SessionIndexStore {
     root: PathBuf,
     entries: StdMutex<Vec<IndexSessionEntry>>,
     health: StdMutex<IndexHealth>,
-    write_lock: Mutex<()>,
+    write_lock: StdMutex<()>,
     test_fail_append_nth: Option<usize>,
     test_fail_compact_publish: bool,
     test_fail_compact_rollback: bool,
@@ -68,7 +68,7 @@ impl SessionIndexStore {
             root,
             entries: StdMutex::new(entries),
             health: StdMutex::new(IndexHealth::Healthy),
-            write_lock: Mutex::new(()),
+            write_lock: StdMutex::new(()),
             test_fail_append_nth,
             test_fail_compact_publish,
             test_fail_compact_rollback,
@@ -84,7 +84,7 @@ impl SessionIndexStore {
         self.entries_guard().clone()
     }
 
-    pub fn write_lock(&self) -> &Mutex<()> {
+    pub fn write_lock(&self) -> &StdMutex<()> {
         &self.write_lock
     }
 
@@ -100,13 +100,19 @@ impl SessionIndexStore {
         self.mark_repair_required()
     }
 
-    pub async fn create_session_index_entry(&self, entry: IndexSessionEntry) -> Result<()> {
-        let _guard = self.write_lock.lock().await;
+    pub fn create_session_index_entry(&self, entry: IndexSessionEntry) -> Result<()> {
+        let _guard = self.write_guard();
         self.ensure_writable()?;
+        let normalized_entry = IndexSessionEntry {
+            updated_at: normalize_rfc3339_utc_millis(&entry.updated_at)?,
+            ..entry
+        };
 
         let sessions_root = self.sessions_root();
-        let staging_dir = sessions_root.join(STAGING_DIR).join(&entry.session_id);
-        let published_dir = sessions_root.join(&entry.session_id);
+        let staging_dir = sessions_root
+            .join(STAGING_DIR)
+            .join(&normalized_entry.session_id);
+        let published_dir = sessions_root.join(&normalized_entry.session_id);
         if staging_dir.exists() {
             fs::remove_dir_all(&staging_dir)
                 .with_context(|| format!("remove stale staging dir {}", staging_dir.display()))?;
@@ -114,17 +120,17 @@ impl SessionIndexStore {
         fs::create_dir_all(&staging_dir)
             .with_context(|| format!("create staging dir {}", staging_dir.display()))?;
 
-        let metadata = SessionMetadata::from_index_entry(&entry);
+        let metadata = SessionMetadata::from_index_entry(&normalized_entry);
         write_json_atomic(&staging_dir.join(SESSION_METADATA_FILE), &metadata)?;
 
         let upsert = SessionIndexLogRecord {
             op: IndexLogOpKind::UpsertSession,
-            session_id: entry.session_id.clone(),
+            session_id: normalized_entry.session_id.clone(),
             ts: now_rfc3339()?,
-            payload: Some(entry.clone()),
+            payload: Some(normalized_entry.clone()),
         };
         self.append_log_record(&upsert)?;
-        self.upsert_memory_entry(entry.clone());
+        self.upsert_memory_entry(normalized_entry.clone());
 
         if let Err(publish_err) = fs::rename(&staging_dir, &published_dir).with_context(|| {
             format!(
@@ -135,7 +141,7 @@ impl SessionIndexStore {
         }) {
             let compensation = SessionIndexLogRecord {
                 op: IndexLogOpKind::DeleteSession,
-                session_id: entry.session_id.clone(),
+                session_id: normalized_entry.session_id.clone(),
                 ts: now_rfc3339()?,
                 payload: None,
             };
@@ -145,7 +151,7 @@ impl SessionIndexStore {
                     "index_repair_required: compensation append failed after create publish failure",
                 );
             }
-            self.remove_memory_entry(&entry.session_id);
+            self.remove_memory_entry(&normalized_entry.session_id);
             let _ = fs::remove_dir_all(&staging_dir);
             return Err(publish_err).context("create session index publish failed and rolled back");
         }
@@ -154,30 +160,45 @@ impl SessionIndexStore {
         Ok(())
     }
 
-    pub async fn upsert_session_index_entry(&self, entry: IndexSessionEntry) -> Result<()> {
-        let _guard = self.write_lock.lock().await;
+    pub fn upsert_session_index_entry(&self, entry: IndexSessionEntry) -> Result<()> {
+        let _guard = self.write_guard();
         self.ensure_writable()?;
+        let normalized_entry = IndexSessionEntry {
+            updated_at: normalize_rfc3339_utc_millis(&entry.updated_at)?,
+            ..entry
+        };
         let op = SessionIndexLogRecord {
             op: IndexLogOpKind::UpsertSession,
-            session_id: entry.session_id.clone(),
+            session_id: normalized_entry.session_id.clone(),
             ts: now_rfc3339()?,
-            payload: Some(entry.clone()),
+            payload: Some(normalized_entry.clone()),
         };
         self.append_log_record(&op)?;
-        self.upsert_memory_entry(entry);
+        if let Err(err) = self.write_session_metadata(&normalized_entry.session_id, |metadata| {
+            metadata.title = normalized_entry.title.clone();
+            metadata.created_at = normalized_entry.created_at.clone();
+            metadata.updated_at = normalized_entry.updated_at.clone();
+            Ok(())
+        }) {
+            self.mark_repair_required()?;
+            return Err(err)
+                .context("index_repair_required: metadata update failed after upsert log append");
+        }
+        self.upsert_memory_entry(normalized_entry);
         self.maybe_compact()?;
         Ok(())
     }
 
-    pub async fn touch_session_index_entry(
+    pub fn touch_session_index_entry(
         &self,
         session_id: &str,
         updated_at: String,
         last_event_seq: u64,
         last_preview: String,
     ) -> Result<()> {
-        let _guard = self.write_lock.lock().await;
+        let _guard = self.write_guard();
         self.ensure_writable()?;
+        let normalized_updated_at = normalize_rfc3339_utc_millis(&updated_at)?;
         let base = self
             .entries_guard()
             .iter()
@@ -188,7 +209,7 @@ impl SessionIndexStore {
             session_id: base.session_id.clone(),
             title: base.title.clone(),
             created_at: base.created_at.clone(),
-            updated_at,
+            updated_at: normalized_updated_at,
             last_event_seq,
             last_preview,
         };
@@ -199,13 +220,99 @@ impl SessionIndexStore {
             payload: Some(next.clone()),
         };
         self.append_log_record(&op)?;
+        if let Err(err) = self.write_session_metadata(session_id, |metadata| {
+            metadata.updated_at = next.updated_at.clone();
+            Ok(())
+        }) {
+            self.mark_repair_required()?;
+            return Err(err)
+                .context("index_repair_required: metadata update failed after touch log append");
+        }
         self.upsert_memory_entry(next);
         self.maybe_compact()?;
         Ok(())
     }
 
-    pub async fn delete_session_index_entry(&self, session_id: &str) -> Result<()> {
-        let _guard = self.write_lock.lock().await;
+    pub fn update_session_title(&self, session_id: &str, title: Option<String>) -> Result<()> {
+        let _guard = self.write_guard();
+        self.ensure_writable()?;
+        let base = self
+            .entries_guard()
+            .iter()
+            .find(|entry| entry.session_id == session_id)
+            .cloned()
+            .with_context(|| format!("session not found for title update: {session_id}"))?;
+        let updated_at = now_rfc3339()?;
+        let next = IndexSessionEntry {
+            session_id: base.session_id,
+            title: title.clone(),
+            created_at: base.created_at,
+            updated_at: updated_at.clone(),
+            last_event_seq: base.last_event_seq,
+            last_preview: base.last_preview,
+        };
+        let op = SessionIndexLogRecord {
+            op: IndexLogOpKind::UpsertSession,
+            session_id: next.session_id.clone(),
+            ts: now_rfc3339()?,
+            payload: Some(next.clone()),
+        };
+        self.append_log_record(&op)?;
+        if let Err(err) = self.write_session_metadata(session_id, |metadata| {
+            metadata.title = title;
+            metadata.updated_at = updated_at;
+            Ok(())
+        }) {
+            self.mark_repair_required()?;
+            return Err(err)
+                .context("index_repair_required: metadata update failed after title log append");
+        }
+        self.upsert_memory_entry(next);
+        self.maybe_compact()?;
+        Ok(())
+    }
+
+    pub fn update_session_tags(&self, session_id: &str, tags: Vec<String>) -> Result<()> {
+        let _guard = self.write_guard();
+        self.ensure_writable()?;
+        let base = self
+            .entries_guard()
+            .iter()
+            .find(|entry| entry.session_id == session_id)
+            .cloned()
+            .with_context(|| format!("session not found for tags update: {session_id}"))?;
+        let updated_at = now_rfc3339()?;
+        let next = IndexSessionEntry {
+            session_id: base.session_id,
+            title: base.title,
+            created_at: base.created_at,
+            updated_at: updated_at.clone(),
+            last_event_seq: base.last_event_seq,
+            last_preview: base.last_preview,
+        };
+        let op = SessionIndexLogRecord {
+            op: IndexLogOpKind::UpsertSession,
+            session_id: next.session_id.clone(),
+            ts: now_rfc3339()?,
+            payload: Some(next.clone()),
+        };
+        self.append_log_record(&op)?;
+        if let Err(err) = self.write_session_metadata(session_id, |metadata| {
+            metadata.tags = tags;
+            metadata.updated_at = updated_at;
+            Ok(())
+        }) {
+            self.mark_repair_required()?;
+            return Err(err)
+                .context("index_repair_required: metadata update failed after tags log append");
+        }
+        self.upsert_memory_entry(next);
+        self.maybe_compact()?;
+        Ok(())
+    }
+
+    pub fn delete_session_index_entry(&self, session_id: &str) -> Result<()> {
+        let _guard = self.write_guard();
         self.ensure_writable()?;
 
         let original = self
@@ -342,6 +449,32 @@ impl SessionIndexStore {
         self.root.join(SESSIONS_DIR)
     }
 
+    fn session_metadata_path(&self, session_id: &str) -> PathBuf {
+        self.sessions_root()
+            .join(session_id)
+            .join(SESSION_METADATA_FILE)
+    }
+
+    fn write_session_metadata<F>(&self, session_id: &str, mutate: F) -> Result<()>
+    where
+        F: FnOnce(&mut SessionMetadata) -> Result<()>,
+    {
+        let metadata_path = self.session_metadata_path(session_id);
+        let raw = fs::read_to_string(&metadata_path)
+            .with_context(|| format!("read session metadata {}", metadata_path.display()))?;
+        let mut metadata: SessionMetadata = serde_json::from_str(&raw)
+            .with_context(|| format!("parse session metadata {}", metadata_path.display()))?;
+        mutate(&mut metadata)?;
+        write_json_atomic(&metadata_path, &metadata)?;
+        Ok(())
+    }
+
+    fn write_guard(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.write_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn entries_guard(&self) -> std::sync::MutexGuard<'_, Vec<IndexSessionEntry>> {
         self.entries
             .lock()
@@ -395,9 +528,27 @@ fn sort_entries_desc(entries: &mut [IndexSessionEntry]) {
 }
 
 fn now_rfc3339() -> Result<String> {
-    OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .context("format current timestamp as rfc3339")
+    Ok(format_utc_millis(OffsetDateTime::now_utc()))
+}
+
+fn normalize_rfc3339_utc_millis(input: &str) -> Result<String> {
+    let parsed = OffsetDateTime::parse(input, &Rfc3339)
+        .with_context(|| format!("parse rfc3339 timestamp: {input}"))?;
+    Ok(format_utc_millis(parsed))
+}
+
+fn format_utc_millis(datetime: OffsetDateTime) -> String {
+    let utc = datetime.to_offset(time::UtcOffset::UTC);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        utc.year(),
+        u8::from(utc.month()),
+        utc.day(),
+        utc.hour(),
+        utc.minute(),
+        utc.second(),
+        utc.millisecond()
+    )
 }
 
 fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<()> {
@@ -489,7 +640,9 @@ fn load_with_recovery_or_fail(root: &Path) -> Result<Vec<IndexSessionEntry>> {
     Ok(entries)
 }
 
-fn load_entries_snapshot_and_log(sessions_root: &Path) -> Result<HashMap<String, IndexSessionEntry>> {
+fn load_entries_snapshot_and_log(
+    sessions_root: &Path,
+) -> Result<HashMap<String, IndexSessionEntry>> {
     let mut entries_by_session = load_snapshot(sessions_root)?;
     replay_log(sessions_root, &mut entries_by_session)?;
     Ok(entries_by_session)
@@ -514,7 +667,9 @@ fn cleanup_staging_dirs(sessions_root: &Path) -> Result<()> {
             .with_context(|| format!("read metadata {}", path.display()))?
             .modified()
             .with_context(|| format!("read modified time {}", path.display()))?;
-        let age = now.duration_since(modified).unwrap_or(Duration::from_secs(0));
+        let age = now
+            .duration_since(modified)
+            .unwrap_or(Duration::from_secs(0));
         if age.as_secs() > STAGING_STALE_SECS {
             fs::remove_dir_all(&path)
                 .with_context(|| format!("remove stale staging dir {}", path.display()))?;
@@ -595,6 +750,15 @@ fn scan_sessions_metadata(sessions_root: &Path) -> Result<HashMap<String, IndexS
             .with_context(|| format!("read session metadata {}", session_path.display()))?;
         let metadata: SessionMetadata = serde_json::from_str(&raw)
             .with_context(|| format!("parse session metadata {}", session_path.display()))?;
+        if metadata.session_id != name {
+            warn!(
+                dir_session_id = %name,
+                metadata_session_id = %metadata.session_id,
+                session_path = %session_path.display(),
+                "skip session metadata with mismatched session_id"
+            );
+            continue;
+        }
 
         let manifest_path = path.join(MANIFEST_FILE);
         let last_event_seq = read_last_event_seq(&manifest_path)?;
@@ -602,7 +766,7 @@ fn scan_sessions_metadata(sessions_root: &Path) -> Result<HashMap<String, IndexS
             session_id: metadata.session_id.clone(),
             title: metadata.title,
             created_at: metadata.created_at,
-            updated_at: metadata.updated_at,
+            updated_at: normalize_rfc3339_utc_millis(&metadata.updated_at)?,
             last_event_seq,
             last_preview: String::new(),
         };
@@ -622,11 +786,7 @@ fn read_last_event_seq(manifest_path: &Path) -> Result<u64> {
     Ok(manifest.last_event_seq)
 }
 
-fn rotate_log_tmp_bak(
-    sessions_root: &Path,
-    fail_publish: bool,
-    fail_rollback: bool,
-) -> Result<()> {
+fn rotate_log_tmp_bak(sessions_root: &Path, fail_publish: bool, fail_rollback: bool) -> Result<()> {
     let log_path = sessions_root.join(INDEX_LOG_FILE);
     let tmp_path = sessions_root.join(format!("{INDEX_LOG_FILE}.tmp"));
     let bak_path = sessions_root.join(format!("{INDEX_LOG_FILE}.bak"));
@@ -714,7 +874,8 @@ fn rotate_log_tmp_bak(
 
 fn append_log_record_to_path(log_path: &Path, record: &SessionIndexLogRecord) -> Result<()> {
     if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("create log dir {}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create log dir {}", parent.display()))?;
     }
     let mut file = OpenOptions::new()
         .create(true)
@@ -769,6 +930,14 @@ fn load_snapshot(sessions_root: &Path) -> Result<HashMap<String, IndexSessionEnt
     Ok(snapshot
         .sessions
         .into_iter()
+        .map(|entry| -> Result<IndexSessionEntry> {
+            Ok(IndexSessionEntry {
+                updated_at: normalize_rfc3339_utc_millis(&entry.updated_at)?,
+                ..entry
+            })
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
         .map(|entry| (entry.session_id.clone(), entry))
         .collect())
 }
@@ -798,7 +967,11 @@ fn replay_log(
                 let payload = record.payload.with_context(|| {
                     format!("missing upsert payload in index log {}", log_path.display())
                 })?;
-                entries_by_session.insert(payload.session_id.clone(), payload);
+                let normalized = IndexSessionEntry {
+                    updated_at: normalize_rfc3339_utc_millis(&payload.updated_at)?,
+                    ..payload
+                };
+                entries_by_session.insert(normalized.session_id.clone(), normalized);
             }
             IndexLogOpKind::DeleteSession => {
                 entries_by_session.remove(&record.session_id);

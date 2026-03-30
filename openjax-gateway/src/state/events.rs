@@ -8,6 +8,7 @@ use axum::http::StatusCode;
 use openjax_core::Config;
 use serde_json::json;
 use tokio::sync::{Mutex, RwLock};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::load_api_keys_from_env;
@@ -78,7 +79,8 @@ impl AppState {
             .duration_since(UNIX_EPOCH)
             .expect("clock drift")
             .as_nanos();
-        let transcript_root = std::env::temp_dir().join(format!("openjax-gateway-transcript-test-{pid}-{nanos}"));
+        let transcript_root =
+            std::env::temp_dir().join(format!("openjax-gateway-transcript-test-{pid}-{nanos}"));
         let transcript = Arc::new(TranscriptStore::new(transcript_root));
         let session_index =
             Arc::new(SessionIndexStore::new(transcript.root()).expect("init test session index"));
@@ -113,11 +115,15 @@ impl AppState {
         };
         self.session_index
             .create_session_index_entry(entry)
-            .await
             .map_err(map_session_index_error)?;
-        self.store
-            .create_session(&session_id, None)
-            .map_err(map_store_error)?;
+        if let Err(store_err) = self.store.create_session(&session_id, None) {
+            if let Err(rollback_err) = self.session_index.delete_session_index_entry(&session_id) {
+                return Err(ApiError::internal(format!(
+                    "create_session store failure rollback failed: store={store_err:#}; rollback={rollback_err:#}"
+                )));
+            }
+            return Err(map_store_error(store_err));
+        }
         let runtime = self
             .build_session_runtime(&session_id)
             .map_err(map_store_error)?;
@@ -171,13 +177,24 @@ impl AppState {
             };
             guard.runtime.clear_session_overlay(session_id);
         }
+        let index_entry_snapshot = self
+            .session_index
+            .list_sessions()
+            .into_iter()
+            .find(|entry| entry.session_id == session_id);
         self.session_index
             .delete_session_index_entry(session_id)
-            .await
             .map_err(map_session_index_error)?;
-        self.store
-            .delete_session(session_id)
-            .map_err(map_store_error)?;
+        if let Err(store_err) = self.store.delete_session(session_id) {
+            if let Some(snapshot) = index_entry_snapshot {
+                if let Err(rollback_err) = self.session_index.create_session_index_entry(snapshot) {
+                    return Err(ApiError::internal(format!(
+                        "delete_session store failure rollback failed: store={store_err:#}; rollback={rollback_err:#}"
+                    )));
+                }
+            }
+            return Err(map_store_error(store_err));
+        }
         Ok(())
     }
 
@@ -256,7 +273,42 @@ impl AppState {
         Ok(())
     }
 
-    pub fn append_event(&self, event: &StreamEventEnvelope) -> Result<StreamEventEnvelope, ApiError> {
+    pub fn update_session_title(
+        &self,
+        session_id: &str,
+        title: Option<String>,
+    ) -> Result<(), ApiError> {
+        self.session_index
+            .update_session_title(session_id, title)
+            .map_err(map_session_index_error)?;
+        if let Err(err) = self.store.touch_session(session_id) {
+            warn!(
+                session_id,
+                error_message = %err,
+                "sqlite touch_session failed after title update; continuing with file index as source of truth"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn update_session_tags(&self, session_id: &str, tags: Vec<String>) -> Result<(), ApiError> {
+        self.session_index
+            .update_session_tags(session_id, tags)
+            .map_err(map_session_index_error)?;
+        if let Err(err) = self.store.touch_session(session_id) {
+            warn!(
+                session_id,
+                error_message = %err,
+                "sqlite touch_session failed after tags update; continuing with file index as source of truth"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn append_event(
+        &self,
+        event: &StreamEventEnvelope,
+    ) -> Result<StreamEventEnvelope, ApiError> {
         if cfg!(debug_assertions) {
             let force_all = event.request_id.contains("__force_append_fail_all__");
             let force_payload = event
@@ -284,6 +336,16 @@ impl AppState {
             .transcript
             .append(&record)
             .map_err(|err| ApiError::internal(err.to_string()))?;
+        if let Err(err) = self.refresh_session_index_from_event(&persisted) {
+            warn!(
+                session_id = %persisted.session_id,
+                event_seq = persisted.event_seq,
+                event_type = %persisted.event_type,
+                error_code = err.code,
+                error_message = %err.message,
+                "session index refresh failed after transcript append"
+            );
+        }
         Ok(StreamEventEnvelope {
             request_id: persisted.request_id,
             session_id: persisted.session_id,
@@ -295,6 +357,27 @@ impl AppState {
             stream_source: persisted.stream_source,
             payload: persisted.payload,
         })
+    }
+
+    fn refresh_session_index_from_event(&self, record: &TranscriptRecord) -> Result<(), ApiError> {
+        let current_preview = self
+            .session_index
+            .list_sessions()
+            .into_iter()
+            .find(|entry| entry.session_id == record.session_id)
+            .map(|entry| entry.last_preview)
+            .unwrap_or_default();
+        let next_preview =
+            derive_last_preview(&record.event_type, &record.payload).unwrap_or(current_preview);
+        self.session_index
+            .touch_session_index_entry(
+                &record.session_id,
+                record.timestamp.clone(),
+                record.event_seq,
+                next_preview,
+            )
+            .map_err(map_session_index_error)?;
+        Ok(())
     }
 
     pub fn list_providers(&self) -> Result<Vec<openjax_store::ProviderRecord>, ApiError> {
@@ -392,6 +475,23 @@ impl AppState {
         }
         Ok(Arc::new(Mutex::new(runtime)))
     }
+}
+
+fn derive_last_preview(event_type: &str, payload: &serde_json::Value) -> Option<String> {
+    if event_type != "user_message" {
+        return None;
+    }
+    payload
+        .get("content")
+        .and_then(|value| value.as_str())
+        .map(|content| truncate_utf8_chars(content.trim(), 120))
+}
+
+fn truncate_utf8_chars(input: &str, max_chars: usize) -> String {
+    if input.chars().count() <= max_chars {
+        return input.to_string();
+    }
+    input.chars().take(max_chars).collect()
 }
 
 impl Default for AppState {

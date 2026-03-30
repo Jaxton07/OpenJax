@@ -113,6 +113,8 @@ export interface ChatState {
   settings: AppSettings;
   auth: AuthState;
   sessions: ChatSession[];
+  sessionsNextCursor: string | null;
+  sessionsLoadingMore: boolean;
   activeSessionId: string | null;
   globalError: string | null;
   infoToast: string | null;

@@ -8,6 +8,9 @@ interface SidebarProps {
   collapsed: boolean;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => Promise<void> | void;
+  onLoadMoreSessions: () => Promise<void> | void;
+  hasMoreSessions: boolean;
+  loadingMoreSessions: boolean;
   onManageSessions: () => void;
   onLogout: () => void;
 }
@@ -59,6 +62,18 @@ export default function Sidebar(props: SidebarProps) {
           </div>
         ))}
         {props.sessions.length === 0 ? <div className="history-empty">暂无历史对话</div> : null}
+        {props.hasMoreSessions ? (
+          <button
+            className="history-load-more-btn"
+            type="button"
+            onClick={() => {
+              void props.onLoadMoreSessions();
+            }}
+            disabled={props.loadingMoreSessions}
+          >
+            {props.loadingMoreSessions ? "加载中..." : "加载更多"}
+          </button>
+        ) : null}
       </div>
       <div className="sidebar-bottom">
         <button className="settings-btn" onClick={props.onManageSessions}>

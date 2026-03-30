@@ -45,12 +45,49 @@ export { buildChatSessionFromGateway, mapGatewayRoleToMessageRole } from "./chat
 const MAX_RECONNECT_RETRY = 6;
 const STREAM_DEBUG_ENABLED = resolveWebStreamDebugEnabled();
 
+export async function fetchSidebarSessionSummaries(
+  apiClient: Pick<GatewayClient, "listChatSessions">,
+  cursor?: string,
+  limit = 50,
+): Promise<{ summaries: GatewaySessionSummary[]; nextCursor: string | null }> {
+  const sessionsResponse = await apiClient.listChatSessions({ cursor, limit });
+  return {
+    summaries: sessionsResponse.sessions,
+    nextCursor: sessionsResponse.next_cursor ?? null
+  };
+}
+
+export function buildSidebarSessionsFromSummaries(summaries: GatewaySessionSummary[]): ChatSession[] {
+  const hydrated: ChatSession[] = [];
+  for (const remoteSession of summaries) {
+    hydrated.push({
+      id: remoteSession.session_id,
+      title: remoteSession.title?.trim() || "新聊天",
+      createdAt: remoteSession.created_at,
+      connection: "idle",
+      turnPhase: "draft",
+      lastEventSeq: 0,
+      messages: [],
+      pendingApprovals: []
+    });
+  }
+  const deduped = new Map<string, ChatSession>();
+  for (const session of hydrated) {
+    if (!deduped.has(session.id)) {
+      deduped.set(session.id, session);
+    }
+  }
+  return Array.from(deduped.values());
+}
+
 export function useChatApp() {
   const initialSessions = loadSessions();
   const [state, setState] = useState<ChatState>(() => ({
     settings: loadSettings(),
     auth: loadAuth(),
     sessions: initialSessions,
+    sessionsNextCursor: null,
+    sessionsLoadingMore: false,
     activeSessionId: initialSessions[0]?.id ?? null,
     globalError: null,
     infoToast: null,
@@ -60,6 +97,7 @@ export function useChatApp() {
   const reconnectAbortRef = useRef<AbortController | null>(null);
   const pollingAbortRef = useRef<AbortController | null>(null);
   const sessionsRef = useRef(state.sessions);
+  const hydratedSessionsRef = useRef<Record<string, boolean>>({});
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const sseRunTokenRef = useRef<Record<string, number>>({});
   const nextSseRunTokenRef = useRef(1);
@@ -391,25 +429,16 @@ export function useChatApp() {
     void fetchPolicyLevelAction({ client, sessionId, updateSession });
   }, [activeSession?.id, state.auth.authenticated, state.auth.accessToken, client, updateSession]);
 
-  const hydrateSessionsFromGateway = useCallback(async (apiClient: GatewayClient): Promise<ChatSession[]> => {
-    const sessionsResponse = await apiClient.listChatSessions();
-    const hydrated: ChatSession[] = [];
-    for (const remoteSession of sessionsResponse.sessions) {
-      try {
-        const timelineResponse = await apiClient.listSessionTimeline(remoteSession.session_id);
-        hydrated.push(buildChatSessionFromGateway(remoteSession, timelineResponse.events));
-      } catch {
-        continue;
-      }
-    }
-    const deduped = new Map<string, ChatSession>();
-    for (const session of hydrated) {
-      if (!deduped.has(session.id)) {
-        deduped.set(session.id, session);
-      }
-    }
-    return Array.from(deduped.values());
-  }, []);
+  const hydrateSessionsFromGateway = useCallback(
+    async (apiClient: GatewayClient): Promise<{ sessions: ChatSession[]; nextCursor: string | null }> => {
+      const page = await fetchSidebarSessionSummaries(apiClient, undefined, 50);
+      return {
+        sessions: buildSidebarSessionsFromSummaries(page.summaries),
+        nextCursor: page.nextCursor
+      };
+    },
+    []
+  );
 
   const authenticate = useCallback(
     async (baseUrlInput: string, ownerKeyInput: string) => {
@@ -428,17 +457,24 @@ export function useChatApp() {
           accessToken: result.access_token
         });
         let sessions: ChatSession[] = [];
+        let nextCursor: string | null = null;
         let toast = "登录成功";
         try {
-          sessions = await hydrateSessionsFromGateway(authedClient);
+          const hydrated = await hydrateSessionsFromGateway(authedClient);
+          sessions = hydrated.sessions;
+          nextCursor = hydrated.nextCursor;
           toast = sessions.length > 0 ? `登录成功，已同步 ${sessions.length} 个历史会话` : "登录成功，暂无历史会话";
         } catch {
           sessions = loadSessions();
+          nextCursor = null;
           toast = "历史同步失败，已使用本地缓存";
         }
         for (const session of sessionsRef.current) {
           streamRenderStore.clear(session.id);
         }
+        hydratedSessionsRef.current = Object.fromEntries(
+          sessions.map((session) => [session.id, false])
+        );
         lastEventSeqRef.current = Object.fromEntries(
           sessions.map((session) => [session.id, session.lastEventSeq])
         );
@@ -464,6 +500,8 @@ export function useChatApp() {
             scope: result.scope
           },
           sessions,
+          sessionsNextCursor: nextCursor,
+          sessionsLoadingMore: false,
           activeSessionId: sessions[0]?.id ?? null,
           globalError: null,
           infoToast: toast
@@ -476,6 +514,102 @@ export function useChatApp() {
     },
     [hydrateSessionsFromGateway, state.settings]
   );
+
+  useEffect(() => {
+    const session = activeSession;
+    if (!session || !state.auth.authenticated || !state.auth.accessToken) {
+      return;
+    }
+    if (hydratedSessionsRef.current[session.id]) {
+      return;
+    }
+    if (isEmptyDraftSession(session)) {
+      hydratedSessionsRef.current[session.id] = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const timeline = await withAuthRetry(() => client.listSessionTimeline(session.id));
+        if (cancelled) {
+          return;
+        }
+        updateSession(session.id, (current) => {
+          const incremental = timeline.events.filter((event) => event.event_seq > current.lastEventSeq);
+          if (incremental.length === 0) {
+            return current;
+          }
+          const rebuilt = applySessionEvents(current, incremental);
+          return {
+            ...current,
+            ...rebuilt,
+            title: current.title || rebuilt.title
+          };
+        });
+      } catch {
+        // keep sidebar responsive even if this session timeline fails to hydrate
+      } finally {
+        if (!cancelled) {
+          hydratedSessionsRef.current[session.id] = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSession,
+    client,
+    state.auth.accessToken,
+    state.auth.authenticated,
+    updateSession,
+    withAuthRetry
+  ]);
+
+  const loadMoreSessions = useCallback(async () => {
+    if (
+      !state.auth.authenticated ||
+      !state.auth.accessToken ||
+      !state.sessionsNextCursor ||
+      state.sessionsLoadingMore
+    ) {
+      return;
+    }
+    setState((prev) => ({ ...prev, sessionsLoadingMore: true }));
+    try {
+      const page = await withAuthRetry(() =>
+        fetchSidebarSessionSummaries(client, state.sessionsNextCursor ?? undefined, 50)
+      );
+      const nextSessions = buildSidebarSessionsFromSummaries(page.summaries);
+      setState((prev) => {
+        const deduped = new Map(prev.sessions.map((session) => [session.id, session]));
+        for (const session of nextSessions) {
+          if (!deduped.has(session.id)) {
+            deduped.set(session.id, session);
+          }
+        }
+        return {
+          ...prev,
+          sessions: Array.from(deduped.values()),
+          sessionsNextCursor: page.nextCursor,
+          sessionsLoadingMore: false
+        };
+      });
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        sessionsLoadingMore: false,
+        globalError: humanizeError(error)
+      }));
+    }
+  }, [
+    client,
+    state.auth.accessToken,
+    state.auth.authenticated,
+    state.sessionsLoadingMore,
+    state.sessionsNextCursor,
+    withAuthRetry
+  ]);
 
   const logout = useCallback(async () => {
     reconnectAbortRef.current?.abort();
@@ -495,6 +629,8 @@ export function useChatApp() {
       ...prev,
       auth: { authenticated: false, accessToken: "", sessionId: null, scope: null },
       sessions: [],
+      sessionsNextCursor: null,
+      sessionsLoadingMore: false,
       activeSessionId: null,
       globalError: null,
       infoToast: null
@@ -791,6 +927,7 @@ export function useChatApp() {
     authenticate,
     logout,
     newChat,
+    loadMoreSessions,
     switchSession,
     deleteSession,
     sendMessage,
@@ -812,7 +949,9 @@ export function useChatApp() {
     fetchCatalog,
     sendPolicyLevel,
     dismissGlobalError,
-    dismissToast
+    dismissToast,
+    sidebarHasMore: Boolean(state.sessionsNextCursor),
+    sidebarLoadingMore: state.sessionsLoadingMore
   };
 }
 

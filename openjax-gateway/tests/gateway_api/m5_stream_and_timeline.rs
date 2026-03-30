@@ -8,6 +8,7 @@ use openjax_gateway::state::{
 };
 use openjax_protocol::{AgentStatus, Event, ThreadId};
 use serde_json::{Value, json};
+use std::fs;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::time::{Duration, timeout};
 use tower::ServiceExt;
@@ -213,6 +214,154 @@ async fn append_failure_does_not_emit_sse_event() {
         rx.try_recv(),
         Err(TryRecvError::Empty) | Err(TryRecvError::Closed)
     ));
+}
+
+#[tokio::test]
+async fn appending_user_message_updates_session_index_preview_and_event_seq() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+    let long_user_text = "你".repeat(140);
+
+    {
+        let mut session = session_runtime.lock().await;
+        let event = session.create_gateway_event(
+            "req_test",
+            &session_id,
+            None,
+            "user_message",
+            json!({ "content": long_user_text }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, event).expect("append+publish user message");
+    }
+
+    let entry = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("index entry exists");
+    assert_eq!(entry.last_event_seq, 1);
+    assert_eq!(entry.last_preview.chars().count(), 120);
+}
+
+#[tokio::test]
+async fn last_preview_prefers_latest_user_message_and_is_empty_without_user_message() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+
+    {
+        let mut session = session_runtime.lock().await;
+        let model_event = session.create_gateway_event(
+            "req_test",
+            &session_id,
+            Some("turn_1".to_string()),
+            "response_text_delta",
+            json!({ "content_delta": "assistant-only delta" }),
+            Some("model_live"),
+        );
+        append_then_publish(&state, &mut session, model_event).expect("append+publish model event");
+    }
+
+    let after_model = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("index entry exists after model event");
+    assert_eq!(after_model.last_event_seq, 1);
+    assert_eq!(after_model.last_preview, "");
+
+    {
+        let mut session = session_runtime.lock().await;
+        let user_event_1 = session.create_gateway_event(
+            "req_test",
+            &session_id,
+            None,
+            "user_message",
+            json!({ "content": "first user input" }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, user_event_1)
+            .expect("append+publish user event 1");
+
+        let user_event_2 = session.create_gateway_event(
+            "req_test",
+            &session_id,
+            None,
+            "user_message",
+            json!({ "content": "second user input" }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, user_event_2)
+            .expect("append+publish user event 2");
+    }
+
+    let after_user = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("index entry exists after user events");
+    assert_eq!(after_user.last_event_seq, 3);
+    assert_eq!(after_user.last_preview, "second user input");
+}
+
+#[tokio::test]
+async fn transcript_append_success_still_publishes_when_index_refresh_fails() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+    let mut rx = {
+        let session = session_runtime.lock().await;
+        session.event_tx.subscribe()
+    };
+
+    let metadata_path = state
+        .transcript
+        .root()
+        .join("sessions")
+        .join(&session_id)
+        .join("session.json");
+    fs::remove_file(&metadata_path)
+        .expect("remove session metadata to force index refresh failure");
+
+    {
+        let mut session = session_runtime.lock().await;
+        let event = session.create_gateway_event(
+            "req_test",
+            &session_id,
+            Some("turn_1".to_string()),
+            "response_text_delta",
+            json!({ "content_delta": "keep publishing" }),
+            Some("model_live"),
+        );
+        append_then_publish(&state, &mut session, event).expect("append+publish should succeed");
+    }
+
+    let emitted = timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("recv timeout")
+        .expect("recv emitted event");
+    assert_eq!(emitted.event_type, "response_text_delta");
+    assert_eq!(
+        state
+            .list_session_events(&session_id, None)
+            .expect("list persisted events")
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]

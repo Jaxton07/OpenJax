@@ -35,6 +35,9 @@ export default function App() {
     authenticate,
     logout,
     newChat,
+    loadMoreSessions,
+    sidebarHasMore,
+    sidebarLoadingMore,
     switchSession,
     deleteSession,
     sendMessage,
@@ -141,6 +144,9 @@ export default function App() {
         collapsed={sidebarCollapsed}
         onSelectSession={switchSession}
         onDeleteSession={deleteSession}
+        onLoadMoreSessions={() => void loadMoreSessions()}
+        hasMoreSessions={sidebarHasMore}
+        loadingMoreSessions={sidebarLoadingMore}
         onManageSessions={() => void manageAuthSessions()}
         onLogout={() => {
           void logout();
