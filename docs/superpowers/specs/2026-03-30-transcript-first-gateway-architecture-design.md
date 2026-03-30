@@ -131,8 +131,15 @@
 ### 6.2 失败路径
 
 1. append 失败：当前事件禁止发布到 SSE。
-2. 关键事件（`turn/response/tool/approval`）append 失败：当前 turn 转 failed，并暴露明确错误事件（该错误事件自身也必须通过 append）。
-3. 未映射 core 事件：显式告警 + 测试门禁失败，不允许静默忽略。
+2. 关键事件（`turn/response/tool/approval`）append 失败：当前 turn 转 failed，并尝试写入固定 `response_error` 事件（错误码 `TRANSCRIPT_APPEND_FAILED`）。
+3. 若该 `response_error` 事件 append 仍失败：停止当前 turn，返回固定失败响应，内部记录告警；不再递归尝试写入后续错误事件。
+4. 未映射 core 事件：显式告警 + 测试门禁失败，不允许静默忽略。
+
+### 6.3 “映射门禁”精确定义
+
+1. 本设计中的“映射”仅指 **core 事件类型 -> gateway envelope 投影处理函数** 的类型覆盖关系，不指 payload 字段改写（payload 不改写）。
+2. gateway 需维护一份“已支持 core 事件类型集合”并与 `openjax_protocol::Event` 变体集合做 1:1 覆盖校验（测试期强制）。
+3. 任何新增 core 事件变体，若未进入该集合并实现 envelope 投影，CI 必须失败。
 
 ## 7. P1 边界收口拆分方案
 
@@ -184,6 +191,11 @@
 2. `zsh -lc "make core-feature-streaming"`
 3. `zsh -lc "make core-feature-tools"`
 
+### 8.3 恢复一致性校验
+
+1. 进程重启后，`manifest.last_event_seq` 必须与 active segment 尾记录 `event_seq` 一致。
+2. 若不一致，恢复逻辑需执行修复（以 segment 尾记录为准回写 manifest）并输出告警。
+
 ## 9. 文档同步要求
 
 README 必须与实现一致：
@@ -215,4 +227,3 @@ README 必须与实现一致：
    - 完成 gateway/core 文件拆分。
    - 删除 planner_tool_batch dead path。
    - README 与实现对齐。
-
