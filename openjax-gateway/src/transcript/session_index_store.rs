@@ -699,6 +699,14 @@ fn load_snapshot(sessions_root: &Path) -> Result<HashMap<String, IndexSessionEnt
         .with_context(|| format!("read index snapshot {}", snapshot_path.display()))?;
     let snapshot: SessionIndexSnapshot = serde_json::from_str(&raw)
         .with_context(|| format!("parse index snapshot {}", snapshot_path.display()))?;
+    if snapshot.schema_version != SESSION_INDEX_SCHEMA_VERSION {
+        anyhow::bail!(
+            "invalid index snapshot schema_version {} expected {} in {}",
+            snapshot.schema_version,
+            SESSION_INDEX_SCHEMA_VERSION,
+            snapshot_path.display()
+        );
+    }
 
     Ok(snapshot
         .sessions

@@ -435,6 +435,45 @@ fn rebuild_from_sessions_dir_runs_when_log_replay_corrupted() {
 }
 
 #[test]
+fn rebuild_from_sessions_dir_runs_when_snapshot_schema_mismatch() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let snapshot = json!({
+        "schema_version": 999,
+        "updated_at": "2026-03-30T10:00:00.000Z",
+        "sessions": [entry("sess_wrong_schema", "2026-03-30T10:00:00.000Z", 1, "old")]
+    });
+    fs::write(
+        sessions_root.join("index.snapshot.json"),
+        serde_json::to_string_pretty(&snapshot).expect("serialize wrong-schema snapshot"),
+    )
+    .expect("write wrong-schema snapshot");
+    write_session_json(&root, "sess_schema_rebuild", "2026-03-30T12:30:00.000Z");
+    write_manifest(&root, "sess_schema_rebuild", 7, "2026-03-30T12:30:00.000Z");
+
+    let store =
+        SessionIndexStore::new(root.clone()).expect("schema mismatch should trigger rebuild");
+    assert_eq!(
+        store
+            .list_sessions()
+            .into_iter()
+            .map(|item| item.session_id)
+            .collect::<Vec<_>>(),
+        vec!["sess_schema_rebuild".to_string()]
+    );
+
+    let rebuilt_snapshot = fs::read_to_string(sessions_root.join("index.snapshot.json"))
+        .expect("snapshot should be rewritten after schema mismatch rebuild");
+    let rebuilt: serde_json::Value =
+        serde_json::from_str(&rebuilt_snapshot).expect("parse rebuilt snapshot");
+    assert_eq!(rebuilt["schema_version"], 1, "rebuilt snapshot uses current schema");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn startup_fails_when_rebuild_fails() {
     let root = temp_transcript_root();
     let sessions_root = root.join("sessions");
