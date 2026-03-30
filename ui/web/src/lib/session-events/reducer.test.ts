@@ -212,6 +212,77 @@ describe("session-events/reducer", () => {
     expect(assistantMessage.messages.find((message) => message.turnId === "turn_fallback")?.content).toBe("draft");
   });
 
+  it("separates assistant text nodes by response_segment_id across tool interleave", () => {
+    const session = applySessionEvents(baseSession(), [
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_seg",
+        event_seq: 1,
+        timestamp: "2026-01-01T00:00:01Z",
+        type: "response_started",
+        payload: { response_segment_id: "resp_1", stream_source: "model_live" }
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_seg",
+        event_seq: 2,
+        timestamp: "2026-01-01T00:00:02Z",
+        type: "response_text_delta",
+        payload: {
+          response_segment_id: "resp_1",
+          content_delta: "第一段",
+          stream_source: "model_live"
+        }
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_seg",
+        event_seq: 3,
+        timestamp: "2026-01-01T00:00:03Z",
+        type: "tool_call_started",
+        payload: { tool_call_id: "call_1", tool_name: "Read", display_name: "Read" }
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_seg",
+        event_seq: 4,
+        timestamp: "2026-01-01T00:00:04Z",
+        type: "response_resumed",
+        payload: { response_segment_id: "resp_2", stream_source: "replay" }
+      },
+      {
+        request_id: "req",
+        session_id: "sess_1",
+        turn_id: "turn_seg",
+        event_seq: 5,
+        timestamp: "2026-01-01T00:00:05Z",
+        type: "response_text_delta",
+        payload: {
+          response_segment_id: "resp_2",
+          content_delta: "第二段",
+          stream_source: "replay"
+        }
+      }
+    ]);
+
+    const assistantTexts = session.messages.filter(
+      (message) => message.kind === "text" && message.role === "assistant" && message.turnId === "turn_seg"
+    );
+    expect(assistantTexts).toHaveLength(2);
+    expect(assistantTexts[0]?.content).toBe("第一段");
+    expect(assistantTexts[1]?.content).toBe("第二段");
+
+    const toolSteps = session.messages.filter(
+      (message) => message.kind === "tool_steps" && message.turnId === "turn_seg"
+    );
+    expect(toolSteps).toHaveLength(1);
+    expect(toolSteps[0]?.toolSteps?.[0]?.toolCallId).toBe("call_1");
+  });
+
   it("marks assistant message interrupted on turn_interrupted", () => {
     const session = baseSession();
     const streaming = applySessionEvents(session, [

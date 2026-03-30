@@ -44,17 +44,22 @@ function start(
   turnId: string | undefined,
   messageId: string | undefined,
   seq: number,
-  initialContent = ""
+  initialContent = "",
+  streamKey?: string
 ): void {
   if (!turnId) {
     return;
   }
-  const key = composeKey(sessionId, turnId);
+  const key = composeKey(sessionId, turnId, streamKey);
   const existing = store.get(key);
   if (existing && seq <= existing.snapshot.lastEventSeq) {
     return;
   }
-  const nextContent = existing?.snapshot.content || initialContent;
+  const shouldCarryForwardContent =
+    existing?.snapshot.messageId != null &&
+    messageId != null &&
+    existing.snapshot.messageId === messageId;
+  const nextContent = shouldCarryForwardContent ? existing?.snapshot.content ?? initialContent : initialContent;
   const nextVersion = (existing?.snapshot.version ?? 0) + 1;
   store.set(key, {
     snapshot: {
@@ -71,14 +76,20 @@ function start(
   notify(key);
 }
 
-function append(sessionId: string, turnId: string | undefined, delta: string, seq: number): void {
+function append(
+  sessionId: string,
+  turnId: string | undefined,
+  delta: string,
+  seq: number,
+  streamKey?: string
+): void {
   if (!turnId) {
     return;
   }
-  const key = composeKey(sessionId, turnId);
+  const key = composeKey(sessionId, turnId, streamKey);
   const existing = store.get(key);
   if (!existing) {
-    start(sessionId, turnId, undefined, seq, "");
+    start(sessionId, turnId, undefined, seq, "", streamKey);
   }
   const current = store.get(key);
   if (!current) {
@@ -99,15 +110,16 @@ function complete(
   sessionId: string,
   turnId: string | undefined,
   finalContent: string | undefined,
-  seq: number
+  seq: number,
+  streamKey?: string
 ): void {
   if (!turnId) {
     return;
   }
-  const key = composeKey(sessionId, turnId);
+  const key = composeKey(sessionId, turnId, streamKey);
   const current = store.get(key);
   if (!current) {
-    start(sessionId, turnId, undefined, seq, String(finalContent ?? ""));
+    start(sessionId, turnId, undefined, seq, String(finalContent ?? ""), streamKey);
   }
   const next = store.get(key);
   if (!next) {
@@ -130,11 +142,11 @@ function complete(
   notify(key);
 }
 
-function fail(sessionId: string, turnId: string | undefined, seq: number): void {
+function fail(sessionId: string, turnId: string | undefined, seq: number, streamKey?: string): void {
   if (!turnId) {
     return;
   }
-  const key = composeKey(sessionId, turnId);
+  const key = composeKey(sessionId, turnId, streamKey);
   const current = store.get(key);
   if (!current) {
     return;
@@ -150,9 +162,18 @@ function fail(sessionId: string, turnId: string | undefined, seq: number): void 
   notify(key);
 }
 
-function clear(sessionId: string, turnId?: string): void {
+function clear(sessionId: string, turnId?: string, streamKey?: string): void {
   if (turnId) {
-    clearOne(composeKey(sessionId, turnId));
+    if (streamKey) {
+      clearOne(composeKey(sessionId, turnId, streamKey));
+      return;
+    }
+    const prefix = `${sessionId}::${turnId}::`;
+    for (const key of [...store.keys()]) {
+      if (key.startsWith(prefix)) {
+        clearOne(key);
+      }
+    }
     return;
   }
   const prefix = `${sessionId}::`;
@@ -173,11 +194,16 @@ function clearOne(key: string): void {
   notify(key);
 }
 
-function subscribe(sessionId: string | undefined, turnId: string | undefined, listener: Listener): () => void {
+function subscribe(
+  sessionId: string | undefined,
+  turnId: string | undefined,
+  listener: Listener,
+  streamKey?: string
+): () => void {
   if (!sessionId || !turnId) {
     return () => {};
   }
-  const key = composeKey(sessionId, turnId);
+  const key = composeKey(sessionId, turnId, streamKey);
   const group = listeners.get(key) ?? new Set<Listener>();
   group.add(listener);
   listeners.set(key, group);
@@ -193,18 +219,26 @@ function subscribe(sessionId: string | undefined, turnId: string | undefined, li
   };
 }
 
-function getSnapshot(sessionId: string | undefined, turnId: string | undefined): StreamRenderSnapshot {
+function getSnapshot(
+  sessionId: string | undefined,
+  turnId: string | undefined,
+  streamKey?: string
+): StreamRenderSnapshot {
   if (!sessionId || !turnId) {
     return EMPTY_SNAPSHOT;
   }
-  return store.get(composeKey(sessionId, turnId))?.snapshot ?? EMPTY_SNAPSHOT;
+  return store.get(composeKey(sessionId, turnId, streamKey))?.snapshot ?? EMPTY_SNAPSHOT;
 }
 
-function hasActiveTurn(sessionId: string | undefined, turnId: string | undefined): boolean {
+function hasActiveTurn(
+  sessionId: string | undefined,
+  turnId: string | undefined,
+  streamKey?: string
+): boolean {
   if (!sessionId || !turnId) {
     return false;
   }
-  return store.get(composeKey(sessionId, turnId))?.snapshot.isActive ?? false;
+  return store.get(composeKey(sessionId, turnId, streamKey))?.snapshot.isActive ?? false;
 }
 
 function scheduleCommit(key: string, sessionId: string): void {
@@ -254,8 +288,8 @@ function notify(key: string): void {
   }
 }
 
-function composeKey(sessionId: string, turnId: string): string {
-  return `${sessionId}::${turnId}`;
+function composeKey(sessionId: string, turnId: string, streamKey?: string): string {
+  return `${sessionId}::${turnId}::${streamKey ?? turnId}`;
 }
 
 function resolveRaf(): (cb: FrameRequestCallback) => number {

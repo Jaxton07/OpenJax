@@ -99,10 +99,11 @@ pub(crate) fn map_core_event(
     };
     let core_turn_id = mapping.core_turn_id;
     let event_type = mapping.event_type;
-    let payload = mapping.payload;
+    let mut payload = mapping.payload;
     let stream_source = mapping.stream_source;
 
     let public_turn_id = core_turn_id.map(|tid| session.get_or_create_public_turn_id(tid));
+    session.assign_stream_node_ids(public_turn_id.as_deref(), event_type, &mut payload);
     if let Some(turn_id) = &public_turn_id {
         let turn = session
             .turns
@@ -505,5 +506,195 @@ mod tests {
         assert_eq!(event.payload["tool_call_id"], "call_1");
         assert_eq!(event.payload["display_name"], "Run Shell");
         assert_eq!(event.payload["shell_metadata"]["backend"], "sandbox");
+    }
+
+    #[test]
+    fn response_events_attach_stable_response_segment_id() {
+        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
+        seed_session(&app_state, "sess_1");
+        let mut session = SessionRuntime::default();
+        let mut turn_id_tx = None;
+
+        let events = vec![
+            Event::ResponseStarted {
+                turn_id: 1,
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ResponseTextDelta {
+                turn_id: 1,
+                content_delta: "hello".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ResponseResumed {
+                turn_id: 1,
+                stream_source: openjax_protocol::StreamSource::Replay,
+            },
+            Event::ResponseTextDelta {
+                turn_id: 1,
+                content_delta: " world".to_string(),
+                stream_source: openjax_protocol::StreamSource::Replay,
+            },
+            Event::ResponseCompleted {
+                turn_id: 1,
+                content: "hello world".to_string(),
+                stream_source: openjax_protocol::StreamSource::Replay,
+            },
+        ];
+
+        for event in events {
+            let _ = map_core_event(
+                &app_state,
+                &mut session,
+                "sess_1",
+                "req_1",
+                event,
+                &mut turn_id_tx,
+            );
+        }
+
+        let replay = session
+            .replay_from(None)
+            .expect("replay events should exist");
+        assert_eq!(replay[0].payload["response_segment_id"], "resp_1");
+        assert_eq!(replay[1].payload["response_segment_id"], "resp_1");
+        assert_eq!(replay[2].payload["response_segment_id"], "resp_2");
+        assert_eq!(replay[3].payload["response_segment_id"], "resp_2");
+        assert_eq!(replay[4].payload["response_segment_id"], "resp_2");
+    }
+
+    #[test]
+    fn reasoning_and_tool_interleave_keep_stable_node_ids() {
+        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
+        seed_session(&app_state, "sess_1");
+        let mut session = SessionRuntime::default();
+        let mut turn_id_tx = None;
+
+        let events = vec![
+            Event::ResponseStarted {
+                turn_id: 1,
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ResponseTextDelta {
+                turn_id: 1,
+                content_delta: "A".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ToolCallStarted {
+                turn_id: 1,
+                tool_call_id: "call_1".to_string(),
+                tool_name: "Read".to_string(),
+                target: Some("file.txt".to_string()),
+                display_name: Some("Read File".to_string()),
+            },
+            Event::ReasoningDelta {
+                turn_id: 1,
+                content_delta: "think-1".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ReasoningDelta {
+                turn_id: 1,
+                content_delta: "think-2".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ResponseTextDelta {
+                turn_id: 1,
+                content_delta: "B".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ResponseCompleted {
+                turn_id: 1,
+                content: "AB".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ReasoningDelta {
+                turn_id: 1,
+                content_delta: "think-3".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+        ];
+
+        for event in events {
+            let _ = map_core_event(
+                &app_state,
+                &mut session,
+                "sess_1",
+                "req_1",
+                event,
+                &mut turn_id_tx,
+            );
+        }
+
+        let replay = session
+            .replay_from(None)
+            .expect("replay events should exist");
+        assert_eq!(replay[1].payload["response_segment_id"], "resp_1");
+        assert_eq!(replay[2].payload["tool_call_id"], "call_1");
+        assert!(replay[2].payload.get("response_segment_id").is_none());
+        assert_eq!(replay[3].payload["reasoning_segment_id"], "reason_1");
+        assert_eq!(replay[4].payload["reasoning_segment_id"], "reason_1");
+        assert_eq!(replay[5].payload["response_segment_id"], "resp_1");
+        assert_eq!(replay[7].payload["reasoning_segment_id"], "reason_2");
+    }
+
+    #[test]
+    fn mapped_stream_node_ids_are_identical_between_replay_and_timeline() {
+        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
+        seed_session(&app_state, "sess_1");
+        let mut session = SessionRuntime::default();
+        let mut turn_id_tx = None;
+
+        let events = vec![
+            Event::ResponseStarted {
+                turn_id: 1,
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ResponseTextDelta {
+                turn_id: 1,
+                content_delta: "A".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ToolCallStarted {
+                turn_id: 1,
+                tool_call_id: "call_1".to_string(),
+                tool_name: "Read".to_string(),
+                target: None,
+                display_name: Some("Read".to_string()),
+            },
+            Event::ReasoningDelta {
+                turn_id: 1,
+                content_delta: "think".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+            Event::ResponseCompleted {
+                turn_id: 1,
+                content: "A".to_string(),
+                stream_source: openjax_protocol::StreamSource::ModelLive,
+            },
+        ];
+
+        for event in events {
+            let _ = map_core_event(
+                &app_state,
+                &mut session,
+                "sess_1",
+                "req_1",
+                event,
+                &mut turn_id_tx,
+            );
+        }
+
+        let replay = session
+            .replay_from(None)
+            .expect("replay events should exist");
+        let timeline = app_state
+            .list_session_events("sess_1", None)
+            .expect("timeline events should exist");
+        assert_eq!(replay.len(), timeline.len());
+        for (live, persisted) in replay.iter().zip(timeline.iter()) {
+            assert_eq!(live.event_seq, persisted.event_seq);
+            assert_eq!(live.turn_seq, persisted.turn_seq);
+            assert_eq!(live.event_type, persisted.event_type);
+            assert_eq!(live.payload, persisted.payload);
+        }
     }
 }

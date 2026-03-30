@@ -19,6 +19,7 @@ export interface ToolStepMeta {
 export interface ReasoningBlock {
   blockId: string;
   turnId: string;
+  reasoningSegmentId?: string;
   content: string;
   collapsed: boolean;
   startedAt: string;
@@ -64,6 +65,7 @@ export interface ChatMessage {
   textLastEventSeq?: number;
   textEndEventSeq?: number;
   turnId?: string;
+  responseSegmentId?: string;
   isDraft?: boolean;
   hasCanonicalDelta?: boolean;
   interrupted?: boolean;

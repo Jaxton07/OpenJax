@@ -465,6 +465,7 @@ impl AppState {
             };
             let _ = runtime.event_log.push(envelope);
             if let Some(turn_id) = row.turn_id.clone() {
+                runtime.observe_stream_node_ids(Some(&turn_id), &row.event_type, &row.payload);
                 let turn = runtime
                     .turns
                     .entry(turn_id.clone())

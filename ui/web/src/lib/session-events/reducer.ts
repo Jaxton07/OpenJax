@@ -103,7 +103,10 @@ function applySingleSessionEvent(session: ChatSession, event: StreamEvent): Chat
       turnId,
       String(event.payload.content_delta ?? ""),
       event.timestamp,
-      event.event_seq
+      event.event_seq,
+      typeof event.payload.reasoning_segment_id === "string"
+        ? event.payload.reasoning_segment_id
+        : undefined
     );
   }
 

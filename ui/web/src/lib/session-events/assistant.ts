@@ -3,10 +3,6 @@ import type { StreamEvent } from "../../types/gateway";
 
 export function shouldCloseReasoningOnEvent(event: StreamEvent): boolean {
   return (
-    event.type === "response_text_delta" ||
-    event.type === "tool_call_started" ||
-    event.type === "tool_calls_proposed" ||
-    event.type === "tool_batch_completed" ||
     event.type === "response_completed" ||
     event.type === "response_error" ||
     event.type === "turn_completed" ||
@@ -22,8 +18,9 @@ export function applyResponseStartedSession(
   if (!turnId) {
     return { session, content: "" };
   }
+  const responseSegmentId = responseSegmentIdFromEvent(event);
 
-  const existingIndex = findAssistantMessageIndex(session.messages, turnId);
+  const existingIndex = findAssistantMessageIndex(session.messages, turnId, responseSegmentId);
   const messages = [...session.messages];
   let messageId: string;
   let content = "";
@@ -34,12 +31,13 @@ export function applyResponseStartedSession(
     messages[existingIndex] = {
       ...existing,
       isDraft: true,
+      responseSegmentId: responseSegmentId ?? existing.responseSegmentId,
       timestamp: event.timestamp,
       startEventSeq: existing.startEventSeq ?? event.event_seq,
       lastEventSeq: Math.max(existing.lastEventSeq ?? event.event_seq, event.event_seq)
     };
   } else {
-    messageId = buildAssistantDraftId(turnId);
+    messageId = buildAssistantDraftId(turnId, responseSegmentId);
     messages.push({
       id: messageId,
       kind: "text",
@@ -49,6 +47,7 @@ export function applyResponseStartedSession(
       startEventSeq: event.event_seq,
       lastEventSeq: event.event_seq,
       turnId,
+      responseSegmentId,
       isDraft: true
     });
   }
@@ -81,10 +80,11 @@ export function applyResponseCompletedSession(
   if (!turnId) {
     return session;
   }
+  const responseSegmentId = responseSegmentIdFromEvent(event);
 
   let nextContent = finalizedContent;
   const messages = [...session.messages];
-  const index = findAssistantMessageIndex(messages, turnId);
+  const index = findAssistantMessageIndex(messages, turnId, responseSegmentId);
   let messageId: string;
   if (index >= 0) {
     const message = messages[index];
@@ -97,6 +97,7 @@ export function applyResponseCompletedSession(
       ...message,
       content: nextContent,
       isDraft: false,
+      responseSegmentId: responseSegmentId ?? message.responseSegmentId,
       timestamp: event.timestamp,
       startEventSeq: message.startEventSeq ?? event.event_seq,
       lastEventSeq: Math.max(message.lastEventSeq ?? event.event_seq, event.event_seq),
@@ -105,7 +106,7 @@ export function applyResponseCompletedSession(
       textEndEventSeq: Math.max(message.textEndEventSeq ?? event.event_seq, event.event_seq)
     };
   } else {
-    messageId = buildAssistantDraftId(turnId);
+    messageId = buildAssistantDraftId(turnId, responseSegmentId);
     messages.push({
       id: messageId,
       kind: "text",
@@ -118,6 +119,7 @@ export function applyResponseCompletedSession(
       textLastEventSeq: event.event_seq,
       textEndEventSeq: event.event_seq,
       turnId,
+      responseSegmentId,
       isDraft: false
     });
   }
@@ -145,9 +147,8 @@ export function mergeAssistantDraft(
   isCanonicalDelta: boolean,
   event: StreamEvent
 ): void {
-  const idx = messages.findIndex(
-    (message) => message.turnId === turnId && message.kind === "text" && message.isDraft
-  );
+  const responseSegmentId = responseSegmentIdFromEvent(event);
+  const idx = findAssistantDraftIndex(messages, turnId, responseSegmentId);
   if (idx >= 0) {
     if (!isCanonicalDelta && messages[idx].hasCanonicalDelta) {
       logStreamMetric("web_stream_duplicate_drop_count", {
@@ -162,6 +163,7 @@ export function mergeAssistantDraft(
       ...messages[idx],
       content: `${messages[idx].content}${delta}`,
       hasCanonicalDelta: messages[idx].hasCanonicalDelta || isCanonicalDelta,
+      responseSegmentId: responseSegmentId ?? messages[idx].responseSegmentId,
       startEventSeq: messages[idx].startEventSeq ?? event.event_seq,
       lastEventSeq: Math.max(messages[idx].lastEventSeq ?? event.event_seq, event.event_seq),
       textStartEventSeq: messages[idx].textStartEventSeq ?? event.event_seq,
@@ -170,7 +172,7 @@ export function mergeAssistantDraft(
     return;
   }
   messages.push({
-    id: crypto.randomUUID(),
+    id: buildAssistantDraftId(turnId, responseSegmentId),
     kind: "text",
     role: "assistant",
     content: delta,
@@ -180,6 +182,7 @@ export function mergeAssistantDraft(
     textStartEventSeq: event.event_seq,
     textLastEventSeq: event.event_seq,
     turnId,
+    responseSegmentId,
     isDraft: true,
     hasCanonicalDelta: isCanonicalDelta
   });
@@ -190,16 +193,22 @@ export function appendReasoningDelta(
   turnId: string,
   delta: string,
   timestamp: string,
-  eventSeq: number
+  eventSeq: number,
+  reasoningSegmentId?: string
 ): void {
   if (!delta) {
     return;
   }
   const idx = findAssistantMessageIndex(messages, turnId);
-  if (idx < 0) {
+  const targetIdx =
+    reasoningSegmentId && reasoningSegmentId.length > 0
+      ? findAssistantMessageIndexByReasoningSegment(messages, turnId, reasoningSegmentId) ?? idx
+      : idx;
+  if (targetIdx < 0) {
     const block: ReasoningBlock = {
-      blockId: `reasoning:${turnId}:${eventSeq}`,
+      blockId: buildReasoningBlockId(turnId, eventSeq, reasoningSegmentId),
       turnId,
+      reasoningSegmentId,
       content: delta,
       collapsed: true,
       startedAt: timestamp,
@@ -221,19 +230,37 @@ export function appendReasoningDelta(
     });
     return;
   }
-  const message = messages[idx];
+  const message = messages[targetIdx];
   const blocks = [...(message.reasoningBlocks ?? [])];
-  const openIdx = findLastOpenReasoningBlockIndex(blocks);
-  if (openIdx >= 0) {
-    blocks[openIdx] = {
-      ...blocks[openIdx],
-      content: `${blocks[openIdx].content}${delta}`,
-      lastEventSeq: Math.max(blocks[openIdx].lastEventSeq ?? eventSeq, eventSeq)
+  const hasReasoningSegmentId = Boolean(reasoningSegmentId && reasoningSegmentId.length > 0);
+  const segmentedIdx = hasReasoningSegmentId
+    ? blocks.findIndex((block) => block.reasoningSegmentId === reasoningSegmentId)
+    : -1;
+  if (segmentedIdx >= 0) {
+    blocks[segmentedIdx] = {
+      ...blocks[segmentedIdx],
+      content: `${blocks[segmentedIdx].content}${delta}`,
+      reasoningSegmentId: reasoningSegmentId ?? blocks[segmentedIdx].reasoningSegmentId,
+      closed: false,
+      endEventSeq: undefined,
+      endedAt: undefined,
+      lastEventSeq: Math.max(blocks[segmentedIdx].lastEventSeq ?? eventSeq, eventSeq)
     };
-  } else {
+  } else if (hasReasoningSegmentId) {
+    for (let i = 0; i < blocks.length; i += 1) {
+      if (!blocks[i].closed) {
+        blocks[i] = {
+          ...blocks[i],
+          closed: true,
+          endEventSeq: blocks[i].lastEventSeq ?? eventSeq,
+          endedAt: timestamp
+        };
+      }
+    }
     blocks.push({
-      blockId: `reasoning:${turnId}:${eventSeq}`,
+      blockId: buildReasoningBlockId(turnId, eventSeq, reasoningSegmentId),
       turnId,
+      reasoningSegmentId,
       content: delta,
       collapsed: true,
       startedAt: timestamp,
@@ -241,8 +268,31 @@ export function appendReasoningDelta(
       startEventSeq: eventSeq,
       lastEventSeq: eventSeq
     });
+  } else {
+    const openIdx = findLastOpenReasoningBlockIndex(blocks);
+    if (openIdx >= 0) {
+      blocks[openIdx] = {
+        ...blocks[openIdx],
+        content: `${blocks[openIdx].content}${delta}`,
+        closed: false,
+        endEventSeq: undefined,
+        endedAt: undefined,
+        lastEventSeq: Math.max(blocks[openIdx].lastEventSeq ?? eventSeq, eventSeq)
+      };
+    } else {
+      blocks.push({
+        blockId: buildReasoningBlockId(turnId, eventSeq, undefined),
+        turnId,
+        content: delta,
+        collapsed: true,
+        startedAt: timestamp,
+        closed: false,
+        startEventSeq: eventSeq,
+        lastEventSeq: eventSeq
+      });
+    }
   }
-  messages[idx] = {
+  messages[targetIdx] = {
     ...message,
     timestamp,
     startEventSeq: message.startEventSeq ?? eventSeq,
@@ -252,29 +302,34 @@ export function appendReasoningDelta(
 }
 
 export function closeOpenReasoningBlock(messages: ChatMessage[], turnId: string, eventSeq?: number, timestamp?: string): void {
-  const idx = findAssistantMessageIndex(messages, turnId);
-  if (idx < 0) {
-    return;
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (message.turnId !== turnId || message.kind !== "text" || message.role !== "assistant") {
+      continue;
+    }
+    if (!message.reasoningBlocks || message.reasoningBlocks.length === 0) {
+      continue;
+    }
+    const blocks = [...message.reasoningBlocks];
+    let changed = false;
+    for (let j = 0; j < blocks.length; j += 1) {
+      if (!blocks[j].closed) {
+        blocks[j] = {
+          ...blocks[j],
+          closed: true,
+          endEventSeq: blocks[j].lastEventSeq ?? eventSeq,
+          endedAt: timestamp ?? new Date().toISOString()
+        };
+        changed = true;
+      }
+    }
+    if (changed) {
+      messages[i] = {
+        ...message,
+        reasoningBlocks: blocks
+      };
+    }
   }
-  const message = messages[idx];
-  if (!message.reasoningBlocks || message.reasoningBlocks.length === 0) {
-    return;
-  }
-  const blocks = [...message.reasoningBlocks];
-  const openIdx = findLastOpenReasoningBlockIndex(blocks);
-  if (openIdx < 0) {
-    return;
-  }
-  blocks[openIdx] = {
-    ...blocks[openIdx],
-    closed: true,
-    endEventSeq: blocks[openIdx].lastEventSeq ?? eventSeq,
-    endedAt: timestamp ?? new Date().toISOString()
-  };
-  messages[idx] = {
-    ...message,
-    reasoningBlocks: blocks
-  };
 }
 
 export function closeOpenReasoningBlockInSession(
@@ -286,35 +341,9 @@ export function closeOpenReasoningBlockInSession(
   if (!turnId) {
     return session;
   }
-  const idx = findAssistantMessageIndex(session.messages, turnId);
-  if (idx < 0) {
-    return session;
-  }
-  const message = session.messages[idx];
-  const blocks = message.reasoningBlocks;
-  if (!blocks || blocks.length === 0) {
-    return session;
-  }
-  const openIdx = findLastOpenReasoningBlockIndex(blocks);
-  if (openIdx < 0) {
-    return session;
-  }
-  const nextBlocks = [...blocks];
-  nextBlocks[openIdx] = {
-    ...nextBlocks[openIdx],
-    closed: true,
-    endEventSeq: nextBlocks[openIdx].lastEventSeq ?? eventSeq,
-    endedAt: timestamp ?? new Date().toISOString()
-  };
   const messages = [...session.messages];
-  messages[idx] = {
-    ...message,
-    reasoningBlocks: nextBlocks
-  };
-  return {
-    ...session,
-    messages
-  };
+  closeOpenReasoningBlock(messages, turnId, eventSeq, timestamp);
+  return { ...session, messages };
 }
 
 export function finalizeAssistantMessageFallback(
@@ -383,9 +412,8 @@ export function sealAssistantMessage(
   timestamp: string,
   event: StreamEvent
 ): void {
-  const draftIdx = messages.findIndex(
-    (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant" && message.isDraft
-  );
+  const responseSegmentId = responseSegmentIdFromEvent(event);
+  const draftIdx = findAssistantDraftIndex(messages, turnId, responseSegmentId);
   if (draftIdx >= 0) {
     if (content && content !== messages[draftIdx].content) {
       logStreamMetric("web_stream_content_mismatch_count", {
@@ -399,6 +427,7 @@ export function sealAssistantMessage(
       ...messages[draftIdx],
       content: content || messages[draftIdx].content,
       isDraft: false,
+      responseSegmentId: responseSegmentId ?? messages[draftIdx].responseSegmentId,
       timestamp,
       lastEventSeq: Math.max(messages[draftIdx].lastEventSeq ?? event.event_seq, event.event_seq),
       textStartEventSeq: messages[draftIdx].textStartEventSeq ?? event.event_seq,
@@ -409,13 +438,18 @@ export function sealAssistantMessage(
   }
 
   const existingIdx = messages.findIndex(
-    (message) => message.turnId === turnId && message.kind === "text" && message.role === "assistant"
+    (message) =>
+      message.turnId === turnId &&
+      message.kind === "text" &&
+      message.role === "assistant" &&
+      (!responseSegmentId || message.responseSegmentId === responseSegmentId)
   );
   if (existingIdx >= 0) {
     messages[existingIdx] = {
       ...messages[existingIdx],
       content: content || messages[existingIdx].content,
       isDraft: false,
+      responseSegmentId: responseSegmentId ?? messages[existingIdx].responseSegmentId,
       timestamp,
       lastEventSeq: Math.max(messages[existingIdx].lastEventSeq ?? event.event_seq, event.event_seq),
       textStartEventSeq: messages[existingIdx].textStartEventSeq ?? event.event_seq,
@@ -436,7 +470,7 @@ export function sealAssistantMessage(
   }
 
   messages.push({
-    id: crypto.randomUUID(),
+    id: buildAssistantDraftId(turnId, responseSegmentId),
     kind: "text",
     role: "assistant",
     content,
@@ -447,6 +481,7 @@ export function sealAssistantMessage(
     textLastEventSeq: event.event_seq,
     textEndEventSeq: event.event_seq,
     turnId,
+    responseSegmentId,
     isDraft: false
   });
 }
@@ -490,10 +525,25 @@ export function markTurnDraftFinal(messages: ChatMessage[], turnId?: string): vo
   }
 }
 
-export function findAssistantMessageIndex(messages: ChatMessage[], turnId: string): number {
+export function findAssistantMessageIndex(messages: ChatMessage[], turnId: string): number;
+export function findAssistantMessageIndex(
+  messages: ChatMessage[],
+  turnId: string,
+  responseSegmentId?: string
+): number;
+export function findAssistantMessageIndex(
+  messages: ChatMessage[],
+  turnId: string,
+  responseSegmentId?: string
+): number {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
-    if (message.turnId === turnId && message.kind === "text" && message.role === "assistant") {
+    if (
+      message.turnId === turnId &&
+      message.kind === "text" &&
+      message.role === "assistant" &&
+      (!responseSegmentId || message.responseSegmentId === responseSegmentId)
+    ) {
       return i;
     }
   }
@@ -507,8 +557,77 @@ export function isCanonicalDeltaEvent(event: StreamEvent): boolean {
   return Object.prototype.hasOwnProperty.call(event.payload, "stream_source");
 }
 
-function buildAssistantDraftId(turnId: string): string {
-  return `assistant_draft_${turnId}`;
+function buildAssistantDraftId(turnId: string, responseSegmentId?: string): string {
+  if (!responseSegmentId) {
+    return `assistant_draft_${turnId}`;
+  }
+  return `assistant_${turnId}_${responseSegmentId}`;
+}
+
+function buildReasoningBlockId(turnId: string, eventSeq: number, reasoningSegmentId?: string): string {
+  if (!reasoningSegmentId) {
+    return `reasoning:${turnId}:${eventSeq}`;
+  }
+  return `reasoning:${turnId}:${reasoningSegmentId}`;
+}
+
+function responseSegmentIdFromEvent(event: StreamEvent): string | undefined {
+  const value = event.payload.response_segment_id;
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  return undefined;
+}
+
+function findAssistantDraftIndex(
+  messages: ChatMessage[],
+  turnId: string,
+  responseSegmentId?: string
+): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (
+      message.turnId === turnId &&
+      message.kind === "text" &&
+      message.role === "assistant" &&
+      message.isDraft &&
+      (!responseSegmentId || message.responseSegmentId === responseSegmentId)
+    ) {
+      return i;
+    }
+  }
+  if (!responseSegmentId) {
+    return -1;
+  }
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (
+      message.turnId === turnId &&
+      message.kind === "text" &&
+      message.role === "assistant" &&
+      message.responseSegmentId === responseSegmentId
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function findAssistantMessageIndexByReasoningSegment(
+  messages: ChatMessage[],
+  turnId: string,
+  reasoningSegmentId: string
+): number | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.turnId !== turnId || message.kind !== "text" || message.role !== "assistant") {
+      continue;
+    }
+    if ((message.reasoningBlocks ?? []).some((block) => block.reasoningSegmentId === reasoningSegmentId)) {
+      return i;
+    }
+  }
+  return undefined;
 }
 
 function findLastOpenReasoningBlockIndex(blocks: ReasoningBlock[]): number {

@@ -160,6 +160,7 @@ function TimelineRow({
           <AssistantDraftMessage
             sessionId={sessionId}
             turnId={message.turnId}
+            streamKey={message.responseSegmentId}
             fallbackContent={message.content}
             assistantRenderMode={assistantRenderMode}
             onStreamTick={onDraftStreamTick}
@@ -183,6 +184,7 @@ function TimelineRow({
 interface AssistantDraftMessageProps {
   sessionId?: string;
   turnId: string;
+  streamKey?: string;
   fallbackContent: string;
   assistantRenderMode: AssistantRenderMode;
   onStreamTick: () => void;
@@ -192,12 +194,13 @@ interface AssistantDraftMessageProps {
 function AssistantDraftMessage({
   sessionId,
   turnId,
+  streamKey,
   fallbackContent,
   assistantRenderMode,
   onStreamTick,
   onStreamEnd
 }: AssistantDraftMessageProps) {
-  const snapshot = useStreamRenderSnapshot(sessionId, turnId);
+  const snapshot = useStreamRenderSnapshot(sessionId, turnId, streamKey);
   const content = snapshot.version > 0 ? snapshot.content : fallbackContent;
 
   useEffect(() => {

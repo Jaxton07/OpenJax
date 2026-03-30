@@ -116,6 +116,8 @@ export function useChatApp() {
   }, [state.sessions]);
 
   const applyIncomingEvent = useCallback((sessionId: string, event: StreamEvent) => {
+    const responseSegmentId =
+      typeof event.payload.response_segment_id === "string" ? event.payload.response_segment_id : undefined;
     const seenSeq = lastEventSeqRef.current[sessionId] ?? 0;
     const seqReset = isSequenceResetEvent(event);
     if (!seqReset && event.event_seq <= seenSeq) {
@@ -138,20 +140,20 @@ export function useChatApp() {
 
     if (event.type === "response_text_delta") {
       recordDeltaReceived(sessionId);
-      streamRenderStore.append(sessionId, event.turn_id, String(event.payload.content_delta ?? ""), event.event_seq);
+      streamRenderStore.append(
+        sessionId,
+        event.turn_id,
+        String(event.payload.content_delta ?? ""),
+        event.event_seq,
+        responseSegmentId
+      );
       setState((prev) => {
         let changed = false;
         const sessions = prev.sessions.map((session) => {
           if (session.id !== sessionId) {
             return session;
           }
-          const withReasoningClosed = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq, event.timestamp);
-          const next = touchAssistantTextSeqInSession(
-            withReasoningClosed,
-            event.turn_id,
-            event.event_seq,
-            event.timestamp
-          );
+          const next = touchAssistantTextSeqInSession(session, event.turn_id, event.event_seq, event.timestamp);
           changed = changed || next !== session;
           return next;
         });
@@ -168,7 +170,7 @@ export function useChatApp() {
       return;
     }
 
-    if (event.type === "response_started") {
+    if (event.type === "response_started" || event.type === "response_resumed") {
       let startedMessageId: string | undefined;
       let startedContent = "";
       setState((prev) => {
@@ -185,14 +187,21 @@ export function useChatApp() {
         });
         return changed ? { ...prev, sessions } : prev;
       });
-      streamRenderStore.start(sessionId, event.turn_id, startedMessageId, event.event_seq, startedContent);
+      streamRenderStore.start(
+        sessionId,
+        event.turn_id,
+        startedMessageId,
+        event.event_seq,
+        startedContent,
+        responseSegmentId
+      );
       return;
     }
 
     if (event.type === "response_completed") {
       const payloadContent = String(event.payload.content ?? "");
-      streamRenderStore.complete(sessionId, event.turn_id, payloadContent, event.event_seq);
-      const snapshot = streamRenderStore.getSnapshot(sessionId, event.turn_id);
+      streamRenderStore.complete(sessionId, event.turn_id, payloadContent, event.event_seq, responseSegmentId);
+      const snapshot = streamRenderStore.getSnapshot(sessionId, event.turn_id, responseSegmentId);
       const finalizedContent = payloadContent.length > 0 ? payloadContent : snapshot.content;
       setState((prev) => {
         let changed = false;
@@ -214,7 +223,7 @@ export function useChatApp() {
     }
 
     if (event.type === "response_error") {
-      streamRenderStore.fail(sessionId, event.turn_id, event.event_seq);
+      streamRenderStore.fail(sessionId, event.turn_id, event.event_seq, responseSegmentId);
     }
     if (event.type === "turn_completed") {
       streamRenderStore.clear(sessionId, event.turn_id);

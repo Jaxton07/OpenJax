@@ -249,16 +249,23 @@ zsh -lc "cargo test -p openjax-gateway --test m1_assistant_message_compat_only"
 3. 每条 SSE 的 `data` 是事件信封（`event_seq/turn_seq/type/payload`）。
 4. 关键渲染事件：
 - `user_message`
-- `response_started`
-- `reasoning_delta`（思考流增量，建议在正文上方折叠展示）
-- `response_text_delta`
-- `response_resumed`
-- `response_completed`
+- `response_started`（payload 含 `response_segment_id`）
+- `reasoning_delta`（payload 含 `reasoning_segment_id`，思考流增量，建议在正文上方折叠展示）
+- `response_text_delta`（payload 含 `response_segment_id`）
+- `response_resumed`（payload 含 `response_segment_id`）
+- `response_completed`（payload 含 `response_segment_id`）
 - `assistant_message`（legacy compatibility only，不应作为新链路的权威完成态）
 - `tool_call_started/tool_args_delta/tool_call_ready/tool_call_progress/tool_call_completed/tool_call_failed`
 - `approval_requested/approval_resolved`
 - `context_compacted`（上下文压缩事件，payload 含 `compressed_turns`、`retained_turns`、`summary_preview`）
 5. 若收到 `response_error.code=REPLAY_WINDOW_EXCEEDED`，应提示前端重新发起会话流连接。
+
+节点归并约定（WebUI 推荐）：
+
+- response 节点主键：`node_type=response + response_segment_id`
+- reasoning 节点主键：`node_type=reasoning + reasoning_segment_id`
+- tool 节点主键：`node_type=tool + tool_call_id`
+- 同一 turn 内 `response_segment_id` / `reasoning_segment_id` 由 gateway 投影层稳定生成，timeline 回放与 SSE 实时流保持一致。
 
 `tool_call_completed` payload 当前透传协议字段：
 
