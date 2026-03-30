@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::auth::load_api_keys_from_env;
 use crate::auth::{AuthConfig, AuthService};
 use crate::error::ApiError;
-use crate::event_mapper::map_core_event_payload;
+use crate::event_mapper::{MapResult, map_core_event_payload_result};
 use openjax_store::SqliteStore;
 use openjax_store::repository::{CreateProviderParams, UpdateProviderParams};
 use openjax_store::{ProviderRepository, SessionRepository};
@@ -545,7 +545,21 @@ fn map_core_event(
     event: Event,
     turn_id_tx: &mut Option<oneshot::Sender<Result<String, ApiError>>>,
 ) -> Option<String> {
-    let mapping = map_core_event_payload(&event)?;
+    let mapping = match map_core_event_payload_result(&event) {
+        MapResult::Mapped(mapping) => mapping,
+        MapResult::IgnoredInternal => return None,
+        MapResult::Unmapped(variant) => {
+            warn!(
+                core_event_variant = variant,
+                "unmapped core event hit gateway coverage gate"
+            );
+            debug_assert!(
+                false,
+                "unmapped core event variant hit gateway mapping gate: {variant}"
+            );
+            return None;
+        }
+    };
     let core_turn_id = mapping.core_turn_id;
     let event_type = mapping.event_type;
     let payload = mapping.payload;
@@ -702,6 +716,13 @@ fn map_core_event(
     }
 
     public_turn_id
+}
+
+pub fn core_event_mapping_gate(event: &Event) -> Result<(), &'static str> {
+    match map_core_event_payload_result(event) {
+        MapResult::Mapped(_) | MapResult::IgnoredInternal => Ok(()),
+        MapResult::Unmapped(variant) => Err(variant),
+    }
 }
 
 fn first_turn_id(events: &[Event]) -> Option<u64> {

@@ -2,10 +2,12 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use futures_util::StreamExt;
 use openjax_gateway::AppState;
+use openjax_gateway::state::core_event_mapping_gate;
 use openjax_gateway::state::{
     StreamEventEnvelope, TurnRuntime, TurnStatus, append_then_publish,
     handle_key_event_append_failure,
 };
+use openjax_protocol::{AgentStatus, Event, ThreadId};
 use serde_json::{Value, json};
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::time::{Duration, timeout};
@@ -14,6 +16,18 @@ use tower::ServiceExt;
 use crate::gateway_api::helpers::{
     app_with_api_key, auth_header, create_session_for_test, login, response_json,
 };
+
+#[test]
+fn mapping_gate_explicitly_classifies_mapped_and_ignored_core_events() {
+    assert!(core_event_mapping_gate(&Event::TurnStarted { turn_id: 1 }).is_ok());
+    assert!(
+        core_event_mapping_gate(&Event::AgentStatusChanged {
+            thread_id: ThreadId::new(),
+            status: AgentStatus::Running,
+        })
+        .is_ok()
+    );
+}
 
 fn seed_event(
     session_id: &str,
