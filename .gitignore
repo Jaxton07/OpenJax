@@ -20,3 +20,4 @@ __pycache__/
 scripts/api_test/response.log
 .superpowers/
 .idea/
+.local-dev-test/
