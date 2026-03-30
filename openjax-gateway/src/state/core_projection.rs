@@ -168,7 +168,10 @@ pub(crate) fn map_core_event(
             .payload
             .get("content_delta")
             .and_then(|value| value.as_str());
-        let content_raw = envelope.payload.get("content").and_then(|value| value.as_str());
+        let content_raw = envelope
+            .payload
+            .get("content")
+            .and_then(|value| value.as_str());
         let delta_len = envelope
             .payload
             .get("content_delta")
@@ -305,6 +308,18 @@ mod tests {
             .store
             .create_session(session_id, None)
             .expect("seed test session");
+        let now = crate::error::now_rfc3339();
+        app_state
+            .session_index
+            .create_session_index_entry(crate::transcript::IndexSessionEntry {
+                session_id: session_id.to_string(),
+                title: None,
+                created_at: now.clone(),
+                updated_at: now,
+                last_event_seq: 0,
+                last_preview: String::new(),
+            })
+            .expect("seed session index entry");
     }
 
     #[test]

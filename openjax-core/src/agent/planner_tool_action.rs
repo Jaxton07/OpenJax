@@ -1,9 +1,9 @@
 use serde_json::Value;
 
+use crate::Agent;
 use crate::agent::decision::ModelDecision;
 use crate::agent::planner::ToolActionContext;
 use crate::agent::tool_projection::{observe_tool_args, tool_input_to_args};
-use crate::Agent;
 
 pub(super) enum NativeToolExecOutcome {
     Result { model_content: String, ok: bool },
@@ -49,7 +49,8 @@ impl Agent {
         let args = decision.args.clone().unwrap_or_default();
         observe_tool_args(&args, ctx);
 
-        if let Some(outcome) = self.guard_duplicate_legacy_tool_call(turn_id, &tool_name, &args, ctx)
+        if let Some(outcome) =
+            self.guard_duplicate_legacy_tool_call(turn_id, &tool_name, &args, ctx)
         {
             return outcome;
         }

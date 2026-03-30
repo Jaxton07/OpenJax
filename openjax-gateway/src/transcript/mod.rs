@@ -5,8 +5,8 @@ mod types;
 
 pub use session_index_store::SessionIndexStore;
 pub use session_index_types::{
-    INDEX_LOG_FILE, INDEX_SNAPSHOT_FILE, SESSION_INDEX_SCHEMA_VERSION, IndexLogOpKind,
-    IndexSessionEntry, SessionIndexLogRecord, SessionIndexSnapshot,
+    INDEX_LOG_FILE, INDEX_SNAPSHOT_FILE, IndexLogOpKind, IndexSessionEntry,
+    SESSION_INDEX_SCHEMA_VERSION, SessionIndexLogRecord, SessionIndexSnapshot,
 };
 pub use store::TranscriptStore;
 pub use types::{

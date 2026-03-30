@@ -164,12 +164,12 @@ impl Agent {
                 *ctx.executed_count += 1;
                 *ctx.consecutive_duplicate_skips = 0;
                 if is_approval_blocking_error(&err_text) {
-                    let stop_message = if err_text.to_ascii_lowercase().contains("approval timed out")
-                    {
-                        approval_timed_out_stop_message()
-                    } else {
-                        approval_rejected_stop_message()
-                    };
+                    let stop_message =
+                        if err_text.to_ascii_lowercase().contains("approval timed out") {
+                            approval_timed_out_stop_message()
+                        } else {
+                            approval_rejected_stop_message()
+                        };
                     self.push_event(
                         ctx.events,
                         Event::ResponseError {
@@ -338,12 +338,12 @@ impl Agent {
                 *ctx.executed_count += 1;
                 *ctx.consecutive_duplicate_skips = 0;
                 if is_approval_blocking_error(&err_text) {
-                    let stop_message = if err_text.to_ascii_lowercase().contains("approval timed out")
-                    {
-                        approval_timed_out_stop_message()
-                    } else {
-                        approval_rejected_stop_message()
-                    };
+                    let stop_message =
+                        if err_text.to_ascii_lowercase().contains("approval timed out") {
+                            approval_timed_out_stop_message()
+                        } else {
+                            approval_rejected_stop_message()
+                        };
                     self.push_event(
                         ctx.events,
                         Event::ResponseError {

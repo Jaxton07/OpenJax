@@ -258,12 +258,10 @@ impl ChatCompletionsClient {
                 ConversationMessage::Assistant(blocks) => {
                     let text: String = blocks
                         .iter()
-                        .filter_map(|b| {
-                            match b {
-                                AssistantContentBlock::Text { text } => Some(text.as_str()),
-                                AssistantContentBlock::Reasoning { .. }
-                                | AssistantContentBlock::ToolUse { .. } => None,
-                            }
+                        .filter_map(|b| match b {
+                            AssistantContentBlock::Text { text } => Some(text.as_str()),
+                            AssistantContentBlock::Reasoning { .. }
+                            | AssistantContentBlock::ToolUse { .. } => None,
                         })
                         .collect::<Vec<_>>()
                         .join("");

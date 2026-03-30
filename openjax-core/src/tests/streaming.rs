@@ -205,7 +205,10 @@ async fn tool_use_round_emits_intermediate_response_text_delta() {
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(deltas, vec!["working on it".to_string(), "done".to_string()]);
+    assert_eq!(
+        deltas,
+        vec!["working on it".to_string(), "done".to_string()]
+    );
 }
 
 #[tokio::test]
@@ -218,7 +221,11 @@ async fn tool_use_followup_request_preserves_assistant_reasoning_history() {
     let events = agent.submit(user_turn("inspect and continue")).await;
 
     let requests = model_probe.recorded_requests();
-    assert_eq!(requests.len(), 2, "expected initial and follow-up model requests");
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected initial and follow-up model requests"
+    );
 
     let followup_assistant = requests[1]
         .messages
