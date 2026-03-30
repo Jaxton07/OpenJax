@@ -4,8 +4,7 @@ use futures_util::StreamExt;
 use openjax_gateway::AppState;
 use openjax_gateway::state::core_event_mapping_gate;
 use openjax_gateway::state::{
-    StreamEventEnvelope, TurnRuntime, TurnStatus, append_then_publish,
-    handle_key_event_append_failure,
+    TurnRuntime, TurnStatus, append_then_publish, handle_key_event_append_failure,
 };
 use openjax_protocol::{AgentStatus, Event, ThreadId};
 use serde_json::{Value, json};
@@ -27,27 +26,6 @@ fn mapping_gate_explicitly_classifies_mapped_and_ignored_core_events() {
         })
         .is_ok()
     );
-}
-
-fn seed_event(
-    session_id: &str,
-    event_seq: u64,
-    turn_seq: u64,
-    turn_id: Option<&str>,
-    event_type: &str,
-    payload: Value,
-) -> StreamEventEnvelope {
-    StreamEventEnvelope {
-        request_id: "req_seed".to_string(),
-        session_id: session_id.to_string(),
-        turn_id: turn_id.map(ToString::to_string),
-        event_seq,
-        turn_seq,
-        timestamp: "2026-03-30T00:00:00Z".to_string(),
-        event_type: event_type.to_string(),
-        stream_source: "synthetic".to_string(),
-        payload,
-    }
 }
 
 async fn publish_1100_response_text_delta_events(state: &AppState, session_id: &str) {
@@ -219,25 +197,13 @@ async fn append_failure_does_not_emit_sse_event() {
         session.event_tx.subscribe()
     };
 
-    let persisted = seed_event(
-        &session_id,
-        1,
-        0,
-        None,
-        "seed_event",
-        json!({ "seed": true }),
-    );
-    state
-        .append_event(&persisted)
-        .expect("persist seed event to force duplicate seq");
-
     let mut session = session_runtime.lock().await;
     let event = session.create_gateway_event(
-        "req_test",
+        "req___force_append_fail_all__",
         &session_id,
         None,
         "session_shutdown",
-        json!({ "reason": "test" }),
+        json!({ "reason": "test", "__force_append_fail": true }),
         Some("synthetic"),
     );
     let err = append_then_publish(&state, &mut session, event).expect_err("append should fail");
@@ -296,10 +262,7 @@ async fn sse_and_timeline_are_identical_for_same_turn() {
         assert_eq!(live.turn_seq, saved.turn_seq);
         assert_eq!(live.event_type, saved.event_type);
         assert_eq!(live.turn_id.as_deref(), saved.turn_id.as_deref());
-        assert_eq!(
-            live.payload,
-            serde_json::from_str::<Value>(&saved.payload_json).expect("parse payload")
-        );
+        assert_eq!(live.payload, saved.payload);
     }
 }
 
@@ -317,17 +280,6 @@ async fn key_event_append_failure_marks_turn_failed_and_emits_single_transcript_
         session.event_tx.subscribe()
     };
 
-    state
-        .append_event(&seed_event(
-            &session_id,
-            1,
-            1,
-            Some("turn_1"),
-            "seed_conflict",
-            json!({}),
-        ))
-        .expect("seed conflict seq");
-
     let mut session = session_runtime.lock().await;
     session
         .turns
@@ -337,7 +289,7 @@ async fn key_event_append_failure_marks_turn_failed_and_emits_single_transcript_
         &session_id,
         Some("turn_1".to_string()),
         "response_text_delta",
-        json!({ "content_delta": "hello" }),
+        json!({ "content_delta": "hello", "__force_append_fail": true }),
         Some("model_live"),
     );
     let key_error = append_then_publish(&state, &mut session, key_event.clone())
@@ -376,37 +328,16 @@ async fn when_error_event_append_also_fails_turn_stops_without_recursive_error_e
         session.event_tx.subscribe()
     };
 
-    state
-        .append_event(&seed_event(
-            &session_id,
-            1,
-            1,
-            Some("turn_1"),
-            "seed_conflict_key",
-            json!({}),
-        ))
-        .expect("seed key conflict");
-    state
-        .append_event(&seed_event(
-            &session_id,
-            2,
-            2,
-            Some("turn_1"),
-            "seed_conflict_error",
-            json!({}),
-        ))
-        .expect("seed error conflict");
-
     let mut session = session_runtime.lock().await;
     session
         .turns
         .insert("turn_1".to_string(), TurnRuntime::queued());
     let key_event = session.create_gateway_event(
-        "req_test",
+        "req___force_append_fail_all__",
         &session_id,
         Some("turn_1".to_string()),
         "response_completed",
-        json!({ "content": "done" }),
+        json!({ "content": "done", "__force_append_fail": true }),
         Some("model_live"),
     );
     let key_error = append_then_publish(&state, &mut session, key_event.clone())

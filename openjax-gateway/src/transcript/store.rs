@@ -197,6 +197,15 @@ impl TranscriptStore {
         Ok(())
     }
 
+    pub fn delete_session(&self, session_id: &str) -> Result<()> {
+        let session_root = self.session_root(session_id);
+        if session_root.exists() {
+            fs::remove_dir_all(&session_root)
+                .with_context(|| format!("remove transcript session {}", session_root.display()))?;
+        }
+        Ok(())
+    }
+
     pub fn recover_manifest_from_active_segment_tail(
         &self,
         session_id: &str,

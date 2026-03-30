@@ -107,18 +107,17 @@ fn replay_events_from_transcript(
     let floor = after_event_seq.unwrap_or(min_allowed);
     Ok(persisted
         .into_iter()
-        .filter(|row| row.event_seq > floor)
-        .map(|row| StreamEventEnvelope {
-            request_id: format!("req_replay_{}", row.id),
-            session_id: row.session_id,
-            turn_id: row.turn_id,
-            event_seq: row.event_seq,
-            turn_seq: row.turn_seq,
-            timestamp: row.timestamp,
-            event_type: row.event_type,
-            stream_source: row.stream_source,
-            payload: serde_json::from_str::<serde_json::Value>(&row.payload_json)
-                .unwrap_or_else(|_| json!({})),
+        .filter(|record| record.event_seq > floor)
+        .map(|record| StreamEventEnvelope {
+            request_id: record.request_id,
+            session_id: record.session_id,
+            turn_id: record.turn_id,
+            event_seq: record.event_seq,
+            turn_seq: record.turn_seq,
+            timestamp: record.timestamp,
+            event_type: record.event_type,
+            stream_source: record.stream_source,
+            payload: record.payload,
         })
         .collect())
 }
@@ -136,17 +135,16 @@ pub async fn list_session_timeline(
     let events = state
         .list_session_events(&session_id, query.after_event_seq)?
         .into_iter()
-        .map(|item| StreamEventEnvelope {
-            request_id: format!("req_timeline_{}", item.id),
-            session_id: item.session_id,
-            turn_id: item.turn_id,
-            event_seq: item.event_seq,
-            turn_seq: item.turn_seq,
-            timestamp: item.timestamp,
-            event_type: item.event_type,
-            stream_source: item.stream_source,
-            payload: serde_json::from_str::<serde_json::Value>(&item.payload_json)
-                .unwrap_or_else(|_| json!({})),
+        .map(|record| StreamEventEnvelope {
+            request_id: record.request_id,
+            session_id: record.session_id,
+            turn_id: record.turn_id,
+            event_seq: record.event_seq,
+            turn_seq: record.turn_seq,
+            timestamp: record.timestamp,
+            event_type: record.event_type,
+            stream_source: record.stream_source,
+            payload: record.payload,
         })
         .collect::<Vec<StreamEventEnvelope>>();
     Ok(Json(SessionTimelineResponse {
@@ -198,6 +196,9 @@ pub async fn stream_events(
         loop {
             match rx.recv().await {
                 Ok(event) => {
+                    if event.event_seq <= last_sent_event_seq {
+                        continue;
+                    }
                     last_sent_event_seq = event.event_seq;
                     yield Ok(to_sse_event(event));
                 }

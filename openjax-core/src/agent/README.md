@@ -9,8 +9,7 @@
 - `turn.rs`: `submit`/`submit_with_sink` 入口，分发工具直调模式或自然语言规划模式。
 - `planner.rs`: Native Tool Calling 回合主循环，基于 `ModelResponse.content` 驱动 `tool_use/final` 收敛。
 - `planner_stream_flow.rs`: planner 阶段流式编排（stream request、delta 处理、工具事件发射、synthetic delta 发射）。
-- `planner_tool_action.rs`: 单工具调用分支编排（重复调用保护、guard 拦截、执行与失败收敛），当前保持独立模块。
-- `planner_tool_batch.rs`: `tool_batch` 执行调度（依赖图、并发执行、批次完成统计与错误事件）。
+- `planner_tool_action.rs`: 单工具调用分支编排（串起 guard/executor/projection 并完成成功/失败收敛）。
 - `planner_utils.rs`: planner 复用的工具函数与策略辅助（trace 文本、tool error 分类、git diff 策略判定）。
 - `execution.rs`: 单工具调用执行、重试、实时工具事件透传。
 - `decision.rs`: 旧 JSON planner 解析辅助（保留为非主路径兼容/测试支持，不是默认执行路径）。
@@ -19,8 +18,14 @@
 - `state.rs`: 历史记录、限速、重复工具调用检测。
 - `events.rs`: 统一事件推送（写入返回 `Vec<Event>` + 可选 sink）。
 - `lifecycle.rs`: `thread_id/depth/parent` 与子 Agent 生成（保留扩展位）。
-- `tool_guard.rs`: 工具调用回合级防护（当前保留空模块）。
+- `loop_detector.rs`: 连续重复工具调用检测与软/硬中断判定。
+- `tool_guard.rs`: 工具调用回合级防护（空工具名、重复调用跳过、循环终止条件）。
+- `tool_executor.rs`: 工具执行主流程（审批阻断收敛、shell metadata 透传、状态推进）。
+- `tool_projection.rs`: tool args 观测与 trace 投影（diff 策略与 skill shell misfire 统计）。
+- `tool_lifecycle.rs`: `ToolCallStarted/ArgsDelta/Ready/Progress/Completed/Failed` 事件发射封装。
 - `tool_policy.rs`: 重复调用、审批阻断等策略文案与判定函数。
+- `turn_engine.rs`: 回合阶段状态机（Planning/Streaming/ToolBatchRunning/Completed/Failed）。
+- `policy_level.rs`: 会话策略级别类型导出与共享。
 
 ## 回合执行流程
 

@@ -2,9 +2,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use openjax_core::Config;
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
@@ -21,6 +22,7 @@ use super::config::{
 };
 use super::core_projection::apply_turn_runtime_event;
 use super::runtime::{SessionRuntime, StreamEventEnvelope, TurnRuntime};
+use crate::transcript::{TranscriptRecord, TranscriptStore};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -28,6 +30,7 @@ pub struct AppState {
     pub api_keys: Arc<HashSet<String>>,
     pub auth_service: Arc<AuthService>,
     pub store: Arc<SqliteStore>,
+    pub transcript: Arc<TranscriptStore>,
 }
 
 impl AppState {
@@ -48,23 +51,37 @@ impl AppState {
         };
         let db_path = gateway_db_path();
         let store = Arc::new(SqliteStore::open(&db_path)?);
+        let transcript_root = db_path
+            .parent()
+            .map(|parent| parent.join("transcripts"))
+            .unwrap_or_else(|| std::env::temp_dir().join("openjax-transcripts"));
+        let transcript = Arc::new(TranscriptStore::new(transcript_root));
         migrate_providers_from_config_if_needed(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
             auth_service: Arc::new(auth_service),
             store,
+            transcript,
         })
     }
 
     pub fn new_with_api_keys_for_test(api_keys: HashSet<String>) -> Self {
         let auth_service = AuthService::for_test().expect("initialize test auth service");
         let store = Arc::new(SqliteStore::open_memory().expect("initialize test store"));
+        let pid = std::process::id();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock drift")
+            .as_nanos();
+        let transcript_root = std::env::temp_dir().join(format!("openjax-gateway-transcript-test-{pid}-{nanos}"));
+        let transcript = Arc::new(TranscriptStore::new(transcript_root));
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
             auth_service: Arc::new(auth_service),
             store,
+            transcript,
         }
     }
 
@@ -137,6 +154,9 @@ impl AppState {
         self.store
             .delete_session(session_id)
             .map_err(map_store_error)?;
+        self.transcript
+            .delete_session(session_id)
+            .map_err(|err| ApiError::internal(err.to_string()))?;
         Ok(())
     }
 
@@ -157,10 +177,10 @@ impl AppState {
         &self,
         session_id: &str,
         after_event_seq: Option<u64>,
-    ) -> Result<Vec<openjax_store::EventRecord>, ApiError> {
-        self.store
-            .list_events(session_id, after_event_seq)
-            .map_err(map_store_error)
+    ) -> Result<Vec<TranscriptRecord>, ApiError> {
+        self.transcript
+            .replay(session_id, after_event_seq)
+            .map_err(|err| ApiError::internal(err.to_string()))
     }
 
     pub fn append_message(
@@ -176,22 +196,45 @@ impl AppState {
         Ok(())
     }
 
-    pub fn append_event(&self, event: &StreamEventEnvelope) -> Result<(), ApiError> {
-        let payload_json = serde_json::to_string(&event.payload)
+    pub fn append_event(&self, event: &StreamEventEnvelope) -> Result<StreamEventEnvelope, ApiError> {
+        if cfg!(debug_assertions) {
+            let force_all = event.request_id.contains("__force_append_fail_all__");
+            let force_payload = event
+                .payload
+                .get("__force_append_fail")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            if force_all || force_payload {
+                return Err(ApiError::internal("forced append failure"));
+            }
+        }
+        let record = TranscriptRecord {
+            schema_version: crate::transcript::TRANSCRIPT_SCHEMA_VERSION,
+            session_id: event.session_id.clone(),
+            event_seq: event.event_seq,
+            turn_seq: event.turn_seq,
+            turn_id: event.turn_id.clone(),
+            event_type: event.event_type.clone(),
+            stream_source: event.stream_source.clone(),
+            timestamp: event.timestamp.clone(),
+            payload: event.payload.clone(),
+            request_id: event.request_id.clone(),
+        };
+        let persisted = self
+            .transcript
+            .append(&record)
             .map_err(|err| ApiError::internal(err.to_string()))?;
-        self.store
-            .append_event(
-                &event.session_id,
-                event.event_seq,
-                event.turn_seq,
-                event.turn_id.as_deref(),
-                &event.event_type,
-                &payload_json,
-                &event.timestamp,
-                &event.stream_source,
-            )
-            .map_err(map_store_error)?;
-        Ok(())
+        Ok(StreamEventEnvelope {
+            request_id: persisted.request_id,
+            session_id: persisted.session_id,
+            turn_id: persisted.turn_id,
+            event_seq: persisted.event_seq,
+            turn_seq: persisted.turn_seq,
+            timestamp: persisted.timestamp,
+            event_type: persisted.event_type,
+            stream_source: persisted.stream_source,
+            payload: persisted.payload,
+        })
     }
 
     pub fn list_providers(&self) -> Result<Vec<openjax_store::ProviderRecord>, ApiError> {
@@ -258,18 +301,16 @@ impl AppState {
         let config = build_runtime_config(providers, active_provider_id.as_deref());
         let mut runtime = SessionRuntime::new_with_config(config);
         runtime.active_provider_id = active_provider_id;
-        if let Some(max_event_seq) = self.store.last_event_seq(session_id)? {
+        let events = self
+            .transcript
+            .replay(session_id, None)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        if let Some(max_event_seq) = events.last().map(|event| event.event_seq) {
             runtime.next_event_seq = max_event_seq.saturating_add(1);
         }
-        for (turn_id, seq) in self.store.last_turn_seq_by_turn(session_id)? {
-            runtime.turn_event_seq.insert(turn_id, seq);
-        }
-        let events = self.store.list_events(session_id, None)?;
         for row in events {
-            let payload =
-                serde_json::from_str::<Value>(&row.payload_json).unwrap_or_else(|_| json!({}));
             let envelope = StreamEventEnvelope {
-                request_id: format!("req_replay_{}", row.id),
+                request_id: row.request_id.clone(),
                 session_id: row.session_id.clone(),
                 turn_id: row.turn_id.clone(),
                 event_seq: row.event_seq,
@@ -277,15 +318,16 @@ impl AppState {
                 timestamp: row.timestamp.clone(),
                 event_type: row.event_type.clone(),
                 stream_source: row.stream_source.clone(),
-                payload: payload.clone(),
+                payload: row.payload.clone(),
             };
             let _ = runtime.event_log.push(envelope);
-            if let Some(turn_id) = row.turn_id {
+            if let Some(turn_id) = row.turn_id.clone() {
                 let turn = runtime
                     .turns
-                    .entry(turn_id)
+                    .entry(turn_id.clone())
                     .or_insert_with(TurnRuntime::queued);
-                apply_turn_runtime_event(turn, &row.event_type, &payload);
+                apply_turn_runtime_event(turn, &row.event_type, &row.payload);
+                runtime.turn_event_seq.insert(turn_id, row.turn_seq);
             }
         }
         Ok(Arc::new(Mutex::new(runtime)))

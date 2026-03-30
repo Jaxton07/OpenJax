@@ -14,8 +14,8 @@ pub fn append_then_publish(
     session: &mut SessionRuntime,
     event: StreamEventEnvelope,
 ) -> Result<(), ApiError> {
-    app_state.append_event(&event)?;
-    session.publish_event(event);
+    let persisted = app_state.append_event(&event)?;
+    session.publish_event(persisted);
     session.set_last_event_emitted_at(Some(std::time::Instant::now()));
     Ok(())
 }

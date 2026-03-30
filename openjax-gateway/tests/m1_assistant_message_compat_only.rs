@@ -33,7 +33,7 @@ where
     let session_id = app_state.create_session().await.expect("create session");
 
     for event in build_events(&session_id) {
-        app_state.append_event(&event).expect("append event");
+    let _ = app_state.append_event(&event).expect("append event");
     }
 
     app_state.remove_session(&session_id).await;

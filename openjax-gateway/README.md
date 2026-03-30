@@ -7,7 +7,7 @@
 - 提供会话生命周期 API：创建、清理、关闭会话。
 - 提供 turn 提交与查询 API：提交输入并轮询 turn 结果。
 - 提供 SSE 事件流：支持 `Last-Event-ID` / `after_event_seq` 回放。
-- 提供会话时间线 API：按 `event_seq` 查询持久化事件，用于前端冷启动恢复。
+- 提供会话时间线 API：按 `event_seq` 查询 transcript 回放结果，用于前端冷启动恢复。
 - 处理审批转发：将网关审批请求映射到 core 的 `ApprovalHandler`。
 - 提供请求上下文、中间件鉴权、访问日志与统一错误模型。
 
@@ -40,21 +40,23 @@ openjax-gateway/
 │   ├── lib.rs
 │   ├── main.rs
 │   ├── middleware.rs
-│   ├── persistence/
-│   │   ├── mod.rs
-│   │   ├── repository.rs
-│   │   ├── sqlite.rs
-│   │   └── types.rs
 │   ├── state/
 │   │   ├── mod.rs
-│   │   ├── runtime.rs
+│   │   ├── config.rs
+│   │   ├── core_projection.rs
 │   │   ├── events.rs
-│   │   └── config.rs
+│   │   ├── publish_pipeline.rs
+│   │   ├── runtime.rs
+│   │   └── turn_orchestrator.rs
 │   ├── stdio/
 │   │   ├── mod.rs
 │   │   ├── protocol.rs
 │   │   ├── daemon.rs
 │   │   └── dispatch.rs
+│   └── transcript/
+│       ├── mod.rs
+│       ├── store.rs
+│       └── types.rs
 └── tests
     ├── gateway_api_suite.rs
     ├── gateway_api/
@@ -66,7 +68,8 @@ openjax-gateway/
     │   ├── m4_approval.rs
     │   ├── m5_stream_and_timeline.rs
     │   ├── m6_provider.rs
-    │   └── m7_policy_level.rs
+    │   ├── m7_policy_level.rs
+    │   └── m8_transcript_store.rs
     ├── policy_api_suite.rs
     ├── policy_api/
     │   ├── mod.rs
@@ -146,33 +149,35 @@ openjax-gateway/
 - `src/main.rs`：网关启动入口，读取 `OPENJAX_GATEWAY_BIND`（默认 `127.0.0.1:8765`）。
 - `src/state/`：状态管理模块
   - `state/runtime.rs`：`SessionRuntime`、`TurnRuntime`、状态枚举、`GatewayApprovalHandler`
-  - `state/events.rs`：`AppState`、事件映射（`map_core_event`）、`run_turn_task`、会话重建
+  - `state/events.rs`：`AppState`、session/message/event 查询与追加入口、会话重建
+  - `state/core_projection.rs`：core 事件到 gateway 运行态/对外事件的投影与映射门禁
+  - `state/publish_pipeline.rs`：统一 append-then-publish 链路与 transcript append failure 收敛
+  - `state/turn_orchestrator.rs`：turn worker 编排（submit_with_sink 接入、中断与失败兜底）
   - `state/config.rs`：配置构建、provider 迁移、环境变量解析
+- `src/transcript/`：transcript JSONL 持久化模块
+  - `transcript/store.rs`：manifest/segment append、replay、rotate、gc、tail recovery
+  - `transcript/types.rs`：`TranscriptRecord` / `TranscriptManifest` schema
 - `src/event_mapper/`：core 事件到 gateway 事件的薄映射层（response/tool/approval）。
 - `src/handlers/`：HTTP 处理函数模块
   - `handlers/session.rs`：会话 API（create_session、submit_turn、get_turn、resolve_approval 等）
-  - `handlers/stream.rs`：SSE 流（stream_events、list_session_timeline）
+  - `handlers/stream.rs`：SSE 流与 timeline API（stream_events、list_session_timeline）
   - `handlers/provider.rs`：Provider CRUD 和 catalog
 - `src/auth_handlers.rs`：登录、刷新、登出、撤销、会话查询接口。
 - `src/middleware.rs`：请求 ID、鉴权、访问日志。
 - `src/error.rs`：统一错误响应结构（`code/message/retryable/details`）。
 - `src/auth/`：owner key 加载、token 生成哈希、SQLite 持久化、限流与 cookie 逻辑。
-- `src/persistence/`：`biz_sessions`/`biz_messages`/`biz_events` 持久化仓储实现。
 - `src/stdio/`：JSONL stdio daemon 模块
   - `stdio/protocol.rs`：协议信封类型（Request/Response/EventEnvelope）
   - `stdio/daemon.rs`：`SessionState`、`DaemonApprovalHandler`
   - `stdio/dispatch.rs`：消息分发、I/O helpers
-- `tests/gateway_api_suite.rs` / `tests/gateway_api/`：gateway API 主集成测试入口，按鉴权、session 生命周期、slash/compact、审批、stream/timeline、provider、policy level 分域组织。
+- `tests/gateway_api_suite.rs` / `tests/gateway_api/`：gateway API 主集成测试入口，按鉴权、session 生命周期、slash/compact、审批、stream/timeline、provider、policy level、transcript store 分域组织。
 - `tests/policy_api_suite.rs` / `tests/policy_api/`：policy API 集成测试入口，按发布、规则 CRUD、请求校验、session overlay、策略生效分域组织。
 
 ## 事件持久化模型
 
-- `biz_events`：事件级持久化（时间线恢复主数据源）。
-  - 关键列：`session_id`, `event_seq`, `turn_seq`, `turn_id`, `event_type`, `payload_json`, `timestamp`, `stream_source`, `created_at`
-  - 关键约束：`UNIQUE(session_id, event_seq)`
-  - 关键索引：`(session_id, turn_id, event_seq)`、`(session_id, created_at)`
-- `biz_messages`：保留用于旧消息接口与简版历史浏览；时间线恢复不再依赖该表。
-- 发布给前端的事件（含 gateway 合成事件与 `user_message`）统一经过发布+落盘链路，避免漏写。
+- transcript-first：会话事件以 `manifest + segment-*.jsonl` 组织，按 `event_seq` 单调追加。
+- append-then-publish：事件仅在 append 成功后才允许广播到 SSE，避免“先发后落盘”不一致。
+- timeline/replay：`GET /timeline` 与 SSE 恢复都基于 transcript 回放窗口读取，保持同一事件序列语义。
 
 ## 环境变量
 
