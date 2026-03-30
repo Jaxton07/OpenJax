@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::http::StatusCode;
 use openjax_core::Config;
 use serde_json::json;
 use tokio::sync::{Mutex, RwLock};
@@ -22,7 +23,7 @@ use super::config::{
 };
 use super::core_projection::apply_turn_runtime_event;
 use super::runtime::{SessionRuntime, StreamEventEnvelope, TurnRuntime};
-use crate::transcript::{TranscriptRecord, TranscriptStore};
+use crate::transcript::{IndexSessionEntry, SessionIndexStore, TranscriptRecord, TranscriptStore};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -31,6 +32,7 @@ pub struct AppState {
     pub auth_service: Arc<AuthService>,
     pub store: Arc<SqliteStore>,
     pub transcript: Arc<TranscriptStore>,
+    pub session_index: Arc<SessionIndexStore>,
 }
 
 impl AppState {
@@ -56,6 +58,7 @@ impl AppState {
             .map(|parent| parent.join("transcripts"))
             .unwrap_or_else(|| std::env::temp_dir().join("openjax-transcripts"));
         let transcript = Arc::new(TranscriptStore::new(transcript_root));
+        let session_index = Arc::new(SessionIndexStore::new(transcript.root())?);
         migrate_providers_from_config_if_needed(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -63,6 +66,7 @@ impl AppState {
             auth_service: Arc::new(auth_service),
             store,
             transcript,
+            session_index,
         })
     }
 
@@ -76,12 +80,15 @@ impl AppState {
             .as_nanos();
         let transcript_root = std::env::temp_dir().join(format!("openjax-gateway-transcript-test-{pid}-{nanos}"));
         let transcript = Arc::new(TranscriptStore::new(transcript_root));
+        let session_index =
+            Arc::new(SessionIndexStore::new(transcript.root()).expect("init test session index"));
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
             auth_service: Arc::new(auth_service),
             store,
             transcript,
+            session_index,
         }
     }
 
@@ -95,6 +102,19 @@ impl AppState {
 
     pub async fn create_session(&self) -> Result<String, ApiError> {
         let session_id = format!("sess_{}", Uuid::new_v4().simple());
+        let now = crate::error::now_rfc3339();
+        let entry = IndexSessionEntry {
+            session_id: session_id.clone(),
+            title: None,
+            created_at: now.clone(),
+            updated_at: now,
+            last_event_seq: 0,
+            last_preview: String::new(),
+        };
+        self.session_index
+            .create_session_index_entry(entry)
+            .await
+            .map_err(map_session_index_error)?;
         self.store
             .create_session(&session_id, None)
             .map_err(map_store_error)?;
@@ -116,10 +136,10 @@ impl AppState {
             return Ok(runtime);
         }
         let exists = self
-            .store
-            .get_session(session_id)
-            .map_err(map_store_error)?
-            .is_some();
+            .session_index
+            .list_sessions()
+            .iter()
+            .any(|entry| entry.session_id == session_id);
         if !exists {
             return Err(ApiError::not_found(
                 "session not found",
@@ -151,17 +171,57 @@ impl AppState {
             };
             guard.runtime.clear_session_overlay(session_id);
         }
-        self.transcript
-            .delete_session(session_id)
-            .map_err(|err| ApiError::internal(err.to_string()))?;
+        self.session_index
+            .delete_session_index_entry(session_id)
+            .await
+            .map_err(map_session_index_error)?;
         self.store
             .delete_session(session_id)
             .map_err(map_store_error)?;
         Ok(())
     }
 
-    pub fn list_persisted_sessions(&self) -> Result<Vec<openjax_store::SessionRecord>, ApiError> {
-        self.store.list_sessions().map_err(map_store_error)
+    pub fn list_persisted_sessions(
+        &self,
+        cursor: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<(Vec<IndexSessionEntry>, Option<(String, String)>), ApiError> {
+        if self.session_index.is_repair_required() {
+            return Err(ApiError {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                code: "INDEX_REPAIR_REQUIRED",
+                message: "session index requires repair".to_string(),
+                retryable: false,
+                details: json!({}),
+            });
+        }
+        let all = self.session_index.list_sessions();
+        let mut filtered = Vec::new();
+        for item in all {
+            let include = match cursor {
+                None => true,
+                Some((cursor_updated_at, cursor_session_id)) => {
+                    item.updated_at.as_str() < cursor_updated_at
+                        || (item.updated_at.as_str() == cursor_updated_at
+                            && item.session_id.as_str() < cursor_session_id)
+                }
+            };
+            if include {
+                filtered.push(item);
+            }
+        }
+        let mut sessions = filtered.into_iter().take(limit).collect::<Vec<_>>();
+        let next_cursor = if sessions.len() == limit {
+            sessions
+                .last()
+                .map(|last| (last.updated_at.clone(), last.session_id.clone()))
+        } else {
+            None
+        };
+        if sessions.is_empty() {
+            sessions.shrink_to_fit();
+        }
+        Ok((sessions, next_cursor))
     }
 
     pub fn list_session_messages(
@@ -338,4 +398,17 @@ impl Default for AppState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn map_session_index_error(err: anyhow::Error) -> ApiError {
+    if format!("{err:#}").contains("index_repair_required") {
+        return ApiError {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "INDEX_REPAIR_REQUIRED",
+            message: "session index requires repair".to_string(),
+            retryable: false,
+            details: json!({}),
+        };
+    }
+    ApiError::internal(err.to_string())
 }

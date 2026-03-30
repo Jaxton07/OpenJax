@@ -2,7 +2,9 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use axum::Json;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Extension, Path, Query, State};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -107,7 +109,21 @@ pub struct SessionSummary {
 pub struct SessionListResponse {
     request_id: String,
     sessions: Vec<SessionSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_cursor: Option<String>,
     timestamp: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SessionListQuery {
+    cursor: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SessionListCursor {
+    updated_at: String,
+    session_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -148,10 +164,19 @@ pub async fn create_session(
 
 pub async fn list_sessions(
     State(state): State<AppState>,
+    Query(query): Query<SessionListQuery>,
     Extension(ctx): Extension<RequestContext>,
 ) -> Result<Json<SessionListResponse>, ApiError> {
-    let sessions = state
-        .list_persisted_sessions()?
+    let limit = normalize_limit(query.limit);
+    let decoded_cursor = decode_cursor(query.cursor.as_deref())?;
+    let (entries, next_cursor_raw) = state
+        .list_persisted_sessions(
+            decoded_cursor
+                .as_ref()
+                .map(|cursor| (cursor.updated_at.as_str(), cursor.session_id.as_str())),
+            limit,
+        )?;
+    let sessions = entries
         .into_iter()
         .map(|item| SessionSummary {
             session_id: item.session_id,
@@ -160,9 +185,16 @@ pub async fn list_sessions(
             updated_at: item.updated_at,
         })
         .collect::<Vec<SessionSummary>>();
+    let next_cursor = next_cursor_raw
+        .map(|(updated_at, session_id)| encode_cursor(SessionListCursor {
+            updated_at,
+            session_id,
+        }))
+        .transpose()?;
     Ok(Json(SessionListResponse {
         request_id: ctx.request_id,
         sessions,
+        next_cursor,
         timestamp: now_rfc3339(),
     }))
 }
@@ -565,6 +597,28 @@ pub fn parse_session_action(session_action: &str) -> Result<(&str, &str), ApiErr
             json!({ "session_action": session_action }),
         )
     })
+}
+
+fn normalize_limit(limit: Option<usize>) -> usize {
+    limit.unwrap_or(20).clamp(1, 100)
+}
+
+fn decode_cursor(cursor: Option<&str>) -> Result<Option<SessionListCursor>, ApiError> {
+    let Some(cursor) = cursor else {
+        return Ok(None);
+    };
+    let decoded = URL_SAFE_NO_PAD.decode(cursor).map_err(|_| {
+        ApiError::invalid_argument("invalid cursor", json!({ "cursor": "decode_failed" }))
+    })?;
+    let parsed: SessionListCursor = serde_json::from_slice(&decoded).map_err(|_| {
+        ApiError::invalid_argument("invalid cursor", json!({ "cursor": "json_invalid" }))
+    })?;
+    Ok(Some(parsed))
+}
+
+fn encode_cursor(cursor: SessionListCursor) -> Result<String, ApiError> {
+    let encoded = serde_json::to_vec(&cursor).map_err(|err| ApiError::internal(err.to_string()))?;
+    Ok(URL_SAFE_NO_PAD.encode(encoded))
 }
 
 pub async fn clear_runtime(

@@ -728,13 +728,13 @@ async fn restart_rebuild_clears_previous_repair_required_state() {
         .await
         .expect_err("force repair-required on first process");
     assert!(broken_store.is_repair_required());
+    let marker_path = root.join("sessions").join("index.repair_required");
+    assert!(
+        marker_path.exists(),
+        "repair-required state should persist marker for next startup rebuild"
+    );
 
     let _ = fs::remove_file(&published_path);
-    fs::write(
-        root.join("sessions").join("index.snapshot.json"),
-        "{invalid-json",
-    )
-    .expect("corrupt snapshot to force rebuild on restart");
     write_session_json(&root, "sess_restart_ok", "2026-03-30T15:00:00.000Z");
     write_manifest(&root, "sess_restart_ok", 8, "2026-03-30T15:00:00.000Z");
 
@@ -750,6 +750,14 @@ async fn restart_rebuild_clears_previous_repair_required_state() {
             .map(|item| item.session_id)
             .collect::<Vec<_>>(),
         vec!["sess_restart_ok".to_string()]
+    );
+    assert!(
+        !marker_path.exists(),
+        "successful restart rebuild should clear repair marker"
+    );
+    assert!(
+        read_log_records(&root).is_empty(),
+        "marker-triggered rebuild should reset prior log history on restart"
     );
 
     let _ = fs::remove_dir_all(root);

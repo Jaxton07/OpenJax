@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -21,6 +21,7 @@ const SESSIONS_DIR: &str = "sessions";
 const STAGING_DIR: &str = ".staging";
 const SESSION_METADATA_FILE: &str = "session.json";
 const MANIFEST_FILE: &str = "manifest.json";
+const INDEX_REPAIR_MARKER_FILE: &str = "index.repair_required";
 const COMPACT_MAX_LINES: usize = 1000;
 const COMPACT_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const STAGING_STALE_SECS: u64 = 10 * 60;
@@ -95,6 +96,10 @@ impl SessionIndexStore {
         *self.health_guard()
     }
 
+    pub fn force_repair_required_for_test(&self) -> Result<()> {
+        self.mark_repair_required()
+    }
+
     pub async fn create_session_index_entry(&self, entry: IndexSessionEntry) -> Result<()> {
         let _guard = self.write_lock.lock().await;
         self.ensure_writable()?;
@@ -135,7 +140,7 @@ impl SessionIndexStore {
                 payload: None,
             };
             if let Err(compensation_err) = self.append_log_record(&compensation) {
-                self.mark_repair_required();
+                self.mark_repair_required()?;
                 return Err(compensation_err).context(
                     "index_repair_required: compensation append failed after create publish failure",
                 );
@@ -230,7 +235,7 @@ impl SessionIndexStore {
                     payload: Some(entry.clone()),
                 };
                 if let Err(compensation_err) = self.append_log_record(&compensation) {
-                    self.mark_repair_required();
+                    self.mark_repair_required()?;
                     return Err(compensation_err).context(
                         "index_repair_required: compensation append failed after delete remove failure",
                     );
@@ -271,7 +276,7 @@ impl SessionIndexStore {
             self.test_fail_compact_rollback,
         ) {
             if format!("{err:#}").contains("index_repair_required") {
-                self.mark_repair_required();
+                self.mark_repair_required()?;
                 return Err(err).context("index_repair_required");
             }
             return Err(err);
@@ -298,8 +303,20 @@ impl SessionIndexStore {
         Ok(())
     }
 
-    fn mark_repair_required(&self) {
+    fn mark_repair_required(&self) -> Result<()> {
         *self.health_guard() = IndexHealth::RepairRequired;
+        let marker_path = self.sessions_root().join(INDEX_REPAIR_MARKER_FILE);
+        fs::write(&marker_path, b"repair_required")
+            .with_context(|| format!("write repair marker {}", marker_path.display()))?;
+        let marker_file = OpenOptions::new()
+            .read(true)
+            .open(&marker_path)
+            .with_context(|| format!("open repair marker {}", marker_path.display()))?;
+        marker_file
+            .sync_all()
+            .with_context(|| format!("sync repair marker {}", marker_path.display()))?;
+        sync_parent_dir(&marker_path)?;
+        Ok(())
     }
 
     fn upsert_memory_entry(&self, entry: IndexSessionEntry) {
@@ -436,15 +453,37 @@ fn load_with_recovery_or_fail(root: &Path) -> Result<Vec<IndexSessionEntry>> {
     fs::create_dir_all(&sessions_root)
         .with_context(|| format!("create sessions root {}", sessions_root.display()))?;
     cleanup_staging_dirs(&sessions_root)?;
+    let repair_marker_path = sessions_root.join(INDEX_REPAIR_MARKER_FILE);
+    let has_repair_marker = repair_marker_path.exists();
 
-    let mut entries_by_session = match load_entries_snapshot_and_log(&sessions_root) {
-        Ok(entries) => entries,
-        Err(load_err) => rebuild_from_sessions_dir(&sessions_root).with_context(|| {
-            format!("rebuild_from_sessions_dir after load failure: {load_err:#}")
-        })?,
+    let mut entries_by_session = if has_repair_marker {
+        rebuild_from_sessions_dir(&sessions_root).with_context(|| {
+            format!(
+                "rebuild_from_sessions_dir due {} marker",
+                INDEX_REPAIR_MARKER_FILE
+            )
+        })?
+    } else {
+        match load_entries_snapshot_and_log(&sessions_root) {
+            Ok(entries) => entries,
+            Err(load_err) => rebuild_from_sessions_dir(&sessions_root).with_context(|| {
+                format!("rebuild_from_sessions_dir after load failure: {load_err:#}")
+            })?,
+        }
     };
 
     startup_audit(&sessions_root, &mut entries_by_session)?;
+    if has_repair_marker {
+        match fs::remove_file(&repair_marker_path) {
+            Ok(()) => sync_parent_dir(&repair_marker_path)?,
+            Err(err) if err.kind() == ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).with_context(|| {
+                    format!("remove repair marker {}", repair_marker_path.display())
+                });
+            }
+        }
+    }
     let mut entries: Vec<IndexSessionEntry> = entries_by_session.into_values().collect();
     sort_entries_desc(&mut entries);
     Ok(entries)
@@ -648,8 +687,27 @@ fn rotate_log_tmp_bak(
 
     sync_parent_dir(&log_path)?;
     if bak_path.exists() {
-        fs::remove_file(&bak_path)
-            .with_context(|| format!("remove compact bak {}", bak_path.display()))?;
+        if let Err(cleanup_err) = fs::remove_file(&bak_path)
+            .with_context(|| format!("remove compact bak {}", bak_path.display()))
+        {
+            let rollback_result = fs::remove_file(&log_path)
+                .with_context(|| format!("remove compact live {}", log_path.display()))
+                .and_then(|_| {
+                    fs::rename(&bak_path, &log_path).with_context(|| {
+                        format!(
+                            "rollback compact bak {} to live {} after cleanup failure",
+                            bak_path.display(),
+                            log_path.display()
+                        )
+                    })
+                })
+                .and_then(|_| sync_parent_dir(&log_path));
+            if rollback_result.is_err() {
+                return Err(cleanup_err)
+                    .context("index_repair_required: compact cleanup failed and rollback failed");
+            }
+            return Err(cleanup_err).context("compact cleanup failed but rollback succeeded");
+        }
     }
     Ok(())
 }
