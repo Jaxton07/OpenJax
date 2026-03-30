@@ -6,6 +6,7 @@ mod handlers;
 mod middleware;
 pub mod state;
 pub mod stdio;
+pub mod transcript;
 
 pub use auth::{ApiKeyConfig, ApiKeySource, load_api_keys};
 pub use state::AppState;
