@@ -2,11 +2,13 @@
 
 mod config;
 mod events;
+mod publish_pipeline;
 mod runtime;
 
 pub use config::*;
 pub use events::*;
+pub use publish_pipeline::*;
 pub use runtime::*;
 
-pub use openjax_store::SqliteStore;
 pub use crate::transcript::{TranscriptManifest, TranscriptRecord, TranscriptStore};
+pub use openjax_store::SqliteStore;

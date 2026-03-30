@@ -29,6 +29,7 @@ use super::runtime::{
     ApiTurnError, SessionRuntime, StreamEventEnvelope, TurnRuntime, TurnStatus,
     gateway_stream_debug_enabled, log_preview, reasoning_preview,
 };
+use super::{append_then_publish, handle_key_event_append_failure};
 
 const AFTER_DISPATCH_LOG_TARGET: &str = "openjax_after_dispatcher";
 const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
@@ -233,8 +234,7 @@ impl AppState {
         params: CreateProviderParams<'_>,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
         let store = self.store.as_ref();
-        <SqliteStore as ProviderRepository>::create_provider(store, params)
-            .map_err(map_store_error)
+        <SqliteStore as ProviderRepository>::create_provider(store, params).map_err(map_store_error)
     }
 
     pub fn update_provider(
@@ -242,8 +242,7 @@ impl AppState {
         params: UpdateProviderParams<'_>,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         let store = self.store.as_ref();
-        <SqliteStore as ProviderRepository>::update_provider(store, params)
-            .map_err(map_store_error)
+        <SqliteStore as ProviderRepository>::update_provider(store, params).map_err(map_store_error)
     }
 
     pub fn delete_provider(&self, provider_id: &str) -> Result<bool, ApiError> {
@@ -455,7 +454,15 @@ pub async fn run_turn_task(
                     json!({ "reason": "user_abort" }),
                     Some("synthetic"),
                 );
-                publish_and_persist_event(&app_state, &mut session, envelope);
+                if let Err(err) = append_then_publish(&app_state, &mut session, envelope.clone()) {
+                    warn!(
+                        session_id = %envelope.session_id,
+                        event_seq = envelope.event_seq,
+                        event_type = %envelope.event_type,
+                        error = %err.message,
+                        "failed to append abort event before publish"
+                    );
+                }
             }
 
             if let Some(tx) = pending_turn_id_tx.take() {
@@ -528,23 +535,6 @@ fn apply_turn_runtime_event(turn: &mut TurnRuntime, event_type: &str, payload: &
         turn.assistant_message = Some(content.to_string());
         turn.status = TurnStatus::Completed;
     }
-}
-
-fn publish_and_persist_event(
-    app_state: &AppState,
-    session: &mut SessionRuntime,
-    event: StreamEventEnvelope,
-) {
-    if let Err(err) = app_state.append_event(&event) {
-        warn!(
-            session_id = %event.session_id,
-            event_seq = event.event_seq,
-            event_type = %event.event_type,
-            error = %err.message,
-            "failed to persist event"
-        );
-    }
-    session.publish_event(event);
 }
 
 fn map_core_event(
@@ -687,8 +677,29 @@ fn map_core_event(
             "tool event mapped"
         );
     }
-    session.set_last_event_emitted_at(Some(std::time::Instant::now()));
-    publish_and_persist_event(app_state, session, envelope);
+    let should_emit_append_failure_error =
+        envelope.turn_id.is_some() && envelope.event_type != "response_error";
+    if let Err(err) = append_then_publish(app_state, session, envelope.clone()) {
+        warn!(
+            session_id = %envelope.session_id,
+            event_seq = envelope.event_seq,
+            event_type = %envelope.event_type,
+            error = %err.message,
+            "failed to append core mapped event before publish"
+        );
+        if should_emit_append_failure_error
+            && let Err(error_event_err) =
+                handle_key_event_append_failure(app_state, session, &envelope, err)
+        {
+            warn!(
+                session_id = %envelope.session_id,
+                event_type = %envelope.event_type,
+                turn_id = ?envelope.turn_id,
+                error = %error_event_err.message,
+                "failed to emit transcript append failure response_error"
+            );
+        }
+    }
 
     public_turn_id
 }

@@ -12,7 +12,7 @@ use serde_json::json;
 use tracing::{info, warn};
 
 use crate::error::{ApiError, now_rfc3339};
-use crate::state::{AppState, StreamEventEnvelope};
+use crate::state::{AppState, StreamEventEnvelope, append_then_publish, event_replay_limit};
 
 static STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
 
@@ -71,16 +71,56 @@ pub fn publish_event_for_session(
     session: &mut crate::state::SessionRuntime,
     event: StreamEventEnvelope,
 ) {
-    if let Err(err) = state.append_event(&event) {
+    if let Err(err) = append_then_publish(state, session, event.clone()) {
         warn!(
             session_id = %event.session_id,
             event_seq = event.event_seq,
             event_type = %event.event_type,
             error = %err.message,
-            "failed to persist event"
+            "failed to append event before publish; event not broadcast"
         );
     }
-    session.publish_event(event);
+}
+
+fn replay_events_from_transcript(
+    state: &AppState,
+    session_id: &str,
+    after_event_seq: Option<u64>,
+) -> Result<Vec<StreamEventEnvelope>, ApiError> {
+    let persisted = state.list_session_events(session_id, None)?;
+    if persisted.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let replay_limit = event_replay_limit() as u64;
+    let max_event_seq = persisted.last().map(|row| row.event_seq).unwrap_or(0);
+    let min_allowed = max_event_seq.saturating_sub(replay_limit);
+    if let Some(requested) = after_event_seq
+        && requested < min_allowed
+    {
+        return Err(ApiError::invalid_argument(
+            "replay point is outside retention window",
+            json!({ "after_event_seq": requested, "min_allowed": min_allowed }),
+        ));
+    }
+
+    let floor = after_event_seq.unwrap_or(min_allowed);
+    Ok(persisted
+        .into_iter()
+        .filter(|row| row.event_seq > floor)
+        .map(|row| StreamEventEnvelope {
+            request_id: format!("req_replay_{}", row.id),
+            session_id: row.session_id,
+            turn_id: row.turn_id,
+            event_seq: row.event_seq,
+            turn_seq: row.turn_seq,
+            timestamp: row.timestamp,
+            event_type: row.event_type,
+            stream_source: row.stream_source,
+            payload: serde_json::from_str::<serde_json::Value>(&row.payload_json)
+                .unwrap_or_else(|_| json!({})),
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -124,19 +164,17 @@ pub async fn stream_events(
     headers: HeaderMap,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
     let session_runtime = state.get_session(&session_id).await?;
-    let (replay, mut rx) = {
-        let session = session_runtime.lock().await;
+    let (after_event_seq, mut rx) = {
         let last_event_id = headers
             .get("Last-Event-ID")
             .and_then(|value| value.to_str().ok());
         let after_event_seq = resolve_resume_seq(query.after_event_seq, last_event_id);
-        (
-            session.replay_from(after_event_seq)?,
-            session.event_tx.subscribe(),
-        )
+        let session = session_runtime.lock().await;
+        (after_event_seq, session.event_tx.subscribe())
     };
+    let replay = replay_events_from_transcript(&state, &session_id, after_event_seq)?;
 
-    let session_runtime_for_recovery = session_runtime.clone();
+    let state_for_recovery = state.clone();
     let request_id = headers
         .get("X-Request-Id")
         .and_then(|value| value.to_str().ok())
@@ -164,10 +202,11 @@ pub async fn stream_events(
                     yield Ok(to_sse_event(event));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    let recovered = {
-                        let session = session_runtime_for_recovery.lock().await;
-                        session.replay_from(Some(last_sent_event_seq))
-                    };
+                    let recovered = replay_events_from_transcript(
+                        &state_for_recovery,
+                        &session_id,
+                        Some(last_sent_event_seq),
+                    );
                     match recovered {
                         Ok(missed) if !missed.is_empty() => {
                             info!(
