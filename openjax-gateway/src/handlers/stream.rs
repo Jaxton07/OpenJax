@@ -66,6 +66,10 @@ pub fn to_sse_event(event: StreamEventEnvelope) -> SseEvent {
         .data(serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()))
 }
 
+fn should_emit_broadcast_event(last_sent_event_seq: u64, event_seq: u64) -> bool {
+    event_seq > last_sent_event_seq
+}
+
 pub fn publish_event_for_session(
     state: &AppState,
     session: &mut crate::state::SessionRuntime,
@@ -196,7 +200,7 @@ pub async fn stream_events(
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    if event.event_seq <= last_sent_event_seq {
+                    if !should_emit_broadcast_event(last_sent_event_seq, event.event_seq) {
                         continue;
                     }
                     last_sent_event_seq = event.event_seq;
@@ -270,7 +274,7 @@ pub async fn stream_events(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_resume_seq;
+    use super::{resolve_resume_seq, should_emit_broadcast_event};
 
     #[test]
     fn resolve_resume_seq_prefers_after_event_seq() {
@@ -280,5 +284,12 @@ mod tests {
     #[test]
     fn resolve_resume_seq_uses_last_event_id_when_query_absent() {
         assert_eq!(resolve_resume_seq(None, Some("7")), Some(7));
+    }
+
+    #[test]
+    fn should_emit_broadcast_event_filters_replay_overlap_duplicates() {
+        assert!(!should_emit_broadcast_event(10, 10));
+        assert!(!should_emit_broadcast_event(10, 9));
+        assert!(should_emit_broadcast_event(10, 11));
     }
 }

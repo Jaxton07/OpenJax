@@ -151,12 +151,12 @@ impl AppState {
             };
             guard.runtime.clear_session_overlay(session_id);
         }
-        self.store
-            .delete_session(session_id)
-            .map_err(map_store_error)?;
         self.transcript
             .delete_session(session_id)
             .map_err(|err| ApiError::internal(err.to_string()))?;
+        self.store
+            .delete_session(session_id)
+            .map_err(map_store_error)?;
         Ok(())
     }
 

@@ -7,7 +7,7 @@ use crate::gateway_api::helpers::{app_with_api_key, auth_header, login, response
 #[tokio::test]
 async fn shutdown_session_endpoint_returns_shutdown_status() {
     let api_key = "test-key";
-    let (app, _state) = app_with_api_key(api_key);
+    let (app, state) = app_with_api_key(api_key);
     let (access_token, _, _) = login(&app, api_key).await;
 
     let create_response = app
@@ -25,7 +25,32 @@ async fn shutdown_session_endpoint_returns_shutdown_status() {
         .expect("create response");
     assert_eq!(create_response.status(), StatusCode::OK);
     let create_body = response_json(create_response).await;
-    let session_id = create_body["session_id"].as_str().expect("session_id");
+    let session_id = create_body["session_id"].as_str().expect("session_id").to_string();
+
+    let submit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/sessions/{}/turns", session_id))
+                .header("Authorization", auth_header(&access_token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"input":"hello"}"#))
+                .expect("submit request"),
+        )
+        .await
+        .expect("submit response");
+    assert_eq!(submit_response.status(), StatusCode::OK);
+
+    let transcript_session_root = state
+        .transcript
+        .root()
+        .join("sessions")
+        .join(&session_id);
+    assert!(
+        transcript_session_root.exists(),
+        "transcript session dir should exist before shutdown"
+    );
 
     let shutdown_response = app
         .oneshot(
@@ -41,6 +66,10 @@ async fn shutdown_session_endpoint_returns_shutdown_status() {
     assert_eq!(shutdown_response.status(), StatusCode::OK);
     let shutdown_body = response_json(shutdown_response).await;
     assert_eq!(shutdown_body["status"], "shutdown");
+    assert!(
+        !transcript_session_root.exists(),
+        "transcript session dir should be deleted after shutdown"
+    );
 }
 
 #[tokio::test]
