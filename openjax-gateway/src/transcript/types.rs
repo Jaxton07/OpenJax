@@ -3,6 +3,7 @@ use serde_json::Value;
 
 pub const TRANSCRIPT_SCHEMA_VERSION: u32 = 1;
 pub const FIRST_SEGMENT_FILE: &str = "segment-000001.jsonl";
+pub const DEFAULT_SEGMENT_MAX_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptRecord {
@@ -29,14 +30,14 @@ pub struct TranscriptManifest {
 }
 
 impl TranscriptManifest {
-    pub fn new_for_first_record(record: &TranscriptRecord) -> Self {
+    pub fn new_empty(session_id: &str, updated_at: String) -> Self {
         Self {
             schema_version: TRANSCRIPT_SCHEMA_VERSION,
-            session_id: record.session_id.clone(),
-            last_event_seq: record.event_seq,
-            last_turn_seq: record.turn_seq,
+            session_id: session_id.to_string(),
+            last_event_seq: 0,
+            last_turn_seq: 0,
             active_segment: FIRST_SEGMENT_FILE.to_string(),
-            updated_at: record.timestamp.clone(),
+            updated_at,
         }
     }
 }
