@@ -33,18 +33,18 @@ export default function PolicyLevelButton({ level, onChange }: PolicyLevelButton
       {open && (
         <div className="policy-level-popover">
           {POLICY_OPTIONS.map((opt) => (
-            <div
+            <button
+              type="button"
               key={opt.level}
               className={`policy-level-option${opt.level === level ? " active" : ""}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
+              onClick={() => {
                 onChange(opt.level);
                 setOpen(false);
               }}
             >
               <span className="policy-level-option-name">{opt.level}</span>
               <span className="policy-level-option-summary">{opt.summary}</span>
-            </div>
+            </button>
           ))}
         </div>
       )}

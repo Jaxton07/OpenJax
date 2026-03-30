@@ -340,6 +340,7 @@ interface ChangePolicyLevelParams {
   client: GatewayClient;
   sessionId: string;
   level: "allow" | "ask" | "deny";
+  withAuthRetry: WithAuthRetry;
   updateSession: (sessionId: string, updater: (session: ChatSession) => ChatSession) => void;
   clearAuthState: (message: string) => void;
   setState: SetState;
@@ -347,7 +348,7 @@ interface ChangePolicyLevelParams {
 
 export async function changePolicyLevelAction(params: ChangePolicyLevelParams): Promise<void> {
   try {
-    await params.client.setPolicyLevel(params.sessionId, params.level);
+    await params.withAuthRetry(() => params.client.setPolicyLevel(params.sessionId, params.level));
     params.updateSession(params.sessionId, (session) => ({
       ...session,
       policyLevel: params.level,

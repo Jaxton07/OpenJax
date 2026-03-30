@@ -912,12 +912,13 @@ export function useChatApp() {
         client,
         sessionId,
         level,
+        withAuthRetry,
         updateSession,
         clearAuthState,
         setState
       });
     },
-    [client, updateSession, clearAuthState]
+    [client, withAuthRetry, updateSession, clearAuthState]
   );
 
   const dismissGlobalError = useCallback(() => {
