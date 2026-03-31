@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::tools::handlers::de_helpers;
+
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessSortBy {
@@ -14,7 +16,7 @@ pub struct ProcessSnapshotArgs {
     pub sort_by: ProcessSortBy,
     #[serde(
         default = "default_process_limit",
-        deserialize_with = "deserialize_usize_or_string"
+        deserialize_with = "de_helpers::de_usize"
     )]
     pub limit: usize,
     pub user: Option<String>,
@@ -26,54 +28,21 @@ fn default_process_limit() -> usize {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SystemLoadArgs {
-    #[serde(default = "default_true", deserialize_with = "deserialize_boolish")]
+    #[serde(default = "default_true", deserialize_with = "de_helpers::de_bool")]
     pub include_cpu: bool,
-    #[serde(default = "default_true", deserialize_with = "deserialize_boolish")]
+    #[serde(default = "default_true", deserialize_with = "de_helpers::de_bool")]
     pub include_memory: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DiskUsageArgs {
     pub path: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_boolish")]
+    #[serde(default, deserialize_with = "de_helpers::de_bool")]
     pub include_all_mounts: bool,
 }
 
 fn default_true() -> bool {
     true
-}
-
-fn deserialize_usize_or_string<'de, D>(deserializer: D) -> Result<usize, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    if let Some(num) = value.as_u64() {
-        return Ok(num as usize);
-    }
-    if let Some(text) = value.as_str() {
-        return text
-            .parse::<usize>()
-            .map_err(|_| serde::de::Error::custom("expected positive integer"));
-    }
-    Err(serde::de::Error::custom("expected integer"))
-}
-
-fn deserialize_boolish<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    if let Some(flag) = value.as_bool() {
-        return Ok(flag);
-    }
-    if let Some(text) = value.as_str() {
-        return Ok(matches!(
-            text.to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes"
-        ));
-    }
-    Ok(false)
 }
 
 #[derive(Debug, Clone)]

@@ -5,6 +5,8 @@ use std::path::Path;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 
+use super::de_helpers;
+
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -20,7 +22,7 @@ struct GrepFilesArgs {
     include: Option<String>,
     #[serde(default)]
     path: Option<String>,
-    #[serde(default = "grep_default_limit")]
+    #[serde(default = "grep_default_limit", deserialize_with = "de_helpers::de_usize")]
     limit: usize,
 }
 

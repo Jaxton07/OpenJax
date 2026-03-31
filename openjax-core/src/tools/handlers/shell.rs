@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+use super::de_helpers;
 use crate::sandbox;
 use crate::tools::context::{ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
@@ -10,7 +11,7 @@ use crate::tools::registry::{ToolHandler, ToolKind};
 #[derive(Deserialize)]
 struct ShellCommandArgs {
     cmd: String,
-    #[serde(default = "shell_default_timeout")]
+    #[serde(default = "shell_default_timeout", deserialize_with = "de_helpers::de_u64")]
     timeout_ms: u64,
 }
 

@@ -1,3 +1,4 @@
+pub mod de_helpers;
 pub mod edit;
 pub mod glob_files;
 pub mod grep_files;
