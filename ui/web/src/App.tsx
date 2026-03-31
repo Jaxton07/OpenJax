@@ -56,7 +56,8 @@ export default function App() {
     fetchCatalog,
     dismissGlobalError,
     dismissToast,
-    sendPolicyLevel,
+    draftPolicyLevel,
+    onPolicyLevelChange,
     isStreaming,
     isBusyTurn,
     abortTurn,
@@ -220,8 +221,8 @@ export default function App() {
           onSend={sendMessage}
           onNewChat={() => void newChat()}
           onClear={() => void clearConversation()}
-          policyLevel={activeSession?.policyLevel ?? "ask"}
-          onPolicyLevelChange={(level) => void sendPolicyLevel(activeSession!.id, level)}
+          policyLevel={activeSession?.policyLevel ?? draftPolicyLevel}
+          onPolicyLevelChange={onPolicyLevelChange}
           isBusyTurn={isBusyTurn}
           isStreaming={isStreaming}
           onBlockedSendAttempt={notifyBusyTurnBlockedSend}
