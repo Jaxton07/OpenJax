@@ -42,8 +42,8 @@
   background: #e8e8e8;
   color: #111111;
   border: none;
-  border-radius: 999px;
-  padding: 8px 16px;
+  border-radius: 18px;
+  padding: 10px 16px;
 }
 
 .message-row.role-user .message-text {

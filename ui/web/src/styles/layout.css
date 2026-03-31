@@ -238,7 +238,7 @@
 
 .chat-main {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 0;
   padding: 16px 24px 12px;
   background: var(--bg);
@@ -379,11 +379,16 @@
 
 /* Toast Banner */
 .chat-banners {
+  position: absolute;
+  top: 72px;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   pointer-events: none;
+  z-index: 100;
 }
 
 .toast-banner {
