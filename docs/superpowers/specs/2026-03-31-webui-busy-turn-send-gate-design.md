@@ -63,7 +63,7 @@
 当 `isBusyTurn=true`：
 
 1. `textarea` 保持可编辑（不禁用）。
-2. 发送按钮不可触发发送（可表现为 disabled 或拦截点击）。
+2. 发送按钮在忙碌态保持可点击，但统一走拦截逻辑（不使用原生 `disabled`），用于触发用户提示与去重。
 3. `Enter` 不触发发送。
 4. `Stop` 按钮保持可用（用于终止当前回合）。
 
@@ -86,7 +86,7 @@
 1. 读取当前 `session.turnPhase`（通过参数注入当前 session 快照或查询函数）。
 2. 若为 `submitting/streaming`：
    - 直接返回；
-   - 仅设置 `infoToast` 为目标文案（可复用去重逻辑）；
+   - 调用统一通知入口 `notifyBusyTurnBlockedSend()`（由 `useChatApp` 提供，内含去重），不得在 action 内直接写 `infoToast`；
    - **不得**执行 `updateSession(...messages.push(user...))`；
    - **不得**调用 `client.submitTurn(...)`。
 
@@ -110,7 +110,14 @@
 3. 去重窗口内重复触发不再次刷新 toast；
 4. 窗口外再次触发可正常提示。
 
-可放置于 `useChatApp`（集中处理 UI 反馈），避免分散在组件和 action。
+统一约束：
+
+1. `Composer` 拦截发送尝试时调用 `notifyBusyTurnBlockedSend()`；
+2. `sendMessageAction` busy guard 命中时调用 `notifyBusyTurnBlockedSend()`；
+3. `CONFLICT` 错误回退展示也经由同一入口；
+4. 除该入口外，不允许其他路径直接写该 toast 文案。
+
+去重实现放置于 `useChatApp`，保证单点行为一致。
 
 ## 5. 影响范围
 
@@ -135,7 +142,7 @@
 
 1. `isBusyTurn=true` 时 `Enter` 不调用 `onSend`。
 2. `isBusyTurn=true` 时发送按钮不可发送，输入框仍可输入。
-3. 忙碌态触发发送仅出现一次提示（去重窗口内重复触发不新增）。
+3. 忙碌态按钮点击与 `Enter` 尝试都触发同一通知入口，且去重窗口内仅出现一次提示。
 
 ### 6.2 sendMessageAction 单元测试
 
@@ -144,7 +151,7 @@
 1. busy guard 生效：
    - 不调用 `submitTurn`
    - 不追加本地 user message
-   - 仅触发 infoToast
+   - 仅调用统一通知入口（不直接 set `infoToast`）
 2. 非 busy 时现有流程不回归：
    - 乐观插入 + submitTurn 保持原行为。
 
@@ -178,4 +185,3 @@
 ### 8.3 回滚点
 
 若出现异常，可先保留业务层 hard guard，仅临时关闭 UI 端去重逻辑，确保正确性优先。
-
