@@ -1,7 +1,5 @@
 import type { CatalogProvider, LlmProvider } from "../../types/gateway";
-import { TrashIcon } from "../../pic/icon";
-
-const EDIT_ICON = new URL("../../pic/icon/edit.svg", import.meta.url).href;
+import { EditIcon, TrashIcon } from "../../pic/icon";
 
 interface ProviderCardProps {
   provider: LlmProvider;
@@ -79,7 +77,7 @@ export default function ProviderCard({
           title="编辑"
           onClick={onEdit}
         >
-          <img src={EDIT_ICON} alt="" />
+          <EditIcon />
         </button>
         <button
           type="button"
