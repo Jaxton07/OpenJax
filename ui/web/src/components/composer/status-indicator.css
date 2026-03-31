@@ -1,0 +1,23 @@
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.status-indicator.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.status-indicator-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}

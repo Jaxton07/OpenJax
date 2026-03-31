@@ -85,7 +85,7 @@ describe("session-events/assistant", () => {
     expect(assistant?.reasoningBlocks?.[1]?.lastEventSeq).toBe(3);
   });
 
-  it("keeps reasoning open across tool lifecycle events", () => {
+  it("closes current reasoning block when tool lifecycle starts and creates a new block on later reasoning", () => {
     const session = baseSession();
     const beforeTool = applySessionEvent(session, {
       request_id: "req",
@@ -115,11 +115,13 @@ describe("session-events/assistant", () => {
       payload: { content_delta: "调用后思考" }
     });
     const assistant = afterTool.messages.find((message) => message.turnId === "turn_r3" && message.role === "assistant");
-    expect(assistant?.reasoningBlocks).toHaveLength(1);
-    expect(assistant?.reasoningBlocks?.[0]?.content).toBe("调用前思考调用后思考");
-    expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(false);
+    expect(assistant?.reasoningBlocks).toHaveLength(2);
+    expect(assistant?.reasoningBlocks?.[0]?.content).toBe("调用前思考");
+    expect(assistant?.reasoningBlocks?.[0]?.closed).toBe(true);
+    expect(assistant?.reasoningBlocks?.[1]?.content).toBe("调用后思考");
+    expect(assistant?.reasoningBlocks?.[1]?.closed).toBe(false);
     expect(assistant?.reasoningBlocks?.[0]?.startEventSeq).toBe(1);
-    expect(assistant?.reasoningBlocks?.[0]?.lastEventSeq).toBe(3);
+    expect(assistant?.reasoningBlocks?.[0]?.lastEventSeq).toBe(1);
   });
 
   it("keeps one reasoning block when reasoning_segment_id stays the same across tool events", () => {

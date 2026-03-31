@@ -1,50 +1,54 @@
 .composer-wrap {
-  position: relative;
-  padding: 4px 0 8px;
-  background: transparent;
-  width: min(var(--composer-max-width), 100%);
-  margin: 0 auto;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(var(--composer-max-width), calc(100% - 48px));
+  padding: 8px 0 36px;
+  background: linear-gradient(to bottom, transparent 0%, var(--bg) 28%);
+}
+
+.composer-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 8px;
 }
 
 .composer-actions {
   display: inline-flex;
   gap: 8px;
   width: fit-content;
-  margin-bottom: 8px;
 }
 
 .composer-actions button {
-  border-width: 0.8px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border-radius: 999px;
-  padding: 7px 14px;
-  background: var(--bg);
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--ink-2);
-  border: 1px solid var(--border);
-  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.06);
-  transform: translateY(-1px);
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
   cursor: pointer;
+  color: var(--ink-2);
+  opacity: 0.6;
+  transition: opacity 0.16s ease;
+}
+
+.composer-actions button:hover {
+  opacity: 1;
 }
 
 .composer-action-icon {
   display: inline-grid;
   place-items: center;
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
 }
 
 .composer-action-icon svg {
-  width: 13px;
-  height: 13px;
-  fill: var(--ink-2);
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
 }
 
 .composer {

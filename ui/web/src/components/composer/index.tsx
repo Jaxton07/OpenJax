@@ -3,7 +3,9 @@ import "./composer.css";
 import ComposerActions from "./ComposerActions";
 import ComposerInput from "./ComposerInput";
 import SlashDropdown from "./SlashDropdown";
+import StatusIndicator from "./StatusIndicator";
 import { useSlashCommands } from "../../hooks/useSlashCommands";
+import type { ComposerPhase } from "../../lib/deriveComposerPhase";
 import type { ContextUsageState } from "../../types/chat";
 import type { SlashCommandDto } from "../../types/gateway";
 
@@ -20,6 +22,7 @@ interface ComposerProps {
   onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
   isBusyTurn?: boolean;
   isStreaming?: boolean;
+  streamPhase?: ComposerPhase;
   onBlockedSendAttempt?: () => void;
   onStop?: () => void;
 }
@@ -37,6 +40,7 @@ export default function Composer({
   onPolicyLevelChange,
   isBusyTurn,
   isStreaming,
+  streamPhase = "idle",
   onBlockedSendAttempt,
   onStop
 }: ComposerProps) {
@@ -189,7 +193,10 @@ export default function Composer({
 
   return (
     <div className="composer-wrap">
-      <ComposerActions onNewChat={onNewChat} />
+      <div className="composer-actions-bar">
+        <ComposerActions onNewChat={onNewChat} />
+        <StatusIndicator phase={streamPhase} />
+      </div>
       <SlashDropdown
         visible={showSlashDropdown}
         commands={slashMatches}

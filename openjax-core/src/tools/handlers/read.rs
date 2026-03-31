@@ -6,6 +6,8 @@ use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::debug;
 
+use super::de_helpers;
+
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -18,9 +20,9 @@ const READ_COMMENT_PREFIXES: &[&str] = &["#", "//", "--"];
 struct ReadFileArgs {
     #[serde(alias = "path", alias = "filepath")]
     file_path: String,
-    #[serde(default = "read_default_offset")]
+    #[serde(default = "read_default_offset", deserialize_with = "de_helpers::de_usize")]
     offset: usize,
-    #[serde(default = "read_default_limit")]
+    #[serde(default = "read_default_limit", deserialize_with = "de_helpers::de_usize")]
     limit: usize,
     #[serde(default)]
     mode: ReadMode,
@@ -38,15 +40,15 @@ enum ReadMode {
 
 #[derive(Deserialize, Clone, Default)]
 struct IndentationArgs {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_helpers::de_opt_usize")]
     anchor_line: Option<usize>,
-    #[serde(default = "read_default_max_levels")]
+    #[serde(default = "read_default_max_levels", deserialize_with = "de_helpers::de_usize")]
     max_levels: usize,
     #[serde(default = "read_default_include_siblings")]
     include_siblings: bool,
     #[serde(default = "read_default_include_header")]
     include_header: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_helpers::de_opt_usize")]
     max_lines: Option<usize>,
 }
 

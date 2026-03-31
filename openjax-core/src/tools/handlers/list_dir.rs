@@ -7,6 +7,7 @@ use std::fs::FileType;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+use super::de_helpers;
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -17,11 +18,11 @@ const LIST_DIR_INDENTATION_SPACES: usize = 2;
 #[derive(Deserialize)]
 struct ListDirArgs {
     dir_path: String,
-    #[serde(default = "list_dir_default_offset")]
+    #[serde(default = "list_dir_default_offset", deserialize_with = "de_helpers::de_usize")]
     offset: usize,
-    #[serde(default = "list_dir_default_limit")]
+    #[serde(default = "list_dir_default_limit", deserialize_with = "de_helpers::de_usize")]
     limit: usize,
-    #[serde(default = "list_dir_default_depth")]
+    #[serde(default = "list_dir_default_depth", deserialize_with = "de_helpers::de_usize")]
     depth: usize,
 }
 

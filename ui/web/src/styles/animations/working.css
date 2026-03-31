@@ -1,0 +1,26 @@
+@keyframes scan-move {
+  0% { left: -50%; }
+  100% { left: 100%; }
+}
+
+.scan-bar {
+  width: 60px;
+  height: 4px;
+  background: transparent;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.scan-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 50%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, #00f5ff 28%, #00f5ff 72%, transparent 100%);
+  animation: scan-move 1.5s ease-in-out infinite;
+}

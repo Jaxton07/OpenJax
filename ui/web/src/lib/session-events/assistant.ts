@@ -3,6 +3,15 @@ import type { StreamEvent } from "../../types/gateway";
 
 export function shouldCloseReasoningOnEvent(event: StreamEvent): boolean {
   return (
+    event.type === "response_text_delta" ||
+    event.type === "assistant_message" ||
+    event.type === "tool_calls_proposed" ||
+    event.type === "tool_call_started" ||
+    event.type === "tool_call_ready" ||
+    event.type === "tool_call_completed" ||
+    event.type === "approval_requested" ||
+    event.type === "approval_resolved" ||
+    event.type === "error" ||
     event.type === "response_completed" ||
     event.type === "response_error" ||
     event.type === "turn_completed" ||

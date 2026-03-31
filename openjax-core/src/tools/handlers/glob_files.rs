@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use glob::glob;
 use serde::Deserialize;
-use serde::de::{self, Deserializer};
 use std::path::Path;
 use std::time::SystemTime;
 
+use super::de_helpers;
 use crate::tools::context::{FunctionCallOutputBody, ToolInvocation, ToolOutput, ToolPayload};
 use crate::tools::error::FunctionCallError;
 use crate::tools::registry::{ToolHandler, ToolKind};
@@ -17,7 +17,7 @@ struct GlobFilesArgs {
     pattern: String,
     #[serde(default)]
     base_path: Option<String>,
-    #[serde(default = "glob_default_limit", deserialize_with = "de_usize")]
+    #[serde(default = "glob_default_limit", deserialize_with = "de_helpers::de_usize")]
     limit: usize,
 }
 
@@ -29,26 +29,6 @@ struct GlobMatch {
 
 fn glob_default_limit() -> usize {
     GLOB_DEFAULT_LIMIT
-}
-
-fn de_usize<'de, D>(deserializer: D) -> Result<usize, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum NumOrString {
-        Num(usize),
-        Str(String),
-    }
-
-    match NumOrString::deserialize(deserializer)? {
-        NumOrString::Num(n) => Ok(n),
-        NumOrString::Str(s) => s
-            .trim()
-            .parse::<usize>()
-            .map_err(|_| de::Error::custom("expected positive integer")),
-    }
 }
 
 pub struct GlobFilesHandler;

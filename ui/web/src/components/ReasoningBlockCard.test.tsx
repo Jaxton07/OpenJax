@@ -24,6 +24,16 @@ function buildBlock(overrides: Partial<ReasoningBlock> = {}): ReasoningBlock {
 }
 
 describe("ReasoningBlockCard", () => {
+  it("shows Thinking label when reasoning block is open", () => {
+    render(<ReasoningBlockCard block={buildBlock({ closed: false })} />);
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+  });
+
+  it("shows Thought label when reasoning block is closed", () => {
+    render(<ReasoningBlockCard block={buildBlock({ closed: true, endedAt: "2026-01-01T00:00:02Z" })} />);
+    expect(screen.getByText("Thought")).toBeInTheDocument();
+  });
+
   it("passes final=false when reasoning block is still open", () => {
     render(<ReasoningBlockCard block={buildBlock({ closed: false })} />);
     expect(screen.getByTestId("reasoning-markdown")).toHaveAttribute("data-final", "false");
