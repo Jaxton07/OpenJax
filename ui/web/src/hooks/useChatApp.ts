@@ -130,6 +130,12 @@ export function useChatApp() {
     loading: false
   }));
 
+  const [draftPolicyLevel, setDraftPolicyLevel] = useState<"allow" | "ask" | "deny">("ask");
+  const draftPolicyLevelRef = useRef<"allow" | "ask" | "deny">("ask");
+  useEffect(() => {
+    draftPolicyLevelRef.current = draftPolicyLevel;
+  }, [draftPolicyLevel]);
+
   const reconnectAbortRef = useRef<AbortController | null>(null);
   const pollingAbortRef = useRef<AbortController | null>(null);
   const sessionsRef = useRef(state.sessions);
@@ -711,6 +717,8 @@ export function useChatApp() {
       await sendMessageAction({
         content,
         ensureSession: () => ensureSession(targetSessionId),
+        isDraftSend: !targetSessionId,
+        getDraftPolicyLevel: () => draftPolicyLevelRef.current,
         updateSession,
         withAuthRetry,
         client,
@@ -761,6 +769,7 @@ export function useChatApp() {
       setState,
       clearAuthState
     });
+    setDraftPolicyLevel("ask");
   }, [activeSession, clearAuthState, client, withAuthRetry]);
 
   const switchSession = useCallback((sessionId: string) => {
@@ -1005,6 +1014,17 @@ export function useChatApp() {
     [client, withAuthRetry, updateSession, clearAuthState]
   );
 
+  const onPolicyLevelChange = useCallback(
+    (level: "allow" | "ask" | "deny") => {
+      if (activeSession != null) {
+        void sendPolicyLevel(activeSession.id, level);
+      } else {
+        setDraftPolicyLevel(level);
+      }
+    },
+    [activeSession, sendPolicyLevel]
+  );
+
   const dismissGlobalError = useCallback(() => {
     setState((prev) => ({ ...prev, globalError: null }));
   }, []);
@@ -1043,6 +1063,8 @@ export function useChatApp() {
     setActiveProvider,
     fetchCatalog,
     sendPolicyLevel,
+    draftPolicyLevel,
+    onPolicyLevelChange,
     dismissGlobalError,
     dismissToast,
     notifyBusyTurnBlockedSend,

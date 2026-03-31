@@ -7,13 +7,15 @@ import { BUSY_TURN_BLOCKED_MESSAGE } from "./chatApp/busyTurnNotifier";
 const mocks = vi.hoisted(() => {
   const startSession = vi.fn();
   const submitTurn = vi.fn();
-  return { startSession, submitTurn };
+  const setPolicyLevel = vi.fn();
+  return { startSession, submitTurn, setPolicyLevel };
 });
 
 vi.mock("../lib/gatewayClient", () => ({
   GatewayClient: vi.fn().mockImplementation(() => ({
     startSession: mocks.startSession,
-    submitTurn: mocks.submitTurn
+    submitTurn: mocks.submitTurn,
+    setPolicyLevel: mocks.setPolicyLevel
   }))
 }));
 
@@ -49,6 +51,7 @@ describe("useChatApp newChat guard", () => {
       turn_id: "turn_1",
       timestamp: "2026-01-01T00:00:02Z"
     });
+    mocks.setPolicyLevel.mockReset().mockResolvedValue({ level: "allow" });
   });
 
   afterEach(() => {
@@ -320,5 +323,100 @@ describe("useChatApp newChat guard", () => {
       ["sess_new_switch", "draft message"]
     ]);
     expect(apiRef!.state.activeSessionId).toBe("sess_used");
+  });
+
+  it("onPolicyLevelChange in draft mode updates draftPolicyLevel without calling setPolicyLevel API", async () => {
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    expect(apiRef!.state.activeSessionId).toBeNull();
+
+    await act(async () => {
+      apiRef!.onPolicyLevelChange("allow");
+    });
+
+    expect(apiRef!.draftPolicyLevel).toBe("allow");
+    expect(mocks.setPolicyLevel).not.toHaveBeenCalled();
+  });
+
+  it("newChat resets draftPolicyLevel to ask", async () => {
+    saveSessionsForBoot([
+      {
+        id: "sess_used",
+        title: "老会话",
+        isPlaceholderTitle: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          { id: "msg_1", kind: "text", role: "user", content: "hello", timestamp: "2026-01-01T00:00:01Z" }
+        ],
+        pendingApprovals: []
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    // Go to draft and set policy to allow
+    await act(async () => { await apiRef!.newChat(); });
+    await act(async () => { apiRef!.onPolicyLevelChange("allow"); });
+    expect(apiRef!.draftPolicyLevel).toBe("allow");
+
+    // Switch back to existing session then new chat again
+    await act(async () => { apiRef!.switchSession("sess_used"); });
+    await act(async () => { await apiRef!.newChat(); });
+
+    expect(apiRef!.draftPolicyLevel).toBe("ask");
+  });
+
+  it("draft send with draftPolicyLevel=allow calls startSession then setPolicyLevel then submitTurn in order", async () => {
+    const callOrder: string[] = [];
+    mocks.startSession.mockReset().mockImplementation(async () => {
+      callOrder.push("startSession");
+      return { request_id: "req_1", session_id: "sess_new_1", timestamp: "2026-01-01T00:00:00Z" };
+    });
+    mocks.setPolicyLevel.mockReset().mockImplementation(async () => {
+      callOrder.push("setPolicyLevel");
+      return { level: "allow" };
+    });
+    mocks.submitTurn.mockReset().mockImplementation(async () => {
+      callOrder.push("submitTurn");
+      return { request_id: "req_t1", session_id: "sess_new_1", turn_id: "turn_1", timestamp: "2026-01-01T00:00:01Z" };
+    });
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    await act(async () => { apiRef!.onPolicyLevelChange("allow"); });
+    expect(apiRef!.draftPolicyLevel).toBe("allow");
+
+    await act(async () => { await apiRef!.sendMessage("hello"); });
+
+    expect(callOrder).toEqual(["startSession", "setPolicyLevel", "submitTurn"]);
+    expect(mocks.setPolicyLevel).toHaveBeenCalledWith("sess_new_1", "allow");
+  });
+
+  it("draft send aborts and sets globalError when setPolicyLevel fails", async () => {
+    mocks.startSession.mockReset().mockResolvedValue({
+      request_id: "req_1",
+      session_id: "sess_new_1",
+      timestamp: "2026-01-01T00:00:00Z"
+    });
+    mocks.setPolicyLevel.mockReset().mockRejectedValue(new Error("network error"));
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    await act(async () => { apiRef!.onPolicyLevelChange("allow"); });
+    await act(async () => { await apiRef!.sendMessage("hello"); });
+
+    expect(mocks.submitTurn).not.toHaveBeenCalled();
+    expect(apiRef!.state.globalError).toBeTruthy();
   });
 });
