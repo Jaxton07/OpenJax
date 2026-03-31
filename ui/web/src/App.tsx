@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar";
 import ThemeToggle from "./components/ThemeToggle";
 import ToastBanner from "./components/ToastBanner";
 import { useChatApp } from "./hooks/useChatApp";
+import { deriveComposerPhase } from "./lib/deriveComposerPhase";
 import { SettingsIcon, SidebarToggleIcon } from "./pic/icon";
 
 type AppRoute = "/login" | "/chat";
@@ -89,6 +90,7 @@ export default function App() {
     () => (route === "/login" ? state.globalError : null),
     [route, state.globalError]
   );
+  const composerPhase = useMemo(() => deriveComposerPhase(activeSession), [activeSession]);
 
   const handleLogin = async (baseUrl: string, ownerKey: string) => {
     const ok = await authenticate(baseUrl, ownerKey);
@@ -225,6 +227,7 @@ export default function App() {
           onPolicyLevelChange={onPolicyLevelChange}
           isBusyTurn={isBusyTurn}
           isStreaming={isStreaming}
+          streamPhase={composerPhase}
           onBlockedSendAttempt={notifyBusyTurnBlockedSend}
           onStop={() => void abortTurn()}
         />

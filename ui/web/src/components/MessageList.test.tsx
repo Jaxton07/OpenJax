@@ -349,7 +349,7 @@ describe("MessageList", () => {
       }
     ];
     render(<MessageList messages={messages} pendingApprovals={[]} onResolveApproval={() => {}} />);
-    const toggle = screen.getByRole("button", { name: /思考过程/ });
+    const toggle = screen.getByRole("button", { name: /Thought/ });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     const toggleNode = toggle.closest(".reasoning-block");
     expect(toggleNode).not.toBeNull();

@@ -1,0 +1,66 @@
+@keyframes cyber-nebula {
+  0%, 100% {
+    border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%;
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    border-radius: 30% 60% 70% 40% / 50% 40% 60% 50%;
+    transform: rotate(90deg) scale(1.1);
+  }
+  50% {
+    border-radius: 50% 60% 30% 60% / 30% 70% 50% 70%;
+    transform: rotate(180deg) scale(0.95);
+  }
+  75% {
+    border-radius: 60% 40% 60% 40% / 60% 30% 70% 40%;
+    transform: rotate(270deg) scale(1.05);
+  }
+}
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.cyber-liquid-4 {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.cyber-liquid-4::before,
+.cyber-liquid-4::after,
+.cyber-liquid-4 .inner {
+  content: "";
+  position: absolute;
+  border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%;
+  animation: cyber-nebula 4s ease-in-out infinite;
+}
+
+.cyber-liquid-4::before {
+  inset: -2.5px;
+  background: linear-gradient(45deg, #ff006e, transparent, #8338ec);
+  opacity: 0.4;
+  filter: blur(2px);
+  animation-delay: 0s;
+}
+
+.cyber-liquid-4::after {
+  inset: -1px;
+  background: linear-gradient(135deg, #00f5ff, transparent, #ff00ff);
+  opacity: 0.6;
+  filter: blur(1px);
+  animation-delay: -1.3s;
+}
+
+.cyber-liquid-4 .inner {
+  inset: 0;
+  background: linear-gradient(90deg, #ff006e, #8338ec, #00f5ff);
+  background-size: 300% 300%;
+  animation:
+    cyber-nebula 4s ease-in-out infinite,
+    gradient-shift 3s ease infinite;
+  animation-delay: -2.6s;
+  box-shadow: inset 0 0 5px rgba(255, 255, 255, 0.3);
+}

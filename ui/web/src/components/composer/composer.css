@@ -8,11 +8,17 @@
   background: linear-gradient(to bottom, transparent 0%, var(--bg) 28%);
 }
 
+.composer-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 8px;
+}
+
 .composer-actions {
   display: inline-flex;
   gap: 8px;
   width: fit-content;
-  margin-bottom: 8px;
 }
 
 .composer-actions button {

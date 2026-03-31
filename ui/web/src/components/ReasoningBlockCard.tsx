@@ -29,6 +29,7 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
   }, [block, now]);
 
   const isActive = !block.closed;
+  const label = isActive ? "Thinking" : "Thought";
 
   const blockClass = [
     "reasoning-block",
@@ -54,7 +55,7 @@ export default function ReasoningBlockCard({ block }: ReasoningBlockCardProps) {
       }}
     >
       <div className="reasoning-block-header">
-        <span className="reasoning-block-label">思考过程</span>
+        <span className="reasoning-block-label">{label}</span>
         <span className="reasoning-block-dur">{duration}</span>
         <svg
           className="reasoning-block-chevron"
