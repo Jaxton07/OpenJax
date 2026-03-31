@@ -23,6 +23,7 @@ fi
 
 GATEWAY_BIND="${OPENJAX_GATEWAY_BIND:-127.0.0.1:8765}"
 API_KEYS="${OPENJAX_GATEWAY_API_KEYS:-${OPENJAX_API_KEYS:-}}"
+cleanup_done=0
 
 echo "[run-web-dev] starting gateway on ${GATEWAY_BIND}"
 echo "[run-web-dev] gateway cwd: ${LOCAL_DEV_WORKDIR}"
@@ -45,14 +46,43 @@ echo "[run-web-dev] starting web dev server on http://127.0.0.1:5173"
 (cd ui/web && pnpm dev --host 127.0.0.1 --port 5173) &
 web_pid=$!
 
+terminate_tree() {
+  local pid="$1"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  local children
+  children="$(pgrep -P "$pid" 2>/dev/null || true)"
+  if [ -n "$children" ]; then
+    local child
+    for child in $children; do
+      terminate_tree "$child"
+    done
+  fi
+
+  kill "$pid" 2>/dev/null || true
+}
+
 cleanup() {
+  if [ "$cleanup_done" -eq 1 ]; then
+    return 0
+  fi
+  cleanup_done=1
+
   echo
   echo "[run-web-dev] stopping processes..."
-  kill "$gateway_pid" "$web_pid" 2>/dev/null || true
+  terminate_tree "$gateway_pid"
+  terminate_tree "$web_pid"
   wait "$gateway_pid" "$web_pid" 2>/dev/null || true
 }
 
-trap cleanup INT TERM EXIT
+on_interrupt() {
+  exit 130
+}
+
+trap on_interrupt INT TERM
+trap cleanup EXIT
 
 echo "[run-web-dev] ready"
 echo "[run-web-dev] gateway: http://${GATEWAY_BIND}"
