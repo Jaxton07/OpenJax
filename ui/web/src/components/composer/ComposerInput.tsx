@@ -18,6 +18,7 @@ interface ComposerInputProps {
   onSlashSubmit?: () => void;
   policyLevel?: "allow" | "ask" | "deny";
   onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
+  isBusyTurn?: boolean;
   isStreaming?: boolean;
   onStop?: () => void;
 }
@@ -36,6 +37,7 @@ export default function ComposerInput({
   onSlashSubmit,
   policyLevel,
   onPolicyLevelChange,
+  isBusyTurn,
   isStreaming,
   onStop
 }: ComposerInputProps) {
@@ -94,7 +96,7 @@ export default function ComposerInput({
       ) : (
         <button
           type="button"
-          className={`composer-send-btn ${hasContent && !disabled ? "ready" : ""}`}
+          className={`composer-send-btn ${hasContent && !disabled && !isBusyTurn ? "ready" : ""}`}
           onClick={onSubmit}
           disabled={disabled || !hasContent}
           aria-label="发送"

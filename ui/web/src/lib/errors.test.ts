@@ -13,6 +13,16 @@ describe("humanizeError", () => {
     expect(text).toContain("Owner Key");
   });
 
+  it("maps conflict to busy-turn guidance", () => {
+    const text = humanizeError({
+      code: "CONFLICT",
+      message: "another turn is still running",
+      status: 409,
+      retryable: false
+    });
+    expect(text).toBe("Please wait for the current response to finish.");
+  });
+
   it("falls back to generic error", () => {
     expect(humanizeError(new Error("boom"))).toBe("boom");
   });

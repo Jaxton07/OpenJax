@@ -52,6 +52,9 @@ interface SendMessageParams {
   pollingAbortRef: MutableRefObject<AbortController | null>;
   clearAuthState: (message: string) => void;
   setState: SetState;
+  getSessionTurnPhase?: (sessionId: string) => ChatSession["turnPhase"] | undefined;
+  getSessionTitle?: (sessionId: string) => string | undefined;
+  notifyBusyTurnBlockedSend?: () => void;
 }
 
 export async function sendMessageAction(params: SendMessageParams): Promise<void> {
@@ -61,6 +64,13 @@ export async function sendMessageAction(params: SendMessageParams): Promise<void
   }
 
   const sessionId = await params.ensureSession();
+  const priorTurnPhase = params.getSessionTurnPhase?.(sessionId);
+  const priorTitle = params.getSessionTitle?.(sessionId);
+  if (isBusyTurnPhase(params.getSessionTurnPhase?.(sessionId))) {
+    params.notifyBusyTurnBlockedSend?.();
+    return;
+  }
+  const optimisticMessageId = crypto.randomUUID();
   params.updateSession(sessionId, (session) => ({
     ...session,
     turnPhase: "submitting",
@@ -68,7 +78,7 @@ export async function sendMessageAction(params: SendMessageParams): Promise<void
     messages: [
       ...session.messages,
       {
-        id: crypto.randomUUID(),
+        id: optimisticMessageId,
         kind: "text",
         role: "user",
         content: message,
@@ -130,13 +140,35 @@ export async function sendMessageAction(params: SendMessageParams): Promise<void
       }
     }
   } catch (error) {
-    params.updateSession(sessionId, (session) => ({ ...session, turnPhase: "failed" }));
     if (isAuthenticationError(error)) {
       params.clearAuthState("登录态已失效，请重新登录。");
       return;
     }
+    if (isGatewayConflictError(error)) {
+      params.updateSession(sessionId, (session) => ({
+        ...session,
+        title: priorTitle ?? session.title,
+        turnPhase: priorTurnPhase ?? "draft",
+        messages: session.messages.filter((item) => item.id !== optimisticMessageId)
+      }));
+      params.notifyBusyTurnBlockedSend?.();
+      return;
+    }
+    params.updateSession(sessionId, (session) => ({ ...session, turnPhase: "failed" }));
     params.setState((prev) => ({ ...prev, globalError: humanizeProviderError(error) }));
   }
+}
+
+function isBusyTurnPhase(phase: ChatSession["turnPhase"] | undefined): boolean {
+  return phase === "submitting" || phase === "streaming";
+}
+
+function isGatewayConflictError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const gateway = error as Partial<{ code: string; status: number }>;
+  return gateway.code === "CONFLICT" || gateway.status === 409;
 }
 
 interface NewChatParams {

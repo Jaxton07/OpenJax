@@ -265,4 +265,89 @@ describe("Composer slash commands", () => {
       updatedAt: "2026-03-21T00:00:01Z",
     });
   });
+
+  it("blocks Enter submit when busy turn is active", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ commands: [] }),
+      })
+    );
+    const onSend = vi.fn();
+    const onBlockedSendAttempt = vi.fn();
+    render(
+      <Composer
+        baseUrl="http://127.0.0.1:8765"
+        accessToken="token-123"
+        sessionId="sess_busy"
+        onSend={onSend}
+        onNewChat={vi.fn()}
+        isBusyTurn
+        onBlockedSendAttempt={onBlockedSendAttempt}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("Ask anything (type / for commands)");
+    await userEvent.type(input, "hello");
+    await userEvent.keyboard("{Enter}");
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onBlockedSendAttempt).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks send button click when busy turn is active", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ commands: [] }),
+      })
+    );
+    const onSend = vi.fn();
+    const onBlockedSendAttempt = vi.fn();
+    render(
+      <Composer
+        baseUrl="http://127.0.0.1:8765"
+        accessToken="token-123"
+        sessionId="sess_busy"
+        onSend={onSend}
+        onNewChat={vi.fn()}
+        isBusyTurn
+        onBlockedSendAttempt={onBlockedSendAttempt}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("Ask anything (type / for commands)");
+    await userEvent.type(input, "hello");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onBlockedSendAttempt).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps textarea editable while busy turn is active", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ commands: [] }),
+      })
+    );
+    render(
+      <Composer
+        baseUrl="http://127.0.0.1:8765"
+        accessToken="token-123"
+        sessionId="sess_busy"
+        onSend={vi.fn()}
+        onNewChat={vi.fn()}
+        isBusyTurn
+        onBlockedSendAttempt={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("Ask anything (type / for commands)");
+    await userEvent.type(input, "draft while waiting");
+    expect(input).toHaveValue("draft while waiting");
+  });
 });

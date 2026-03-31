@@ -58,8 +58,10 @@ export default function App() {
     dismissToast,
     sendPolicyLevel,
     isStreaming,
+    isBusyTurn,
     abortTurn,
-    clearConversation
+    clearConversation,
+    notifyBusyTurnBlockedSend
   } = useChatApp();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -220,7 +222,9 @@ export default function App() {
           onClear={() => void clearConversation()}
           policyLevel={activeSession?.policyLevel ?? "ask"}
           onPolicyLevelChange={(level) => void sendPolicyLevel(activeSession!.id, level)}
+          isBusyTurn={isBusyTurn}
           isStreaming={isStreaming}
+          onBlockedSendAttempt={notifyBusyTurnBlockedSend}
           onStop={() => void abortTurn()}
         />
       </main>

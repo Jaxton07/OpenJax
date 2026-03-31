@@ -39,6 +39,7 @@ import {
   resolveApprovalAction,
   sendMessageAction
 } from "./chatApp/session-actions";
+import { createBusyTurnNotifier } from "./chatApp/busyTurnNotifier";
 
 export { buildChatSessionFromGateway, mapGatewayRoleToMessageRole } from "./chatApp/session-model";
 
@@ -263,12 +264,23 @@ export function useChatApp() {
     () => state.sessions.find((session) => session.id === state.activeSessionId) ?? null,
     [state.activeSessionId, state.sessions]
   );
+  const isBusyTurn = useMemo(
+    () => activeSession != null && (activeSession.turnPhase === "submitting" || activeSession.turnPhase === "streaming"),
+    [activeSession]
+  );
   const isStreaming = useMemo(
     () =>
       activeSession != null &&
       activeSession.turnPhase === "streaming" &&
       activeSession.pendingApprovals.length === 0,
     [activeSession]
+  );
+  const notifyBusyTurnBlockedSend = useMemo(
+    () =>
+      createBusyTurnNotifier((message) => {
+        setState((prev) => ({ ...prev, infoToast: message }));
+      }),
+    []
   );
 
   const clearAuthState = useCallback((message: string) => {
@@ -657,13 +669,19 @@ export function useChatApp() {
         outputMode: state.settings.outputMode,
         pollingAbortRef,
         clearAuthState,
-        setState
+        setState,
+        getSessionTurnPhase: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.turnPhase,
+        getSessionTitle: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.title,
+        notifyBusyTurnBlockedSend
       });
     },
     [
       clearAuthState,
       client,
       ensureSession,
+      notifyBusyTurnBlockedSend,
       state.settings.outputMode,
       updateSession,
       withAuthRetry
@@ -932,6 +950,7 @@ export function useChatApp() {
   return {
     state,
     activeSession,
+    isBusyTurn,
     isStreaming,
     isAuthenticated: state.auth.authenticated,
     authenticate,
@@ -960,6 +979,7 @@ export function useChatApp() {
     sendPolicyLevel,
     dismissGlobalError,
     dismissToast,
+    notifyBusyTurnBlockedSend,
     sidebarHasMore: Boolean(state.sessionsNextCursor),
     sidebarLoadingMore: state.sessionsLoadingMore
   };

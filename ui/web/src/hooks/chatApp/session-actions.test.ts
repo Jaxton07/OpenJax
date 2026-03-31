@@ -1,0 +1,178 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import type { ChatState } from "../../types/chat";
+import type { GatewayClient } from "../../lib/gatewayClient";
+import { createBusyTurnNotifier, BUSY_TURN_BLOCKED_MESSAGE } from "./busyTurnNotifier";
+import { sendMessageAction } from "./session-actions";
+
+function baseState(): ChatState {
+  return {
+    settings: {
+      baseUrl: "http://127.0.0.1:8765",
+      outputMode: "sse",
+      selectedProviderId: null,
+      selectedModelName: null
+    },
+    auth: { authenticated: true, accessToken: "token", sessionId: "sess_auth", scope: "owner" },
+    sessions: [],
+    sessionsNextCursor: null,
+    sessionsLoadingMore: false,
+    activeSessionId: "sess_1",
+    globalError: null,
+    infoToast: null,
+    loading: false
+  };
+}
+
+describe("busy turn notifier", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-31T00:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("deduplicates blocked-send message within 1500ms", () => {
+    const emit = vi.fn();
+    const notify = createBusyTurnNotifier(emit);
+
+    expect(notify()).toBe(true);
+    expect(notify()).toBe(false);
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenLastCalledWith(BUSY_TURN_BLOCKED_MESSAGE);
+
+    vi.advanceTimersByTime(1500);
+    expect(notify()).toBe(true);
+    expect(emit).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("sendMessageAction", () => {
+  it("blocks submitting turn before optimistic insert and submitTurn", async () => {
+    const submitTurn = vi.fn();
+    const ensureSession = vi.fn().mockResolvedValue("sess_1");
+    const updateSession = vi.fn();
+    const notifyBusyTurnBlockedSend = vi.fn();
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession,
+      updateSession,
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState: vi.fn(),
+      setState: vi.fn(),
+      getSessionTurnPhase: () => "submitting",
+      notifyBusyTurnBlockedSend
+    });
+
+    expect(notifyBusyTurnBlockedSend).toHaveBeenCalledTimes(1);
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(submitTurn).not.toHaveBeenCalled();
+  });
+
+  it("blocks streaming turn before optimistic insert and submitTurn", async () => {
+    const submitTurn = vi.fn();
+    const ensureSession = vi.fn().mockResolvedValue("sess_1");
+    const updateSession = vi.fn();
+    const notifyBusyTurnBlockedSend = vi.fn();
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession,
+      updateSession,
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState: vi.fn(),
+      setState: vi.fn(),
+      getSessionTurnPhase: () => "streaming",
+      notifyBusyTurnBlockedSend
+    });
+
+    expect(notifyBusyTurnBlockedSend).toHaveBeenCalledTimes(1);
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(submitTurn).not.toHaveBeenCalled();
+  });
+
+  it("uses conflict fallback notifier path", async () => {
+    const submitTurn = vi.fn().mockRejectedValue({
+      code: "CONFLICT",
+      status: 409,
+      message: "another turn is still running",
+      retryable: false
+    });
+    const ensureSession = vi.fn().mockResolvedValue("sess_1");
+    const updateSession = vi.fn();
+    const setState = vi.fn();
+    const notifyBusyTurnBlockedSend = vi.fn();
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession,
+      updateSession,
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState: vi.fn(),
+      setState,
+      getSessionTurnPhase: () => "draft",
+      getSessionTitle: () => "new chat",
+      notifyBusyTurnBlockedSend
+    });
+
+    expect(updateSession).toHaveBeenCalledTimes(2);
+    const optimisticUpdater = updateSession.mock.calls[0]?.[1] as ((state: any) => any);
+    const rollbackUpdater = updateSession.mock.calls[1]?.[1] as ((state: any) => any);
+    const optimisticBase = {
+      id: "sess_1",
+      title: "test",
+      createdAt: "2026-03-31T00:00:00Z",
+      connection: "idle",
+      turnPhase: "draft",
+      lastEventSeq: 3,
+      messages: [],
+      pendingApprovals: []
+    };
+    const optimisticSession = optimisticUpdater(optimisticBase);
+    expect(optimisticSession.turnPhase).toBe("submitting");
+    expect(optimisticSession.title).toBe("hello");
+    expect(optimisticSession.messages).toHaveLength(1);
+    const rollbackSession = rollbackUpdater(optimisticSession);
+    expect(rollbackSession.turnPhase).toBe("draft");
+    expect(rollbackSession.title).toBe("new chat");
+    expect(rollbackSession.messages).toHaveLength(0);
+    expect(notifyBusyTurnBlockedSend).toHaveBeenCalledTimes(1);
+    expect(setState).not.toHaveBeenCalled();
+  });
+
+  it("keeps normal path for non-busy turn", async () => {
+    const submitTurn = vi.fn().mockResolvedValue({ turn_id: "turn_1" });
+    const ensureSession = vi.fn().mockResolvedValue("sess_1");
+    const updateSession = vi.fn();
+    const notifyBusyTurnBlockedSend = vi.fn();
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession,
+      updateSession,
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState: vi.fn(),
+      setState: vi.fn(),
+      getSessionTurnPhase: () => "draft",
+      notifyBusyTurnBlockedSend
+    });
+
+    expect(notifyBusyTurnBlockedSend).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenCalledTimes(1);
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+  });
+});
