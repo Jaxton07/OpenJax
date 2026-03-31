@@ -46,10 +46,6 @@ OpenJax 是一个基于 Rust 实现的agent系统，使 AI 模型能够与处理
 
 
 
-## 3) 命令执行策略
-- 从仓库根目录运行命令。
-- 优先使用 `zsh -lc "..."`（与 `CLAUDE.md` 中的仓库指引一致）。
-
 ## 4) 构建命令
 - `zsh -lc "cargo build"`
 - `zsh -lc "cargo build -p openjax-core"`
