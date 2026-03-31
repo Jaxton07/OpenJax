@@ -419,4 +419,82 @@ describe("useChatApp newChat guard", () => {
     expect(mocks.submitTurn).not.toHaveBeenCalled();
     expect(apiRef!.state.globalError).toBeTruthy();
   });
+
+  it("onPolicyLevelChange calls setPolicyLevel API for existing session and does not touch draftPolicyLevel", async () => {
+    saveSessionsForBoot([
+      {
+        id: "sess_active",
+        title: "活跃会话",
+        isPlaceholderTitle: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          { id: "msg_1", kind: "text", role: "user", content: "hello", timestamp: "2026-01-01T00:00:01Z" }
+        ],
+        pendingApprovals: [],
+        policyLevel: "ask"
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    expect(apiRef!.state.activeSessionId).toBe("sess_active");
+    expect(apiRef!.draftPolicyLevel).toBe("ask");
+
+    await act(async () => {
+      apiRef!.onPolicyLevelChange("allow");
+    });
+
+    expect(mocks.setPolicyLevel).toHaveBeenCalledWith("sess_active", "allow");
+    expect(apiRef!.draftPolicyLevel).toBe("ask"); // draft policy unaffected
+  });
+
+  it("session policyLevel and draftPolicyLevel are isolated when switching between sessions and draft", async () => {
+    saveSessionsForBoot([
+      {
+        id: "sess_with_policy",
+        title: "有 policy 的会话",
+        isPlaceholderTitle: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          { id: "msg_1", kind: "text", role: "user", content: "hello", timestamp: "2026-01-01T00:00:01Z" }
+        ],
+        pendingApprovals: [],
+        policyLevel: "allow"
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    // Active session has policyLevel = "allow", draft is at "ask"
+    expect(apiRef!.activeSession?.policyLevel).toBe("allow");
+    expect(apiRef!.draftPolicyLevel).toBe("ask");
+
+    // Go to draft, set draft policy to "deny"
+    await act(async () => { await apiRef!.newChat(); });
+    expect(apiRef!.state.activeSessionId).toBeNull();
+    expect(apiRef!.draftPolicyLevel).toBe("ask"); // reset by newChat
+
+    await act(async () => { apiRef!.onPolicyLevelChange("deny"); });
+    expect(apiRef!.draftPolicyLevel).toBe("deny");
+
+    // Switch back to existing session — its own policyLevel is unchanged
+    await act(async () => { apiRef!.switchSession("sess_with_policy"); });
+    expect(apiRef!.activeSession?.policyLevel).toBe("allow");
+
+    // draftPolicyLevel persists independently (not reset by switching to existing session)
+    expect(apiRef!.draftPolicyLevel).toBe("deny");
+
+    // setPolicyLevel API was never called (only changed draft policy while in draft mode)
+    expect(mocks.setPolicyLevel).not.toHaveBeenCalled();
+  });
 });

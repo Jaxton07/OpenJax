@@ -108,6 +108,16 @@ getDraftPolicyLevel: () => draftPolicyLevelRef.current,
 
 `targetSessionId` 在 `sendMessage` 入口处捕获（`activeSessionIdRef.current`），准确反映"发送时是否为草稿"。
 
+**`setPolicyLevel` 失败时的 session 状态说明（已知 tradeoff）：**
+
+`ensureSession()` 在 `setPolicyLevel` 之前执行，因此失败时远端 session 已落库并出现在 sidebar。此时：
+- 发送已中止，`globalError` 已展示，用户可感知 —— 不属于静默降级
+- 该 session 无消息，`policyLevel` 为 `undefined`（展示为 `ask`）
+- 不做额外回滚：删除 session 需要额外网络调用，引入"失败中的失败"复杂度
+- 用户重试路径：点「新建对话」进入草稿态（`draftPolicyLevel` 保留），重新发送即可
+
+此 tradeoff 可接受；若未来需要改善，可在失败时将 `activeSessionId` 置为 `null` 使用户回到草稿态。
+
 ---
 
 ## 改动文件
