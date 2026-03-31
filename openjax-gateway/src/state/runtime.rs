@@ -82,6 +82,111 @@ impl TurnRuntime {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct TurnStreamNodeState {
+    response_segment_counter: u64,
+    reasoning_segment_counter: u64,
+    current_response_segment_id: Option<String>,
+    current_reasoning_segment_id: Option<String>,
+}
+
+impl TurnStreamNodeState {
+    fn assign_response_segment_id(&mut self, payload: &mut Value, open_new: bool) {
+        if let Some(existing) = payload
+            .get("response_segment_id")
+            .and_then(|value| value.as_str())
+        {
+            self.observe_response_segment_id(existing);
+            return;
+        }
+        let segment_id = if open_new {
+            self.open_new_response_segment()
+        } else {
+            self.current_or_open_response_segment()
+        };
+        payload["response_segment_id"] = Value::String(segment_id);
+    }
+
+    fn assign_reasoning_segment_id(&mut self, payload: &mut Value) {
+        if let Some(existing) = payload
+            .get("reasoning_segment_id")
+            .and_then(|value| value.as_str())
+        {
+            self.observe_reasoning_segment_id(existing);
+            return;
+        }
+        let segment_id = self.current_or_open_reasoning_segment();
+        payload["reasoning_segment_id"] = Value::String(segment_id);
+    }
+
+    fn observe_payload_ids(&mut self, payload: &Value) {
+        if let Some(response_id) = payload
+            .get("response_segment_id")
+            .and_then(|value| value.as_str())
+        {
+            self.observe_response_segment_id(response_id);
+        }
+        if let Some(reasoning_id) = payload
+            .get("reasoning_segment_id")
+            .and_then(|value| value.as_str())
+        {
+            self.observe_reasoning_segment_id(reasoning_id);
+        }
+    }
+
+    fn observe_response_segment_id(&mut self, segment_id: &str) {
+        self.response_segment_counter = self
+            .response_segment_counter
+            .max(parse_segment_suffix(segment_id, "resp_").unwrap_or(0));
+        self.current_response_segment_id = Some(segment_id.to_string());
+    }
+
+    fn observe_reasoning_segment_id(&mut self, segment_id: &str) {
+        self.reasoning_segment_counter = self
+            .reasoning_segment_counter
+            .max(parse_segment_suffix(segment_id, "reason_").unwrap_or(0));
+        self.current_reasoning_segment_id = Some(segment_id.to_string());
+    }
+
+    fn open_new_response_segment(&mut self) -> String {
+        self.response_segment_counter += 1;
+        let id = format!("resp_{}", self.response_segment_counter);
+        self.current_response_segment_id = Some(id.clone());
+        id
+    }
+
+    fn current_or_open_response_segment(&mut self) -> String {
+        if let Some(segment_id) = self.current_response_segment_id.clone() {
+            return segment_id;
+        }
+        self.open_new_response_segment()
+    }
+
+    fn current_or_open_reasoning_segment(&mut self) -> String {
+        if let Some(segment_id) = self.current_reasoning_segment_id.clone() {
+            return segment_id;
+        }
+        self.reasoning_segment_counter += 1;
+        let id = format!("reason_{}", self.reasoning_segment_counter);
+        self.current_reasoning_segment_id = Some(id.clone());
+        id
+    }
+
+    fn close_response_segment(&mut self) {
+        self.current_response_segment_id = None;
+    }
+
+    fn close_reasoning_segment(&mut self) {
+        self.current_reasoning_segment_id = None;
+    }
+}
+
+fn parse_segment_suffix(segment_id: &str, prefix: &str) -> Option<u64> {
+    segment_id
+        .strip_prefix(prefix)
+        .and_then(|suffix| suffix.parse::<u64>().ok())
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiTurnError {
     pub code: String,
@@ -128,6 +233,7 @@ pub struct SessionRuntime {
     pub current_turn_abort_handle: Option<tokio::task::AbortHandle>,
     pub turn_submit_in_flight: bool,
     pub turn_abort_requested: bool,
+    turn_stream_nodes: HashMap<String, TurnStreamNodeState>,
     last_event_emitted_at: Option<Instant>,
     replay_capacity: usize,
 }
@@ -157,6 +263,7 @@ impl SessionRuntime {
             current_turn_abort_handle: None,
             turn_submit_in_flight: false,
             turn_abort_requested: false,
+            turn_stream_nodes: HashMap::new(),
             last_event_emitted_at: None,
             replay_capacity,
         }
@@ -180,6 +287,7 @@ impl SessionRuntime {
         self.current_turn_abort_handle = None;
         self.turn_submit_in_flight = false;
         self.turn_abort_requested = false;
+        self.turn_stream_nodes.clear();
         self.last_event_emitted_at = None;
     }
 
@@ -200,7 +308,95 @@ impl SessionRuntime {
         self.current_turn_abort_handle = None;
         self.turn_submit_in_flight = false;
         self.turn_abort_requested = false;
+        self.turn_stream_nodes.clear();
         self.last_event_emitted_at = None;
+    }
+
+    pub fn assign_stream_node_ids(
+        &mut self,
+        turn_id: Option<&str>,
+        event_type: &str,
+        payload: &mut Value,
+    ) {
+        let Some(turn_id) = turn_id else {
+            return;
+        };
+        let should_drop_on_turn_completed = event_type == "turn_completed";
+        {
+            let state = self
+                .turn_stream_nodes
+                .entry(turn_id.to_string())
+                .or_default();
+            match event_type {
+                "response_started" | "response_resumed" => {
+                    state.assign_response_segment_id(payload, true);
+                }
+                "response_text_delta" | "response_completed" => {
+                    state.assign_response_segment_id(payload, false);
+                }
+                "reasoning_delta" => {
+                    state.assign_reasoning_segment_id(payload);
+                }
+                _ => {}
+            }
+            if matches!(
+                event_type,
+                "response_completed" | "response_error" | "turn_completed"
+            ) {
+                state.close_response_segment();
+                state.close_reasoning_segment();
+            }
+        }
+        if should_drop_on_turn_completed {
+            self.turn_stream_nodes.remove(turn_id);
+        }
+    }
+
+    pub fn observe_stream_node_ids(
+        &mut self,
+        turn_id: Option<&str>,
+        event_type: &str,
+        payload: &Value,
+    ) {
+        let Some(turn_id) = turn_id else {
+            return;
+        };
+        let should_drop_on_turn_completed = event_type == "turn_completed";
+        {
+            let state = self
+                .turn_stream_nodes
+                .entry(turn_id.to_string())
+                .or_default();
+            match event_type {
+                "response_started" | "response_resumed" => {
+                    if payload.get("response_segment_id").is_none() {
+                        state.open_new_response_segment();
+                    }
+                }
+                "response_text_delta" | "response_completed" => {
+                    if payload.get("response_segment_id").is_none() {
+                        state.current_or_open_response_segment();
+                    }
+                }
+                "reasoning_delta" => {
+                    if payload.get("reasoning_segment_id").is_none() {
+                        state.current_or_open_reasoning_segment();
+                    }
+                }
+                _ => {}
+            }
+            state.observe_payload_ids(payload);
+            if matches!(
+                event_type,
+                "response_completed" | "response_error" | "turn_completed"
+            ) {
+                state.close_response_segment();
+                state.close_reasoning_segment();
+            }
+        }
+        if should_drop_on_turn_completed {
+            self.turn_stream_nodes.remove(turn_id);
+        }
     }
 
     pub fn create_gateway_event(
@@ -345,5 +541,43 @@ mod tests {
         assert!(runtime.current_turn_abort_handle.is_none());
         assert!(!runtime.turn_submit_in_flight);
         assert!(!runtime.turn_abort_requested);
+    }
+
+    #[test]
+    fn observe_then_assign_keeps_segment_counters_monotonic_after_recovery() {
+        let mut runtime = SessionRuntime::new_with_config(Config::default());
+        runtime.observe_stream_node_ids(
+            Some("turn_1"),
+            "response_started",
+            &json!({ "response_segment_id": "resp_2" }),
+        );
+        runtime.observe_stream_node_ids(
+            Some("turn_1"),
+            "reasoning_delta",
+            &json!({ "reasoning_segment_id": "reason_3" }),
+        );
+        runtime.observe_stream_node_ids(Some("turn_1"), "response_completed", &json!({}));
+
+        let mut resumed_payload = json!({ "stream_source": "replay" });
+        runtime.assign_stream_node_ids(Some("turn_1"), "response_resumed", &mut resumed_payload);
+        assert_eq!(resumed_payload["response_segment_id"], "resp_3");
+
+        let mut reasoning_payload = json!({ "content_delta": "new think" });
+        runtime.assign_stream_node_ids(Some("turn_1"), "reasoning_delta", &mut reasoning_payload);
+        assert_eq!(reasoning_payload["reasoning_segment_id"], "reason_4");
+    }
+
+    #[test]
+    fn response_and_reasoning_segments_close_on_terminal_events() {
+        let mut runtime = SessionRuntime::new_with_config(Config::default());
+        let mut response_payload = json!({ "stream_source": "model_live" });
+        runtime.assign_stream_node_ids(Some("turn_1"), "response_started", &mut response_payload);
+        let mut reasoning_payload = json!({ "content_delta": "r1" });
+        runtime.assign_stream_node_ids(Some("turn_1"), "reasoning_delta", &mut reasoning_payload);
+        runtime.assign_stream_node_ids(Some("turn_1"), "response_error", &mut json!({}));
+
+        let mut next_reasoning = json!({ "content_delta": "r2" });
+        runtime.assign_stream_node_ids(Some("turn_1"), "reasoning_delta", &mut next_reasoning);
+        assert_eq!(next_reasoning["reasoning_segment_id"], "reason_2");
     }
 }

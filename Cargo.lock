@@ -1345,6 +1345,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
+ "base64",
  "futures-util",
  "hex",
  "openjax-core",

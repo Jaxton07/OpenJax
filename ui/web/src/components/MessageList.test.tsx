@@ -260,6 +260,50 @@ describe("MessageList", () => {
     expect(screen.getByText("const greeting = 'hello'")).toBeInTheDocument();
   });
 
+  it("keeps draft rendering isolated by response segment id in the same turn", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m_resp_1",
+        kind: "text",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-01-01T00:00:00Z",
+        turnId: "turn_1",
+        responseSegmentId: "resp_1",
+        isDraft: true
+      },
+      {
+        id: "m_resp_2",
+        kind: "text",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-01-01T00:00:01Z",
+        turnId: "turn_1",
+        responseSegmentId: "resp_2",
+        isDraft: true
+      }
+    ];
+    act(() => {
+      streamRenderStore.start("sess_1", "turn_1", "m_resp_1", 1, "", "resp_1");
+      streamRenderStore.append("sess_1", "turn_1", "第一段", 2, "resp_1");
+      streamRenderStore.complete("sess_1", "turn_1", "第一段", 3, "resp_1");
+      streamRenderStore.start("sess_1", "turn_1", "m_resp_2", 3, "", "resp_2");
+      streamRenderStore.append("sess_1", "turn_1", "第二段", 4, "resp_2");
+      streamRenderStore.complete("sess_1", "turn_1", "第二段", 5, "resp_2");
+    });
+
+    render(
+      <MessageList
+        sessionId="sess_1"
+        messages={messages}
+        pendingApprovals={[]}
+        onResolveApproval={() => {}}
+      />
+    );
+    expect(screen.getByText("第一段")).toBeInTheDocument();
+    expect(screen.getByText("第二段")).toBeInTheDocument();
+  });
+
   it("does not execute html script in assistant markdown", () => {
     const messages: ChatMessage[] = [
       {

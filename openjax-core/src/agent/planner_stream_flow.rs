@@ -109,16 +109,22 @@ impl Agent {
                     let display_name = self.tools.display_name_for(&tool_name);
                     let target = args_accum
                         .remove(&id)
-                        .and_then(|json_str| serde_json::from_str::<serde_json::Value>(&json_str).ok())
+                        .and_then(|json_str| {
+                            serde_json::from_str::<serde_json::Value>(&json_str).ok()
+                        })
                         .and_then(|v| {
                             v.as_object().map(|obj| {
                                 obj.iter()
-                                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                                    .filter_map(|(k, v)| {
+                                        v.as_str().map(|s| (k.clone(), s.to_string()))
+                                    })
                                     .collect::<HashMap<String, String>>()
                             })
                         })
                         .as_ref()
-                        .and_then(|args| crate::agent::planner_utils::extract_tool_target_hint(&tool_name, args));
+                        .and_then(|args| {
+                            crate::agent::planner_utils::extract_tool_target_hint(&tool_name, args)
+                        });
                     self.push_event(
                         events,
                         Event::ToolCallReady {

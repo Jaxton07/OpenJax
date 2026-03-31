@@ -6,6 +6,7 @@ mod handlers;
 mod middleware;
 pub mod state;
 pub mod stdio;
+pub mod transcript;
 
 pub use auth::{ApiKeyConfig, ApiKeySource, load_api_keys};
 pub use state::AppState;
@@ -86,7 +87,9 @@ pub fn build_app(state: AppState, static_dir: Option<PathBuf>) -> Router {
         )
         .route(
             "/api/v1/sessions/:session_id",
-            post(handlers::session_action).delete(handlers::shutdown_session),
+            post(handlers::session_action)
+                .delete(handlers::shutdown_session)
+                .patch(handlers::update_session_metadata),
         )
         .route("/api/v1/slash_commands", get(handlers::list_slash_commands))
         .route(

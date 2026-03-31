@@ -2,7 +2,14 @@ import { humanizeError, isAuthenticationError } from "../../lib/errors";
 import { streamRenderStore } from "../../lib/streamRenderStore";
 import type { GatewayClient } from "../../lib/gatewayClient";
 import type { ChatSession, ChatState, PendingApproval } from "../../types/chat";
-import { createLocalSession, humanizeProviderError, INFO_TOAST_ALREADY_IN_NEW_CHAT, isEmptyDraftSession, summarizeTitle } from "./session-model";
+import {
+  createLocalSession,
+  humanizeProviderError,
+  INFO_TOAST_ALREADY_IN_NEW_CHAT,
+  isEmptyDraftSession,
+  PLACEHOLDER_SESSION_TITLE,
+  summarizeTitle
+} from "./session-model";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 type SetState = Dispatch<SetStateAction<ChatState>>;
@@ -14,6 +21,7 @@ interface EnsureSessionParams {
   client: GatewayClient;
   setState: SetState;
   clearAuthState: (message: string) => void;
+  shouldActivateCreatedSession?: () => boolean;
 }
 
 export async function ensureSessionAction(params: EnsureSessionParams): Promise<string> {
@@ -28,12 +36,13 @@ export async function ensureSessionAction(params: EnsureSessionParams): Promise<
     params.setState((prev) => ({
       ...prev,
       sessions: [session, ...prev.sessions],
-      activeSessionId: session.id,
+      activeSessionId: params.shouldActivateCreatedSession?.() === false ? prev.activeSessionId : session.id,
       loading: false
     }));
     return session.id;
   } catch (error) {
     if (isAuthenticationError(error)) {
+      params.setState((prev) => ({ ...prev, loading: false }));
       params.clearAuthState("认证失效，请重新登录。");
     } else {
       params.setState((prev) => ({ ...prev, loading: false, globalError: humanizeError(error) }));
@@ -52,6 +61,15 @@ interface SendMessageParams {
   pollingAbortRef: MutableRefObject<AbortController | null>;
   clearAuthState: (message: string) => void;
   setState: SetState;
+  getSessionTurnPhase?: (sessionId: string) => ChatSession["turnPhase"] | undefined;
+  getSessionTitle?: (sessionId: string) => string | undefined;
+  getSessionIsPlaceholderTitle?: (sessionId: string) => boolean | undefined;
+  getSessionMessageCount?: (sessionId: string) => number | undefined;
+  tryBeginSubmit?: (sessionId: string) => boolean;
+  endSubmit?: (sessionId: string) => void;
+  notifyBusyTurnBlockedSend?: () => void;
+  isDraftSend?: boolean;
+  getDraftPolicyLevel?: () => "allow" | "ask" | "deny";
 }
 
 export async function sendMessageAction(params: SendMessageParams): Promise<void> {
@@ -61,14 +79,50 @@ export async function sendMessageAction(params: SendMessageParams): Promise<void
   }
 
   const sessionId = await params.ensureSession();
+
+  // Apply draft policy for newly created sessions before gating
+  if (params.isDraftSend && params.getDraftPolicyLevel) {
+    const level = params.getDraftPolicyLevel();
+    if (level !== "ask") {
+      try {
+        await params.withAuthRetry(() => params.client.setPolicyLevel(sessionId, level));
+        params.updateSession(sessionId, (s) => ({ ...s, policyLevel: level }));
+      } catch (error) {
+        if (isAuthenticationError(error)) {
+          params.clearAuthState("登录态已失效，请重新登录。");
+          return;
+        }
+        params.setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
+        return;
+      }
+    }
+  }
+
+  const gateAccepted = params.tryBeginSubmit ? params.tryBeginSubmit(sessionId) : true;
+  if (!gateAccepted) {
+    params.notifyBusyTurnBlockedSend?.();
+    return;
+  }
+  const priorTurnPhase = params.getSessionTurnPhase?.(sessionId);
+  const priorTitle = params.getSessionTitle?.(sessionId);
+  const priorIsPlaceholderTitle = params.getSessionIsPlaceholderTitle?.(sessionId);
+  const priorMessageCount = params.getSessionMessageCount?.(sessionId) ?? 0;
+  const optimisticTitle = priorMessageCount === 0 ? summarizeTitle(message) : undefined;
+  if (isBusyTurnPhase(priorTurnPhase)) {
+    params.notifyBusyTurnBlockedSend?.();
+    params.endSubmit?.(sessionId);
+    return;
+  }
+  const optimisticMessageId = crypto.randomUUID();
   params.updateSession(sessionId, (session) => ({
     ...session,
     turnPhase: "submitting",
-    title: session.messages.length === 0 ? summarizeTitle(message) : session.title,
+    title: session.messages.length === 0 ? (optimisticTitle ?? session.title) : session.title,
+    isPlaceholderTitle: session.messages.length === 0 ? false : session.isPlaceholderTitle,
     messages: [
       ...session.messages,
       {
-        id: crypto.randomUUID(),
+        id: optimisticMessageId,
         kind: "text",
         role: "user",
         content: message,
@@ -130,13 +184,44 @@ export async function sendMessageAction(params: SendMessageParams): Promise<void
       }
     }
   } catch (error) {
-    params.updateSession(sessionId, (session) => ({ ...session, turnPhase: "failed" }));
     if (isAuthenticationError(error)) {
       params.clearAuthState("登录态已失效，请重新登录。");
       return;
     }
+    if (isGatewayConflictError(error)) {
+      params.updateSession(sessionId, (session) => ({
+        ...session,
+        turnPhase: session.turnPhase === "submitting" ? (priorTurnPhase ?? "draft") : session.turnPhase,
+        title:
+          priorMessageCount === 0 && optimisticTitle && session.title === optimisticTitle
+            ? (priorTitle ?? session.title)
+            : session.title,
+        isPlaceholderTitle:
+          priorMessageCount === 0 && optimisticTitle && session.title === optimisticTitle
+            ? (priorIsPlaceholderTitle ?? session.isPlaceholderTitle)
+            : session.isPlaceholderTitle,
+        messages: session.messages.filter((item) => item.id !== optimisticMessageId)
+      }));
+      params.notifyBusyTurnBlockedSend?.();
+      return;
+    }
+    params.updateSession(sessionId, (session) => ({ ...session, turnPhase: "failed" }));
     params.setState((prev) => ({ ...prev, globalError: humanizeProviderError(error) }));
+  } finally {
+    params.endSubmit?.(sessionId);
   }
+}
+
+function isBusyTurnPhase(phase: ChatSession["turnPhase"] | undefined): boolean {
+  return phase === "submitting" || phase === "streaming";
+}
+
+function isGatewayConflictError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const gateway = error as Partial<{ code: string; status: number }>;
+  return gateway.code === "CONFLICT" || gateway.status === 409;
 }
 
 interface NewChatParams {
@@ -148,26 +233,16 @@ interface NewChatParams {
 }
 
 export async function newChatAction(params: NewChatParams): Promise<void> {
-  if (isEmptyDraftSession(params.activeSession)) {
+  if (!params.activeSession || isEmptyDraftSession(params.activeSession)) {
     params.setState((prev) => ({ ...prev, infoToast: INFO_TOAST_ALREADY_IN_NEW_CHAT, globalError: null }));
     return;
   }
-  try {
-    const created = await params.withAuthRetry(() => params.client.startSession());
-    const session = createLocalSession(created.session_id);
-    params.setState((prev) => ({
-      ...prev,
-      sessions: [session, ...prev.sessions],
-      activeSessionId: session.id,
-      globalError: null
-    }));
-  } catch (error) {
-    if (isAuthenticationError(error)) {
-      params.clearAuthState("登录态已失效，请重新登录。");
-      return;
-    }
-    params.setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
-  }
+  params.setState((prev) => ({
+    ...prev,
+    activeSessionId: null,
+    globalError: null,
+    infoToast: null
+  }));
 }
 
 interface DeleteSessionParams {
@@ -280,6 +355,8 @@ export async function clearConversationAction(params: ClearConversationParams): 
     streamRenderStore.clear(params.activeSessionId);
     params.updateSession(params.activeSessionId, (session) => ({
       ...session,
+      title: PLACEHOLDER_SESSION_TITLE,
+      isPlaceholderTitle: true,
       messages: [],
       pendingApprovals: [],
       turnPhase: "draft"
@@ -340,6 +417,7 @@ interface ChangePolicyLevelParams {
   client: GatewayClient;
   sessionId: string;
   level: "allow" | "ask" | "deny";
+  withAuthRetry: WithAuthRetry;
   updateSession: (sessionId: string, updater: (session: ChatSession) => ChatSession) => void;
   clearAuthState: (message: string) => void;
   setState: SetState;
@@ -347,7 +425,7 @@ interface ChangePolicyLevelParams {
 
 export async function changePolicyLevelAction(params: ChangePolicyLevelParams): Promise<void> {
   try {
-    await params.client.setPolicyLevel(params.sessionId, params.level);
+    await params.withAuthRetry(() => params.client.setPolicyLevel(params.sessionId, params.level));
     params.updateSession(params.sessionId, (session) => ({
       ...session,
       policyLevel: params.level,

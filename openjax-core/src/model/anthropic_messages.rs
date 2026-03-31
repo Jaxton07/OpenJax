@@ -1081,8 +1081,8 @@ mod tests {
         build_messages_endpoint, extract_content_blocks_from_body, extract_delta_content_from_body,
         extract_delta_thinking_from_body, extract_thinking_from_body, is_message_stop_frame,
     };
-    use crate::model::request_profiles::anthropic_messages::AnthropicMessagesRequestProfile;
     use crate::model::registry::RegisteredModel;
+    use crate::model::request_profiles::anthropic_messages::AnthropicMessagesRequestProfile;
     use crate::model::types::{
         AssistantContentBlock, CapabilityFlags, ConversationMessage, ModelRequest, ModelStage,
     };

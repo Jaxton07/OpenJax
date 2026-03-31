@@ -19,6 +19,7 @@ export interface ToolStepMeta {
 export interface ReasoningBlock {
   blockId: string;
   turnId: string;
+  reasoningSegmentId?: string;
   content: string;
   collapsed: boolean;
   startedAt: string;
@@ -64,6 +65,7 @@ export interface ChatMessage {
   textLastEventSeq?: number;
   textEndEventSeq?: number;
   turnId?: string;
+  responseSegmentId?: string;
   isDraft?: boolean;
   hasCanonicalDelta?: boolean;
   interrupted?: boolean;
@@ -98,6 +100,7 @@ export interface ContextUsageState {
 export interface ChatSession {
   id: string;
   title: string;
+  isPlaceholderTitle: boolean;
   createdAt: string;
   connection: SessionConnection;
   turnPhase: TurnPhase;
@@ -113,6 +116,8 @@ export interface ChatState {
   settings: AppSettings;
   auth: AuthState;
   sessions: ChatSession[];
+  sessionsNextCursor: string | null;
+  sessionsLoadingMore: boolean;
   activeSessionId: string | null;
   globalError: string | null;
   infoToast: string | null;

@@ -35,7 +35,7 @@ export function humanizeError(error: unknown): string {
       case "TIMEOUT":
         return "网关暂不可用，可稍后重试。";
       case "CONFLICT":
-        return "检测到异常登录行为，请重新登录。";
+        return "Please wait for the current response to finish.";
       case "NOT_IMPLEMENTED":
         return "该能力尚未实现。";
       default:

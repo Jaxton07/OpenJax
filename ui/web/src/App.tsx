@@ -35,6 +35,9 @@ export default function App() {
     authenticate,
     logout,
     newChat,
+    loadMoreSessions,
+    sidebarHasMore,
+    sidebarLoadingMore,
     switchSession,
     deleteSession,
     sendMessage,
@@ -53,10 +56,13 @@ export default function App() {
     fetchCatalog,
     dismissGlobalError,
     dismissToast,
-    sendPolicyLevel,
+    draftPolicyLevel,
+    onPolicyLevelChange,
     isStreaming,
+    isBusyTurn,
     abortTurn,
-    clearConversation
+    clearConversation,
+    notifyBusyTurnBlockedSend
   } = useChatApp();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -141,6 +147,9 @@ export default function App() {
         collapsed={sidebarCollapsed}
         onSelectSession={switchSession}
         onDeleteSession={deleteSession}
+        onLoadMoreSessions={() => void loadMoreSessions()}
+        hasMoreSessions={sidebarHasMore}
+        loadingMoreSessions={sidebarLoadingMore}
         onManageSessions={() => void manageAuthSessions()}
         onLogout={() => {
           void logout();
@@ -212,9 +221,11 @@ export default function App() {
           onSend={sendMessage}
           onNewChat={() => void newChat()}
           onClear={() => void clearConversation()}
-          policyLevel={activeSession?.policyLevel ?? "ask"}
-          onPolicyLevelChange={(level) => void sendPolicyLevel(activeSession!.id, level)}
+          policyLevel={activeSession?.policyLevel ?? draftPolicyLevel}
+          onPolicyLevelChange={onPolicyLevelChange}
+          isBusyTurn={isBusyTurn}
           isStreaming={isStreaming}
+          onBlockedSendAttempt={notifyBusyTurnBlockedSend}
           onStop={() => void abortTurn()}
         />
       </main>

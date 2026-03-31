@@ -26,7 +26,10 @@ import { clearAuthStateRuntime, refreshAccessTokenRuntime, withAuthRetryRuntime 
 import {
   buildChatSessionFromGateway,
   isEmptyDraftSession,
-  isSessionNotFoundError
+  isSessionNotFoundError,
+  PLACEHOLDER_SESSION_TITLE,
+  resolveSessionTitle,
+  summarizeTitle
 } from "./chatApp/session-model";
 import {
   changePolicyLevelAction,
@@ -39,28 +42,108 @@ import {
   resolveApprovalAction,
   sendMessageAction
 } from "./chatApp/session-actions";
+import { createBusyTurnNotifier } from "./chatApp/busyTurnNotifier";
 
 export { buildChatSessionFromGateway, mapGatewayRoleToMessageRole } from "./chatApp/session-model";
 
 const MAX_RECONNECT_RETRY = 6;
 const STREAM_DEBUG_ENABLED = resolveWebStreamDebugEnabled();
 
+export async function fetchSidebarSessionSummaries(
+  apiClient: Pick<GatewayClient, "listChatSessions">,
+  cursor?: string,
+  limit = 50,
+): Promise<{ summaries: GatewaySessionSummary[]; nextCursor: string | null }> {
+  const sessionsResponse = await apiClient.listChatSessions({ cursor, limit });
+  return {
+    summaries: sessionsResponse.sessions,
+    nextCursor: sessionsResponse.next_cursor ?? null
+  };
+}
+
+export function buildSidebarSessionsFromSummaries(summaries: GatewaySessionSummary[]): ChatSession[] {
+  const hydrated: ChatSession[] = [];
+  for (const remoteSession of summaries) {
+    const resolved = resolveSessionTitle({ remoteTitle: remoteSession.title });
+    hydrated.push({
+      id: remoteSession.session_id,
+      ...resolved,
+      createdAt: remoteSession.created_at,
+      connection: "idle",
+      turnPhase: "draft",
+      lastEventSeq: 0,
+      messages: [],
+      pendingApprovals: []
+    });
+  }
+  const deduped = new Map<string, ChatSession>();
+  for (const session of hydrated) {
+    if (!deduped.has(session.id)) {
+      deduped.set(session.id, session);
+    }
+  }
+  return Array.from(deduped.values());
+}
+
+export function mergeHydratedSessionFromTimeline(current: ChatSession, timelineEvents: StreamEvent[]): ChatSession {
+  const incremental = timelineEvents.filter((event) => event.event_seq > current.lastEventSeq);
+  const rebuilt = incremental.length === 0 ? current : applySessionEvents(current, incremental);
+  const firstUserMessage = rebuilt.messages.find((message) => message.role === "user");
+  const resolved = resolveSessionTitle({
+    localTitle: current.title,
+    localIsPlaceholderTitle: current.isPlaceholderTitle,
+    inferredTitle: summarizeTitle(firstUserMessage?.content ?? "")
+  });
+  const titleChanged =
+    resolved.title !== current.title || resolved.isPlaceholderTitle !== current.isPlaceholderTitle;
+  if (incremental.length === 0) {
+    return titleChanged ? { ...current, ...resolved } : current;
+  }
+  return {
+    ...current,
+    ...rebuilt,
+    ...resolved
+  };
+}
+
+function normalizeCachedSessionTitle(session: ChatSession): ChatSession {
+  if (typeof session.isPlaceholderTitle === "boolean") {
+    return session;
+  }
+  return {
+    ...session,
+    isPlaceholderTitle: session.title.trim() === PLACEHOLDER_SESSION_TITLE
+  };
+}
+
 export function useChatApp() {
-  const initialSessions = loadSessions();
+  const initialSessions = loadSessions().map(normalizeCachedSessionTitle);
   const [state, setState] = useState<ChatState>(() => ({
     settings: loadSettings(),
     auth: loadAuth(),
     sessions: initialSessions,
+    sessionsNextCursor: null,
+    sessionsLoadingMore: false,
     activeSessionId: initialSessions[0]?.id ?? null,
     globalError: null,
     infoToast: null,
     loading: false
   }));
 
+  const [draftPolicyLevel, setDraftPolicyLevel] = useState<"allow" | "ask" | "deny">("ask");
+  const draftPolicyLevelRef = useRef<"allow" | "ask" | "deny">("ask");
+  useEffect(() => {
+    draftPolicyLevelRef.current = draftPolicyLevel;
+  }, [draftPolicyLevel]);
+
   const reconnectAbortRef = useRef<AbortController | null>(null);
   const pollingAbortRef = useRef<AbortController | null>(null);
   const sessionsRef = useRef(state.sessions);
+  const activeSessionIdRef = useRef(state.activeSessionId);
+  const hydratedSessionsRef = useRef<Record<string, boolean>>({});
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
+  const ensureDraftSessionPromiseRef = useRef<Promise<string> | null>(null);
+  const submittingSessionIdsRef = useRef<Set<string>>(new Set());
   const sseRunTokenRef = useRef<Record<string, number>>({});
   const nextSseRunTokenRef = useRef(1);
   const lastEventSeqRef = useRef<Record<string, number>>(
@@ -77,7 +160,13 @@ export function useChatApp() {
     lastEventSeqRef.current = nextLastSeq;
   }, [state.sessions]);
 
+  useEffect(() => {
+    activeSessionIdRef.current = state.activeSessionId;
+  }, [state.activeSessionId]);
+
   const applyIncomingEvent = useCallback((sessionId: string, event: StreamEvent) => {
+    const responseSegmentId =
+      typeof event.payload.response_segment_id === "string" ? event.payload.response_segment_id : undefined;
     const seenSeq = lastEventSeqRef.current[sessionId] ?? 0;
     const seqReset = isSequenceResetEvent(event);
     if (!seqReset && event.event_seq <= seenSeq) {
@@ -100,20 +189,20 @@ export function useChatApp() {
 
     if (event.type === "response_text_delta") {
       recordDeltaReceived(sessionId);
-      streamRenderStore.append(sessionId, event.turn_id, String(event.payload.content_delta ?? ""), event.event_seq);
+      streamRenderStore.append(
+        sessionId,
+        event.turn_id,
+        String(event.payload.content_delta ?? ""),
+        event.event_seq,
+        responseSegmentId
+      );
       setState((prev) => {
         let changed = false;
         const sessions = prev.sessions.map((session) => {
           if (session.id !== sessionId) {
             return session;
           }
-          const withReasoningClosed = closeOpenReasoningBlockInSession(session, event.turn_id, event.event_seq, event.timestamp);
-          const next = touchAssistantTextSeqInSession(
-            withReasoningClosed,
-            event.turn_id,
-            event.event_seq,
-            event.timestamp
-          );
+          const next = touchAssistantTextSeqInSession(session, event.turn_id, event.event_seq, event.timestamp);
           changed = changed || next !== session;
           return next;
         });
@@ -130,7 +219,7 @@ export function useChatApp() {
       return;
     }
 
-    if (event.type === "response_started") {
+    if (event.type === "response_started" || event.type === "response_resumed") {
       let startedMessageId: string | undefined;
       let startedContent = "";
       setState((prev) => {
@@ -147,14 +236,21 @@ export function useChatApp() {
         });
         return changed ? { ...prev, sessions } : prev;
       });
-      streamRenderStore.start(sessionId, event.turn_id, startedMessageId, event.event_seq, startedContent);
+      streamRenderStore.start(
+        sessionId,
+        event.turn_id,
+        startedMessageId,
+        event.event_seq,
+        startedContent,
+        responseSegmentId
+      );
       return;
     }
 
     if (event.type === "response_completed") {
       const payloadContent = String(event.payload.content ?? "");
-      streamRenderStore.complete(sessionId, event.turn_id, payloadContent, event.event_seq);
-      const snapshot = streamRenderStore.getSnapshot(sessionId, event.turn_id);
+      streamRenderStore.complete(sessionId, event.turn_id, payloadContent, event.event_seq, responseSegmentId);
+      const snapshot = streamRenderStore.getSnapshot(sessionId, event.turn_id, responseSegmentId);
       const finalizedContent = payloadContent.length > 0 ? payloadContent : snapshot.content;
       setState((prev) => {
         let changed = false;
@@ -176,7 +272,7 @@ export function useChatApp() {
     }
 
     if (event.type === "response_error") {
-      streamRenderStore.fail(sessionId, event.turn_id, event.event_seq);
+      streamRenderStore.fail(sessionId, event.turn_id, event.event_seq, responseSegmentId);
     }
     if (event.type === "turn_completed") {
       streamRenderStore.clear(sessionId, event.turn_id);
@@ -216,12 +312,23 @@ export function useChatApp() {
     () => state.sessions.find((session) => session.id === state.activeSessionId) ?? null,
     [state.activeSessionId, state.sessions]
   );
+  const isBusyTurn = useMemo(
+    () => activeSession != null && (activeSession.turnPhase === "submitting" || activeSession.turnPhase === "streaming"),
+    [activeSession]
+  );
   const isStreaming = useMemo(
     () =>
       activeSession != null &&
       activeSession.turnPhase === "streaming" &&
       activeSession.pendingApprovals.length === 0,
     [activeSession]
+  );
+  const notifyBusyTurnBlockedSend = useMemo(
+    () =>
+      createBusyTurnNotifier((message) => {
+        setState((prev) => ({ ...prev, infoToast: message }));
+      }),
+    []
   );
 
   const clearAuthState = useCallback((message: string) => {
@@ -264,15 +371,29 @@ export function useChatApp() {
     }));
   }, []);
 
-  const ensureSession = useCallback(async (): Promise<string> => {
-    return ensureSessionAction({
-      activeSessionId: state.activeSessionId,
+  const ensureSession = useCallback(async (targetSessionId?: string | null): Promise<string> => {
+    const currentActiveSessionId = targetSessionId ?? activeSessionIdRef.current;
+    if (currentActiveSessionId) {
+      return currentActiveSessionId;
+    }
+    if (ensureDraftSessionPromiseRef.current) {
+      return ensureDraftSessionPromiseRef.current;
+    }
+    const task = ensureSessionAction({
+      activeSessionId: null,
       withAuthRetry,
       client,
       setState,
-      clearAuthState
+      clearAuthState,
+      shouldActivateCreatedSession: () => activeSessionIdRef.current === null
+    }).finally(() => {
+      if (ensureDraftSessionPromiseRef.current === task) {
+        ensureDraftSessionPromiseRef.current = null;
+      }
     });
-  }, [clearAuthState, client, state.activeSessionId, withAuthRetry]);
+    ensureDraftSessionPromiseRef.current = task;
+    return task;
+  }, [clearAuthState, client, withAuthRetry]);
 
   const startSseLoop = useCallback(
     (sessionId: string) => {
@@ -391,25 +512,16 @@ export function useChatApp() {
     void fetchPolicyLevelAction({ client, sessionId, updateSession });
   }, [activeSession?.id, state.auth.authenticated, state.auth.accessToken, client, updateSession]);
 
-  const hydrateSessionsFromGateway = useCallback(async (apiClient: GatewayClient): Promise<ChatSession[]> => {
-    const sessionsResponse = await apiClient.listChatSessions();
-    const hydrated: ChatSession[] = [];
-    for (const remoteSession of sessionsResponse.sessions) {
-      try {
-        const timelineResponse = await apiClient.listSessionTimeline(remoteSession.session_id);
-        hydrated.push(buildChatSessionFromGateway(remoteSession, timelineResponse.events));
-      } catch {
-        continue;
-      }
-    }
-    const deduped = new Map<string, ChatSession>();
-    for (const session of hydrated) {
-      if (!deduped.has(session.id)) {
-        deduped.set(session.id, session);
-      }
-    }
-    return Array.from(deduped.values());
-  }, []);
+  const hydrateSessionsFromGateway = useCallback(
+    async (apiClient: GatewayClient): Promise<{ sessions: ChatSession[]; nextCursor: string | null }> => {
+      const page = await fetchSidebarSessionSummaries(apiClient, undefined, 50);
+      return {
+        sessions: buildSidebarSessionsFromSummaries(page.summaries),
+        nextCursor: page.nextCursor
+      };
+    },
+    []
+  );
 
   const authenticate = useCallback(
     async (baseUrlInput: string, ownerKeyInput: string) => {
@@ -428,17 +540,24 @@ export function useChatApp() {
           accessToken: result.access_token
         });
         let sessions: ChatSession[] = [];
+        let nextCursor: string | null = null;
         let toast = "登录成功";
         try {
-          sessions = await hydrateSessionsFromGateway(authedClient);
+          const hydrated = await hydrateSessionsFromGateway(authedClient);
+          sessions = hydrated.sessions;
+          nextCursor = hydrated.nextCursor;
           toast = sessions.length > 0 ? `登录成功，已同步 ${sessions.length} 个历史会话` : "登录成功，暂无历史会话";
         } catch {
-          sessions = loadSessions();
+          sessions = loadSessions().map(normalizeCachedSessionTitle);
+          nextCursor = null;
           toast = "历史同步失败，已使用本地缓存";
         }
         for (const session of sessionsRef.current) {
           streamRenderStore.clear(session.id);
         }
+        hydratedSessionsRef.current = Object.fromEntries(
+          sessions.map((session) => [session.id, false])
+        );
         lastEventSeqRef.current = Object.fromEntries(
           sessions.map((session) => [session.id, session.lastEventSeq])
         );
@@ -464,6 +583,8 @@ export function useChatApp() {
             scope: result.scope
           },
           sessions,
+          sessionsNextCursor: nextCursor,
+          sessionsLoadingMore: false,
           activeSessionId: sessions[0]?.id ?? null,
           globalError: null,
           infoToast: toast
@@ -476,6 +597,93 @@ export function useChatApp() {
     },
     [hydrateSessionsFromGateway, state.settings]
   );
+
+  useEffect(() => {
+    const session = activeSession;
+    if (!session || !state.auth.authenticated || !state.auth.accessToken) {
+      return;
+    }
+    if (hydratedSessionsRef.current[session.id]) {
+      return;
+    }
+    if (isEmptyDraftSession(session)) {
+      hydratedSessionsRef.current[session.id] = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const timeline = await withAuthRetry(() => client.listSessionTimeline(session.id));
+        if (cancelled) {
+          return;
+        }
+        updateSession(session.id, (current) => {
+          return mergeHydratedSessionFromTimeline(current, timeline.events);
+        });
+      } catch {
+        // keep sidebar responsive even if this session timeline fails to hydrate
+      } finally {
+        if (!cancelled) {
+          hydratedSessionsRef.current[session.id] = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSession,
+    client,
+    state.auth.accessToken,
+    state.auth.authenticated,
+    updateSession,
+    withAuthRetry
+  ]);
+
+  const loadMoreSessions = useCallback(async () => {
+    if (
+      !state.auth.authenticated ||
+      !state.auth.accessToken ||
+      !state.sessionsNextCursor ||
+      state.sessionsLoadingMore
+    ) {
+      return;
+    }
+    setState((prev) => ({ ...prev, sessionsLoadingMore: true }));
+    try {
+      const page = await withAuthRetry(() =>
+        fetchSidebarSessionSummaries(client, state.sessionsNextCursor ?? undefined, 50)
+      );
+      const nextSessions = buildSidebarSessionsFromSummaries(page.summaries);
+      setState((prev) => {
+        const deduped = new Map(prev.sessions.map((session) => [session.id, session]));
+        for (const session of nextSessions) {
+          if (!deduped.has(session.id)) {
+            deduped.set(session.id, session);
+          }
+        }
+        return {
+          ...prev,
+          sessions: Array.from(deduped.values()),
+          sessionsNextCursor: page.nextCursor,
+          sessionsLoadingMore: false
+        };
+      });
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        sessionsLoadingMore: false,
+        globalError: humanizeError(error)
+      }));
+    }
+  }, [
+    client,
+    state.auth.accessToken,
+    state.auth.authenticated,
+    state.sessionsLoadingMore,
+    state.sessionsNextCursor,
+    withAuthRetry
+  ]);
 
   const logout = useCallback(async () => {
     reconnectAbortRef.current?.abort();
@@ -495,6 +703,8 @@ export function useChatApp() {
       ...prev,
       auth: { authenticated: false, accessToken: "", sessionId: null, scope: null },
       sessions: [],
+      sessionsNextCursor: null,
+      sessionsLoadingMore: false,
       activeSessionId: null,
       globalError: null,
       infoToast: null
@@ -503,22 +713,45 @@ export function useChatApp() {
 
   const sendMessage = useCallback(
     async (content: string) => {
+      const targetSessionId = activeSessionIdRef.current;
       await sendMessageAction({
         content,
-        ensureSession,
+        ensureSession: () => ensureSession(targetSessionId),
+        isDraftSend: !targetSessionId,
+        getDraftPolicyLevel: () => draftPolicyLevelRef.current,
         updateSession,
         withAuthRetry,
         client,
         outputMode: state.settings.outputMode,
         pollingAbortRef,
         clearAuthState,
-        setState
+        setState,
+        getSessionTurnPhase: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.turnPhase,
+        getSessionTitle: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.title,
+        getSessionIsPlaceholderTitle: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.isPlaceholderTitle,
+        getSessionMessageCount: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.messages.length,
+        tryBeginSubmit: (sessionId: string) => {
+          if (submittingSessionIdsRef.current.has(sessionId)) {
+            return false;
+          }
+          submittingSessionIdsRef.current.add(sessionId);
+          return true;
+        },
+        endSubmit: (sessionId: string) => {
+          submittingSessionIdsRef.current.delete(sessionId);
+        },
+        notifyBusyTurnBlockedSend
       });
     },
     [
       clearAuthState,
       client,
       ensureSession,
+      notifyBusyTurnBlockedSend,
       state.settings.outputMode,
       updateSession,
       withAuthRetry
@@ -526,6 +759,9 @@ export function useChatApp() {
   );
 
   const newChat = useCallback(async () => {
+    if (activeSession && !isEmptyDraftSession(activeSession)) {
+      activeSessionIdRef.current = null;
+    }
     await newChatAction({
       activeSession,
       withAuthRetry,
@@ -533,9 +769,11 @@ export function useChatApp() {
       setState,
       clearAuthState
     });
+    setDraftPolicyLevel("ask");
   }, [activeSession, clearAuthState, client, withAuthRetry]);
 
   const switchSession = useCallback((sessionId: string) => {
+    activeSessionIdRef.current = sessionId;
     setState((prev) => ({ ...prev, activeSessionId: sessionId, globalError: null }));
   }, []);
 
@@ -767,12 +1005,24 @@ export function useChatApp() {
         client,
         sessionId,
         level,
+        withAuthRetry,
         updateSession,
         clearAuthState,
         setState
       });
     },
-    [client, updateSession, clearAuthState]
+    [client, withAuthRetry, updateSession, clearAuthState]
+  );
+
+  const onPolicyLevelChange = useCallback(
+    (level: "allow" | "ask" | "deny") => {
+      if (activeSession != null) {
+        void sendPolicyLevel(activeSession.id, level);
+      } else {
+        setDraftPolicyLevel(level);
+      }
+    },
+    [activeSession, sendPolicyLevel]
   );
 
   const dismissGlobalError = useCallback(() => {
@@ -786,11 +1036,13 @@ export function useChatApp() {
   return {
     state,
     activeSession,
+    isBusyTurn,
     isStreaming,
     isAuthenticated: state.auth.authenticated,
     authenticate,
     logout,
     newChat,
+    loadMoreSessions,
     switchSession,
     deleteSession,
     sendMessage,
@@ -811,8 +1063,13 @@ export function useChatApp() {
     setActiveProvider,
     fetchCatalog,
     sendPolicyLevel,
+    draftPolicyLevel,
+    onPolicyLevelChange,
     dismissGlobalError,
-    dismissToast
+    dismissToast,
+    notifyBusyTurnBlockedSend,
+    sidebarHasMore: Boolean(state.sessionsNextCursor),
+    sidebarLoadingMore: state.sessionsLoadingMore
   };
 }
 

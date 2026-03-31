@@ -2,15 +2,20 @@ import { act, render, waitFor } from "@testing-library/react";
 import { createElement, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatApp } from "./useChatApp";
+import { BUSY_TURN_BLOCKED_MESSAGE } from "./chatApp/busyTurnNotifier";
 
 const mocks = vi.hoisted(() => {
   const startSession = vi.fn();
-  return { startSession };
+  const submitTurn = vi.fn();
+  const setPolicyLevel = vi.fn();
+  return { startSession, submitTurn, setPolicyLevel };
 });
 
 vi.mock("../lib/gatewayClient", () => ({
   GatewayClient: vi.fn().mockImplementation(() => ({
-    startSession: mocks.startSession
+    startSession: mocks.startSession,
+    submitTurn: mocks.submitTurn,
+    setPolicyLevel: mocks.setPolicyLevel
   }))
 }));
 
@@ -40,6 +45,13 @@ describe("useChatApp newChat guard", () => {
         session_id: "sess_new_2",
         timestamp: "2026-01-01T00:00:01Z"
       });
+    mocks.submitTurn.mockReset().mockResolvedValue({
+      request_id: "req_turn_1",
+      session_id: "sess_new_1",
+      turn_id: "turn_1",
+      timestamp: "2026-01-01T00:00:02Z"
+    });
+    mocks.setPolicyLevel.mockReset().mockResolvedValue({ level: "allow" });
   });
 
   afterEach(() => {
@@ -74,7 +86,7 @@ describe("useChatApp newChat guard", () => {
     expect(apiRef!.state.infoToast).toBe("已在新对话中");
   });
 
-  it("creates new session when active session already has messages", async () => {
+  it("switches to local draft when active session already has messages", async () => {
     saveSessionsForBoot([
       {
         id: "sess_used",
@@ -104,12 +116,12 @@ describe("useChatApp newChat guard", () => {
       await apiRef!.newChat();
     });
 
-    expect(mocks.startSession).toHaveBeenCalledTimes(1);
-    expect(apiRef!.state.sessions).toHaveLength(2);
-    expect(apiRef!.state.activeSessionId).toBe("sess_new_1");
+    expect(mocks.startSession).not.toHaveBeenCalled();
+    expect(apiRef!.state.sessions).toHaveLength(1);
+    expect(apiRef!.state.activeSessionId).toBeNull();
   });
 
-  it("creates new session when there is no active session", async () => {
+  it("keeps local draft when there is no active session", async () => {
     let apiRef: ReturnType<typeof useChatApp> | null = null;
     render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
     await waitFor(() => expect(apiRef).not.toBeNull());
@@ -118,8 +130,371 @@ describe("useChatApp newChat guard", () => {
       await apiRef!.newChat();
     });
 
+    expect(mocks.startSession).not.toHaveBeenCalled();
+    expect(apiRef!.state.sessions).toHaveLength(0);
+    expect(apiRef!.state.activeSessionId).toBeNull();
+  });
+
+  it("creates remote session only when first message is sent from local draft", async () => {
+    saveSessionsForBoot([
+      {
+        id: "sess_used",
+        title: "你好",
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          {
+            id: "msg_1",
+            kind: "text",
+            role: "user",
+            content: "hello",
+            timestamp: "2026-01-01T00:00:01Z"
+          }
+        ],
+        pendingApprovals: []
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    await act(async () => {
+      await apiRef!.newChat();
+    });
+    expect(mocks.startSession).not.toHaveBeenCalled();
+    expect(apiRef!.state.activeSessionId).toBeNull();
+
+    await act(async () => {
+      await apiRef!.sendMessage("first message");
+    });
+
     expect(mocks.startSession).toHaveBeenCalledTimes(1);
-    expect(apiRef!.state.sessions[0]?.id).toBe("sess_new_1");
+    expect(mocks.submitTurn).toHaveBeenCalledTimes(1);
     expect(apiRef!.state.activeSessionId).toBe("sess_new_1");
+    expect(apiRef!.state.sessions[0]?.id).toBe("sess_new_1");
+  });
+
+  it("creates only one remote session when two sends race from local draft", async () => {
+    const resolveStartSessionRef: {
+      current: ((value: { request_id: string; session_id: string; timestamp: string }) => void) | null;
+    } = { current: null };
+    mocks.startSession.mockReset().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStartSessionRef.current = resolve;
+        })
+    );
+    mocks.submitTurn.mockReset().mockResolvedValue({
+      request_id: "req_turn_race",
+      session_id: "sess_race_1",
+      turn_id: "turn_race_1",
+      timestamp: "2026-01-01T00:00:03Z"
+    });
+
+    saveSessionsForBoot([
+      {
+        id: "sess_used",
+        title: "你好",
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          {
+            id: "msg_1",
+            kind: "text",
+            role: "user",
+            content: "hello",
+            timestamp: "2026-01-01T00:00:01Z"
+          }
+        ],
+        pendingApprovals: []
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    await act(async () => {
+      await apiRef!.newChat();
+    });
+    expect(apiRef!.state.activeSessionId).toBeNull();
+
+    let send1: Promise<void> | null = null;
+    let send2: Promise<void> | null = null;
+    await act(async () => {
+      send1 = apiRef!.sendMessage("first race");
+      send2 = apiRef!.sendMessage("second race");
+      await Promise.resolve();
+    });
+
+    expect(mocks.startSession).toHaveBeenCalledTimes(1);
+    resolveStartSessionRef.current?.({
+        request_id: "req_race_1",
+        session_id: "sess_race_1",
+        timestamp: "2026-01-01T00:00:00Z"
+      });
+
+    await act(async () => {
+      await Promise.all([send1!, send2!]);
+    });
+
+    expect(mocks.startSession).toHaveBeenCalledTimes(1);
+    expect(mocks.submitTurn).toHaveBeenCalledTimes(1);
+    expect(apiRef!.state.infoToast).toBe(BUSY_TURN_BLOCKED_MESSAGE);
+  });
+
+  it("does not hijack active session when draft creation resolves after switching sessions", async () => {
+    const resolveStartSessionRef: {
+      current: ((value: { request_id: string; session_id: string; timestamp: string }) => void) | null;
+    } = { current: null };
+    mocks.startSession.mockReset().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStartSessionRef.current = resolve;
+        })
+    );
+    mocks.submitTurn.mockReset().mockResolvedValue({
+      request_id: "req_turn_switch",
+      session_id: "sess_new_switch",
+      turn_id: "turn_switch",
+      timestamp: "2026-01-01T00:00:03Z"
+    });
+
+    saveSessionsForBoot([
+      {
+        id: "sess_used",
+        title: "老会话",
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          {
+            id: "msg_1",
+            kind: "text",
+            role: "user",
+            content: "hello",
+            timestamp: "2026-01-01T00:00:01Z"
+          }
+        ],
+        pendingApprovals: []
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    await act(async () => {
+      await apiRef!.newChat();
+    });
+    expect(apiRef!.state.activeSessionId).toBeNull();
+
+    const draftSend = apiRef!.sendMessage("draft message");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mocks.startSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      apiRef!.switchSession("sess_used");
+    });
+    await act(async () => {
+      await apiRef!.sendMessage("existing message");
+    });
+
+    resolveStartSessionRef.current?.({
+        request_id: "req_switch",
+        session_id: "sess_new_switch",
+        timestamp: "2026-01-01T00:00:02Z"
+      });
+    await act(async () => {
+      await draftSend;
+    });
+
+    expect(mocks.startSession).toHaveBeenCalledTimes(1);
+    expect(mocks.submitTurn.mock.calls).toEqual([
+      ["sess_used", "existing message"],
+      ["sess_new_switch", "draft message"]
+    ]);
+    expect(apiRef!.state.activeSessionId).toBe("sess_used");
+  });
+
+  it("onPolicyLevelChange in draft mode updates draftPolicyLevel without calling setPolicyLevel API", async () => {
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    expect(apiRef!.state.activeSessionId).toBeNull();
+
+    await act(async () => {
+      apiRef!.onPolicyLevelChange("allow");
+    });
+
+    expect(apiRef!.draftPolicyLevel).toBe("allow");
+    expect(mocks.setPolicyLevel).not.toHaveBeenCalled();
+  });
+
+  it("newChat resets draftPolicyLevel to ask", async () => {
+    saveSessionsForBoot([
+      {
+        id: "sess_used",
+        title: "老会话",
+        isPlaceholderTitle: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          { id: "msg_1", kind: "text", role: "user", content: "hello", timestamp: "2026-01-01T00:00:01Z" }
+        ],
+        pendingApprovals: []
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    // Go to draft and set policy to allow
+    await act(async () => { await apiRef!.newChat(); });
+    await act(async () => { apiRef!.onPolicyLevelChange("allow"); });
+    expect(apiRef!.draftPolicyLevel).toBe("allow");
+
+    // Switch back to existing session then new chat again
+    await act(async () => { apiRef!.switchSession("sess_used"); });
+    await act(async () => { await apiRef!.newChat(); });
+
+    expect(apiRef!.draftPolicyLevel).toBe("ask");
+  });
+
+  it("draft send with draftPolicyLevel=allow calls startSession then setPolicyLevel then submitTurn in order", async () => {
+    const callOrder: string[] = [];
+    mocks.startSession.mockReset().mockImplementation(async () => {
+      callOrder.push("startSession");
+      return { request_id: "req_1", session_id: "sess_new_1", timestamp: "2026-01-01T00:00:00Z" };
+    });
+    mocks.setPolicyLevel.mockReset().mockImplementation(async () => {
+      callOrder.push("setPolicyLevel");
+      return { level: "allow" };
+    });
+    mocks.submitTurn.mockReset().mockImplementation(async () => {
+      callOrder.push("submitTurn");
+      return { request_id: "req_t1", session_id: "sess_new_1", turn_id: "turn_1", timestamp: "2026-01-01T00:00:01Z" };
+    });
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    await act(async () => { apiRef!.onPolicyLevelChange("allow"); });
+    expect(apiRef!.draftPolicyLevel).toBe("allow");
+
+    await act(async () => { await apiRef!.sendMessage("hello"); });
+
+    expect(callOrder).toEqual(["startSession", "setPolicyLevel", "submitTurn"]);
+    expect(mocks.setPolicyLevel).toHaveBeenCalledWith("sess_new_1", "allow");
+  });
+
+  it("draft send aborts and sets globalError when setPolicyLevel fails", async () => {
+    mocks.startSession.mockReset().mockResolvedValue({
+      request_id: "req_1",
+      session_id: "sess_new_1",
+      timestamp: "2026-01-01T00:00:00Z"
+    });
+    mocks.setPolicyLevel.mockReset().mockRejectedValue(new Error("network error"));
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    await act(async () => { apiRef!.onPolicyLevelChange("allow"); });
+    await act(async () => { await apiRef!.sendMessage("hello"); });
+
+    expect(mocks.submitTurn).not.toHaveBeenCalled();
+    expect(apiRef!.state.globalError).toBeTruthy();
+  });
+
+  it("onPolicyLevelChange calls setPolicyLevel API for existing session and does not touch draftPolicyLevel", async () => {
+    saveSessionsForBoot([
+      {
+        id: "sess_active",
+        title: "活跃会话",
+        isPlaceholderTitle: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          { id: "msg_1", kind: "text", role: "user", content: "hello", timestamp: "2026-01-01T00:00:01Z" }
+        ],
+        pendingApprovals: [],
+        policyLevel: "ask"
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    expect(apiRef!.state.activeSessionId).toBe("sess_active");
+    expect(apiRef!.draftPolicyLevel).toBe("ask");
+
+    await act(async () => {
+      apiRef!.onPolicyLevelChange("allow");
+    });
+
+    expect(mocks.setPolicyLevel).toHaveBeenCalledWith("sess_active", "allow");
+    expect(apiRef!.draftPolicyLevel).toBe("ask"); // draft policy unaffected
+  });
+
+  it("session policyLevel and draftPolicyLevel are isolated when switching between sessions and draft", async () => {
+    saveSessionsForBoot([
+      {
+        id: "sess_with_policy",
+        title: "有 policy 的会话",
+        isPlaceholderTitle: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        connection: "idle",
+        turnPhase: "completed",
+        lastEventSeq: 2,
+        messages: [
+          { id: "msg_1", kind: "text", role: "user", content: "hello", timestamp: "2026-01-01T00:00:01Z" }
+        ],
+        pendingApprovals: [],
+        policyLevel: "allow"
+      }
+    ]);
+
+    let apiRef: ReturnType<typeof useChatApp> | null = null;
+    render(createElement(HookHarness, { onReady: (api) => (apiRef = api) }));
+    await waitFor(() => expect(apiRef).not.toBeNull());
+
+    // Active session has policyLevel = "allow", draft is at "ask"
+    expect(apiRef!.activeSession?.policyLevel).toBe("allow");
+    expect(apiRef!.draftPolicyLevel).toBe("ask");
+
+    // Go to draft, set draft policy to "deny"
+    await act(async () => { await apiRef!.newChat(); });
+    expect(apiRef!.state.activeSessionId).toBeNull();
+    expect(apiRef!.draftPolicyLevel).toBe("ask"); // reset by newChat
+
+    await act(async () => { apiRef!.onPolicyLevelChange("deny"); });
+    expect(apiRef!.draftPolicyLevel).toBe("deny");
+
+    // Switch back to existing session — its own policyLevel is unchanged
+    await act(async () => { apiRef!.switchSession("sess_with_policy"); });
+    expect(apiRef!.activeSession?.policyLevel).toBe("allow");
+
+    // draftPolicyLevel persists independently (not reset by switching to existing session)
+    expect(apiRef!.draftPolicyLevel).toBe("deny");
+
+    // setPolicyLevel API was never called (only changed draft policy while in draft mode)
+    expect(mocks.setPolicyLevel).not.toHaveBeenCalled();
   });
 });

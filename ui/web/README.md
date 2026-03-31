@@ -5,7 +5,7 @@
 ## 职责
 
 - 提供多会话聊天 UI（侧边栏、消息区、输入区）。
-- 对接 gateway API：会话创建、turn 提交、状态轮询、timeline hydration、SSE 订阅。
+- 对接 gateway API：分页会话列表、会话创建、turn 提交、状态轮询、timeline hydration、SSE 订阅。
 - 支持审批交互（approve/reject）。
 - 支持结构化 Tool Step 卡片渲染（`message.kind=tool_steps`）。
 - 支持按事件分段的思考流渲染（`reasoning_delta`，默认折叠，按事件时间线与正文/tool 交错显示）。
@@ -143,7 +143,9 @@ ui/web/
 
 ## 时间线恢复（Hydration）
 
+- 侧边栏加载：先调用 `GET /api/v1/sessions?cursor&limit` 分页拉取会话摘要（不扫目录，不拉全量 timeline）。
 - 冷启动恢复入口：`GET /api/v1/sessions/{session_id}/timeline`
+- 触发时机：仅在用户切换到该会话后懒加载 timeline。
 - 处理方式：`useChatApp` 将 timeline 事件交给 `applySessionEvents` 统一归并重建会话。
 - 主排序键：`event_seq`（`timestamp` 仅兜底）。
 - 事件覆盖：`user_message`、`reasoning_delta`、tool/approval、`response_text_delta`、`response_completed` 等。
@@ -185,6 +187,7 @@ zsh -lc "cd ui/web && pnpm test -- src/lib/session-events/reducer.test.ts src/co
 
 当前客户端对接接口：
 
+- `GET /api/v1/sessions`（支持 `cursor`、`limit`，响应可带 `next_cursor`）
 - `POST /api/v1/sessions`
 - `POST /api/v1/sessions/{session_id}/turns`
 - `GET /api/v1/sessions/{session_id}/turns/{turn_id}`

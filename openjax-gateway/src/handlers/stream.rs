@@ -12,7 +12,7 @@ use serde_json::json;
 use tracing::{info, warn};
 
 use crate::error::{ApiError, now_rfc3339};
-use crate::state::{AppState, StreamEventEnvelope};
+use crate::state::{AppState, StreamEventEnvelope, append_then_publish, event_replay_limit};
 
 static STREAM_DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
 
@@ -66,21 +66,64 @@ pub fn to_sse_event(event: StreamEventEnvelope) -> SseEvent {
         .data(serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()))
 }
 
+fn should_emit_broadcast_event(last_sent_event_seq: u64, event_seq: u64) -> bool {
+    event_seq > last_sent_event_seq
+}
+
 pub fn publish_event_for_session(
     state: &AppState,
     session: &mut crate::state::SessionRuntime,
     event: StreamEventEnvelope,
 ) {
-    if let Err(err) = state.append_event(&event) {
+    if let Err(err) = append_then_publish(state, session, event.clone()) {
         warn!(
             session_id = %event.session_id,
             event_seq = event.event_seq,
             event_type = %event.event_type,
             error = %err.message,
-            "failed to persist event"
+            "failed to append event before publish; event not broadcast"
         );
     }
-    session.publish_event(event);
+}
+
+fn replay_events_from_transcript(
+    state: &AppState,
+    session_id: &str,
+    after_event_seq: Option<u64>,
+) -> Result<Vec<StreamEventEnvelope>, ApiError> {
+    let persisted = state.list_session_events(session_id, None)?;
+    if persisted.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let replay_limit = event_replay_limit() as u64;
+    let max_event_seq = persisted.last().map(|row| row.event_seq).unwrap_or(0);
+    let min_allowed = max_event_seq.saturating_sub(replay_limit);
+    if let Some(requested) = after_event_seq
+        && requested < min_allowed
+    {
+        return Err(ApiError::invalid_argument(
+            "replay point is outside retention window",
+            json!({ "after_event_seq": requested, "min_allowed": min_allowed }),
+        ));
+    }
+
+    let floor = after_event_seq.unwrap_or(min_allowed);
+    Ok(persisted
+        .into_iter()
+        .filter(|record| record.event_seq > floor)
+        .map(|record| StreamEventEnvelope {
+            request_id: record.request_id,
+            session_id: record.session_id,
+            turn_id: record.turn_id,
+            event_seq: record.event_seq,
+            turn_seq: record.turn_seq,
+            timestamp: record.timestamp,
+            event_type: record.event_type,
+            stream_source: record.stream_source,
+            payload: record.payload,
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -96,17 +139,16 @@ pub async fn list_session_timeline(
     let events = state
         .list_session_events(&session_id, query.after_event_seq)?
         .into_iter()
-        .map(|item| StreamEventEnvelope {
-            request_id: format!("req_timeline_{}", item.id),
-            session_id: item.session_id,
-            turn_id: item.turn_id,
-            event_seq: item.event_seq,
-            turn_seq: item.turn_seq,
-            timestamp: item.timestamp,
-            event_type: item.event_type,
-            stream_source: item.stream_source,
-            payload: serde_json::from_str::<serde_json::Value>(&item.payload_json)
-                .unwrap_or_else(|_| json!({})),
+        .map(|record| StreamEventEnvelope {
+            request_id: record.request_id,
+            session_id: record.session_id,
+            turn_id: record.turn_id,
+            event_seq: record.event_seq,
+            turn_seq: record.turn_seq,
+            timestamp: record.timestamp,
+            event_type: record.event_type,
+            stream_source: record.stream_source,
+            payload: record.payload,
         })
         .collect::<Vec<StreamEventEnvelope>>();
     Ok(Json(SessionTimelineResponse {
@@ -124,19 +166,17 @@ pub async fn stream_events(
     headers: HeaderMap,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
     let session_runtime = state.get_session(&session_id).await?;
-    let (replay, mut rx) = {
-        let session = session_runtime.lock().await;
+    let (after_event_seq, mut rx) = {
         let last_event_id = headers
             .get("Last-Event-ID")
             .and_then(|value| value.to_str().ok());
         let after_event_seq = resolve_resume_seq(query.after_event_seq, last_event_id);
-        (
-            session.replay_from(after_event_seq)?,
-            session.event_tx.subscribe(),
-        )
+        let session = session_runtime.lock().await;
+        (after_event_seq, session.event_tx.subscribe())
     };
+    let replay = replay_events_from_transcript(&state, &session_id, after_event_seq)?;
 
-    let session_runtime_for_recovery = session_runtime.clone();
+    let state_for_recovery = state.clone();
     let request_id = headers
         .get("X-Request-Id")
         .and_then(|value| value.to_str().ok())
@@ -160,14 +200,18 @@ pub async fn stream_events(
         loop {
             match rx.recv().await {
                 Ok(event) => {
+                    if !should_emit_broadcast_event(last_sent_event_seq, event.event_seq) {
+                        continue;
+                    }
                     last_sent_event_seq = event.event_seq;
                     yield Ok(to_sse_event(event));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    let recovered = {
-                        let session = session_runtime_for_recovery.lock().await;
-                        session.replay_from(Some(last_sent_event_seq))
-                    };
+                    let recovered = replay_events_from_transcript(
+                        &state_for_recovery,
+                        &session_id,
+                        Some(last_sent_event_seq),
+                    );
                     match recovered {
                         Ok(missed) if !missed.is_empty() => {
                             info!(
@@ -230,7 +274,7 @@ pub async fn stream_events(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_resume_seq;
+    use super::{resolve_resume_seq, should_emit_broadcast_event};
 
     #[test]
     fn resolve_resume_seq_prefers_after_event_seq() {
@@ -240,5 +284,12 @@ mod tests {
     #[test]
     fn resolve_resume_seq_uses_last_event_id_when_query_absent() {
         assert_eq!(resolve_resume_seq(None, Some("7")), Some(7));
+    }
+
+    #[test]
+    fn should_emit_broadcast_event_filters_replay_overlap_duplicates() {
+        assert!(!should_emit_broadcast_event(10, 10));
+        assert!(!should_emit_broadcast_event(10, 9));
+        assert!(should_emit_broadcast_event(10, 11));
     }
 }

@@ -84,6 +84,7 @@ export interface GatewaySessionSummary {
 export interface GatewaySessionListResponse {
   request_id: string;
   sessions: GatewaySessionSummary[];
+  next_cursor?: string;
   timestamp: string;
 }
 

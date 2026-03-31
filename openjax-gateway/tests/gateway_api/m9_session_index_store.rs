@@ -1,0 +1,1014 @@
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use openjax_gateway::transcript::{IndexSessionEntry, SessionIndexStore};
+use serde_json::json;
+
+fn temp_transcript_root() -> PathBuf {
+    static UNIQUIFIER: AtomicU64 = AtomicU64::new(0);
+    let pid = std::process::id();
+    let uniq = UNIQUIFIER.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock drift")
+        .as_nanos();
+    std::env::temp_dir().join(format!("openjax-gateway-m9-{pid}-{nanos}-{uniq}"))
+}
+
+fn entry(
+    session_id: &str,
+    updated_at: &str,
+    last_event_seq: u64,
+    last_preview: &str,
+) -> serde_json::Value {
+    json!({
+        "session_id": session_id,
+        "title": format!("title-{session_id}"),
+        "created_at": "2026-03-30T08:00:00.000Z",
+        "updated_at": updated_at,
+        "last_event_seq": last_event_seq,
+        "last_preview": last_preview
+    })
+}
+
+fn index_entry(session_id: &str, updated_at: &str, last_event_seq: u64) -> IndexSessionEntry {
+    IndexSessionEntry {
+        session_id: session_id.to_string(),
+        title: Some(format!("title-{session_id}")),
+        created_at: "2026-03-30T08:00:00.000Z".to_string(),
+        updated_at: updated_at.to_string(),
+        last_event_seq,
+        last_preview: format!("preview-{session_id}"),
+    }
+}
+
+fn read_log_records(root: &PathBuf) -> Vec<serde_json::Value> {
+    let log_path = root.join("sessions").join("index.log.ndjson");
+    if !log_path.exists() {
+        return Vec::new();
+    }
+    let content = fs::read_to_string(log_path).expect("read index log");
+    content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("parse log line"))
+        .collect()
+}
+
+fn write_session_json(root: &PathBuf, session_id: &str, updated_at: &str) {
+    let session_root = root.join("sessions").join(session_id);
+    fs::create_dir_all(&session_root).expect("create session root");
+    let payload = json!({
+        "schema_version": 1,
+        "session_id": session_id,
+        "title": format!("title-{session_id}"),
+        "created_at": "2026-03-30T08:00:00.000Z",
+        "updated_at": updated_at,
+        "tags": []
+    });
+    fs::write(
+        session_root.join("session.json"),
+        serde_json::to_string_pretty(&payload).expect("serialize session.json"),
+    )
+    .expect("write session.json");
+}
+
+fn write_session_json_with_id(
+    root: &PathBuf,
+    dir_name: &str,
+    metadata_session_id: &str,
+    updated_at: &str,
+) {
+    let session_root = root.join("sessions").join(dir_name);
+    fs::create_dir_all(&session_root).expect("create mismatched session root");
+    let payload = json!({
+        "schema_version": 1,
+        "session_id": metadata_session_id,
+        "title": format!("title-{metadata_session_id}"),
+        "created_at": "2026-03-30T08:00:00.000Z",
+        "updated_at": updated_at,
+        "tags": []
+    });
+    fs::write(
+        session_root.join("session.json"),
+        serde_json::to_string_pretty(&payload).expect("serialize mismatched session.json"),
+    )
+    .expect("write mismatched session.json");
+}
+
+fn write_manifest(root: &PathBuf, session_id: &str, last_event_seq: u64, updated_at: &str) {
+    let session_root = root.join("sessions").join(session_id);
+    fs::create_dir_all(&session_root).expect("create session root for manifest");
+    let payload = json!({
+        "schema_version": 1,
+        "session_id": session_id,
+        "last_event_seq": last_event_seq,
+        "last_turn_seq": 0,
+        "active_segment": "segment-000001.jsonl",
+        "updated_at": updated_at
+    });
+    fs::write(
+        session_root.join("manifest.json"),
+        serde_json::to_string_pretty(&payload).expect("serialize manifest"),
+    )
+    .expect("write manifest");
+}
+
+fn read_session_json(root: &PathBuf, session_id: &str) -> serde_json::Value {
+    let raw = fs::read_to_string(root.join("sessions").join(session_id).join("session.json"))
+        .expect("read session.json");
+    serde_json::from_str(&raw).expect("parse session.json")
+}
+
+fn set_modified_at(path: &PathBuf, modified: SystemTime) {
+    let file = fs::File::open(path).expect("open path for set_times");
+    file.set_times(fs::FileTimes::new().set_modified(modified))
+        .expect("set modified time");
+}
+
+#[test]
+fn index_store_recovers_from_snapshot_and_log() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let snapshot_path = sessions_root.join("index.snapshot.json");
+    let log_path = sessions_root.join("index.log.ndjson");
+
+    let snapshot = json!({
+        "schema_version": 1,
+        "updated_at": "2026-03-30T10:00:00.000Z",
+        "sessions": [
+            entry("sess_a", "2026-03-30T10:00:00.000Z", 3, "alpha"),
+            entry("sess_b", "2026-03-30T09:00:00.000Z", 1, "beta")
+        ]
+    });
+    fs::write(
+        &snapshot_path,
+        serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+
+    let upsert_sess_b = json!({
+        "op": "upsert_session",
+        "session_id": "sess_b",
+        "ts": "2026-03-30T11:00:00.000Z",
+        "payload": entry("sess_b", "2026-03-30T11:00:00.000Z", 4, "beta-updated")
+    });
+    let delete_sess_a = json!({
+        "op": "delete_session",
+        "session_id": "sess_a",
+        "ts": "2026-03-30T11:00:01.000Z"
+    });
+    let upsert_sess_c = json!({
+        "op": "upsert_session",
+        "session_id": "sess_c",
+        "ts": "2026-03-30T11:00:02.000Z",
+        "payload": entry("sess_c", "2026-03-30T11:00:00.000Z", 2, "charlie")
+    });
+    let log_content = format!(
+        "{}\n{}\n{}\n",
+        serde_json::to_string(&upsert_sess_b).expect("serialize upsert sess_b"),
+        serde_json::to_string(&delete_sess_a).expect("serialize delete sess_a"),
+        serde_json::to_string(&upsert_sess_c).expect("serialize upsert sess_c")
+    );
+    fs::write(&log_path, log_content).expect("write log");
+    write_session_json(&root, "sess_b", "2026-03-30T11:00:00.000Z");
+    write_manifest(&root, "sess_b", 4, "2026-03-30T11:00:00.000Z");
+    write_session_json(&root, "sess_c", "2026-03-30T11:00:00.000Z");
+    write_manifest(&root, "sess_c", 2, "2026-03-30T11:00:00.000Z");
+
+    let store = SessionIndexStore::new(root.clone()).expect("build index store from disk");
+    let sessions: Vec<IndexSessionEntry> = store.list_sessions();
+
+    assert_eq!(
+        sessions
+            .iter()
+            .map(|entry| entry.session_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["sess_c", "sess_b"]
+    );
+    assert_eq!(sessions[1].last_event_seq, 4);
+    assert_eq!(sessions[1].last_preview, "beta-updated");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn create_session_uses_staging_then_publish() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    let entry = index_entry("sess_create", "2026-03-30T12:00:00.000Z", 0);
+
+    store
+        .create_session_index_entry(entry.clone())
+        .expect("create session index entry");
+
+    let published = root
+        .join("sessions")
+        .join("sess_create")
+        .join("session.json");
+    let staging = root.join("sessions").join(".staging").join("sess_create");
+    assert!(published.is_file(), "published session.json should exist");
+    assert!(
+        !staging.exists(),
+        "staging directory should be removed after publish"
+    );
+    assert_eq!(store.list_sessions(), vec![entry]);
+
+    let records = read_log_records(&root);
+    assert_eq!(records.len(), 1, "create should append one upsert record");
+    assert_eq!(records[0]["op"], "upsert_session");
+    assert_eq!(records[0]["session_id"], "sess_create");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn update_session_title_if_empty_only_applies_once() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    let mut seeded = index_entry("sess_title_if_empty", "2026-03-30T12:00:00.000Z", 0);
+    seeded.title = None;
+    store
+        .create_session_index_entry(seeded)
+        .expect("seed session entry");
+
+    let first = store
+        .update_session_title_if_empty("sess_title_if_empty", "first-title".to_string())
+        .expect("first title update should succeed");
+    let second = store
+        .update_session_title_if_empty("sess_title_if_empty", "second-title".to_string())
+        .expect("second title update should be no-op");
+
+    assert!(first, "first conditional update should apply");
+    assert!(!second, "second conditional update should not apply");
+
+    let entry = store
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == "sess_title_if_empty")
+        .expect("entry exists");
+    assert_eq!(entry.title.as_deref(), Some("first-title"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn delete_session_rolls_back_index_when_remove_dir_fails() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    let entry = index_entry("sess_delete_rollback", "2026-03-30T12:00:00.000Z", 2);
+    store
+        .create_session_index_entry(entry.clone())
+        .expect("seed index entry");
+
+    let session_path = root.join("sessions").join("sess_delete_rollback");
+    fs::remove_dir_all(&session_path).expect("remove seeded session dir");
+    fs::write(&session_path, b"force-not-a-dir").expect("replace session path with file");
+
+    let err = store
+        .delete_session_index_entry("sess_delete_rollback")
+        .expect_err("delete should fail when remove_dir_all fails");
+    let err_text = format!("{err:#}");
+    assert!(
+        err_text.contains("remove session directory"),
+        "error should come from remove_dir_all: {err_text}"
+    );
+
+    assert_eq!(
+        store
+            .list_sessions()
+            .iter()
+            .map(|entry| entry.session_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["sess_delete_rollback"],
+        "index entry should be restored by compensation upsert"
+    );
+
+    let records = read_log_records(&root);
+    assert_eq!(records.len(), 3, "create + delete + compensation upsert");
+    assert_eq!(records[1]["op"], "delete_session");
+    assert_eq!(records[2]["op"], "upsert_session");
+    assert_eq!(records[2]["session_id"], "sess_delete_rollback");
+
+    let _ = fs::remove_file(&session_path);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn compensation_append_failure_enters_index_repair_required() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new_with_test_fail_append_nth(root.clone(), Some(2))
+        .expect("build index store");
+    let entry = index_entry("sess_repair_required", "2026-03-30T12:10:00.000Z", 0);
+
+    let published_path = root.join("sessions").join("sess_repair_required");
+    fs::create_dir_all(published_path.parent().expect("session parent")).expect("create sessions");
+    fs::write(&published_path, b"conflict-file").expect("seed publish conflict file");
+
+    store
+        .create_session_index_entry(entry)
+        .expect_err("create should fail when publish + compensation fail");
+    assert!(
+        store.is_repair_required(),
+        "store should enter repair required state"
+    );
+
+    let next_err = store
+        .delete_session_index_entry("sess_repair_required")
+        .expect_err("writes should be rejected in repair required state");
+    assert!(
+        format!("{next_err:#}").contains("index_repair_required"),
+        "write rejection should expose repair-required marker"
+    );
+
+    let _ = fs::remove_file(&published_path);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn compact_rotates_log_with_tmp_and_bak_without_truncating_live_log() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let mut log_content = String::new();
+    for idx in 0..1000 {
+        let record = json!({
+            "op": "upsert_session",
+            "session_id": format!("seed_{idx}"),
+            "ts": "2026-03-30T11:00:00.000Z",
+            "payload": entry(
+                &format!("seed_{idx}"),
+                "2026-03-30T11:00:00.000Z",
+                idx as u64,
+                "seed"
+            )
+        });
+        log_content.push_str(
+            &serde_json::to_string(&record).expect("serialize seeded compact log record"),
+        );
+        log_content.push('\n');
+    }
+    fs::write(sessions_root.join("index.log.ndjson"), log_content).expect("write seeded log");
+
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    store
+        .create_session_index_entry(index_entry("sess_compact", "2026-03-30T13:00:00.000Z", 1))
+        .expect("create entry to trigger compact");
+
+    let compacted_log =
+        fs::read_to_string(sessions_root.join("index.log.ndjson")).expect("read compacted log");
+    assert!(
+        compacted_log.lines().count() < 1000,
+        "log should be compacted instead of accumulating >1000 lines"
+    );
+    assert!(
+        !sessions_root.join("index.log.ndjson.tmp").exists(),
+        "compact should clean tmp log file"
+    );
+    assert!(
+        !sessions_root.join("index.log.ndjson.bak").exists(),
+        "compact should clean bak log file"
+    );
+    let snapshot_raw = fs::read_to_string(sessions_root.join("index.snapshot.json"))
+        .expect("compact should persist snapshot");
+    let snapshot: serde_json::Value =
+        serde_json::from_str(&snapshot_raw).expect("parse compacted snapshot");
+    assert!(
+        snapshot["sessions"]
+            .as_array()
+            .expect("snapshot sessions array")
+            .iter()
+            .any(|item| item["session_id"] == "sess_compact"),
+        "compacted snapshot should contain latest session"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn startup_audit_reconciles_index_and_session_dirs() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let snapshot = json!({
+        "schema_version": 1,
+        "updated_at": "2026-03-30T10:00:00.000Z",
+        "sessions": [entry("sess_ghost", "2026-03-30T10:00:00.000Z", 1, "ghost")]
+    });
+    fs::write(
+        sessions_root.join("index.snapshot.json"),
+        serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+    write_session_json(&root, "sess_present", "2026-03-30T11:00:00.000Z");
+    write_manifest(&root, "sess_present", 5, "2026-03-30T11:00:00.000Z");
+
+    let store = SessionIndexStore::new(root.clone()).expect("startup should reconcile");
+    assert_eq!(
+        store
+            .list_sessions()
+            .into_iter()
+            .map(|item| item.session_id)
+            .collect::<Vec<_>>(),
+        vec!["sess_present".to_string()],
+        "startup audit should drop missing dir entry and add missing index entry"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rebuild_from_sessions_dir_recovers_when_snapshot_corrupted() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+    fs::write(sessions_root.join("index.snapshot.json"), "{invalid-json")
+        .expect("write corrupted snapshot");
+    write_session_json(&root, "sess_rebuild_snapshot", "2026-03-30T11:30:00.000Z");
+    write_manifest(
+        &root,
+        "sess_rebuild_snapshot",
+        9,
+        "2026-03-30T11:30:00.000Z",
+    );
+
+    let store = SessionIndexStore::new(root.clone()).expect("snapshot corruption should rebuild");
+    let sessions = store.list_sessions();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].session_id, "sess_rebuild_snapshot");
+    assert_eq!(sessions[0].last_event_seq, 9);
+
+    let repaired_snapshot = fs::read_to_string(sessions_root.join("index.snapshot.json"))
+        .expect("snapshot should be rewritten during rebuild");
+    serde_json::from_str::<serde_json::Value>(&repaired_snapshot).expect("snapshot should be json");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rebuild_from_sessions_dir_runs_when_log_replay_corrupted() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let snapshot = json!({
+        "schema_version": 1,
+        "updated_at": "2026-03-30T10:00:00.000Z",
+        "sessions": []
+    });
+    fs::write(
+        sessions_root.join("index.snapshot.json"),
+        serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+    fs::write(
+        sessions_root.join("index.log.ndjson"),
+        "{\"op\":\"upsert_session\"}\nnot-json\n",
+    )
+    .expect("write corrupted log");
+    write_session_json(&root, "sess_rebuild_log", "2026-03-30T12:00:00.000Z");
+    write_manifest(&root, "sess_rebuild_log", 3, "2026-03-30T12:00:00.000Z");
+
+    let store = SessionIndexStore::new(root.clone()).expect("log corruption should rebuild");
+    assert_eq!(
+        store
+            .list_sessions()
+            .iter()
+            .map(|item| item.session_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["sess_rebuild_log"]
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rebuild_from_sessions_dir_runs_when_snapshot_schema_mismatch() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let snapshot = json!({
+        "schema_version": 999,
+        "updated_at": "2026-03-30T10:00:00.000Z",
+        "sessions": [entry("sess_wrong_schema", "2026-03-30T10:00:00.000Z", 1, "old")]
+    });
+    fs::write(
+        sessions_root.join("index.snapshot.json"),
+        serde_json::to_string_pretty(&snapshot).expect("serialize wrong-schema snapshot"),
+    )
+    .expect("write wrong-schema snapshot");
+    write_session_json(&root, "sess_schema_rebuild", "2026-03-30T12:30:00.000Z");
+    write_manifest(&root, "sess_schema_rebuild", 7, "2026-03-30T12:30:00.000Z");
+
+    let store =
+        SessionIndexStore::new(root.clone()).expect("schema mismatch should trigger rebuild");
+    assert_eq!(
+        store
+            .list_sessions()
+            .into_iter()
+            .map(|item| item.session_id)
+            .collect::<Vec<_>>(),
+        vec!["sess_schema_rebuild".to_string()]
+    );
+
+    let rebuilt_snapshot = fs::read_to_string(sessions_root.join("index.snapshot.json"))
+        .expect("snapshot should be rewritten after schema mismatch rebuild");
+    let rebuilt: serde_json::Value =
+        serde_json::from_str(&rebuilt_snapshot).expect("parse rebuilt snapshot");
+    assert_eq!(
+        rebuilt["schema_version"], 1,
+        "rebuilt snapshot uses current schema"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn startup_fails_when_rebuild_fails() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+    fs::write(sessions_root.join("index.snapshot.json"), "{invalid-json")
+        .expect("write corrupted snapshot");
+    let bad_session_root = sessions_root.join("sess_bad_rebuild");
+    fs::create_dir_all(&bad_session_root).expect("create bad session dir");
+    fs::write(bad_session_root.join("session.json"), "{bad").expect("write bad session metadata");
+
+    let err =
+        SessionIndexStore::new(root.clone()).expect_err("startup should fail when rebuild fails");
+    assert!(
+        format!("{err:#}").contains("rebuild_from_sessions_dir"),
+        "error should indicate rebuild failure path: {err:#}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn startup_cleanup_removes_stale_staging_dirs_and_keeps_recent_ones() {
+    let root = temp_transcript_root();
+    let staging_root = root.join("sessions").join(".staging");
+    let stale = staging_root.join("sess_stale");
+    let recent = staging_root.join("sess_recent");
+    fs::create_dir_all(&stale).expect("create stale staging");
+    fs::create_dir_all(&recent).expect("create recent staging");
+    fs::write(stale.join("session.json"), "{}").expect("seed stale staging");
+    fs::write(recent.join("session.json"), "{}").expect("seed recent staging");
+
+    let old = SystemTime::now() - Duration::from_secs(11 * 60);
+    set_modified_at(&stale, old);
+
+    let _ = SessionIndexStore::new(root.clone()).expect("startup should clean staging");
+    assert!(
+        !stale.exists(),
+        "stale staging directory (>10 minutes) should be removed"
+    );
+    assert!(
+        recent.exists(),
+        "recent staging directory (<=10 minutes) should be kept"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_upsert_and_touch_do_not_corrupt_index_log() {
+    let root = temp_transcript_root();
+    let store = Arc::new(SessionIndexStore::new(root.clone()).expect("build index store"));
+    store
+        .create_session_index_entry(index_entry(
+            "sess_concurrent",
+            "2026-03-30T12:00:00.000Z",
+            0,
+        ))
+        .expect("seed concurrent session");
+
+    let mut tasks = Vec::new();
+    for task_id in 0..8usize {
+        let store = Arc::clone(&store);
+        tasks.push(tokio::spawn(async move {
+            for step in 0..20usize {
+                let seq = (task_id * 100 + step) as u64;
+                let updated_at = format!("2026-03-30T12:{:02}:{:02}.000Z", task_id, step % 60);
+                let upsert_entry = IndexSessionEntry {
+                    session_id: "sess_concurrent".to_string(),
+                    title: Some("title-sess_concurrent".to_string()),
+                    created_at: "2026-03-30T08:00:00.000Z".to_string(),
+                    updated_at: updated_at.clone(),
+                    last_event_seq: seq,
+                    last_preview: format!("preview-upsert-{task_id}-{step}"),
+                };
+                store
+                    .upsert_session_index_entry(upsert_entry)
+                    .expect("upsert should succeed");
+                store
+                    .touch_session_index_entry(
+                        "sess_concurrent",
+                        format!("2026-03-30T13:{:02}:{:02}.000Z", task_id, step % 60),
+                        seq + 1,
+                        format!("preview-touch-{task_id}-{step}"),
+                    )
+                    .expect("touch should succeed");
+            }
+        }));
+    }
+    for task in tasks {
+        task.await.expect("join task");
+    }
+
+    let records = read_log_records(&root);
+    assert!(
+        records.len() >= 1 + (8 * 20 * 2),
+        "every upsert/touch should append a durable log record"
+    );
+    for (idx, record) in records.iter().enumerate() {
+        assert!(
+            record.get("op").is_some(),
+            "log line {idx} should remain parseable under concurrency"
+        );
+    }
+    let sessions = store.list_sessions();
+    assert_eq!(
+        sessions.len(),
+        1,
+        "concurrent upsert/touch should keep single entry"
+    );
+    assert_eq!(sessions[0].session_id, "sess_concurrent");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_create_sessions_do_not_corrupt_index_log() {
+    let root = temp_transcript_root();
+    let store = Arc::new(SessionIndexStore::new(root.clone()).expect("build index store"));
+    let creators = 24usize;
+    let mut tasks = Vec::with_capacity(creators);
+    for idx in 0..creators {
+        let store = Arc::clone(&store);
+        tasks.push(tokio::spawn(async move {
+            let session_id = format!("sess_create_{idx:02}");
+            let entry = IndexSessionEntry {
+                session_id: session_id.clone(),
+                title: Some(format!("title-{session_id}")),
+                created_at: "2026-03-30T09:00:00.000Z".to_string(),
+                updated_at: format!("2026-03-30T15:{:02}:00.000Z", idx % 60),
+                last_event_seq: 0,
+                last_preview: String::new(),
+            };
+            store
+                .create_session_index_entry(entry)
+                .expect("concurrent create should succeed");
+            session_id
+        }));
+    }
+    let mut created_ids = Vec::with_capacity(creators);
+    for task in tasks {
+        created_ids.push(task.await.expect("join create task"));
+    }
+
+    let sessions = store.list_sessions();
+    assert_eq!(
+        sessions.len(),
+        creators,
+        "concurrent creates should persist all unique session entries"
+    );
+    for session_id in &created_ids {
+        assert!(
+            sessions.iter().any(|entry| entry.session_id == *session_id),
+            "missing created session {session_id} in in-memory index"
+        );
+    }
+
+    let records = read_log_records(&root);
+    assert_eq!(
+        records.len(),
+        creators,
+        "each concurrent create should append one durable upsert log record"
+    );
+    for (idx, record) in records.iter().enumerate() {
+        assert_eq!(
+            record.get("op").and_then(|value| value.as_str()),
+            Some("upsert_session"),
+            "log line {idx} should be a parseable create upsert"
+        );
+        assert!(
+            record
+                .get("session_id")
+                .and_then(|value| value.as_str())
+                .is_some(),
+            "log line {idx} should keep session_id payload"
+        );
+    }
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn compact_rollback_failure_sets_repair_required() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let mut log_content = String::new();
+    for idx in 0..1000 {
+        let record = json!({
+            "op": "upsert_session",
+            "session_id": format!("seed_fail_{idx}"),
+            "ts": "2026-03-30T11:00:00.000Z",
+            "payload": entry(
+                &format!("seed_fail_{idx}"),
+                "2026-03-30T11:00:00.000Z",
+                idx as u64,
+                "seed"
+            )
+        });
+        log_content.push_str(
+            &serde_json::to_string(&record).expect("serialize seeded compact rollback log"),
+        );
+        log_content.push('\n');
+    }
+    fs::write(sessions_root.join("index.log.ndjson"), log_content).expect("write seeded log");
+
+    let store = SessionIndexStore::new_with_test_failures(root.clone(), None, true, true)
+        .expect("build index store with compact rollback failure injection");
+    let err = store
+        .create_session_index_entry(index_entry(
+            "sess_compact_failure",
+            "2026-03-30T13:20:00.000Z",
+            2,
+        ))
+        .expect_err("compact rollback failure should fail create");
+    assert!(
+        format!("{err:#}").contains("index_repair_required"),
+        "compact rollback failure should expose repair marker: {err:#}"
+    );
+    assert!(
+        store.is_repair_required(),
+        "rollback failure should move store into repair-required mode"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn startup_audit_persists_repair_ops_into_index_log() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let snapshot = json!({
+        "schema_version": 1,
+        "updated_at": "2026-03-30T10:00:00.000Z",
+        "sessions": [entry("sess_deleted_by_audit", "2026-03-30T09:30:00.000Z", 1, "ghost")]
+    });
+    fs::write(
+        sessions_root.join("index.snapshot.json"),
+        serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+    write_session_json(&root, "sess_added_by_audit", "2026-03-30T11:05:00.000Z");
+    write_manifest(&root, "sess_added_by_audit", 6, "2026-03-30T11:05:00.000Z");
+
+    let _ = SessionIndexStore::new(root.clone()).expect("startup should reconcile and persist");
+    let records = read_log_records(&root);
+    assert!(
+        records.iter().any(|record| {
+            record["op"] == "delete_session" && record["session_id"] == "sess_deleted_by_audit"
+        }),
+        "audit should persist delete repair operation"
+    );
+    assert!(
+        records.iter().any(|record| {
+            record["op"] == "upsert_session" && record["session_id"] == "sess_added_by_audit"
+        }),
+        "audit should persist upsert repair operation"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rebuild_ignores_sessions_under_staging_directory() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+    fs::write(sessions_root.join("index.snapshot.json"), "{invalid-json")
+        .expect("write corrupted snapshot to force rebuild");
+
+    write_session_json(&root, "sess_real", "2026-03-30T14:00:00.000Z");
+    write_manifest(&root, "sess_real", 4, "2026-03-30T14:00:00.000Z");
+    let staging_session = sessions_root.join(".staging").join("sess_shadow");
+    fs::create_dir_all(&staging_session).expect("create staging session");
+    fs::write(
+        staging_session.join("session.json"),
+        serde_json::to_string_pretty(&json!({
+            "schema_version": 1,
+            "session_id": "sess_shadow",
+            "title": "shadow",
+            "created_at": "2026-03-30T08:00:00.000Z",
+            "updated_at": "2026-03-30T14:01:00.000Z",
+            "tags": []
+        }))
+        .expect("serialize staging session"),
+    )
+    .expect("write staging session metadata");
+
+    let store = SessionIndexStore::new(root.clone()).expect("rebuild should succeed");
+    assert_eq!(
+        store
+            .list_sessions()
+            .into_iter()
+            .map(|item| item.session_id)
+            .collect::<Vec<_>>(),
+        vec!["sess_real".to_string()],
+        "rebuild should ignore sessions under .staging"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rebuild_skips_session_metadata_with_mismatched_session_id() {
+    let root = temp_transcript_root();
+    let sessions_root = root.join("sessions");
+    fs::create_dir_all(&sessions_root).expect("create sessions root");
+    fs::write(sessions_root.join("index.snapshot.json"), "{invalid-json")
+        .expect("write corrupted snapshot");
+    write_session_json_with_id(
+        &root,
+        "sess_dir_name",
+        "sess_other_id",
+        "2026-03-30T14:30:00.000Z",
+    );
+    write_manifest(&root, "sess_dir_name", 7, "2026-03-30T14:30:00.000Z");
+
+    let store =
+        SessionIndexStore::new(root.clone()).expect("startup should rebuild and skip mismatch");
+    let sessions = store.list_sessions();
+    assert!(
+        sessions.is_empty(),
+        "mismatched session_id metadata should be skipped during rebuild"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn restart_rebuild_clears_previous_repair_required_state() {
+    let root = temp_transcript_root();
+    let broken_store = SessionIndexStore::new_with_test_fail_append_nth(root.clone(), Some(2))
+        .expect("build store");
+    let published_path = root.join("sessions").join("sess_restart_repair");
+    fs::create_dir_all(published_path.parent().expect("session parent")).expect("create sessions");
+    fs::write(&published_path, b"conflict-file").expect("seed publish conflict file");
+
+    broken_store
+        .create_session_index_entry(index_entry(
+            "sess_restart_repair",
+            "2026-03-30T12:10:00.000Z",
+            0,
+        ))
+        .expect_err("force repair-required on first process");
+    assert!(broken_store.is_repair_required());
+    let marker_path = root.join("sessions").join("index.repair_required");
+    assert!(
+        marker_path.exists(),
+        "repair-required state should persist marker for next startup rebuild"
+    );
+
+    let _ = fs::remove_file(&published_path);
+    write_session_json(&root, "sess_restart_ok", "2026-03-30T15:00:00.000Z");
+    write_manifest(&root, "sess_restart_ok", 8, "2026-03-30T15:00:00.000Z");
+
+    let restarted = SessionIndexStore::new(root.clone()).expect("restart should rebuild");
+    assert!(
+        !restarted.is_repair_required(),
+        "successful restart rebuild should clear repair-required state"
+    );
+    assert_eq!(
+        restarted
+            .list_sessions()
+            .into_iter()
+            .map(|item| item.session_id)
+            .collect::<Vec<_>>(),
+        vec!["sess_restart_ok".to_string()]
+    );
+    assert!(
+        !marker_path.exists(),
+        "successful restart rebuild should clear repair marker"
+    );
+    assert!(
+        read_log_records(&root).is_empty(),
+        "marker-triggered rebuild should reset prior log history on restart"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn updating_session_title_updates_index_title_and_updated_at() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    let original = index_entry("sess_title", "2026-03-30T12:00:00.000Z", 2);
+    store
+        .create_session_index_entry(original)
+        .expect("seed title session");
+
+    store
+        .update_session_title("sess_title", Some("renamed session".to_string()))
+        .expect("update title");
+
+    let updated = store
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == "sess_title")
+        .expect("session entry exists");
+    assert_eq!(updated.title.as_deref(), Some("renamed session"));
+    assert_ne!(updated.updated_at, "2026-03-30T12:00:00.000Z");
+    let metadata = read_session_json(&root, "sess_title");
+    assert_eq!(metadata["title"], "renamed session");
+    assert_eq!(metadata["session_id"], "sess_title");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn updating_session_tags_updates_session_json_and_index_updated_at_only() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    store
+        .create_session_index_entry(index_entry("sess_tags", "2026-03-30T12:10:00.000Z", 5))
+        .expect("seed tags session");
+
+    let before = store
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == "sess_tags")
+        .expect("session entry exists before tags");
+    store
+        .update_session_tags(
+            "sess_tags",
+            vec!["priority/high".to_string(), "source/web".to_string()],
+        )
+        .expect("update tags");
+    let after = store
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == "sess_tags")
+        .expect("session entry exists after tags");
+
+    assert_eq!(after.session_id, before.session_id);
+    assert_eq!(after.title, before.title);
+    assert_eq!(after.created_at, before.created_at);
+    assert_eq!(after.last_event_seq, before.last_event_seq);
+    assert_eq!(after.last_preview, before.last_preview);
+    assert_ne!(after.updated_at, before.updated_at);
+
+    let metadata = read_session_json(&root, "sess_tags");
+    assert_eq!(
+        metadata["tags"],
+        json!(["priority/high", "source/web"]),
+        "tags should be persisted only in session.json"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn metadata_write_failure_after_log_append_enters_repair_required() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    store
+        .create_session_index_entry(index_entry(
+            "sess_metadata_fail",
+            "2026-03-30T16:00:00.000Z",
+            1,
+        ))
+        .expect("seed session");
+
+    let metadata_path = root
+        .join("sessions")
+        .join("sess_metadata_fail")
+        .join("session.json");
+    fs::remove_file(&metadata_path).expect("remove metadata to force write failure");
+
+    let err = store
+        .update_session_title("sess_metadata_fail", Some("new-title".to_string()))
+        .expect_err("title update should fail when metadata file is missing");
+    assert!(
+        format!("{err:#}").contains("index_repair_required"),
+        "metadata write failure should move store into repair-required mode"
+    );
+    assert!(store.is_repair_required());
+
+    let _ = fs::remove_dir_all(root);
+}

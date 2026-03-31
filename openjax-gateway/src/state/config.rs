@@ -157,8 +157,8 @@ pub fn migrate_providers_from_config_if_needed(store: &SqliteStore) {
 
 #[cfg(test)]
 mod tests {
-    use openjax_store::repository::{CreateProviderParams, ProviderRepository};
     use openjax_store::SqliteStore;
+    use openjax_store::repository::{CreateProviderParams, ProviderRepository};
 
     use super::migrate_providers_from_config_if_needed;
 

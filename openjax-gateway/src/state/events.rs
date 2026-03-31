@@ -1,22 +1,21 @@
-//! Event dispatch and AppState implementation.
+//! AppState and session persistence orchestration.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::http::StatusCode;
 use openjax_core::Config;
-use openjax_policy::overlay::SessionOverlay;
-use openjax_policy::runtime::PolicyRuntime;
-use openjax_policy::store::PolicyStore;
-use openjax_protocol::Event;
-use serde_json::{Value, json};
-use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
-use tracing::{info, warn};
+use serde_json::json;
+use tokio::sync::{Mutex, RwLock};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::load_api_keys_from_env;
 use crate::auth::{AuthConfig, AuthService};
 use crate::error::ApiError;
-use crate::event_mapper::map_core_event_payload;
 use openjax_store::SqliteStore;
 use openjax_store::repository::{CreateProviderParams, UpdateProviderParams};
 use openjax_store::{ProviderRepository, SessionRepository};
@@ -25,17 +24,9 @@ use super::config::{
     build_runtime_config, gateway_db_path, gateway_policy_state, map_store_error,
     migrate_providers_from_config_if_needed,
 };
-use super::runtime::{
-    ApiTurnError, SessionRuntime, StreamEventEnvelope, TurnRuntime, TurnStatus,
-    gateway_stream_debug_enabled, log_preview, reasoning_preview,
-};
-
-const AFTER_DISPATCH_LOG_TARGET: &str = "openjax_after_dispatcher";
-const AFTER_DISPATCH_PREFIX: &str = "OPENJAX_AFTER_DISPATCH";
-
-// ---------------------------------------------------------------------------
-// AppState
-// ---------------------------------------------------------------------------
+use super::core_projection::apply_turn_runtime_event;
+use super::runtime::{SessionRuntime, StreamEventEnvelope, TurnRuntime};
+use crate::transcript::{IndexSessionEntry, SessionIndexStore, TranscriptRecord, TranscriptStore};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -43,7 +34,13 @@ pub struct AppState {
     pub api_keys: Arc<HashSet<String>>,
     pub auth_service: Arc<AuthService>,
     pub store: Arc<SqliteStore>,
+    pub transcript: Arc<TranscriptStore>,
+    pub session_index: Arc<SessionIndexStore>,
+    auto_title_dedupe: Arc<StdMutex<AutoTitleDedupeCache>>,
 }
+
+pub const AUTO_TITLE_DEDUPE_TTL_MS: u64 = 30_000;
+pub const AUTO_TITLE_DEDUPE_MAX_KEYS: usize = 10_000;
 
 impl AppState {
     pub fn new() -> Self {
@@ -63,23 +60,51 @@ impl AppState {
         };
         let db_path = gateway_db_path();
         let store = Arc::new(SqliteStore::open(&db_path)?);
+        let transcript_root = db_path
+            .parent()
+            .map(|parent| parent.join("transcripts"))
+            .unwrap_or_else(|| std::env::temp_dir().join("openjax-transcripts"));
+        let transcript = Arc::new(TranscriptStore::new(transcript_root));
+        let session_index = Arc::new(SessionIndexStore::new(transcript.root())?);
         migrate_providers_from_config_if_needed(&store);
         Ok(Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
             auth_service: Arc::new(auth_service),
             store,
+            transcript,
+            session_index,
+            auto_title_dedupe: Arc::new(StdMutex::new(AutoTitleDedupeCache::new(
+                AUTO_TITLE_DEDUPE_TTL_MS,
+                AUTO_TITLE_DEDUPE_MAX_KEYS,
+            ))),
         })
     }
 
     pub fn new_with_api_keys_for_test(api_keys: HashSet<String>) -> Self {
         let auth_service = AuthService::for_test().expect("initialize test auth service");
         let store = Arc::new(SqliteStore::open_memory().expect("initialize test store"));
+        let pid = std::process::id();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock drift")
+            .as_nanos();
+        let transcript_root =
+            std::env::temp_dir().join(format!("openjax-gateway-transcript-test-{pid}-{nanos}"));
+        let transcript = Arc::new(TranscriptStore::new(transcript_root));
+        let session_index =
+            Arc::new(SessionIndexStore::new(transcript.root()).expect("init test session index"));
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             api_keys: Arc::new(api_keys),
             auth_service: Arc::new(auth_service),
             store,
+            transcript,
+            session_index,
+            auto_title_dedupe: Arc::new(StdMutex::new(AutoTitleDedupeCache::new(
+                AUTO_TITLE_DEDUPE_TTL_MS,
+                AUTO_TITLE_DEDUPE_MAX_KEYS,
+            ))),
         }
     }
 
@@ -93,9 +118,26 @@ impl AppState {
 
     pub async fn create_session(&self) -> Result<String, ApiError> {
         let session_id = format!("sess_{}", Uuid::new_v4().simple());
-        self.store
-            .create_session(&session_id, None)
-            .map_err(map_store_error)?;
+        let now = crate::error::now_rfc3339();
+        let entry = IndexSessionEntry {
+            session_id: session_id.clone(),
+            title: None,
+            created_at: now.clone(),
+            updated_at: now,
+            last_event_seq: 0,
+            last_preview: String::new(),
+        };
+        self.session_index
+            .create_session_index_entry(entry)
+            .map_err(map_session_index_error)?;
+        if let Err(store_err) = self.store.create_session(&session_id, None) {
+            if let Err(rollback_err) = self.session_index.delete_session_index_entry(&session_id) {
+                return Err(ApiError::internal(format!(
+                    "create_session store failure rollback failed: store={store_err:#}; rollback={rollback_err:#}"
+                )));
+            }
+            return Err(map_store_error(store_err));
+        }
         let runtime = self
             .build_session_runtime(&session_id)
             .map_err(map_store_error)?;
@@ -114,10 +156,10 @@ impl AppState {
             return Ok(runtime);
         }
         let exists = self
-            .store
-            .get_session(session_id)
-            .map_err(map_store_error)?
-            .is_some();
+            .session_index
+            .list_sessions()
+            .iter()
+            .any(|entry| entry.session_id == session_id);
         if !exists {
             return Err(ApiError::not_found(
                 "session not found",
@@ -149,14 +191,68 @@ impl AppState {
             };
             guard.runtime.clear_session_overlay(session_id);
         }
-        self.store
-            .delete_session(session_id)
-            .map_err(map_store_error)?;
+        let index_entry_snapshot = self
+            .session_index
+            .list_sessions()
+            .into_iter()
+            .find(|entry| entry.session_id == session_id);
+        self.session_index
+            .delete_session_index_entry(session_id)
+            .map_err(map_session_index_error)?;
+        if let Err(store_err) = self.store.delete_session(session_id) {
+            if let Some(snapshot) = index_entry_snapshot {
+                if let Err(rollback_err) = self.session_index.create_session_index_entry(snapshot) {
+                    return Err(ApiError::internal(format!(
+                        "delete_session store failure rollback failed: store={store_err:#}; rollback={rollback_err:#}"
+                    )));
+                }
+            }
+            return Err(map_store_error(store_err));
+        }
         Ok(())
     }
 
-    pub fn list_persisted_sessions(&self) -> Result<Vec<openjax_store::SessionRecord>, ApiError> {
-        self.store.list_sessions().map_err(map_store_error)
+    pub fn list_persisted_sessions(
+        &self,
+        cursor: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<(Vec<IndexSessionEntry>, Option<(String, String)>), ApiError> {
+        if self.session_index.is_repair_required() {
+            return Err(ApiError {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                code: "INDEX_REPAIR_REQUIRED",
+                message: "session index requires repair".to_string(),
+                retryable: false,
+                details: json!({}),
+            });
+        }
+        let all = self.session_index.list_sessions();
+        let mut filtered = Vec::new();
+        for item in all {
+            let include = match cursor {
+                None => true,
+                Some((cursor_updated_at, cursor_session_id)) => {
+                    item.updated_at.as_str() < cursor_updated_at
+                        || (item.updated_at.as_str() == cursor_updated_at
+                            && item.session_id.as_str() < cursor_session_id)
+                }
+            };
+            if include {
+                filtered.push(item);
+            }
+        }
+        let mut sessions = filtered.into_iter().take(limit).collect::<Vec<_>>();
+        let next_cursor = if sessions.len() == limit {
+            sessions
+                .last()
+                .map(|last| (last.updated_at.clone(), last.session_id.clone()))
+        } else {
+            None
+        };
+        if sessions.is_empty() {
+            sessions.shrink_to_fit();
+        }
+        Ok((sessions, next_cursor))
     }
 
     pub fn list_session_messages(
@@ -172,10 +268,10 @@ impl AppState {
         &self,
         session_id: &str,
         after_event_seq: Option<u64>,
-    ) -> Result<Vec<openjax_store::EventRecord>, ApiError> {
-        self.store
-            .list_events(session_id, after_event_seq)
-            .map_err(map_store_error)
+    ) -> Result<Vec<TranscriptRecord>, ApiError> {
+        self.transcript
+            .replay(session_id, after_event_seq)
+            .map_err(|err| ApiError::internal(err.to_string()))
     }
 
     pub fn append_message(
@@ -191,21 +287,126 @@ impl AppState {
         Ok(())
     }
 
-    pub fn append_event(&self, event: &StreamEventEnvelope) -> Result<(), ApiError> {
-        let payload_json = serde_json::to_string(&event.payload)
+    pub fn update_session_title(
+        &self,
+        session_id: &str,
+        title: Option<String>,
+    ) -> Result<(), ApiError> {
+        self.session_index
+            .update_session_title(session_id, title)
+            .map_err(map_session_index_error)?;
+        if let Err(err) = self.store.touch_session(session_id) {
+            warn!(
+                session_id,
+                error_message = %err,
+                "sqlite touch_session failed after title update; continuing with file index as source of truth"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn update_session_tags(&self, session_id: &str, tags: Vec<String>) -> Result<(), ApiError> {
+        self.session_index
+            .update_session_tags(session_id, tags)
+            .map_err(map_session_index_error)?;
+        if let Err(err) = self.store.touch_session(session_id) {
+            warn!(
+                session_id,
+                error_message = %err,
+                "sqlite touch_session failed after tags update; continuing with file index as source of truth"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn append_event(
+        &self,
+        event: &StreamEventEnvelope,
+    ) -> Result<StreamEventEnvelope, ApiError> {
+        if cfg!(debug_assertions) {
+            let force_all = event.request_id.contains("__force_append_fail_all__");
+            let force_payload = event
+                .payload
+                .get("__force_append_fail")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            if force_all || force_payload {
+                return Err(ApiError::internal("forced append failure"));
+            }
+        }
+        let record = TranscriptRecord {
+            schema_version: crate::transcript::TRANSCRIPT_SCHEMA_VERSION,
+            session_id: event.session_id.clone(),
+            event_seq: event.event_seq,
+            turn_seq: event.turn_seq,
+            turn_id: event.turn_id.clone(),
+            event_type: event.event_type.clone(),
+            stream_source: event.stream_source.clone(),
+            timestamp: event.timestamp.clone(),
+            payload: event.payload.clone(),
+            request_id: event.request_id.clone(),
+        };
+        let persisted = self
+            .transcript
+            .append(&record)
             .map_err(|err| ApiError::internal(err.to_string()))?;
-        self.store
-            .append_event(
-                &event.session_id,
-                event.event_seq,
-                event.turn_seq,
-                event.turn_id.as_deref(),
-                &event.event_type,
-                &payload_json,
-                &event.timestamp,
-                &event.stream_source,
+        if let Err(err) = self.refresh_session_index_from_event(&persisted) {
+            warn!(
+                session_id = %persisted.session_id,
+                event_seq = persisted.event_seq,
+                event_type = %persisted.event_type,
+                error_code = err.code,
+                error_message = %err.message,
+                "session index refresh failed after transcript append"
+            );
+        }
+        Ok(StreamEventEnvelope {
+            request_id: persisted.request_id,
+            session_id: persisted.session_id,
+            turn_id: persisted.turn_id,
+            event_seq: persisted.event_seq,
+            turn_seq: persisted.turn_seq,
+            timestamp: persisted.timestamp,
+            event_type: persisted.event_type,
+            stream_source: persisted.stream_source,
+            payload: persisted.payload,
+        })
+    }
+
+    fn refresh_session_index_from_event(&self, record: &TranscriptRecord) -> Result<(), ApiError> {
+        let current_entry = self
+            .session_index
+            .list_sessions()
+            .into_iter()
+            .find(|entry| entry.session_id == record.session_id);
+        let current_preview = current_entry
+            .as_ref()
+            .map(|entry| entry.last_preview.clone())
+            .unwrap_or_default();
+        if let Some(next_title) = derive_session_title(&record.event_type, &record.payload) {
+            let should_skip = build_auto_title_dedupe_key(record)
+                .map(|key| {
+                    let now_ms = now_unix_ms();
+                    let mut cache = self.auto_title_dedupe.lock().unwrap_or_else(|e| e.into_inner());
+                    cache.should_skip(key, now_ms)
+                })
+                .unwrap_or(false);
+            if !should_skip {
+                self.session_index
+                    .update_session_title_if_empty(&record.session_id, next_title)
+                    .map_err(map_session_index_error)?;
+            }
+        }
+        let next_preview =
+            derive_last_preview(&record.event_type, &record.payload).unwrap_or(current_preview);
+        self.session_index
+            .touch_session_index_entry(
+                &record.session_id,
+                record.timestamp.clone(),
+                record.event_seq,
+                next_preview,
             )
-            .map_err(map_store_error)?;
+            .map_err(map_session_index_error)?;
         Ok(())
     }
 
@@ -233,8 +434,7 @@ impl AppState {
         params: CreateProviderParams<'_>,
     ) -> Result<openjax_store::ProviderRecord, ApiError> {
         let store = self.store.as_ref();
-        <SqliteStore as ProviderRepository>::create_provider(store, params)
-            .map_err(map_store_error)
+        <SqliteStore as ProviderRepository>::create_provider(store, params).map_err(map_store_error)
     }
 
     pub fn update_provider(
@@ -242,8 +442,7 @@ impl AppState {
         params: UpdateProviderParams<'_>,
     ) -> Result<Option<openjax_store::ProviderRecord>, ApiError> {
         let store = self.store.as_ref();
-        <SqliteStore as ProviderRepository>::update_provider(store, params)
-            .map_err(map_store_error)
+        <SqliteStore as ProviderRepository>::update_provider(store, params).map_err(map_store_error)
     }
 
     pub fn delete_provider(&self, provider_id: &str) -> Result<bool, ApiError> {
@@ -275,18 +474,16 @@ impl AppState {
         let config = build_runtime_config(providers, active_provider_id.as_deref());
         let mut runtime = SessionRuntime::new_with_config(config);
         runtime.active_provider_id = active_provider_id;
-        if let Some(max_event_seq) = self.store.last_event_seq(session_id)? {
+        let events = self
+            .transcript
+            .replay(session_id, None)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        if let Some(max_event_seq) = events.last().map(|event| event.event_seq) {
             runtime.next_event_seq = max_event_seq.saturating_add(1);
         }
-        for (turn_id, seq) in self.store.last_turn_seq_by_turn(session_id)? {
-            runtime.turn_event_seq.insert(turn_id, seq);
-        }
-        let events = self.store.list_events(session_id, None)?;
         for row in events {
-            let payload =
-                serde_json::from_str::<Value>(&row.payload_json).unwrap_or_else(|_| json!({}));
             let envelope = StreamEventEnvelope {
-                request_id: format!("req_replay_{}", row.id),
+                request_id: row.request_id.clone(),
                 session_id: row.session_id.clone(),
                 turn_id: row.turn_id.clone(),
                 event_seq: row.event_seq,
@@ -294,19 +491,208 @@ impl AppState {
                 timestamp: row.timestamp.clone(),
                 event_type: row.event_type.clone(),
                 stream_source: row.stream_source.clone(),
-                payload: payload.clone(),
+                payload: row.payload.clone(),
             };
             let _ = runtime.event_log.push(envelope);
-            if let Some(turn_id) = row.turn_id {
+            if let Some(turn_id) = row.turn_id.clone() {
+                runtime.observe_stream_node_ids(Some(&turn_id), &row.event_type, &row.payload);
                 let turn = runtime
                     .turns
-                    .entry(turn_id)
+                    .entry(turn_id.clone())
                     .or_insert_with(TurnRuntime::queued);
-                apply_turn_runtime_event(turn, &row.event_type, &payload);
+                apply_turn_runtime_event(turn, &row.event_type, &row.payload);
+                runtime.turn_event_seq.insert(turn_id, row.turn_seq);
             }
         }
         Ok(Arc::new(Mutex::new(runtime)))
     }
+}
+
+fn derive_last_preview(event_type: &str, payload: &serde_json::Value) -> Option<String> {
+    if event_type != "user_message" {
+        return None;
+    }
+    payload
+        .get("content")
+        .and_then(|value| value.as_str())
+        .map(|content| truncate_utf8_chars(content.trim(), 120))
+}
+
+fn derive_session_title(
+    event_type: &str,
+    payload: &serde_json::Value,
+) -> Option<String> {
+    if event_type != "user_message" {
+        return None;
+    }
+    let raw = payload.get("content").and_then(|value| value.as_str())?;
+    let normalized = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    const MAX_TITLE_CHARS: usize = 24;
+    let title = if normalized.chars().count() > MAX_TITLE_CHARS {
+        format!(
+            "{}...",
+            normalized.chars().take(MAX_TITLE_CHARS).collect::<String>()
+        )
+    } else {
+        normalized
+    };
+    Some(title)
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+fn build_auto_title_dedupe_key(record: &TranscriptRecord) -> Option<String> {
+    if record.event_type != "user_message" {
+        return None;
+    }
+    let raw = record.payload.get("content").and_then(|value| value.as_str())?;
+    let normalized = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    normalized.hash(&mut hasher);
+    let content_hash = hasher.finish();
+    Some(format!(
+        "{}|{}|{}|{}|{}",
+        record.session_id,
+        record.turn_id.as_deref().unwrap_or_default(),
+        record.turn_seq,
+        record.event_type,
+        content_hash
+    ))
+}
+
+#[derive(Debug)]
+struct AutoTitleDedupeCache {
+    ttl_ms: u64,
+    cap: usize,
+    expires_at: HashMap<String, u64>,
+    order: VecDeque<String>,
+}
+
+impl AutoTitleDedupeCache {
+    fn new(ttl_ms: u64, cap: usize) -> Self {
+        Self {
+            ttl_ms,
+            cap: cap.max(1),
+            expires_at: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn should_skip(&mut self, key: String, now_ms: u64) -> bool {
+        self.evict_expired(now_ms);
+        if let Some(expires_at) = self.expires_at.get(&key).copied() {
+            if expires_at > now_ms {
+                return true;
+            }
+            self.expires_at.remove(&key);
+        }
+        self.order.retain(|queued| queued != &key);
+        let next_expiry = now_ms.saturating_add(self.ttl_ms);
+        self.expires_at.insert(key.clone(), next_expiry);
+        self.order.push_back(key);
+        self.evict_overflow();
+        false
+    }
+
+    fn evict_expired(&mut self, now_ms: u64) {
+        let mut next_order = VecDeque::with_capacity(self.order.len());
+        let mut seen = HashSet::new();
+        while let Some(key) = self.order.pop_front() {
+            let Some(expires_at) = self.expires_at.get(&key).copied() else {
+                continue;
+            };
+            if expires_at <= now_ms {
+                self.expires_at.remove(&key);
+                continue;
+            }
+            if seen.insert(key.clone()) {
+                next_order.push_back(key);
+            }
+        }
+        self.order = next_order;
+    }
+
+    fn evict_overflow(&mut self) {
+        while self.expires_at.len() > self.cap {
+            let Some(front) = self.order.pop_front() else {
+                break;
+            };
+            self.expires_at.remove(&front);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AUTO_TITLE_DEDUPE_MAX_KEYS, AUTO_TITLE_DEDUPE_TTL_MS, AutoTitleDedupeCache,
+        derive_session_title,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn auto_title_dedupe_cache_honors_ttl_window() {
+        let mut cache = AutoTitleDedupeCache::new(AUTO_TITLE_DEDUPE_TTL_MS, 8);
+        let now = 1_000_u64;
+        assert!(!cache.should_skip("k1".to_string(), now));
+        assert!(cache.should_skip("k1".to_string(), now + AUTO_TITLE_DEDUPE_TTL_MS - 1));
+        assert!(!cache.should_skip("k1".to_string(), now + AUTO_TITLE_DEDUPE_TTL_MS));
+    }
+
+    #[test]
+    fn auto_title_dedupe_cache_evicts_oldest_when_over_capacity() {
+        let mut cache = AutoTitleDedupeCache::new(AUTO_TITLE_DEDUPE_TTL_MS, 2);
+        let now = 1_000_u64;
+        assert!(!cache.should_skip("k1".to_string(), now));
+        assert!(!cache.should_skip("k2".to_string(), now));
+        assert!(!cache.should_skip("k3".to_string(), now));
+        assert_eq!(cache.expires_at.len(), 2);
+        assert!(!cache.should_skip("k1".to_string(), now + 1));
+    }
+
+    #[test]
+    fn auto_title_dedupe_cache_handles_middle_expiry_and_key_reinsert() {
+        let mut cache = AutoTitleDedupeCache::new(10, 8);
+        assert!(!cache.should_skip("k1".to_string(), 0));
+        assert!(!cache.should_skip("k2".to_string(), 1));
+        assert!(!cache.should_skip("k3".to_string(), 2));
+        assert!(!cache.should_skip("k2".to_string(), 20));
+        assert!(cache.should_skip("k2".to_string(), 21));
+    }
+
+    #[test]
+    fn derive_session_title_normalizes_whitespace_and_truncates_24_codepoints() {
+        let normalized = derive_session_title("user_message", &json!({ "content": "  a\t b \n c " }));
+        assert_eq!(normalized.as_deref(), Some("a b c"));
+
+        let long = "你".repeat(25);
+        let truncated = derive_session_title("user_message", &json!({ "content": long }));
+        assert_eq!(truncated.as_deref(), Some(format!("{}...", "你".repeat(24)).as_str()));
+    }
+
+    #[test]
+    fn dedupe_constants_match_spec_contract() {
+        assert_eq!(AUTO_TITLE_DEDUPE_TTL_MS, 30_000);
+        assert_eq!(AUTO_TITLE_DEDUPE_MAX_KEYS, 10_000);
+    }
+}
+
+fn truncate_utf8_chars(input: &str, max_chars: usize) -> String {
+    if input.chars().count() <= max_chars {
+        return input.to_string();
+    }
+    input.chars().take(max_chars).collect()
 }
 
 impl Default for AppState {
@@ -315,601 +701,15 @@ impl Default for AppState {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Turn task
-// ---------------------------------------------------------------------------
-
-pub async fn run_turn_task(
-    app_state: AppState,
-    session_runtime: Arc<Mutex<SessionRuntime>>,
-    session_id: String,
-    request_id: String,
-    input: String,
-    turn_id_tx: oneshot::Sender<Result<String, ApiError>>,
-) {
-    let (event_sink_tx, mut event_sink_rx) = mpsc::unbounded_channel();
-    let (policy_level_override, overlay_rules, agent) = {
-        let guard = session_runtime.lock().await;
-        (
-            guard.policy_level_override.clone(),
-            guard.policy_overlay_rules.clone(),
-            guard.agent.clone(),
-        )
-    };
-    let policy_runtime = {
-        let policy_state = gateway_policy_state(&app_state.store);
-        let guard = match policy_state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        if let Some(override_decision) = policy_level_override {
-            // User explicitly set a policy level for this session.
-            // Build an independent runtime so the gateway global default (Ask)
-            // does not overwrite the user's choice on every turn.
-            let store = PolicyStore::new(override_decision, vec![]);
-            let fresh = PolicyRuntime::new(store);
-            if !overlay_rules.is_empty() {
-                fresh.set_session_overlay(&session_id, SessionOverlay::new(overlay_rules));
-            }
-            fresh
-        } else {
-            guard.runtime.clone()
-        }
-    };
-    let session_id_for_core = session_id.clone();
-
-    let submit_task = tokio::spawn(async move {
-        let mut guard = agent.lock().await;
-        guard.set_policy_runtime(Some(policy_runtime));
-        guard.set_policy_session_id(Some(session_id_for_core));
-        guard
-            .submit_with_sink(openjax_protocol::Op::UserTurn { input }, event_sink_tx)
-            .await
-    });
-
-    let should_abort_now = {
-        let mut session = session_runtime.lock().await;
-        session.current_turn_abort_handle = Some(submit_task.abort_handle());
-        session.turn_submit_in_flight = false;
-        session.turn_abort_requested
-    };
-    if should_abort_now {
-        submit_task.abort();
-    }
-
-    let mut sent_turn_id = false;
-    let mut last_known_public_turn_id: Option<String> = None;
-    let mut pending_turn_id_tx = Some(turn_id_tx);
-    while let Some(event) = event_sink_rx.recv().await {
-        let mapped = {
-            let mut session = session_runtime.lock().await;
-            map_core_event(
-                &app_state,
-                &mut session,
-                &session_id,
-                &request_id,
-                event,
-                &mut pending_turn_id_tx,
-            )
-        };
-        if let Some(turn_id) = mapped {
-            sent_turn_id = true;
-            last_known_public_turn_id = Some(turn_id);
-        }
-    }
-
-    match submit_task.await {
-        Ok(events) => {
-            {
-                let mut session = session_runtime.lock().await;
-                session.current_turn_abort_handle = None;
-                session.turn_submit_in_flight = false;
-                session.turn_abort_requested = false;
-            }
-            if !sent_turn_id {
-                let mut session = session_runtime.lock().await;
-                if let Some(core_turn_id) = first_turn_id(&events) {
-                    let public_turn_id = session.get_or_create_public_turn_id(core_turn_id);
-                    if let Some(tx) = pending_turn_id_tx.take() {
-                        let _ = tx.send(Ok(public_turn_id));
-                    }
-                } else if let Some(tx) = pending_turn_id_tx.take() {
-                    let _ = tx.send(Err(ApiError::internal("failed to infer turn id")));
-                }
-            }
-        }
-        Err(join_error) => {
-            {
-                let mut session = session_runtime.lock().await;
-                session.current_turn_abort_handle = None;
-                session.turn_submit_in_flight = false;
-                session.turn_abort_requested = false;
-            }
-
-            if join_error.is_cancelled() {
-                let mut session = session_runtime.lock().await;
-                let public_turn_id = last_known_public_turn_id.clone().or_else(|| {
-                    session
-                        .turns
-                        .iter()
-                        .find(|(_, turn)| turn.status == TurnStatus::Running)
-                        .map(|(turn_id, _)| turn_id.clone())
-                });
-                if let Some(turn_id) = public_turn_id.as_ref()
-                    && let Some(turn) = session.turns.get_mut(turn_id)
-                    && matches!(turn.status, TurnStatus::Queued | TurnStatus::Running)
-                {
-                    turn.status = TurnStatus::Failed;
-                    turn.error = Some(ApiTurnError {
-                        code: "TURN_ABORTED".to_string(),
-                        message: "turn aborted by user".to_string(),
-                        retryable: false,
-                        details: json!({ "reason": "user_abort" }),
-                    });
-                }
-                let envelope = session.create_gateway_event(
-                    &request_id,
-                    &session_id,
-                    public_turn_id.clone(),
-                    "turn_interrupted",
-                    json!({ "reason": "user_abort" }),
-                    Some("synthetic"),
-                );
-                publish_and_persist_event(&app_state, &mut session, envelope);
-            }
-
-            if let Some(tx) = pending_turn_id_tx.take() {
-                let err = if join_error.is_cancelled() {
-                    ApiError::conflict("turn aborted by user", json!({ "reason": "user_abort" }))
-                } else {
-                    ApiError::upstream_unavailable("core execution task failed", json!({}))
-                };
-                let _ = tx.send(Err(err));
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Event mapping
-// ---------------------------------------------------------------------------
-
-fn apply_turn_runtime_event(turn: &mut TurnRuntime, event_type: &str, payload: &Value) {
-    if event_type == "turn_started" {
-        turn.status = TurnStatus::Running;
-        return;
-    }
-    if event_type == "turn_completed" {
-        if !matches!(turn.status, TurnStatus::Failed) {
-            turn.status = TurnStatus::Completed;
-        }
-        return;
-    }
-    if event_type == "response_error" || event_type == "error" {
-        turn.status = TurnStatus::Failed;
-        turn.error = Some(ApiTurnError {
-            code: payload
-                .get("code")
-                .and_then(|value| value.as_str())
-                .unwrap_or("UPSTREAM_ERROR")
-                .to_string(),
-            message: payload
-                .get("message")
-                .and_then(|value| value.as_str())
-                .unwrap_or("response failed")
-                .to_string(),
-            retryable: payload
-                .get("retryable")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false),
-            details: payload.clone(),
-        });
-        return;
-    }
-    if event_type == "turn_interrupted" {
-        turn.status = TurnStatus::Failed;
-        turn.error = Some(ApiTurnError {
-            code: "TURN_ABORTED".to_string(),
-            message: "turn aborted by user".to_string(),
+fn map_session_index_error(err: anyhow::Error) -> ApiError {
+    if format!("{err:#}").contains("index_repair_required") {
+        return ApiError {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "INDEX_REPAIR_REQUIRED",
+            message: "session index requires repair".to_string(),
             retryable: false,
-            details: payload.clone(),
-        });
-        return;
+            details: json!({}),
+        };
     }
-    if event_type == "assistant_message" {
-        // Intentional decommission rule:
-        // assistant_message-only history is no longer authoritative and does not
-        // populate turn.assistant_message in runtime replay.
-        return;
-    }
-    if event_type == "response_completed"
-        && let Some(content) = payload.get("content").and_then(|value| value.as_str())
-    {
-        turn.assistant_message = Some(content.to_string());
-        turn.status = TurnStatus::Completed;
-    }
-}
-
-fn publish_and_persist_event(
-    app_state: &AppState,
-    session: &mut SessionRuntime,
-    event: StreamEventEnvelope,
-) {
-    if let Err(err) = app_state.append_event(&event) {
-        warn!(
-            session_id = %event.session_id,
-            event_seq = event.event_seq,
-            event_type = %event.event_type,
-            error = %err.message,
-            "failed to persist event"
-        );
-    }
-    session.publish_event(event);
-}
-
-fn map_core_event(
-    app_state: &AppState,
-    session: &mut SessionRuntime,
-    session_id: &str,
-    request_id: &str,
-    event: Event,
-    turn_id_tx: &mut Option<oneshot::Sender<Result<String, ApiError>>>,
-) -> Option<String> {
-    let mapping = map_core_event_payload(&event)?;
-    let core_turn_id = mapping.core_turn_id;
-    let event_type = mapping.event_type;
-    let payload = mapping.payload;
-    let stream_source = mapping.stream_source;
-
-    let public_turn_id = core_turn_id.map(|tid| session.get_or_create_public_turn_id(tid));
-    if let Some(turn_id) = &public_turn_id {
-        let turn = session
-            .turns
-            .entry(turn_id.clone())
-            .or_insert_with(TurnRuntime::queued);
-        apply_turn_runtime_event(turn, event_type, &payload);
-        if event_type == "response_completed"
-            && let Some(content) = payload.get("content").and_then(|value| value.as_str())
-        {
-            turn.assistant_message = Some(content.to_string());
-            let _ = app_state.append_message(session_id, Some(turn_id), "assistant", content);
-        }
-    }
-
-    if let Some(turn_id) = public_turn_id.clone()
-        && let Some(tx) = turn_id_tx.take()
-    {
-        let _ = tx.send(Ok(turn_id));
-    }
-
-    let envelope = session.create_gateway_event(
-        request_id,
-        session_id,
-        public_turn_id.clone(),
-        event_type,
-        payload,
-        stream_source,
-    );
-    if event_type == "reasoning_delta" {
-        let delta_raw = envelope
-            .payload
-            .get("content_delta")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default();
-        let (delta_preview, delta_preview_truncated) = reasoning_preview(delta_raw);
-        info!(
-            target: AFTER_DISPATCH_LOG_TARGET,
-            session_id = %session_id,
-            turn_id = ?public_turn_id,
-            flow_prefix = AFTER_DISPATCH_PREFIX,
-            flow_node = "gateway.reasoning.publish",
-            flow_route = "reasoning_delta",
-            flow_next = "frontend.reasoning_delta",
-            event_seq = envelope.event_seq,
-            turn_seq = envelope.turn_seq,
-            delta_len = delta_raw.chars().count(),
-            delta_preview = %delta_preview,
-            delta_preview_truncated = delta_preview_truncated,
-            "after_dispatcher_trace"
-        );
-    }
-    if gateway_stream_debug_enabled()
-        && matches!(
-            event_type,
-            "response_started"
-                | "response_text_delta"
-                | "response_completed"
-                | "turn_completed"
-                | "response_error"
-        )
-    {
-        let delta_raw = envelope
-            .payload
-            .get("content_delta")
-            .and_then(|value| value.as_str());
-        let content_raw = envelope
-            .payload
-            .get("content")
-            .and_then(|value| value.as_str());
-        let delta_len = envelope
-            .payload
-            .get("content_delta")
-            .and_then(|value| value.as_str())
-            .map(|value| value.len());
-        let content_len = envelope
-            .payload
-            .get("content")
-            .and_then(|value| value.as_str())
-            .map(|value| value.len());
-        let (delta_preview, delta_preview_truncated) = delta_raw
-            .map(|value| log_preview(value, 24))
-            .map(|(preview, truncated)| (Some(preview), Some(truncated)))
-            .unwrap_or((None, None));
-        let (content_preview, content_preview_truncated) = content_raw
-            .map(|value| log_preview(value, 80))
-            .map(|(preview, truncated)| (Some(preview), Some(truncated)))
-            .unwrap_or((None, None));
-        let assistant_len = public_turn_id
-            .as_ref()
-            .and_then(|turn_id| session.turns.get(turn_id))
-            .and_then(|turn| turn.assistant_message.as_ref())
-            .map(|value| value.len());
-        let event_gap_ms = session
-            .get_last_event_emitted_at()
-            .map(|ts: std::time::Instant| ts.elapsed().as_millis() as u64);
-        info!(
-            session_id = %session_id,
-            turn_id = ?public_turn_id,
-            event_type = event_type,
-            event_seq = envelope.event_seq,
-            turn_seq = envelope.turn_seq,
-            stream_source = %envelope.stream_source,
-            delta_len = ?delta_len,
-            delta_preview = ?delta_preview,
-            delta_preview_truncated = ?delta_preview_truncated,
-            content_len = ?content_len,
-            content_preview = ?content_preview,
-            content_preview_truncated = ?content_preview_truncated,
-            assistant_message_len = ?assistant_len,
-            event_gap_ms = ?event_gap_ms,
-            "stream_debug.gateway_event_emitted"
-        );
-    }
-    if (event_type == "tool_call_started"
-        || event_type == "tool_call_ready"
-        || event_type == "tool_call_completed")
-        && envelope.payload.get("tool_call_id").is_some()
-    {
-        info!(
-            event_type = event_type,
-            turn_id = ?public_turn_id,
-            tool_call_id = ?envelope.payload.get("tool_call_id").and_then(|v| v.as_str()),
-            "tool event mapped"
-        );
-    }
-    session.set_last_event_emitted_at(Some(std::time::Instant::now()));
-    publish_and_persist_event(app_state, session, envelope);
-
-    public_turn_id
-}
-
-fn first_turn_id(events: &[Event]) -> Option<u64> {
-    for event in events {
-        match event {
-            Event::TurnStarted { turn_id }
-            | Event::ToolCallStarted { turn_id, .. }
-            | Event::ToolCallCompleted { turn_id, .. }
-            | Event::ToolCallArgsDelta { turn_id, .. }
-            | Event::ToolCallReady { turn_id, .. }
-            | Event::ToolCallProgress { turn_id, .. }
-            | Event::ToolCallFailed { turn_id, .. }
-            | Event::AssistantMessage { turn_id, .. }
-            | Event::ResponseStarted { turn_id, .. }
-            | Event::ResponseTextDelta { turn_id, .. }
-            | Event::ReasoningDelta { turn_id, .. }
-            | Event::ToolCallsProposed { turn_id, .. }
-            | Event::ToolBatchCompleted { turn_id, .. }
-            | Event::ResponseResumed { turn_id, .. }
-            | Event::ResponseCompleted { turn_id, .. }
-            | Event::ResponseError { turn_id, .. }
-            | Event::ApprovalRequested { turn_id, .. }
-            | Event::ApprovalResolved { turn_id, .. }
-            | Event::LoopWarning { turn_id, .. }
-            | Event::TurnCompleted { turn_id } => return Some(*turn_id),
-            Event::AgentSpawned { .. }
-            | Event::AgentStatusChanged { .. }
-            | Event::ContextUsageUpdated { .. }
-            | Event::ContextCompacted { .. }
-            | Event::ShutdownComplete => {}
-        }
-    }
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use openjax_protocol::ShellExecutionMetadata;
-    use std::collections::HashSet;
-
-    #[test]
-    fn turn_status_remains_failed_after_turn_completed() {
-        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
-        let mut session = SessionRuntime::default();
-        let mut turn_id_tx = None;
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::ResponseError {
-                turn_id: 1,
-                code: "ERR".to_string(),
-                message: "failed".to_string(),
-                retryable: false,
-            },
-            &mut turn_id_tx,
-        );
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::TurnCompleted { turn_id: 1 },
-            &mut turn_id_tx,
-        );
-        let turn = session.turns.get("turn_1").expect("turn exists");
-        assert_eq!(turn.status, TurnStatus::Failed);
-    }
-
-    #[test]
-    fn turn_message_only_updates_from_response_completed() {
-        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
-        let mut session = SessionRuntime::default();
-        let mut turn_id_tx = None;
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::TurnStarted { turn_id: 1 },
-            &mut turn_id_tx,
-        );
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::AssistantMessage {
-                turn_id: 1,
-                content: "legacy".to_string(),
-            },
-            &mut turn_id_tx,
-        );
-        let turn = session.turns.get("turn_1").expect("turn exists");
-        assert!(turn.assistant_message.is_none());
-
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::ResponseCompleted {
-                turn_id: 1,
-                content: "final".to_string(),
-                stream_source: openjax_protocol::StreamSource::Synthetic,
-            },
-            &mut turn_id_tx,
-        );
-        let turn = session.turns.get("turn_1").expect("turn exists");
-        assert_eq!(turn.assistant_message.as_deref(), Some("final"));
-    }
-
-    #[test]
-    fn response_completed_overrides_later_assistant_message() {
-        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
-        let mut session = SessionRuntime::default();
-        let mut turn_id_tx = None;
-
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::TurnStarted { turn_id: 1 },
-            &mut turn_id_tx,
-        );
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::ResponseCompleted {
-                turn_id: 1,
-                content: "final".to_string(),
-                stream_source: openjax_protocol::StreamSource::Synthetic,
-            },
-            &mut turn_id_tx,
-        );
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::AssistantMessage {
-                turn_id: 1,
-                content: "legacy".to_string(),
-            },
-            &mut turn_id_tx,
-        );
-
-        let turn = session.turns.get("turn_1").expect("turn exists");
-        assert_eq!(turn.status, TurnStatus::Completed);
-        assert_eq!(turn.assistant_message.as_deref(), Some("final"));
-    }
-
-    #[test]
-    fn first_turn_id_supports_reasoning_delta() {
-        let turn_id = first_turn_id(&[Event::ReasoningDelta {
-            turn_id: 7,
-            content_delta: "thinking".to_string(),
-            stream_source: openjax_protocol::StreamSource::ModelLive,
-        }]);
-        assert_eq!(turn_id, Some(7));
-    }
-
-    #[test]
-    fn turn_interrupted_marks_turn_failed_with_abort_error() {
-        let mut turn = TurnRuntime::queued();
-        apply_turn_runtime_event(
-            &mut turn,
-            "turn_interrupted",
-            &json!({ "reason": "user_abort" }),
-        );
-        assert_eq!(turn.status, TurnStatus::Failed);
-        let error = turn.error.expect("abort error");
-        assert_eq!(error.code, "TURN_ABORTED");
-        assert!(!error.retryable);
-    }
-
-    #[test]
-    fn tool_call_completed_replay_event_keeps_shell_metadata() {
-        let app_state = AppState::new_with_api_keys_for_test(HashSet::new());
-        let mut session = SessionRuntime::default();
-        let mut turn_id_tx = None;
-
-        let _ = map_core_event(
-            &app_state,
-            &mut session,
-            "sess_1",
-            "req_1",
-            Event::ToolCallCompleted {
-                turn_id: 1,
-                tool_call_id: "call_1".to_string(),
-                tool_name: "shell".to_string(),
-                ok: true,
-                output: "done".to_string(),
-                shell_metadata: Some(ShellExecutionMetadata {
-                    result_class: "success".to_string(),
-                    backend: "sandbox".to_string(),
-                    exit_code: 0,
-                    policy_decision: "allow".to_string(),
-                    runtime_allowed: true,
-                    degrade_reason: None,
-                    runtime_deny_reason: None,
-                }),
-                display_name: Some("Run Shell".to_string()),
-            },
-            &mut turn_id_tx,
-        );
-
-        let replay = session
-            .replay_from(None)
-            .expect("replay events should exist");
-        let event = replay.last().expect("tool call event");
-        assert_eq!(event.event_type, "tool_call_completed");
-        assert_eq!(event.payload["tool_call_id"], "call_1");
-        assert_eq!(event.payload["display_name"], "Run Shell");
-        assert_eq!(event.payload["shell_metadata"]["backend"], "sandbox");
-    }
+    ApiError::internal(err.to_string())
 }

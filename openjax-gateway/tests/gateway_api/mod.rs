@@ -6,3 +6,5 @@ mod m4_approval;
 mod m5_stream_and_timeline;
 mod m6_provider;
 mod m7_policy_level;
+mod m8_transcript_store;
+mod m9_session_index_store;

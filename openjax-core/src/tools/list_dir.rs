@@ -437,7 +437,10 @@ mod tests {
             .expect("list without overflow");
         assert_eq!(
             entries,
-            vec!["beta.txt  (4 B)".to_string(), "gamma.txt  (5 B)".to_string(),]
+            vec![
+                "beta.txt  (4 B)".to_string(),
+                "gamma.txt  (5 B)".to_string(),
+            ]
         );
     }
 

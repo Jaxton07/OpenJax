@@ -18,7 +18,9 @@ interface ComposerProps {
   contextUsage?: ContextUsageState | null;
   policyLevel?: "allow" | "ask" | "deny";
   onPolicyLevelChange?: (level: "allow" | "ask" | "deny") => void;
+  isBusyTurn?: boolean;
   isStreaming?: boolean;
+  onBlockedSendAttempt?: () => void;
   onStop?: () => void;
 }
 
@@ -33,7 +35,9 @@ export default function Composer({
   contextUsage,
   policyLevel,
   onPolicyLevelChange,
+  isBusyTurn,
   isStreaming,
+  onBlockedSendAttempt,
   onStop
 }: ComposerProps) {
   const [input, setInput] = useState("");
@@ -127,6 +131,10 @@ export default function Composer({
   };
 
   const submit = async () => {
+    if (isBusyTurn) {
+      onBlockedSendAttempt?.();
+      return;
+    }
     const trimmed = input.trim();
     if (!trimmed) return;
 
@@ -159,6 +167,10 @@ export default function Composer({
   };
 
   const handleSlashSubmit = async () => {
+    if (isBusyTurn) {
+      onBlockedSendAttempt?.();
+      return;
+    }
     const matched = slashMatches[effectiveSlashIndex];
     if (!matched) {
       await submit();
@@ -198,6 +210,7 @@ export default function Composer({
         onSlashSubmit={() => void handleSlashSubmit()}
         policyLevel={policyLevel}
         onPolicyLevelChange={onPolicyLevelChange}
+        isBusyTurn={isBusyTurn}
         isStreaming={isStreaming}
         onStop={onStop}
       />

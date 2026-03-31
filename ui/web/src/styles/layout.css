@@ -173,6 +173,22 @@
   padding: 8px 10px;
 }
 
+.history-load-more-btn {
+  margin: 6px 6px 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: 12px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.history-load-more-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .history-delete-btn {
   width: 28px;
   height: 28px;

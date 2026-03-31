@@ -24,6 +24,7 @@ help:
 	@echo "    make prefetch          - 预拉取 Rust 依赖 (Cargo.lock)"
 	@echo "    make run-tui           - 运行 Rust TUI (tui_next)"
 	@echo "    make run-web-dev       - 同时启动 gateway + web 前端开发服务"
+	@echo "                            (gateway 默认 cwd: .local-dev-test，可用 OPENJAX_LOCAL_DEV_WORKDIR 覆盖)"
 	@echo "    make build-web-release - 构建 web 静态资源 (ui/web/dist)"
 	@echo "    make build-release-mac - 构建 macOS ARM release 二进制"
 	@echo "    make package-mac       - 打包预编译安装包"
