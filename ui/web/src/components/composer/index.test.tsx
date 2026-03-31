@@ -236,6 +236,7 @@ describe("Composer slash commands", () => {
     const session: ChatSession = {
       id: "sess_ctx",
       title: "Context session",
+      isPlaceholderTitle: false,
       createdAt: "2026-03-21T00:00:00Z",
       connection: "active",
       turnPhase: "draft",

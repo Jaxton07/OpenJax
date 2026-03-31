@@ -100,6 +100,7 @@ export interface ContextUsageState {
 export interface ChatSession {
   id: string;
   title: string;
+  isPlaceholderTitle: boolean;
   createdAt: string;
   connection: SessionConnection;
   turnPhase: TurnPhase;

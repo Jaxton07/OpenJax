@@ -6,10 +6,13 @@ use openjax_gateway::state::core_event_mapping_gate;
 use openjax_gateway::state::{
     TurnRuntime, TurnStatus, append_then_publish, handle_key_event_append_failure,
 };
+use openjax_gateway::transcript::SessionIndexStore;
 use openjax_protocol::{AgentStatus, Event, ThreadId};
 use serde_json::{Value, json};
 use std::fs;
+use std::sync::Arc;
 use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::Barrier;
 use tokio::time::{Duration, timeout};
 use tower::ServiceExt;
 
@@ -247,6 +250,285 @@ async fn appending_user_message_updates_session_index_preview_and_event_seq() {
         .expect("index entry exists");
     assert_eq!(entry.last_event_seq, 1);
     assert_eq!(entry.last_preview.chars().count(), 120);
+    let expected_title = format!("{}...", "你".repeat(24));
+    assert_eq!(entry.title.as_deref(), Some(expected_title.as_str()));
+}
+
+#[tokio::test]
+async fn first_user_message_title_is_not_overwritten_by_later_user_messages() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+
+    {
+        let mut session = session_runtime.lock().await;
+        let first = session.create_gateway_event(
+            "req_first",
+            &session_id,
+            None,
+            "user_message",
+            json!({ "content": "   first   user   title   " }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, first).expect("append first user message");
+
+        let second = session.create_gateway_event(
+            "req_second",
+            &session_id,
+            None,
+            "user_message",
+            json!({ "content": "second user title should not replace" }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, second).expect("append second user message");
+    }
+
+    let entry = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("index entry exists");
+    assert_eq!(entry.title.as_deref(), Some("first user title"));
+}
+
+#[tokio::test]
+async fn manual_title_is_not_overwritten_by_user_message_auto_title() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    state
+        .update_session_title(&session_id, Some("manual-title".to_string()))
+        .expect("set manual title");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+
+    {
+        let mut session = session_runtime.lock().await;
+        let event = session.create_gateway_event(
+            "req_test",
+            &session_id,
+            None,
+            "user_message",
+            json!({ "content": "new content" }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, event).expect("append user message");
+    }
+
+    let entry = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("index entry exists");
+    assert_eq!(entry.title.as_deref(), Some("manual-title"));
+}
+
+#[tokio::test]
+async fn duplicate_user_message_with_same_key_skips_auto_title_side_effect_within_ttl() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+
+    let duplicate_event = {
+        let mut session = session_runtime.lock().await;
+        session.create_gateway_event(
+            "req_dup",
+            &session_id,
+            Some("turn_dup".to_string()),
+            "user_message",
+            json!({ "content": "same payload for dedupe" }),
+            Some("synthetic"),
+        )
+    };
+
+    state.append_event(&duplicate_event).expect("append first event");
+    state
+        .update_session_title(&session_id, None)
+        .expect("clear title to observe dedupe side-effect skip");
+    state
+        .append_event(&duplicate_event)
+        .expect("append duplicate event within dedupe ttl");
+
+    let entry = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("index entry exists");
+    assert_eq!(
+        entry.title, None,
+        "duplicate dedupe key should skip re-applying auto-title side effect"
+    );
+}
+
+#[tokio::test]
+async fn manual_rename_wins_under_concurrent_race_with_auto_title() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+    let race_event = {
+        let mut session = session_runtime.lock().await;
+        session.create_gateway_event(
+            "req_race",
+            &session_id,
+            Some("turn_race".to_string()),
+            "user_message",
+            json!({ "content": "auto title candidate" }),
+            Some("synthetic"),
+        )
+    };
+
+    let barrier = Arc::new(Barrier::new(3));
+    let state_for_manual = state.clone();
+    let state_for_auto = state.clone();
+    let session_id_for_manual = session_id.clone();
+    let manual_barrier = barrier.clone();
+    let auto_barrier = barrier.clone();
+    let auto_event = race_event.clone();
+
+    let manual = tokio::spawn(async move {
+        manual_barrier.wait().await;
+        state_for_manual.update_session_title(&session_id_for_manual, Some("manual-title".to_string()))
+    });
+    let auto = tokio::spawn(async move {
+        auto_barrier.wait().await;
+        state_for_auto.append_event(&auto_event).map(|_| ())
+    });
+
+    barrier.wait().await;
+    manual.await.expect("manual join").expect("manual update");
+    auto.await.expect("auto join").expect("auto append");
+
+    let entry = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("index entry exists");
+    assert_eq!(entry.title.as_deref(), Some("manual-title"));
+}
+
+#[tokio::test]
+async fn auto_title_persists_after_session_index_reload() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let session_id = state.create_session().await.expect("create session");
+    let session_runtime = state
+        .get_session(&session_id)
+        .await
+        .expect("session runtime exists");
+
+    {
+        let mut session = session_runtime.lock().await;
+        let event = session.create_gateway_event(
+            "req_reload",
+            &session_id,
+            None,
+            "user_message",
+            json!({ "content": "persisted title after reload" }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, event).expect("append user message");
+    }
+
+    let reopened = SessionIndexStore::new(state.transcript.root().to_path_buf())
+        .expect("reopen session index from disk");
+    let entry = reopened
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == session_id)
+        .expect("entry exists after reload");
+    assert_eq!(entry.title.as_deref(), Some("persisted title after re..."));
+}
+
+#[tokio::test]
+async fn auto_title_ignores_blank_content_and_applies_24_char_boundary() {
+    let state = AppState::new_with_api_keys_for_test(Default::default());
+    let blank_session_id = state
+        .create_session()
+        .await
+        .expect("create blank-boundary session");
+    let blank_runtime = state
+        .get_session(&blank_session_id)
+        .await
+        .expect("blank session runtime exists");
+    {
+        let mut session = blank_runtime.lock().await;
+        let blank_event = session.create_gateway_event(
+            "req_blank",
+            &blank_session_id,
+            None,
+            "user_message",
+            json!({ "content": "      " }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, blank_event).expect("append blank user message");
+
+        let exact_24 = "a".repeat(24);
+        let exact_event = session.create_gateway_event(
+            "req_exact_24",
+            &blank_session_id,
+            None,
+            "user_message",
+            json!({ "content": exact_24 }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, exact_event)
+            .expect("append exact-24 user message");
+    }
+    let blank_entry = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == blank_session_id)
+        .expect("blank-boundary index entry exists");
+    assert_eq!(
+        blank_entry.title.as_deref(),
+        Some("aaaaaaaaaaaaaaaaaaaaaaaa")
+    );
+
+    let long_session_id = state
+        .create_session()
+        .await
+        .expect("create over-boundary session");
+    let long_runtime = state
+        .get_session(&long_session_id)
+        .await
+        .expect("over-boundary session runtime exists");
+    {
+        let mut session = long_runtime.lock().await;
+        let over_24 = "b".repeat(25);
+        let over_event = session.create_gateway_event(
+            "req_over_24",
+            &long_session_id,
+            None,
+            "user_message",
+            json!({ "content": over_24 }),
+            Some("synthetic"),
+        );
+        append_then_publish(&state, &mut session, over_event).expect("append over-24 user message");
+    }
+    let long_entry = state
+        .session_index
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == long_session_id)
+        .expect("over-boundary index entry exists");
+    assert_eq!(
+        long_entry.title.as_deref(),
+        Some("bbbbbbbbbbbbbbbbbbbbbbbb...")
+    );
 }
 
 #[tokio::test]

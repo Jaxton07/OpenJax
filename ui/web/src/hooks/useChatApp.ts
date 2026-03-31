@@ -26,7 +26,10 @@ import { clearAuthStateRuntime, refreshAccessTokenRuntime, withAuthRetryRuntime 
 import {
   buildChatSessionFromGateway,
   isEmptyDraftSession,
-  isSessionNotFoundError
+  isSessionNotFoundError,
+  PLACEHOLDER_SESSION_TITLE,
+  resolveSessionTitle,
+  summarizeTitle
 } from "./chatApp/session-model";
 import {
   changePolicyLevelAction,
@@ -61,9 +64,10 @@ export async function fetchSidebarSessionSummaries(
 export function buildSidebarSessionsFromSummaries(summaries: GatewaySessionSummary[]): ChatSession[] {
   const hydrated: ChatSession[] = [];
   for (const remoteSession of summaries) {
+    const resolved = resolveSessionTitle({ remoteTitle: remoteSession.title });
     hydrated.push({
       id: remoteSession.session_id,
-      title: remoteSession.title?.trim() || "新聊天",
+      ...resolved,
       createdAt: remoteSession.created_at,
       connection: "idle",
       turnPhase: "draft",
@@ -81,8 +85,39 @@ export function buildSidebarSessionsFromSummaries(summaries: GatewaySessionSumma
   return Array.from(deduped.values());
 }
 
+export function mergeHydratedSessionFromTimeline(current: ChatSession, timelineEvents: StreamEvent[]): ChatSession {
+  const incremental = timelineEvents.filter((event) => event.event_seq > current.lastEventSeq);
+  const rebuilt = incremental.length === 0 ? current : applySessionEvents(current, incremental);
+  const firstUserMessage = rebuilt.messages.find((message) => message.role === "user");
+  const resolved = resolveSessionTitle({
+    localTitle: current.title,
+    localIsPlaceholderTitle: current.isPlaceholderTitle,
+    inferredTitle: summarizeTitle(firstUserMessage?.content ?? "")
+  });
+  const titleChanged =
+    resolved.title !== current.title || resolved.isPlaceholderTitle !== current.isPlaceholderTitle;
+  if (incremental.length === 0) {
+    return titleChanged ? { ...current, ...resolved } : current;
+  }
+  return {
+    ...current,
+    ...rebuilt,
+    ...resolved
+  };
+}
+
+function normalizeCachedSessionTitle(session: ChatSession): ChatSession {
+  if (typeof session.isPlaceholderTitle === "boolean") {
+    return session;
+  }
+  return {
+    ...session,
+    isPlaceholderTitle: session.title.trim() === PLACEHOLDER_SESSION_TITLE
+  };
+}
+
 export function useChatApp() {
-  const initialSessions = loadSessions();
+  const initialSessions = loadSessions().map(normalizeCachedSessionTitle);
   const [state, setState] = useState<ChatState>(() => ({
     settings: loadSettings(),
     auth: loadAuth(),
@@ -98,8 +133,11 @@ export function useChatApp() {
   const reconnectAbortRef = useRef<AbortController | null>(null);
   const pollingAbortRef = useRef<AbortController | null>(null);
   const sessionsRef = useRef(state.sessions);
+  const activeSessionIdRef = useRef(state.activeSessionId);
   const hydratedSessionsRef = useRef<Record<string, boolean>>({});
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
+  const ensureDraftSessionPromiseRef = useRef<Promise<string> | null>(null);
+  const submittingSessionIdsRef = useRef<Set<string>>(new Set());
   const sseRunTokenRef = useRef<Record<string, number>>({});
   const nextSseRunTokenRef = useRef(1);
   const lastEventSeqRef = useRef<Record<string, number>>(
@@ -115,6 +153,10 @@ export function useChatApp() {
     }
     lastEventSeqRef.current = nextLastSeq;
   }, [state.sessions]);
+
+  useEffect(() => {
+    activeSessionIdRef.current = state.activeSessionId;
+  }, [state.activeSessionId]);
 
   const applyIncomingEvent = useCallback((sessionId: string, event: StreamEvent) => {
     const responseSegmentId =
@@ -323,15 +365,29 @@ export function useChatApp() {
     }));
   }, []);
 
-  const ensureSession = useCallback(async (): Promise<string> => {
-    return ensureSessionAction({
-      activeSessionId: state.activeSessionId,
+  const ensureSession = useCallback(async (targetSessionId?: string | null): Promise<string> => {
+    const currentActiveSessionId = targetSessionId ?? activeSessionIdRef.current;
+    if (currentActiveSessionId) {
+      return currentActiveSessionId;
+    }
+    if (ensureDraftSessionPromiseRef.current) {
+      return ensureDraftSessionPromiseRef.current;
+    }
+    const task = ensureSessionAction({
+      activeSessionId: null,
       withAuthRetry,
       client,
       setState,
-      clearAuthState
+      clearAuthState,
+      shouldActivateCreatedSession: () => activeSessionIdRef.current === null
+    }).finally(() => {
+      if (ensureDraftSessionPromiseRef.current === task) {
+        ensureDraftSessionPromiseRef.current = null;
+      }
     });
-  }, [clearAuthState, client, state.activeSessionId, withAuthRetry]);
+    ensureDraftSessionPromiseRef.current = task;
+    return task;
+  }, [clearAuthState, client, withAuthRetry]);
 
   const startSseLoop = useCallback(
     (sessionId: string) => {
@@ -486,7 +542,7 @@ export function useChatApp() {
           nextCursor = hydrated.nextCursor;
           toast = sessions.length > 0 ? `登录成功，已同步 ${sessions.length} 个历史会话` : "登录成功，暂无历史会话";
         } catch {
-          sessions = loadSessions();
+          sessions = loadSessions().map(normalizeCachedSessionTitle);
           nextCursor = null;
           toast = "历史同步失败，已使用本地缓存";
         }
@@ -556,16 +612,7 @@ export function useChatApp() {
           return;
         }
         updateSession(session.id, (current) => {
-          const incremental = timeline.events.filter((event) => event.event_seq > current.lastEventSeq);
-          if (incremental.length === 0) {
-            return current;
-          }
-          const rebuilt = applySessionEvents(current, incremental);
-          return {
-            ...current,
-            ...rebuilt,
-            title: current.title || rebuilt.title
-          };
+          return mergeHydratedSessionFromTimeline(current, timeline.events);
         });
       } catch {
         // keep sidebar responsive even if this session timeline fails to hydrate
@@ -660,9 +707,10 @@ export function useChatApp() {
 
   const sendMessage = useCallback(
     async (content: string) => {
+      const targetSessionId = activeSessionIdRef.current;
       await sendMessageAction({
         content,
-        ensureSession,
+        ensureSession: () => ensureSession(targetSessionId),
         updateSession,
         withAuthRetry,
         client,
@@ -674,6 +722,20 @@ export function useChatApp() {
           sessionsRef.current.find((session) => session.id === sessionId)?.turnPhase,
         getSessionTitle: (sessionId: string) =>
           sessionsRef.current.find((session) => session.id === sessionId)?.title,
+        getSessionIsPlaceholderTitle: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.isPlaceholderTitle,
+        getSessionMessageCount: (sessionId: string) =>
+          sessionsRef.current.find((session) => session.id === sessionId)?.messages.length,
+        tryBeginSubmit: (sessionId: string) => {
+          if (submittingSessionIdsRef.current.has(sessionId)) {
+            return false;
+          }
+          submittingSessionIdsRef.current.add(sessionId);
+          return true;
+        },
+        endSubmit: (sessionId: string) => {
+          submittingSessionIdsRef.current.delete(sessionId);
+        },
         notifyBusyTurnBlockedSend
       });
     },
@@ -689,6 +751,9 @@ export function useChatApp() {
   );
 
   const newChat = useCallback(async () => {
+    if (activeSession && !isEmptyDraftSession(activeSession)) {
+      activeSessionIdRef.current = null;
+    }
     await newChatAction({
       activeSession,
       withAuthRetry,
@@ -699,6 +764,7 @@ export function useChatApp() {
   }, [activeSession, clearAuthState, client, withAuthRetry]);
 
   const switchSession = useCallback((sessionId: string) => {
+    activeSessionIdRef.current = sessionId;
     setState((prev) => ({ ...prev, activeSessionId: sessionId, globalError: null }));
   }, []);
 

@@ -272,6 +272,53 @@ impl SessionIndexStore {
         Ok(())
     }
 
+    pub fn update_session_title_if_empty(&self, session_id: &str, title: String) -> Result<bool> {
+        let _guard = self.write_guard();
+        self.ensure_writable()?;
+        let base = self
+            .entries_guard()
+            .iter()
+            .find(|entry| entry.session_id == session_id)
+            .cloned()
+            .with_context(|| format!("session not found for title update: {session_id}"))?;
+        if base.title.as_ref().is_some_and(|value| !value.trim().is_empty()) {
+            return Ok(false);
+        }
+        let updated_at = now_rfc3339()?;
+        let normalized_title = title.trim().to_string();
+        if normalized_title.is_empty() {
+            return Ok(false);
+        }
+        let next = IndexSessionEntry {
+            session_id: base.session_id,
+            title: Some(normalized_title.clone()),
+            created_at: base.created_at,
+            updated_at: updated_at.clone(),
+            last_event_seq: base.last_event_seq,
+            last_preview: base.last_preview,
+        };
+        let op = SessionIndexLogRecord {
+            op: IndexLogOpKind::UpsertSession,
+            session_id: next.session_id.clone(),
+            ts: now_rfc3339()?,
+            payload: Some(next.clone()),
+        };
+        self.append_log_record(&op)?;
+        if let Err(err) = self.write_session_metadata(session_id, |metadata| {
+            metadata.title = Some(normalized_title);
+            metadata.updated_at = updated_at;
+            Ok(())
+        }) {
+            self.mark_repair_required()?;
+            return Err(err).context(
+                "index_repair_required: metadata update failed after conditional title log append",
+            );
+        }
+        self.upsert_memory_entry(next);
+        self.maybe_compact()?;
+        Ok(true)
+    }
+
     pub fn update_session_tags(&self, session_id: &str, tags: Vec<String>) -> Result<()> {
         let _guard = self.write_guard();
         self.ensure_writable()?;

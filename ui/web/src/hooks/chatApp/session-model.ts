@@ -4,11 +4,19 @@ import type { ChatMessage, ChatSession, MessageRole } from "../../types/chat";
 import type { GatewayError, GatewaySessionSummary, StreamEvent } from "../../types/gateway";
 
 export const INFO_TOAST_ALREADY_IN_NEW_CHAT = "已在新对话中";
+export const PLACEHOLDER_SESSION_TITLE = "新聊天";
+export const SESSION_TITLE_MAX_CODE_POINTS = 24;
+
+interface ResolvedSessionTitle {
+  title: string;
+  isPlaceholderTitle: boolean;
+}
 
 export function createLocalSession(sessionId: string): ChatSession {
   return {
     id: sessionId,
-    title: "新聊天",
+    title: PLACEHOLDER_SESSION_TITLE,
+    isPlaceholderTitle: true,
     createdAt: new Date().toISOString(),
     connection: "idle",
     turnPhase: "draft",
@@ -20,7 +28,31 @@ export function createLocalSession(sessionId: string): ChatSession {
 
 export function summarizeTitle(input: string): string {
   const plain = input.replace(/\s+/g, " ").trim();
-  return plain.length > 24 ? `${plain.slice(0, 24)}...` : plain;
+  const codePoints = Array.from(plain);
+  return codePoints.length > SESSION_TITLE_MAX_CODE_POINTS
+    ? `${codePoints.slice(0, SESSION_TITLE_MAX_CODE_POINTS).join("")}...`
+    : plain;
+}
+
+export function resolveSessionTitle(params: {
+  remoteTitle?: string | null;
+  localTitle?: string | null;
+  localIsPlaceholderTitle?: boolean;
+  inferredTitle?: string | null;
+}): ResolvedSessionTitle {
+  const remote = params.remoteTitle?.trim();
+  if (remote) {
+    return { title: remote, isPlaceholderTitle: false };
+  }
+  const local = params.localTitle?.trim();
+  if (local && params.localIsPlaceholderTitle === false) {
+    return { title: local, isPlaceholderTitle: false };
+  }
+  const inferred = params.inferredTitle?.trim();
+  if (inferred) {
+    return { title: inferred, isPlaceholderTitle: false };
+  }
+  return { title: PLACEHOLDER_SESSION_TITLE, isPlaceholderTitle: true };
 }
 
 export function isEmptyDraftSession(session: ChatSession | null): boolean {
@@ -48,7 +80,7 @@ export function buildChatSessionFromGateway(
   const orderedEvents = [...remoteEvents].sort((left, right) => left.event_seq - right.event_seq);
   let session: ChatSession = {
     id: remoteSession.session_id,
-    title: remoteSession.title?.trim() || "新聊天",
+    ...resolveSessionTitle({ remoteTitle: remoteSession.title }),
     createdAt: remoteSession.created_at,
     connection: "idle",
     turnPhase: "draft",
@@ -61,10 +93,15 @@ export function buildChatSessionFromGateway(
   }
   const messages: ChatMessage[] = session.messages;
   const firstUserMessage = messages.find((message) => message.role === "user");
-  const title = remoteSession.title?.trim() || summarizeTitle(firstUserMessage?.content ?? "新聊天");
+  const resolved = resolveSessionTitle({
+    remoteTitle: remoteSession.title,
+    localTitle: session.title,
+    localIsPlaceholderTitle: session.isPlaceholderTitle,
+    inferredTitle: summarizeTitle(firstUserMessage?.content ?? "")
+  });
   return {
     ...session,
-    title,
+    ...resolved,
     connection: "idle",
     createdAt: remoteSession.created_at
   };

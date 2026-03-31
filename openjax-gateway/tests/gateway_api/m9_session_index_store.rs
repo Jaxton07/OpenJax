@@ -228,6 +228,36 @@ async fn create_session_uses_staging_then_publish() {
 }
 
 #[tokio::test]
+async fn update_session_title_if_empty_only_applies_once() {
+    let root = temp_transcript_root();
+    let store = SessionIndexStore::new(root.clone()).expect("build index store");
+    let mut seeded = index_entry("sess_title_if_empty", "2026-03-30T12:00:00.000Z", 0);
+    seeded.title = None;
+    store
+        .create_session_index_entry(seeded)
+        .expect("seed session entry");
+
+    let first = store
+        .update_session_title_if_empty("sess_title_if_empty", "first-title".to_string())
+        .expect("first title update should succeed");
+    let second = store
+        .update_session_title_if_empty("sess_title_if_empty", "second-title".to_string())
+        .expect("second title update should be no-op");
+
+    assert!(first, "first conditional update should apply");
+    assert!(!second, "second conditional update should not apply");
+
+    let entry = store
+        .list_sessions()
+        .into_iter()
+        .find(|item| item.session_id == "sess_title_if_empty")
+        .expect("entry exists");
+    assert_eq!(entry.title.as_deref(), Some("first-title"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
 async fn delete_session_rolls_back_index_when_remove_dir_fails() {
     let root = temp_transcript_root();
     let store = SessionIndexStore::new(root.clone()).expect("build index store");

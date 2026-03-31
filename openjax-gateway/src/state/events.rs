@@ -1,6 +1,8 @@
 //! AppState and session persistence orchestration.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -34,7 +36,11 @@ pub struct AppState {
     pub store: Arc<SqliteStore>,
     pub transcript: Arc<TranscriptStore>,
     pub session_index: Arc<SessionIndexStore>,
+    auto_title_dedupe: Arc<StdMutex<AutoTitleDedupeCache>>,
 }
+
+pub const AUTO_TITLE_DEDUPE_TTL_MS: u64 = 30_000;
+pub const AUTO_TITLE_DEDUPE_MAX_KEYS: usize = 10_000;
 
 impl AppState {
     pub fn new() -> Self {
@@ -68,6 +74,10 @@ impl AppState {
             store,
             transcript,
             session_index,
+            auto_title_dedupe: Arc::new(StdMutex::new(AutoTitleDedupeCache::new(
+                AUTO_TITLE_DEDUPE_TTL_MS,
+                AUTO_TITLE_DEDUPE_MAX_KEYS,
+            ))),
         })
     }
 
@@ -91,6 +101,10 @@ impl AppState {
             store,
             transcript,
             session_index,
+            auto_title_dedupe: Arc::new(StdMutex::new(AutoTitleDedupeCache::new(
+                AUTO_TITLE_DEDUPE_TTL_MS,
+                AUTO_TITLE_DEDUPE_MAX_KEYS,
+            ))),
         }
     }
 
@@ -360,13 +374,29 @@ impl AppState {
     }
 
     fn refresh_session_index_from_event(&self, record: &TranscriptRecord) -> Result<(), ApiError> {
-        let current_preview = self
+        let current_entry = self
             .session_index
             .list_sessions()
             .into_iter()
-            .find(|entry| entry.session_id == record.session_id)
-            .map(|entry| entry.last_preview)
+            .find(|entry| entry.session_id == record.session_id);
+        let current_preview = current_entry
+            .as_ref()
+            .map(|entry| entry.last_preview.clone())
             .unwrap_or_default();
+        if let Some(next_title) = derive_session_title(&record.event_type, &record.payload) {
+            let should_skip = build_auto_title_dedupe_key(record)
+                .map(|key| {
+                    let now_ms = now_unix_ms();
+                    let mut cache = self.auto_title_dedupe.lock().unwrap_or_else(|e| e.into_inner());
+                    cache.should_skip(key, now_ms)
+                })
+                .unwrap_or(false);
+            if !should_skip {
+                self.session_index
+                    .update_session_title_if_empty(&record.session_id, next_title)
+                    .map_err(map_session_index_error)?;
+            }
+        }
         let next_preview =
             derive_last_preview(&record.event_type, &record.payload).unwrap_or(current_preview);
         self.session_index
@@ -486,6 +516,176 @@ fn derive_last_preview(event_type: &str, payload: &serde_json::Value) -> Option<
         .get("content")
         .and_then(|value| value.as_str())
         .map(|content| truncate_utf8_chars(content.trim(), 120))
+}
+
+fn derive_session_title(
+    event_type: &str,
+    payload: &serde_json::Value,
+) -> Option<String> {
+    if event_type != "user_message" {
+        return None;
+    }
+    let raw = payload.get("content").and_then(|value| value.as_str())?;
+    let normalized = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    const MAX_TITLE_CHARS: usize = 24;
+    let title = if normalized.chars().count() > MAX_TITLE_CHARS {
+        format!(
+            "{}...",
+            normalized.chars().take(MAX_TITLE_CHARS).collect::<String>()
+        )
+    } else {
+        normalized
+    };
+    Some(title)
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+fn build_auto_title_dedupe_key(record: &TranscriptRecord) -> Option<String> {
+    if record.event_type != "user_message" {
+        return None;
+    }
+    let raw = record.payload.get("content").and_then(|value| value.as_str())?;
+    let normalized = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    normalized.hash(&mut hasher);
+    let content_hash = hasher.finish();
+    Some(format!(
+        "{}|{}|{}|{}|{}",
+        record.session_id,
+        record.turn_id.as_deref().unwrap_or_default(),
+        record.turn_seq,
+        record.event_type,
+        content_hash
+    ))
+}
+
+#[derive(Debug)]
+struct AutoTitleDedupeCache {
+    ttl_ms: u64,
+    cap: usize,
+    expires_at: HashMap<String, u64>,
+    order: VecDeque<String>,
+}
+
+impl AutoTitleDedupeCache {
+    fn new(ttl_ms: u64, cap: usize) -> Self {
+        Self {
+            ttl_ms,
+            cap: cap.max(1),
+            expires_at: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn should_skip(&mut self, key: String, now_ms: u64) -> bool {
+        self.evict_expired(now_ms);
+        if let Some(expires_at) = self.expires_at.get(&key).copied() {
+            if expires_at > now_ms {
+                return true;
+            }
+            self.expires_at.remove(&key);
+        }
+        self.order.retain(|queued| queued != &key);
+        let next_expiry = now_ms.saturating_add(self.ttl_ms);
+        self.expires_at.insert(key.clone(), next_expiry);
+        self.order.push_back(key);
+        self.evict_overflow();
+        false
+    }
+
+    fn evict_expired(&mut self, now_ms: u64) {
+        let mut next_order = VecDeque::with_capacity(self.order.len());
+        let mut seen = HashSet::new();
+        while let Some(key) = self.order.pop_front() {
+            let Some(expires_at) = self.expires_at.get(&key).copied() else {
+                continue;
+            };
+            if expires_at <= now_ms {
+                self.expires_at.remove(&key);
+                continue;
+            }
+            if seen.insert(key.clone()) {
+                next_order.push_back(key);
+            }
+        }
+        self.order = next_order;
+    }
+
+    fn evict_overflow(&mut self) {
+        while self.expires_at.len() > self.cap {
+            let Some(front) = self.order.pop_front() else {
+                break;
+            };
+            self.expires_at.remove(&front);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AUTO_TITLE_DEDUPE_MAX_KEYS, AUTO_TITLE_DEDUPE_TTL_MS, AutoTitleDedupeCache,
+        derive_session_title,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn auto_title_dedupe_cache_honors_ttl_window() {
+        let mut cache = AutoTitleDedupeCache::new(AUTO_TITLE_DEDUPE_TTL_MS, 8);
+        let now = 1_000_u64;
+        assert!(!cache.should_skip("k1".to_string(), now));
+        assert!(cache.should_skip("k1".to_string(), now + AUTO_TITLE_DEDUPE_TTL_MS - 1));
+        assert!(!cache.should_skip("k1".to_string(), now + AUTO_TITLE_DEDUPE_TTL_MS));
+    }
+
+    #[test]
+    fn auto_title_dedupe_cache_evicts_oldest_when_over_capacity() {
+        let mut cache = AutoTitleDedupeCache::new(AUTO_TITLE_DEDUPE_TTL_MS, 2);
+        let now = 1_000_u64;
+        assert!(!cache.should_skip("k1".to_string(), now));
+        assert!(!cache.should_skip("k2".to_string(), now));
+        assert!(!cache.should_skip("k3".to_string(), now));
+        assert_eq!(cache.expires_at.len(), 2);
+        assert!(!cache.should_skip("k1".to_string(), now + 1));
+    }
+
+    #[test]
+    fn auto_title_dedupe_cache_handles_middle_expiry_and_key_reinsert() {
+        let mut cache = AutoTitleDedupeCache::new(10, 8);
+        assert!(!cache.should_skip("k1".to_string(), 0));
+        assert!(!cache.should_skip("k2".to_string(), 1));
+        assert!(!cache.should_skip("k3".to_string(), 2));
+        assert!(!cache.should_skip("k2".to_string(), 20));
+        assert!(cache.should_skip("k2".to_string(), 21));
+    }
+
+    #[test]
+    fn derive_session_title_normalizes_whitespace_and_truncates_24_codepoints() {
+        let normalized = derive_session_title("user_message", &json!({ "content": "  a\t b \n c " }));
+        assert_eq!(normalized.as_deref(), Some("a b c"));
+
+        let long = "你".repeat(25);
+        let truncated = derive_session_title("user_message", &json!({ "content": long }));
+        assert_eq!(truncated.as_deref(), Some(format!("{}...", "你".repeat(24)).as_str()));
+    }
+
+    #[test]
+    fn dedupe_constants_match_spec_contract() {
+        assert_eq!(AUTO_TITLE_DEDUPE_TTL_MS, 30_000);
+        assert_eq!(AUTO_TITLE_DEDUPE_MAX_KEYS, 10_000);
+    }
 }
 
 fn truncate_utf8_chars(input: &str, max_chars: usize) -> String {

@@ -7,6 +7,7 @@ function baseSession(): ChatSession {
   return {
     id: "sess_1",
     title: "test",
+    isPlaceholderTitle: false,
     createdAt: "2026-01-01T00:00:00Z",
     connection: "active",
     turnPhase: "draft",
