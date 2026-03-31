@@ -68,6 +68,8 @@ interface SendMessageParams {
   tryBeginSubmit?: (sessionId: string) => boolean;
   endSubmit?: (sessionId: string) => void;
   notifyBusyTurnBlockedSend?: () => void;
+  isDraftSend?: boolean;
+  getDraftPolicyLevel?: () => "allow" | "ask" | "deny";
 }
 
 export async function sendMessageAction(params: SendMessageParams): Promise<void> {
@@ -77,6 +79,25 @@ export async function sendMessageAction(params: SendMessageParams): Promise<void
   }
 
   const sessionId = await params.ensureSession();
+
+  // Apply draft policy for newly created sessions before gating
+  if (params.isDraftSend && params.getDraftPolicyLevel) {
+    const level = params.getDraftPolicyLevel();
+    if (level !== "ask") {
+      try {
+        await params.withAuthRetry(() => params.client.setPolicyLevel(sessionId, level));
+        params.updateSession(sessionId, (s) => ({ ...s, policyLevel: level }));
+      } catch (error) {
+        if (isAuthenticationError(error)) {
+          params.clearAuthState("登录态已失效，请重新登录。");
+          return;
+        }
+        params.setState((prev) => ({ ...prev, globalError: humanizeError(error) }));
+        return;
+      }
+    }
+  }
+
   const gateAccepted = params.tryBeginSubmit ? params.tryBeginSubmit(sessionId) : true;
   if (!gateAccepted) {
     params.notifyBusyTurnBlockedSend?.();

@@ -267,6 +267,117 @@ describe("sendMessageAction", () => {
     expect(updateSession).toHaveBeenCalledTimes(1);
     expect(submitTurn).toHaveBeenCalledTimes(1);
   });
+
+  it("calls setPolicyLevel before submitTurn when isDraftSend=true and draftPolicyLevel=allow", async () => {
+    const callOrder: string[] = [];
+    const setPolicyLevel = vi.fn().mockImplementation(async () => {
+      callOrder.push("setPolicyLevel");
+    });
+    const submitTurn = vi.fn().mockImplementation(async () => {
+      callOrder.push("submitTurn");
+      return { turn_id: "turn_1" };
+    });
+    const updateSession = vi.fn();
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession: vi.fn().mockResolvedValue("sess_new"),
+      updateSession,
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn, setPolicyLevel } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState: vi.fn(),
+      setState: vi.fn(),
+      getSessionTurnPhase: () => "draft",
+      isDraftSend: true,
+      getDraftPolicyLevel: () => "allow",
+    });
+
+    expect(callOrder).toEqual(["setPolicyLevel", "submitTurn"]);
+    expect(setPolicyLevel).toHaveBeenCalledWith("sess_new", "allow");
+    expect(updateSession).toHaveBeenCalledWith("sess_new", expect.any(Function));
+    const updater = updateSession.mock.calls[0]?.[1] as (s: any) => any;
+    const updated = updater({ id: "sess_new", messages: [], pendingApprovals: [] });
+    expect(updated.policyLevel).toBe("allow");
+  });
+
+  it("skips setPolicyLevel when draftPolicyLevel=ask even if isDraftSend=true", async () => {
+    const setPolicyLevel = vi.fn();
+    const submitTurn = vi.fn().mockResolvedValue({ turn_id: "turn_1" });
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession: vi.fn().mockResolvedValue("sess_new"),
+      updateSession: vi.fn(),
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn, setPolicyLevel } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState: vi.fn(),
+      setState: vi.fn(),
+      getSessionTurnPhase: () => "draft",
+      isDraftSend: true,
+      getDraftPolicyLevel: () => "ask",
+    });
+
+    expect(setPolicyLevel).not.toHaveBeenCalled();
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts send and sets globalError when setPolicyLevel fails in draft send", async () => {
+    const setPolicyLevel = vi.fn().mockRejectedValue(new Error("network error"));
+    const submitTurn = vi.fn().mockResolvedValue({ turn_id: "turn_1" });
+    const setState = vi.fn();
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession: vi.fn().mockResolvedValue("sess_new"),
+      updateSession: vi.fn(),
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn, setPolicyLevel } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState: vi.fn(),
+      setState,
+      getSessionTurnPhase: () => "draft",
+      isDraftSend: true,
+      getDraftPolicyLevel: () => "allow",
+    });
+
+    expect(submitTurn).not.toHaveBeenCalled();
+    const lastCall = setState.mock.calls[setState.mock.calls.length - 1]?.[0] as (s: any) => any;
+    const next = lastCall({ globalError: null });
+    expect(next.globalError).toBeTruthy();
+  });
+
+  it("aborts send and calls clearAuthState when setPolicyLevel returns auth error", async () => {
+    const setPolicyLevel = vi.fn().mockRejectedValue({
+      code: "UNAUTHENTICATED",
+      status: 401,
+      message: "token expired"
+    });
+    const submitTurn = vi.fn();
+    const clearAuthState = vi.fn();
+
+    await sendMessageAction({
+      content: "hello",
+      ensureSession: vi.fn().mockResolvedValue("sess_new"),
+      updateSession: vi.fn(),
+      withAuthRetry: async (action) => action(),
+      client: { submitTurn, setPolicyLevel } as unknown as GatewayClient,
+      outputMode: "sse",
+      pollingAbortRef: { current: null },
+      clearAuthState,
+      setState: vi.fn(),
+      getSessionTurnPhase: () => "draft",
+      isDraftSend: true,
+      getDraftPolicyLevel: () => "allow",
+    });
+
+    expect(clearAuthState).toHaveBeenCalledTimes(1);
+    expect(submitTurn).not.toHaveBeenCalled();
+  });
 });
 
 describe("clearConversationAction", () => {
