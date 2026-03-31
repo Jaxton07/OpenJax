@@ -238,9 +238,9 @@
 
 .chat-main {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr;
   gap: 0;
-  padding: 16px 24px 12px;
+  padding: 16px 24px 0;
   background: var(--bg);
   position: relative;
   height: 100%;

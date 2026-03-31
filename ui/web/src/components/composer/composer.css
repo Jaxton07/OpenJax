@@ -1,9 +1,11 @@
 .composer-wrap {
-  position: relative;
-  padding: 4px 0 8px;
-  background: transparent;
-  width: min(var(--composer-max-width), 100%);
-  margin: 0 auto;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(var(--composer-max-width), calc(100% - 48px));
+  padding: 8px 0 36px;
+  background: linear-gradient(to bottom, transparent 0%, var(--bg) 28%);
 }
 
 .composer-actions {
